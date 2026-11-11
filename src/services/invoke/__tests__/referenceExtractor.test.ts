@@ -5,15 +5,19 @@ describe('extractInvokeImageReferences', () => {
     it('extracts all canonical InvokeAI reference roles', () => {
         const result = extractInvokeImageReferences({
             init_image: 'Init.PNG',
-            controlnets: [{
-                image: { image_name: 'control.png' },
-                processed_image: 'control-processed.png',
-            }],
+            controlnets: [
+                {
+                    image: { image_name: 'control.png' },
+                    processed_image: 'control-processed.png',
+                },
+            ],
             ipAdapters: [{ image: { image_name: 'face.png' } }],
-            t2iAdapters: [{
-                image: 'sketch.png',
-                processed_image: { image_name: 'sketch-processed.png' },
-            }],
+            t2iAdapters: [
+                {
+                    image: 'sketch.png',
+                    processed_image: { image_name: 'sketch-processed.png' },
+                },
+            ],
         });
 
         expect(result).toEqual({
@@ -61,22 +65,14 @@ describe('extractInvokeImageReferences', () => {
             },
         });
 
-        expect(wrapped.references).toEqual([
-            { role: 'init_image', targetInvokeImageName: 'wrapped.png' },
-        ]);
-        expect(imagePayload.references).toEqual([
-            { role: 'ip_adapter_image', targetInvokeImageName: 'image-payload.png' },
-        ]);
+        expect(wrapped.references).toEqual([{ role: 'init_image', targetInvokeImageName: 'wrapped.png' }]);
+        expect(imagePayload.references).toEqual([{ role: 'ip_adapter_image', targetInvokeImageName: 'image-payload.png' }]);
     });
 
     it('deduplicates exact role and name pairs without merging roles or case', () => {
         const result = extractInvokeImageReferences({
             init_image: 'Same.PNG',
-            controlnets: [
-                { image: 'Same.PNG' },
-                { image: { image_name: 'Same.PNG' } },
-                { image: 'same.png' },
-            ],
+            controlnets: [{ image: 'Same.PNG' }, { image: { image_name: 'Same.PNG' } }, { image: 'same.png' }],
         });
 
         expect(result.references).toEqual([
@@ -104,25 +100,25 @@ describe('extractInvokeImageReferences', () => {
             controlnets: [{ image: '   ', processed_image: { image_name: '' } }],
         });
 
-        expect(result.references).toEqual([
-            { role: 'init_image', targetInvokeImageName: '  spaced name.png  ' },
-        ]);
+        expect(result.references).toEqual([{ role: 'init_image', targetInvokeImageName: '  spaced name.png  ' }]);
     });
 
     it('allows empty optional reference values and model-only adapter entries', () => {
-        expect(extractInvokeImageReferences({
-            init_image: null,
-            controlnets: [
-                null,
-                undefined,
-                'control-model.safetensors',
-                '   ',
-                { model_name: 'record-only-model' },
-                { model_name: 'control-model', image: '   ', processed_image: null },
-            ],
-            ipAdapters: { model_name: 'ip-model', image: { image_name: null } },
-            t2iAdapters: [],
-        })).toEqual({ status: 'valid', references: [] });
+        expect(
+            extractInvokeImageReferences({
+                init_image: null,
+                controlnets: [
+                    null,
+                    undefined,
+                    'control-model.safetensors',
+                    '   ',
+                    { model_name: 'record-only-model' },
+                    { model_name: 'control-model', image: '   ', processed_image: null },
+                ],
+                ipAdapters: { model_name: 'ip-model', image: { image_name: null } },
+                t2iAdapters: [],
+            })
+        ).toEqual({ status: 'valid', references: [] });
     });
 
     it.each([

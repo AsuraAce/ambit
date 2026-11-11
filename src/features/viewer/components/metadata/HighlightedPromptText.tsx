@@ -10,7 +10,8 @@ interface HighlightedPromptTextProps {
     terms?: string[];
 }
 
-const MARK_CLASS_NAME = 'bg-ember-200/60 text-ember-600 font-semibold underline decoration-ember-400/70 underline-offset-2 dark:bg-ember-500/20 dark:text-ember-300 dark:decoration-ember-300/60';
+const MARK_CLASS_NAME =
+    'bg-ember-200/60 text-ember-600 font-semibold underline decoration-ember-400/70 underline-offset-2 dark:bg-ember-500/20 dark:text-ember-300 dark:decoration-ember-300/60';
 
 const normalizeTerms = (terms: string[]): string[] => {
     const seen = new Set<string>();
@@ -49,7 +50,7 @@ const findHighlightMatches = (text: string, terms: string[]): HighlightMatch[] =
 
     matches.sort((a, b) => {
         if (a.start !== b.start) return a.start - b.start;
-        return (b.end - b.start) - (a.end - a.start);
+        return b.end - b.start - (a.end - a.start);
     });
 
     const nonOverlapping: HighlightMatch[] = [];

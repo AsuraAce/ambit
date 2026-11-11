@@ -48,9 +48,7 @@ export const isValidDateInput = (value: string | undefined): value is string => 
     const [year, month, day] = value.split('-').map(Number);
     const date = createLocalDate(year, month - 1, day);
 
-    return date.getFullYear() === year
-        && date.getMonth() === month - 1
-        && date.getDate() === day;
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 };
 
 export const compareDateInputs = (left: string, right: string): number => {
@@ -60,11 +58,9 @@ export const compareDateInputs = (left: string, right: string): number => {
     return leftStart - rightStart;
 };
 
-const startOfLocalDay = (date: Date): Date =>
-    new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const startOfLocalDay = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-const addLocalDays = (date: Date, days: number): Date =>
-    new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+const addLocalDays = (date: Date, days: number): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 
 const parseDateInputStart = (value: string | undefined): number | null => {
     if (!isValidDateInput(value)) return null;
@@ -73,13 +69,9 @@ const parseDateInputStart = (value: string | undefined): number | null => {
     return createLocalDate(year, month - 1, day).getTime();
 };
 
-const nextLocalMidnight = (startTimestamp: number): number =>
-    addLocalDays(new Date(startTimestamp), 1).getTime();
+const nextLocalMidnight = (startTimestamp: number): number => addLocalDays(new Date(startTimestamp), 1).getTime();
 
-const buildDateInputBounds = (
-    dateFrom: string | undefined,
-    dateTo: string | undefined
-): DateFilterBounds => {
+const buildDateInputBounds = (dateFrom: string | undefined, dateTo: string | undefined): DateFilterBounds => {
     const fromStart = parseDateInputStart(dateFrom);
     const toStart = parseDateInputStart(dateTo);
 
@@ -113,7 +105,7 @@ const parseSearchDatePeriod = (value: string | undefined): SearchDatePeriod | nu
 
         return {
             start: createLocalDate(year, month - 1, 1).getTime(),
-            end: createLocalDate(year, month, 1).getTime()
+            end: createLocalDate(year, month, 1).getTime(),
         };
     }
 
@@ -121,17 +113,14 @@ const parseSearchDatePeriod = (value: string | undefined): SearchDatePeriod | nu
         const year = Number(normalizedValue);
         return {
             start: createLocalDate(year, 0, 1).getTime(),
-            end: createLocalDate(year + 1, 0, 1).getTime()
+            end: createLocalDate(year + 1, 0, 1).getTime(),
         };
     }
 
     return null;
 };
 
-const buildSearchDateRangeBounds = (
-    dateFrom: string | undefined,
-    dateTo: string | undefined
-): DateFilterBounds | null => {
+const buildSearchDateRangeBounds = (dateFrom: string | undefined, dateTo: string | undefined): DateFilterBounds | null => {
     if (!dateFrom || !dateTo) return null;
 
     const fromPeriod = parseSearchDatePeriod(dateFrom);
@@ -140,7 +129,7 @@ const buildSearchDateRangeBounds = (
     if (fromPeriod && toPeriod) {
         return {
             start: Math.min(fromPeriod.start, toPeriod.start),
-            end: Math.max(fromPeriod.end, toPeriod.end)
+            end: Math.max(fromPeriod.end, toPeriod.end),
         };
     }
 
@@ -196,10 +185,7 @@ export const getSearchDateBounds = (key: string, value: string): DateFilterBound
             if (dateRangeParts.length !== 2) return null;
 
             const [dateFrom, dateTo] = dateRangeParts;
-            const bounds = buildSearchDateRangeBounds(
-                dateFrom.trim() || undefined,
-                dateTo.trim() || undefined
-            );
+            const bounds = buildSearchDateRangeBounds(dateFrom.trim() || undefined, dateTo.trim() || undefined);
             return bounds;
         }
 
@@ -220,11 +206,8 @@ export const getSearchDateBounds = (key: string, value: string): DateFilterBound
     return null;
 };
 
-const isPendingSearchDateAtom = (value: string): boolean => (
-    PENDING_SEARCH_YEAR_PATTERN.test(value) ||
-    PENDING_SEARCH_MONTH_PATTERN.test(value) ||
-    PENDING_SEARCH_DAY_PATTERN.test(value)
-);
+const isPendingSearchDateAtom = (value: string): boolean =>
+    PENDING_SEARCH_YEAR_PATTERN.test(value) || PENDING_SEARCH_MONTH_PATTERN.test(value) || PENDING_SEARCH_DAY_PATTERN.test(value);
 
 const getSearchDateAtomIssue = (key: string, value: string): AdvancedDateSearchIssue | null => {
     const normalizedValue = value.trim();
@@ -240,7 +223,7 @@ const getSearchDateValueIssue = (key: string, value: string): AdvancedDateSearch
         const parts = normalizedValue.split('..');
         if (parts.length !== 2) return 'invalid';
 
-        const [dateFrom, dateTo] = parts.map(part => part.trim());
+        const [dateFrom, dateTo] = parts.map((part) => part.trim());
         if (!dateFrom || !dateTo) return 'pending';
 
         const fromIssue = getSearchDateAtomIssue('date', dateFrom);
@@ -272,7 +255,7 @@ export const getAdvancedDateSearchReadiness = (query: string): AdvancedDateSearc
             return {
                 isReady: false,
                 issue,
-                token: rawTerm
+                token: rawTerm,
             };
         }
     }
@@ -280,10 +263,7 @@ export const getAdvancedDateSearchReadiness = (query: string): AdvancedDateSearc
     return { isReady: true, issue: null };
 };
 
-export const timestampMatchesDateBounds = (
-    timestamp: number,
-    bounds: DateFilterBounds
-): boolean => {
+export const timestampMatchesDateBounds = (timestamp: number, bounds: DateFilterBounds): boolean => {
     if (bounds.start !== undefined && timestamp < bounds.start) return false;
     if (bounds.end !== undefined && timestamp >= bounds.end) return false;
     return true;
@@ -295,7 +275,7 @@ const formatDisplayDate = (value: string): string => {
     return new Intl.DateTimeFormat('en-US', {
         month: 'short',
         day: 'numeric',
-        year: 'numeric'
+        year: 'numeric',
     }).format(date);
 };
 
@@ -306,9 +286,7 @@ const presetLabel = (range: FilterState['dateRange']): string | null => {
     return null;
 };
 
-export const getDateFilterLabel = (
-    filters: Pick<FilterState, 'dateRange' | 'dateFrom' | 'dateTo'>
-): string | null => {
+export const getDateFilterLabel = (filters: Pick<FilterState, 'dateRange' | 'dateFrom' | 'dateTo'>): string | null => {
     if (filters.dateRange !== 'custom') {
         return presetLabel(filters.dateRange);
     }
@@ -318,9 +296,7 @@ export const getDateFilterLabel = (
     const formattedTo = dateTo ? formatDisplayDate(dateTo) : null;
 
     if (formattedFrom && formattedTo) {
-        return formattedFrom === formattedTo
-            ? `Date: ${formattedFrom}`
-            : `Date: ${formattedFrom} to ${formattedTo}`;
+        return formattedFrom === formattedTo ? `Date: ${formattedFrom}` : `Date: ${formattedFrom} to ${formattedTo}`;
     }
 
     if (formattedFrom) return `Date: From ${formattedFrom}`;

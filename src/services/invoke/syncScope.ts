@@ -6,16 +6,9 @@ interface InvokeSyncScopeBase {
     imagesRoot: string;
 }
 
-export type InvokeSyncScope = InvokeSyncScopeBase & (
-    | { mode: 'legacy' }
-    | { mode: 'all' }
-    | { mode: 'owner'; ownerId: string }
-);
+export type InvokeSyncScope = InvokeSyncScopeBase & ({ mode: 'legacy' } | { mode: 'all' } | { mode: 'owner'; ownerId: string });
 
-export const resolveInvokeSyncScope = (
-    discovery: InvokeOwnerDiscovery,
-    selection?: InvokeOwnerSelection
-): InvokeSyncScope | null => {
+export const resolveInvokeSyncScope = (discovery: InvokeOwnerDiscovery, selection?: InvokeOwnerSelection): InvokeSyncScope | null => {
     if (discovery.schemaMode === 'legacy') {
         return {
             dbPath: discovery.dbPath,
@@ -45,19 +38,13 @@ export const resolveInvokeSyncScope = (
     };
 };
 
-export const invokeOwnerPredicate = (
-    scope: InvokeSyncScope,
-    tableAlias?: string
-): { clause: string; params: string[] } => {
+export const invokeOwnerPredicate = (scope: InvokeSyncScope, tableAlias?: string): { clause: string; params: string[] } => {
     if (scope.mode !== 'owner') return { clause: '', params: [] };
     const column = tableAlias ? `${tableAlias}.user_id` : 'user_id';
     return { clause: `${column} = ?`, params: [scope.ownerId] };
 };
 
-export const isInvokeSyncScopeSelectionCurrent = (
-    scope: InvokeSyncScope,
-    selection?: InvokeOwnerSelection
-): boolean => {
+export const isInvokeSyncScopeSelectionCurrent = (scope: InvokeSyncScope, selection?: InvokeOwnerSelection): boolean => {
     if (scope.mode === 'legacy') return true;
     if (!selection || !isSameInvokePath(selection.dbPath, scope.dbPath)) return false;
     if (scope.mode === 'all') return selection.mode === 'all';

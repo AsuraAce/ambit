@@ -98,10 +98,7 @@ describe('MetadataInfoTab', () => {
     });
 
     it('shows source badges only for genuinely modified values', () => {
-        renderTab(image(
-            metadata({ model: 'Unknown', sampler: 'DDIM', cfg: 7.00001 }),
-            metadata({ model: '', sampler: 'Euler', cfg: 7 }),
-        ));
+        renderTab(image(metadata({ model: 'Unknown', sampler: 'DDIM', cfg: 7.00001 }), metadata({ model: '', sampler: 'Euler', cfg: 7 })));
 
         expect(screen.getByRole('button', { name: 'Source: user override' })).toBeTruthy();
         expect(screen.getByText('Sampler').parentElement?.textContent).toContain('DDIM');
@@ -157,10 +154,7 @@ describe('MetadataInfoTab', () => {
     });
 
     it('shows a read-only original prompt without mutating the editable draft', () => {
-        const { props } = renderTab(image(
-            metadata({ positivePrompt: 'Current prompt' }),
-            metadata({ positivePrompt: 'Imported prompt' }),
-        ));
+        const { props } = renderTab(image(metadata({ positivePrompt: 'Current prompt' }), metadata({ positivePrompt: 'Imported prompt' })));
 
         fireEvent.click(screen.getByRole('button', { name: 'Original' }));
         const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
@@ -175,10 +169,9 @@ describe('MetadataInfoTab', () => {
         expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();
         unchanged.unmount();
 
-        const { props } = renderTab(image(
-            metadata({ positivePrompt: 'Recovered prompt' }),
-            metadata({ positivePrompt: 'Original prompt' }),
-        ));
+        const { props } = renderTab(
+            image(metadata({ positivePrompt: 'Recovered prompt' }), metadata({ positivePrompt: 'Original prompt' }))
+        );
         fireEvent.click(screen.getByRole('button', { name: 'Revert All Metadata to Original' }));
         expect(props.onRevertMetadata).toHaveBeenCalledWith('C:/library/image.png');
     });
@@ -195,25 +188,45 @@ describe('MetadataInfoTab', () => {
     });
 
     it('copies raw A1111 data and formats normalized parameters otherwise', () => {
-        const raw = renderTab(image(metadata({
-            tool: GeneratorTool.AUTOMATIC1111,
-            rawParameters: 'raw generation parameters',
-        }), metadata()));
+        const raw = renderTab(
+            image(
+                metadata({
+                    tool: GeneratorTool.AUTOMATIC1111,
+                    rawParameters: 'raw generation parameters',
+                }),
+                metadata()
+            )
+        );
         const copyGenerationData = screen.getByRole('button', { name: 'Copy generation data' });
         fireEvent.mouseEnter(copyGenerationData);
-        expect(screen.getByRole('tooltip').textContent).toBe('Copy prompts and generation settings in the best available source-compatible format.');
+        expect(screen.getByRole('tooltip').textContent).toBe(
+            'Copy prompts and generation settings in the best available source-compatible format.'
+        );
         fireEvent.click(copyGenerationData);
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith('raw generation parameters');
         expect(screen.getByRole('button', { name: 'Generation parameters' }).getAttribute('aria-expanded')).toBe('true');
         raw.unmount();
 
-        renderTab(image(metadata({
-            positivePrompt: 'A castle', negativePrompt: 'fog', steps: 0, sampler: '', cfg: 8,
-            seed: 0, modelHash: 'abc', model: 'Model X', tool: GeneratorTool.COMFYUI,
-        }), metadata()), { negativePromptValue: 'fog' });
+        renderTab(
+            image(
+                metadata({
+                    positivePrompt: 'A castle',
+                    negativePrompt: 'fog',
+                    steps: 0,
+                    sampler: '',
+                    cfg: 8,
+                    seed: 0,
+                    modelHash: 'abc',
+                    model: 'Model X',
+                    tool: GeneratorTool.COMFYUI,
+                }),
+                metadata()
+            ),
+            { negativePromptValue: 'fog' }
+        );
         fireEvent.click(screen.getByRole('button', { name: 'Copy generation data' }));
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-            'A castle\nNegative prompt: fog\nSteps: 0, Sampler: Euler a, CFG scale: 8, Seed: 0, Size: 100x100, Model hash: abc, Model: Model X',
+            'A castle\nNegative prompt: fog\nSteps: 0, Sampler: Euler a, CFG scale: 8, Seed: 0, Size: 100x100, Model hash: abc, Model: Model X'
         );
     });
 
@@ -280,10 +293,15 @@ describe('MetadataInfoTab', () => {
     });
 
     it('renders only populated optional parameter and resource rows', () => {
-        const { props } = renderTab(image(metadata({
-            hiresSteps: 10,
-            loras: ['detail-lora'],
-        }), metadata()));
+        const { props } = renderTab(
+            image(
+                metadata({
+                    hiresSteps: 10,
+                    loras: ['detail-lora'],
+                }),
+                metadata()
+            )
+        );
 
         expect(screen.getByText('Hires Steps').parentElement?.textContent).toContain('10');
         expect(screen.queryByText('Hires Upscale')).toBeNull();
@@ -294,10 +312,15 @@ describe('MetadataInfoTab', () => {
     });
 
     it('groups populated generation resources separately from smart tags', () => {
-        renderTab(image(metadata({
-            positivePrompt: 'portrait, dramatic lighting',
-            loras: ['detail-lora'],
-        }), metadata()));
+        renderTab(
+            image(
+                metadata({
+                    positivePrompt: 'portrait, dramatic lighting',
+                    loras: ['detail-lora'],
+                }),
+                metadata()
+            )
+        );
 
         const tagsSection = screen.getByRole('heading', { name: 'Smart Tags' }).closest('section');
         const resourcesSection = screen.getByRole('heading', { name: 'Resources' }).closest('section');
@@ -333,10 +356,9 @@ describe('MetadataInfoTab', () => {
     });
 
     it('shows an unresolved model hash once without treating it as a user model', () => {
-        const { props } = renderTab(image(
-            metadata({ model: 'Unknown', modelHash: 'f8bb2922e1' }),
-            metadata({ model: 'Unknown', modelHash: 'f8bb2922e1' }),
-        ));
+        const { props } = renderTab(
+            image(metadata({ model: 'Unknown', modelHash: 'f8bb2922e1' }), metadata({ model: 'Unknown', modelHash: 'f8bb2922e1' }))
+        );
 
         expect(screen.getByText('f8bb2922e1')).toBeTruthy();
         expect(screen.getByText('Unresolved hash')).toBeTruthy();
@@ -352,10 +374,12 @@ describe('MetadataInfoTab', () => {
     });
 
     it('shows a resolved model name with its hash as supporting data', () => {
-        renderTab(image(
-            metadata({ model: 'Resolved Model', modelHash: 'f8bb2922e1' }),
-            metadata({ model: 'Resolved Model', modelHash: 'f8bb2922e1' }),
-        ));
+        renderTab(
+            image(
+                metadata({ model: 'Resolved Model', modelHash: 'f8bb2922e1' }),
+                metadata({ model: 'Resolved Model', modelHash: 'f8bb2922e1' })
+            )
+        );
 
         expect(screen.getByText('Resolved Model')).toBeTruthy();
         expect(screen.queryByText('Unresolved hash')).toBeNull();
@@ -372,10 +396,15 @@ describe('MetadataInfoTab', () => {
         const assetGenerator = screen.getByRole('heading', { name: 'Generator software' });
         expect(assetSource.compareDocumentPosition(assetGenerator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-        rerender(<MetadataInfoTab {...props} image={image(metadata(), metadata(), {
-            invokeImageName: 'generation.png',
-            invokeImageCategory: 'general',
-        })} />);
+        rerender(
+            <MetadataInfoTab
+                {...props}
+                image={image(metadata(), metadata(), {
+                    invokeImageName: 'generation.png',
+                    invokeImageCategory: 'general',
+                })}
+            />
+        );
         const generatedSource = screen.getByRole('heading', { name: 'Source' });
         const parameters = screen.getByLabelText('Generation parameters');
         expect(parameters.compareDocumentPosition(generatedSource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -383,12 +412,18 @@ describe('MetadataInfoTab', () => {
     });
 
     it('routes smart tags and highlights both prompts in their single formatted read surfaces', () => {
-        const { props } = renderTab(image(metadata({
-            positivePrompt: 'portrait,\ndramatic lighting',
-            negativePrompt: 'bad anatomy',
-        }), metadata()), {
-            searchHighlights: { positivePrompt: ['portrait'], negativePrompt: ['anatomy'] },
-        });
+        const { props } = renderTab(
+            image(
+                metadata({
+                    positivePrompt: 'portrait,\ndramatic lighting',
+                    negativePrompt: 'bad anatomy',
+                }),
+                metadata()
+            ),
+            {
+                searchHighlights: { positivePrompt: ['portrait'], negativePrompt: ['anatomy'] },
+            }
+        );
 
         const positiveHighlight = document.querySelectorAll('[data-terms="portrait"]');
         const negativeHighlight = document.querySelectorAll('[data-terms="anatomy"]');
@@ -415,10 +450,7 @@ describe('MetadataInfoTab', () => {
     });
 
     it('restores the displayed prompt values when Escape follows an immediate re-edit', () => {
-        const staleImage = image(
-            metadata({ positivePrompt: 'Stale positive', negativePrompt: 'Stale negative' }),
-            metadata(),
-        );
+        const staleImage = image(metadata({ positivePrompt: 'Stale positive', negativePrompt: 'Stale negative' }), metadata());
         const { props } = renderTab(staleImage, {
             promptValue: 'Saved positive',
             negativePromptValue: 'Saved negative',
@@ -458,9 +490,7 @@ describe('MetadataInfoTab', () => {
     });
 
     it('parses compatible clipboard prompts into both editable fields', async () => {
-        vi.mocked(navigator.clipboard.readText).mockResolvedValue(
-            'A lighthouse\nNegative prompt: fog\nSteps: 20, Sampler: Euler',
-        );
+        vi.mocked(navigator.clipboard.readText).mockResolvedValue('A lighthouse\nNegative prompt: fog\nSteps: 20, Sampler: Euler');
         const { props } = renderTab(image(metadata(), metadata()));
 
         fireEvent.click(screen.getByRole('button', { name: 'Parse Prompt from Clipboard' }));

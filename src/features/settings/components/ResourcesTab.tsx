@@ -61,7 +61,13 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
             />
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
-                <div className={isResolving || resolutionResult ? "mb-6 flex items-center justify-between gap-6" : "flex items-center justify-between gap-6"}>
+                <div
+                    className={
+                        isResolving || resolutionResult
+                            ? 'mb-6 flex items-center justify-between gap-6'
+                            : 'flex items-center justify-between gap-6'
+                    }
+                >
                     <div className="flex items-center gap-3">
                         <div className="rounded-lg bg-harbor-100 p-2 dark:bg-harbor-500/10">
                             <FolderSearch className="w-5 h-5 text-harbor-600 dark:text-harbor-300" />
@@ -74,7 +80,9 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
                     {isResolving ? (
                         <div className="flex items-center gap-3 rounded-lg border border-harbor-200 bg-harbor-50 px-3 py-1.5 dark:border-harbor-500/20 dark:bg-harbor-500/10">
                             <RefreshCw className="w-3.5 h-3.5 animate-spin text-harbor-600 dark:text-harbor-300" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-harbor-600 dark:text-harbor-300">Resolving...</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-harbor-600 dark:text-harbor-300">
+                                Resolving...
+                            </span>
                             <div className="h-3 w-px bg-harbor-300 dark:bg-harbor-500/30" />
                             <button
                                 type="button"
@@ -116,11 +124,18 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
                 )}
 
                 {resolutionResult && (
-                    <div className={`p-4 rounded-xl flex items-start gap-3 border ${resolutionResult.success
-                        ? 'border-sage-200 bg-sage-50 text-sage-600 dark:border-sage-500/20 dark:bg-sage-500/10 dark:text-sage-300'
-                        : 'border-ember-200 bg-ember-50 text-ember-600 dark:border-ember-500/20 dark:bg-ember-500/10 dark:text-ember-300'
-                        }`}>
-                        {resolutionResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" /> : <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+                    <div
+                        className={`p-4 rounded-xl flex items-start gap-3 border ${
+                            resolutionResult.success
+                                ? 'border-sage-200 bg-sage-50 text-sage-600 dark:border-sage-500/20 dark:bg-sage-500/10 dark:text-sage-300'
+                                : 'border-ember-200 bg-ember-50 text-ember-600 dark:border-ember-500/20 dark:bg-ember-500/10 dark:text-ember-300'
+                        }`}
+                    >
+                        {resolutionResult.success ? (
+                            <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        ) : (
+                            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        )}
                         <div className="min-w-0">
                             <span className="block text-[10px] font-black uppercase tracking-widest opacity-60 mb-0.5">
                                 {resolutionResult.success ? 'Success' : 'Resolution Partial'}

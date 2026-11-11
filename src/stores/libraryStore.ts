@@ -15,8 +15,7 @@ const createImportRunId = (owner: string): string => {
 
 const isImportRunDebugEnabled = (): boolean => {
     try {
-        return typeof window !== 'undefined'
-            && window.localStorage?.getItem('ambit:debug-import-progress') === '1';
+        return typeof window !== 'undefined' && window.localStorage?.getItem('ambit:debug-import-progress') === '1';
     } catch {
         return false;
     }
@@ -103,10 +102,7 @@ interface LiveWatchSessionUpdate {
     progress?: SyncProgress | null;
 }
 
-const mergeLiveWatchSource = (
-    current: LiveWatchSessionSource | null,
-    next?: LiveWatchSessionSource
-): LiveWatchSessionSource | null => {
+const mergeLiveWatchSource = (current: LiveWatchSessionSource | null, next?: LiveWatchSessionSource): LiveWatchSessionSource | null => {
     if (!next) {
         return current;
     }
@@ -123,9 +119,7 @@ export const getLiveWatchSummaryMessage = (receivedCount: number): string => {
         return 'Watching for new images...';
     }
 
-    return receivedCount === 1
-        ? '1 image added this session.'
-        : `${receivedCount} images added this session.`;
+    return receivedCount === 1 ? '1 image added this session.' : `${receivedCount} images added this session.`;
 };
 
 export const createInitialLiveWatchSessionState = (): LiveWatchSessionState => ({
@@ -136,7 +130,7 @@ export const createInitialLiveWatchSessionState = (): LiveWatchSessionState => (
     progress: null,
     receivedCount: 0,
     startedAt: null,
-    lastActivityAt: null
+    lastActivityAt: null,
 });
 
 const scheduleLiveWatchSessionEnd = () => {
@@ -146,7 +140,7 @@ const scheduleLiveWatchSessionEnd = () => {
 
     liveWatchTimeout = setTimeout(() => {
         const endSession = useLibraryStore.getState().endLiveImageSession;
-        endSession().catch(error => console.error('[LiveWatch] Failed to end live session', error));
+        endSession().catch((error) => console.error('[LiveWatch] Failed to end live session', error));
     }, LIVE_WATCH_SESSION_IDLE_MS);
 };
 
@@ -157,13 +151,10 @@ const clearLiveWatchSessionEnd = () => {
     }
 };
 
-const isActiveLiveWatchPhase = (phase: LiveWatchSessionPhase | null) => (
-    phase === 'watching' || phase === 'syncing' || phase === 'importing'
-);
+const isActiveLiveWatchPhase = (phase: LiveWatchSessionPhase | null) =>
+    phase === 'watching' || phase === 'syncing' || phase === 'importing';
 
-const shouldCloseLiveWatchOnStop = (session: LiveWatchSessionState) => (
-    !session.active || !isActiveLiveWatchPhase(session.phase)
-);
+const shouldCloseLiveWatchOnStop = (session: LiveWatchSessionState) => !session.active || !isActiveLiveWatchPhase(session.phase);
 
 export interface MaintenanceCounts {
     untagged: number;
@@ -329,7 +320,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         intermediates: 0,
         missing: 0,
         trash: 0,
-        duplicates: 0
+        duplicates: 0,
     },
 
     isImporting: false,
@@ -385,37 +376,40 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setInvokeSyncActivityKind: (kind) => set({ invokeSyncActivityKind: kind }),
     setIsLiveSyncing: (isLive) => set({ isLiveSyncing: isLive }),
     setSyncAbortController: (ctrl) => set({ syncAbortController: ctrl }),
-    markInvokeSyncCancelled: () => set(state => ({
-        invokeSyncCancellationGeneration: state.invokeSyncCancellationGeneration + 1,
-    })),
-    cancelSync: () => set((state) => {
-        if (state.syncAbortController) {
-            state.syncAbortController.abort();
-            // The coordinator owns completion: a native write can still be in flight.
-            return { syncProgress: { ...state.syncProgress, message: 'Cancelling…' } };
-        }
-        return {};
-    }),
+    markInvokeSyncCancelled: () =>
+        set((state) => ({
+            invokeSyncCancellationGeneration: state.invokeSyncCancellationGeneration + 1,
+        })),
+    cancelSync: () =>
+        set((state) => {
+            if (state.syncAbortController) {
+                state.syncAbortController.abort();
+                // The coordinator owns completion: a native write can still be in flight.
+                return { syncProgress: { ...state.syncProgress, message: 'Cancelling…' } };
+            }
+            return {};
+        }),
 
-    setIsLiveWatching: (isWatching) => set((state) => {
-        if (isWatching) {
-            return { isLiveWatching: true, liveWatchSessionCloseRequested: false };
-        }
+    setIsLiveWatching: (isWatching) =>
+        set((state) => {
+            if (isWatching) {
+                return { isLiveWatching: true, liveWatchSessionCloseRequested: false };
+            }
 
-        clearLiveWatchSessionEnd();
-        if (shouldCloseLiveWatchOnStop(state.liveWatchSession)) {
+            clearLiveWatchSessionEnd();
+            if (shouldCloseLiveWatchOnStop(state.liveWatchSession)) {
+                return {
+                    isLiveWatching: false,
+                    liveWatchSession: createInitialLiveWatchSessionState(),
+                    liveWatchSessionCloseRequested: false,
+                };
+            }
+
             return {
                 isLiveWatching: false,
-                liveWatchSession: createInitialLiveWatchSessionState(),
-                liveWatchSessionCloseRequested: false
+                liveWatchSessionCloseRequested: true,
             };
-        }
-
-        return {
-            isLiveWatching: false,
-            liveWatchSessionCloseRequested: true
-        };
-    }),
+        }),
     setMaintenanceCounts: (counts) => set({ maintenanceCounts: counts }),
 
     setIsImporting: (val) => {
@@ -451,7 +445,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     runId,
                     owner,
                     activeRunId: state.importRunId,
-                    activeOwner: state.importRunOwner
+                    activeOwner: state.importRunOwner,
                 });
                 return {};
             }
@@ -469,78 +463,82 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                 importRunOwner: owner,
                 importAbortController: options.abortController ?? null,
                 importProgress: options.progress ?? null,
-                isActivityDockDismissed: false
+                isActivityDockDismissed: false,
             };
         });
 
         return didStart ? runId : null;
     },
-    setImportProgressForRun: (runId, progress) => set((state) => {
-        if (state.importRunId !== runId) {
-            debugImportRun('progress-ignored-stale-run', {
-                runId,
-                activeRunId: state.importRunId,
-                progress
-            });
-            return {};
-        }
+    setImportProgressForRun: (runId, progress) =>
+        set((state) => {
+            if (state.importRunId !== runId) {
+                debugImportRun('progress-ignored-stale-run', {
+                    runId,
+                    activeRunId: state.importRunId,
+                    progress,
+                });
+                return {};
+            }
 
-        debugImportRun('progress', {
-            runId,
-            owner: state.importRunOwner,
-            current: progress?.current,
-            total: progress?.total,
-            message: progress?.message,
-            phase: progress?.phase,
-            detail: progress?.detail
-        });
-        return { importProgress: progress };
-    }),
-    finishImportRun: (runId) => set((state) => {
-        if (state.importRunId !== runId) {
-            debugImportRun('finish-ignored-stale-run', {
+            debugImportRun('progress', {
                 runId,
-                activeRunId: state.importRunId
+                owner: state.importRunOwner,
+                current: progress?.current,
+                total: progress?.total,
+                message: progress?.message,
+                phase: progress?.phase,
+                detail: progress?.detail,
             });
-            return {};
-        }
+            return { importProgress: progress };
+        }),
+    finishImportRun: (runId) =>
+        set((state) => {
+            if (state.importRunId !== runId) {
+                debugImportRun('finish-ignored-stale-run', {
+                    runId,
+                    activeRunId: state.importRunId,
+                });
+                return {};
+            }
 
-        debugImportRun('finish', { runId, owner: state.importRunOwner });
-        return {
-            isImporting: false,
-            importProgress: null,
-            importAbortController: null,
-            importRunId: null,
-            importRunOwner: null
-        };
-    }),
-    cancelImport: () => set((state) => {
-        if (state.importAbortController) {
-            debugImportRun('cancel', {
-                runId: state.importRunId,
-                owner: state.importRunOwner
-            });
-            state.importAbortController.abort();
+            debugImportRun('finish', { runId, owner: state.importRunOwner });
             return {
                 isImporting: false,
                 importProgress: null,
                 importAbortController: null,
                 importRunId: null,
-                importRunOwner: null
+                importRunOwner: null,
             };
-        }
-        return {};
-    }),
+        }),
+    cancelImport: () =>
+        set((state) => {
+            if (state.importAbortController) {
+                debugImportRun('cancel', {
+                    runId: state.importRunId,
+                    owner: state.importRunOwner,
+                });
+                state.importAbortController.abort();
+                return {
+                    isImporting: false,
+                    importProgress: null,
+                    importAbortController: null,
+                    importRunId: null,
+                    importRunOwner: null,
+                };
+            }
+            return {};
+        }),
     setIsRegeneratingThumbnails: (val) => set({ isRegeneratingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     setThumbnailProgress: (progress) => set({ thumbnailProgress: progress }),
     setThumbnailAbortController: (ctrl) => set({ thumbnailAbortController: ctrl }),
-    cancelThumbnailRegeneration: () => set((state) => {
-        if (state.thumbnailAbortController) {
-            state.thumbnailAbortController.abort();
-            return { isRegeneratingThumbnails: false, thumbnailProgress: null, thumbnailAbortController: null };
-        }
-        return {};
-    }),
+    cancelThumbnailRegeneration: () =>
+        set((state) => {
+            if (state.thumbnailAbortController) {
+                state.thumbnailAbortController.abort();
+                return { isRegeneratingThumbnails: false, thumbnailProgress: null, thumbnailAbortController: null };
+            }
+            return {};
+        }),
     setIsResolvingModels: (val) => set({ isResolvingModels: val, isActivityDockDismissed: val ? false : undefined }),
     setModelResolutionProgress: (progress) => set({ modelResolutionProgress: progress }),
     // UI State
@@ -549,18 +547,19 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     setLastModelResolutionResult: (result) => set({ lastModelResolutionResult: result }),
     setIsScanningDiscovery: (val) => set({ isScanningDiscovery: val, isActivityDockDismissed: val ? false : undefined }),
-    setDiscoveryScanProgress: (progress) => set((state) => {
-        if (progress && progress.startedAt === undefined && state.discoveryScanProgress?.startedAt !== undefined) {
-            return {
-                discoveryScanProgress: {
-                    ...progress,
-                    startedAt: state.discoveryScanProgress.startedAt
-                }
-            };
-        }
+    setDiscoveryScanProgress: (progress) =>
+        set((state) => {
+            if (progress && progress.startedAt === undefined && state.discoveryScanProgress?.startedAt !== undefined) {
+                return {
+                    discoveryScanProgress: {
+                        ...progress,
+                        startedAt: state.discoveryScanProgress.startedAt,
+                    },
+                };
+            }
 
-        return { discoveryScanProgress: progress };
-    }),
+            return { discoveryScanProgress: progress };
+        }),
     cancelDiscoveryScan: () => {
         commands.cancelModelDiscovery().catch(console.error);
         set({ isScanningDiscovery: false, discoveryScanProgress: null });
@@ -576,12 +575,13 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setMissingScanProgress: (progress) => set({ missingScanProgress: progress }),
     setMissingScanAbortController: (ctrl) => set({ missingScanAbortController: ctrl }),
     setLastMissingScanResult: (result) => set({ lastMissingScanResult: result }),
-    cancelMissingScan: () => set((state) => {
-        if (state.missingScanAbortController) {
-            state.missingScanAbortController.abort();
-        }
-        return { isScanningMissingFiles: false, missingScanProgress: null };
-    }),
+    cancelMissingScan: () =>
+        set((state) => {
+            if (state.missingScanAbortController) {
+                state.missingScanAbortController.abort();
+            }
+            return { isScanningMissingFiles: false, missingScanProgress: null };
+        }),
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
     incrementScopeCountsVersion: () => set((state) => ({ scopeCountsVersion: state.scopeCountsVersion + 1 })),
     setKeywordStatsEnabled: (enabled) => set({ keywordStatsEnabled: enabled }),
@@ -593,12 +593,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setBackgroundHealingDetails: (details) => set({ backgroundHealingDetails: details }),
     setLastBackgroundHealingRun: (summary) => set({ lastBackgroundHealingRun: summary }),
     setBackgroundHealingPaused: (val) => set({ backgroundHealingPaused: val }),
-    requestThumbnailOptimizationRun: () => set((state) => ({
-        thumbnailOptimizationRetrySignal: state.thumbnailOptimizationRetrySignal + 1
-    })),
-    requestThumbnailOptimizationCancel: () => set((state) => ({
-        thumbnailOptimizationCancelSignal: state.thumbnailOptimizationCancelSignal + 1
-    })),
+    requestThumbnailOptimizationRun: () =>
+        set((state) => ({
+            thumbnailOptimizationRetrySignal: state.thumbnailOptimizationRetrySignal + 1,
+        })),
+    requestThumbnailOptimizationCancel: () =>
+        set((state) => ({
+            thumbnailOptimizationCancelSignal: state.thumbnailOptimizationCancelSignal + 1,
+        })),
     setThumbnailMaintenanceOperation: (operation) => set({ thumbnailMaintenanceOperation: operation }),
 
     // Background Metadata Refresh Actions
@@ -626,9 +628,9 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     progress: update.progress ?? null,
                     receivedCount: currentSession.receivedCount,
                     startedAt: currentSession.active ? currentSession.startedAt : now,
-                    lastActivityAt: now
+                    lastActivityAt: now,
                 },
-                liveWatchSessionCloseRequested: state.liveWatchSessionCloseRequested && isActiveLiveWatchPhase(nextPhase)
+                liveWatchSessionCloseRequested: state.liveWatchSessionCloseRequested && isActiveLiveWatchPhase(nextPhase),
             };
         });
         if (useLibraryStore.getState().isLiveWatching) {
@@ -645,7 +647,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                 clearLiveWatchSessionEnd();
                 return {
                     liveWatchSession: createInitialLiveWatchSessionState(),
-                    liveWatchSessionCloseRequested: false
+                    liveWatchSessionCloseRequested: false,
                 };
             }
 
@@ -658,8 +660,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     progress: update.progress !== undefined ? update.progress : currentSession.progress,
                     receivedCount: currentSession.receivedCount,
                     startedAt: currentSession.startedAt ?? now,
-                    lastActivityAt: now
-                }
+                    lastActivityAt: now,
+                },
             };
         });
         if (useLibraryStore.getState().isLiveWatching) {
@@ -674,7 +676,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                 clearLiveWatchSessionEnd();
                 return {
                     liveWatchSession: createInitialLiveWatchSessionState(),
-                    liveWatchSessionCloseRequested: false
+                    liveWatchSessionCloseRequested: false,
                 };
             }
 
@@ -689,8 +691,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     progress: update.progress ?? null,
                     receivedCount,
                     startedAt: currentSession.startedAt ?? now,
-                    lastActivityAt: now
-                }
+                    lastActivityAt: now,
+                },
             };
         });
         if (useLibraryStore.getState().isLiveWatching) {
@@ -701,7 +703,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         clearLiveWatchSessionEnd();
         set({
             liveWatchSession: createInitialLiveWatchSessionState(),
-            liveWatchSessionCloseRequested: false
+            liveWatchSessionCloseRequested: false,
         });
     },
 }));

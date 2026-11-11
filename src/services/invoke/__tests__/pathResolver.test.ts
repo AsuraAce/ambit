@@ -8,7 +8,7 @@ const files = [
     'outputs/images/ab/hash.png',
     'outputs/images/2026/05/25/relative.png',
     'outputs/images/2026/05/25/duplicate.png',
-    'outputs/images/txt2img/duplicate.png'
+    'outputs/images/txt2img/duplicate.png',
 ];
 
 describe('InvokeAI image path resolver', () => {
@@ -32,7 +32,7 @@ describe('InvokeAI image path resolver', () => {
         ['type layout', 'type.png', 'D:/Invoke/outputs/images/txt2img/type.png'],
         ['hash layout', 'hash.png', 'D:/Invoke/outputs/images/ab/hash.png'],
         ['relative image name', '2026/05/25/relative.png', 'D:/Invoke/outputs/images/2026/05/25/relative.png'],
-        ['root-relative image name', 'outputs/images/2026/05/25/relative.png', 'D:/Invoke/outputs/images/2026/05/25/relative.png']
+        ['root-relative image name', 'outputs/images/2026/05/25/relative.png', 'D:/Invoke/outputs/images/2026/05/25/relative.png'],
     ])('resolves %s', async (_label, imageName, expectedPath) => {
         const listImages = vi.fn().mockResolvedValue(files);
         const resolver = createInvokeImagePathResolver('D:/Invoke', listImages);
@@ -40,7 +40,7 @@ describe('InvokeAI image path resolver', () => {
         await expect(resolver.resolveImagePath(imageName)).resolves.toEqual({
             absolutePath: expectedPath,
             relativePath: expectedPath.replace('D:/Invoke/', ''),
-            ambiguous: false
+            ambiguous: false,
         });
         expect(listImages).toHaveBeenCalledTimes(/[\\/]/.test(imageName) ? 0 : 1);
     });
@@ -52,7 +52,7 @@ describe('InvokeAI image path resolver', () => {
         await expect(resolver.resolveImagePath('duplicate.png', 'custom/folder')).resolves.toEqual({
             absolutePath: 'D:/Invoke/outputs/images/custom/folder/duplicate.png',
             relativePath: 'outputs/images/custom/folder/duplicate.png',
-            ambiguous: false
+            ambiguous: false,
         });
         expect(listImages).not.toHaveBeenCalled();
 
@@ -67,7 +67,7 @@ describe('InvokeAI image path resolver', () => {
         await expect(resolver.resolveImagePath('duplicate.png')).resolves.toEqual({
             absolutePath: null,
             relativePath: null,
-            ambiguous: true
+            ambiguous: true,
         });
     });
 
@@ -81,7 +81,7 @@ describe('InvokeAI image path resolver', () => {
         ['traversal image_subfolder', 'safe.png', '../outside'],
         ['absolute image_subfolder', 'safe.png', '/tmp/outside'],
         ['drive-qualified image_subfolder', 'safe.png', 'C:/outside'],
-        ['UNC image_subfolder', 'safe.png', '\\\\server\\share']
+        ['UNC image_subfolder', 'safe.png', '\\\\server\\share'],
     ])('rejects %s from InvokeAI database rows', async (_label, imageName, imageSubfolder) => {
         const listImages = vi.fn().mockResolvedValue(files);
         const resolver = createInvokeImagePathResolver('D:/Invoke', listImages);
@@ -89,7 +89,7 @@ describe('InvokeAI image path resolver', () => {
         await expect(resolver.resolveImagePath(imageName, imageSubfolder)).resolves.toEqual({
             absolutePath: null,
             relativePath: null,
-            ambiguous: false
+            ambiguous: false,
         });
         expect(listImages).not.toHaveBeenCalled();
     });
@@ -102,15 +102,19 @@ describe('InvokeAI image path resolver', () => {
         const existing = new Set([
             'D:/Invoke/outputs/images/thumbnails/flat.webp',
             'D:/Invoke/outputs/images/2026/05/25/date.webp',
-            'D:/Invoke/outputs/images/2026/05/25/date-custom.webp'
+            'D:/Invoke/outputs/images/2026/05/25/date-custom.webp',
         ]);
 
         expect(resolver.resolveThumbnailPath(null, flat, existing)).toBe('D:/Invoke/outputs/images/thumbnails/flat.webp');
         expect(resolver.resolveThumbnailPath(null, nested, existing)).toBe('D:/Invoke/outputs/images/2026/05/25/date.webp');
         expect(resolver.resolveThumbnailPath('flat.webp', flat, existing)).toBe('D:/Invoke/outputs/images/thumbnails/flat.webp');
-        expect(resolver.resolveThumbnailPath('date-custom.webp', nested, existing)).toBe('D:/Invoke/outputs/images/2026/05/25/date-custom.webp');
+        expect(resolver.resolveThumbnailPath('date-custom.webp', nested, existing)).toBe(
+            'D:/Invoke/outputs/images/2026/05/25/date-custom.webp'
+        );
         expect(resolver.resolveThumbnailPath('missing.webp', nested, existing)).toBe('D:/Invoke/outputs/images/2026/05/25/date.png');
-        expect(resolver.resolveThumbnailPath('2026/05/25/date.webp', nested, existing)).toBe('D:/Invoke/outputs/images/2026/05/25/date.webp');
+        expect(resolver.resolveThumbnailPath('2026/05/25/date.webp', nested, existing)).toBe(
+            'D:/Invoke/outputs/images/2026/05/25/date.webp'
+        );
     });
 
     it('checks central nested thumbnail folders before the legacy flat thumbnail folder', async () => {
@@ -118,7 +122,7 @@ describe('InvokeAI image path resolver', () => {
         const nested = await resolver.resolveImagePath('date.png');
         const existing = new Set([
             'D:/Invoke/outputs/images/thumbnails/2026/05/25/date.webp',
-            'D:/Invoke/outputs/images/thumbnails/date.webp'
+            'D:/Invoke/outputs/images/thumbnails/date.webp',
         ]);
 
         expect(resolver.resolveThumbnailPath(null, nested, existing)).toBe('D:/Invoke/outputs/images/thumbnails/2026/05/25/date.webp');
@@ -132,7 +136,7 @@ describe('InvokeAI image path resolver', () => {
             'D:/Invoke/outputs/images/2026/05/25/date.webp',
             'D:/Invoke/outputs/images/2026/05/25/thumbnails/date.webp',
             'D:/Invoke/outputs/images/thumbnails/2026/05/25/date.webp',
-            'D:/Invoke/outputs/images/thumbnails/date.webp'
+            'D:/Invoke/outputs/images/thumbnails/date.webp',
         ];
 
         expect(resolver.getThumbnailPathCandidates('../outside.webp', nested)).toEqual(boundedFallbacks);
@@ -149,7 +153,7 @@ describe('InvokeAI image path resolver', () => {
         await expect(resolver.resolveImagePath('missing.png')).resolves.toEqual({
             absolutePath: 'D:/Invoke/outputs/images/missing.png',
             relativePath: 'outputs/images/missing.png',
-            ambiguous: false
+            ambiguous: false,
         });
         expect(warn).toHaveBeenCalledWith(
             '[InvokeAI Sync] Failed to build InvokeAI image path index; falling back to flat path resolution.',
@@ -162,17 +166,15 @@ describe('InvokeAI image path resolver', () => {
         const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
         const nested = await resolver.resolveImagePath('date.png');
 
-        expect(resolver.resolveThumbnailPath(null, nested)).toBe(
-            'D:/Invoke/outputs/images/2026/05/25/date.webp'
-        );
-        expect(resolver.resolveThumbnailPath('custom/folder/thumb.webp', nested)).toBe(
-            'D:/Invoke/outputs/images/custom/folder/thumb.webp'
-        );
-        expect(resolver.resolveThumbnailPath(null, {
-            absolutePath: null,
-            relativePath: null,
-            ambiguous: false
-        })).toBeNull();
+        expect(resolver.resolveThumbnailPath(null, nested)).toBe('D:/Invoke/outputs/images/2026/05/25/date.webp');
+        expect(resolver.resolveThumbnailPath('custom/folder/thumb.webp', nested)).toBe('D:/Invoke/outputs/images/custom/folder/thumb.webp');
+        expect(
+            resolver.resolveThumbnailPath(null, {
+                absolutePath: null,
+                relativePath: null,
+                ambiguous: false,
+            })
+        ).toBeNull();
     });
 
     it('returns no thumbnail candidates when even the derived name is empty', () => {
@@ -181,11 +183,13 @@ describe('InvokeAI image path resolver', () => {
 
         expect(resolver.getThumbnailPathCandidates(null, unresolvedName)).toEqual([]);
         expect(resolver.resolveThumbnailPath(null, unresolvedName)).toBe('/');
-        expect(resolver.getThumbnailPathCandidates(null, {
-            absolutePath: null,
-            relativePath: null,
-            ambiguous: false,
-        })).toEqual([]);
+        expect(
+            resolver.getThumbnailPathCandidates(null, {
+                absolutePath: null,
+                relativePath: null,
+                ambiguous: false,
+            })
+        ).toEqual([]);
     });
 
     it('handles rooted thumbnails, missing basename matches, and duplicate candidates', async () => {
@@ -194,27 +198,26 @@ describe('InvokeAI image path resolver', () => {
         await expect(resolver.resolveImagePath('not-indexed.png')).resolves.toMatchObject({
             relativePath: 'outputs/images/not-indexed.png',
         });
-        expect(resolver.getThumbnailPathCandidates('outputs/images/custom.webp', {
-            absolutePath: 'D:/Invoke/outputs/images/image.png',
-            relativePath: 'outputs/images/image.png',
-            ambiguous: false,
-        })).toEqual(['D:/Invoke/outputs/images/custom.webp']);
-        expect(resolver.getThumbnailPathCandidates(null, {
-            absolutePath: 'D:/Invoke/outputs/images/thumbnails/image.png',
-            relativePath: 'outputs/images/thumbnails/image.png',
-            ambiguous: false,
-        })).toEqual([
-            'D:/Invoke/outputs/images/thumbnails/image.webp',
-            'D:/Invoke/outputs/images/thumbnails/thumbnails/image.webp',
-        ]);
+        expect(
+            resolver.getThumbnailPathCandidates('outputs/images/custom.webp', {
+                absolutePath: 'D:/Invoke/outputs/images/image.png',
+                relativePath: 'outputs/images/image.png',
+                ambiguous: false,
+            })
+        ).toEqual(['D:/Invoke/outputs/images/custom.webp']);
+        expect(
+            resolver.getThumbnailPathCandidates(null, {
+                absolutePath: 'D:/Invoke/outputs/images/thumbnails/image.png',
+                relativePath: 'outputs/images/thumbnails/image.png',
+                ambiguous: false,
+            })
+        ).toEqual(['D:/Invoke/outputs/images/thumbnails/image.webp', 'D:/Invoke/outputs/images/thumbnails/thumbnails/image.webp']);
     });
 
     it('resolves safe legacy names to the flat output folder and rejects unsafe names', () => {
         const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
 
-        expect(resolver.getLegacyFlatImagePath('nested/image.png')).toBe(
-            'D:/Invoke/outputs/images/image.png'
-        );
+        expect(resolver.getLegacyFlatImagePath('nested/image.png')).toBe('D:/Invoke/outputs/images/image.png');
         expect(resolver.getLegacyFlatImagePath('../outside.png')).toBeNull();
         expect(resolver.getLegacyFlatImagePath('')).toBeNull();
     });
@@ -230,13 +233,11 @@ describe('InvokeAI image path resolver', () => {
     });
 
     it('keeps case-distinct POSIX paths separate while matching Windows paths case-insensitively', async () => {
-        const posixResolver = createInvokeImagePathResolver('/opt/invoke', vi.fn().mockResolvedValue([
-            'outputs/images/Foo.png',
-            'outputs/images/foo.png',
-        ]));
-        const windowsResolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue([
-            'outputs/images/Foo.png',
-        ]));
+        const posixResolver = createInvokeImagePathResolver(
+            '/opt/invoke',
+            vi.fn().mockResolvedValue(['outputs/images/Foo.png', 'outputs/images/foo.png'])
+        );
+        const windowsResolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(['outputs/images/Foo.png']));
 
         await expect(posixResolver.resolveImagePath('Foo.png')).resolves.toMatchObject({
             absolutePath: '/opt/invoke/outputs/images/Foo.png',

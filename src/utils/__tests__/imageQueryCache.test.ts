@@ -28,9 +28,9 @@ const image = (id: string, flags: Partial<AIImage> = {}): AIImage => ({
         cfg: 0,
         sampler: 'Unknown',
         positivePrompt: '',
-        negativePrompt: ''
+        negativePrompt: '',
     },
-    ...flags
+    ...flags,
 });
 
 describe('imageQueryCache', () => {
@@ -53,7 +53,7 @@ describe('imageQueryCache', () => {
         const data = queryClient.getQueryData<{
             pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
         }>(key);
-        expect(data?.pages.map(page => page.images.map(item => item.id))).toEqual([['1'], []]);
+        expect(data?.pages.map((page) => page.images.map((item) => item.id))).toEqual([['1'], []]);
         expect(data?.pages[0]).toMatchObject({ totalCount: 1, globalCount: 1 });
         expect(data?.pages[1]).toMatchObject({ totalCount: -1, globalCount: -1 });
     });
@@ -81,9 +81,9 @@ describe('imageQueryCache', () => {
         queryClient.setQueryData(['images', { scope: 'library' }], {
             pages: [
                 { images: [first], totalCount: 2, globalCount: 2 },
-                { images: [second], totalCount: -1, globalCount: -1 }
+                { images: [second], totalCount: -1, globalCount: -1 },
             ],
-            pageParams: [undefined, { id: '1', val: 1 }]
+            pageParams: [undefined, { id: '1', val: 1 }],
         });
 
         patchImageFlagsInQueryCaches(queryClient, ['2'], { isFavorite: true, isPinned: true });
@@ -96,7 +96,7 @@ describe('imageQueryCache', () => {
         expect(data?.pages[1].images[0]).toMatchObject({
             id: '2',
             isFavorite: true,
-            isPinned: true
+            isPinned: true,
         });
     });
 
@@ -107,34 +107,32 @@ describe('imageQueryCache', () => {
         const second = image('2', { timestamp: 200, isPinned: true });
         const third = image('3', { timestamp: 50 });
         const previousOrder = [first, second, third];
-        const nextOrder = [
-            second,
-            { ...first, isPinned: true },
-            third
-        ];
+        const nextOrder = [second, { ...first, isPinned: true }, third];
 
         queryClient.setQueryData(activeKey, {
             pages: [
                 { images: [first, second], totalCount: 3, globalCount: 3 },
-                { images: [third], totalCount: -1, globalCount: -1 }
+                { images: [third], totalCount: -1, globalCount: -1 },
             ],
-            pageParams: [undefined, { id: '2', val: 100 }]
+            pageParams: [undefined, { id: '2', val: 100 }],
         });
 
-        patchImageFlagsInQueryCaches(queryClient, ['1'], { isPinned: true }, {
-            previousOrder,
-            nextOrder,
-            reorderQueryKey: activeKey
-        });
+        patchImageFlagsInQueryCaches(
+            queryClient,
+            ['1'],
+            { isPinned: true },
+            {
+                previousOrder,
+                nextOrder,
+                reorderQueryKey: activeKey,
+            }
+        );
 
         const data = queryClient.getQueryData<{
             pages: Array<{ images: AIImage[] }>;
         }>(activeKey);
 
-        expect(data?.pages.map(page => page.images.map(item => item.id))).toEqual([
-            ['2', '1'],
-            ['3']
-        ]);
+        expect(data?.pages.map((page) => page.images.map((item) => item.id))).toEqual([['2', '1'], ['3']]);
         expect(data?.pages[0].images[1].isPinned).toBe(true);
     });
 
@@ -147,25 +145,27 @@ describe('imageQueryCache', () => {
         const inactiveFirst = image('1', { timestamp: 100 });
         const inactiveSecond = image('2', { timestamp: 200, isPinned: true });
         const previousOrder = [activeFirst, activeSecond];
-        const nextOrder = [
-            activeSecond,
-            { ...activeFirst, isPinned: true }
-        ];
+        const nextOrder = [activeSecond, { ...activeFirst, isPinned: true }];
 
         queryClient.setQueryData(activeKey, {
             pages: [{ images: [activeFirst, activeSecond], totalCount: 2, globalCount: 2 }],
-            pageParams: [undefined]
+            pageParams: [undefined],
         });
         queryClient.setQueryData(inactiveKey, {
             pages: [{ images: [inactiveFirst, inactiveSecond], totalCount: 2, globalCount: 2 }],
-            pageParams: [undefined]
+            pageParams: [undefined],
         });
 
-        patchImageFlagsInQueryCaches(queryClient, ['1'], { isPinned: true }, {
-            previousOrder,
-            nextOrder,
-            reorderQueryKey: activeKey
-        });
+        patchImageFlagsInQueryCaches(
+            queryClient,
+            ['1'],
+            { isPinned: true },
+            {
+                previousOrder,
+                nextOrder,
+                reorderQueryKey: activeKey,
+            }
+        );
 
         const activeData = queryClient.getQueryData<{
             pages: Array<{ images: AIImage[] }>;
@@ -174,8 +174,8 @@ describe('imageQueryCache', () => {
             pages: Array<{ images: AIImage[] }>;
         }>(inactiveKey);
 
-        expect(activeData?.pages[0].images.map(item => item.id)).toEqual(['2', '1']);
-        expect(inactiveData?.pages[0].images.map(item => item.id)).toEqual(['1', '2']);
+        expect(activeData?.pages[0].images.map((item) => item.id)).toEqual(['2', '1']);
+        expect(inactiveData?.pages[0].images.map((item) => item.id)).toEqual(['1', '2']);
         expect(inactiveData?.pages[0].images[0].isPinned).toBe(true);
     });
 
@@ -184,10 +184,8 @@ describe('imageQueryCache', () => {
         const previous = [image('1')];
 
         queryClient.setQueryData(['images'], {
-            pages: [
-                { images: [image('1', { isFavorite: true })], totalCount: 1, globalCount: 1 }
-            ],
-            pageParams: [undefined]
+            pages: [{ images: [image('1', { isFavorite: true })], totalCount: 1, globalCount: 1 }],
+            pageParams: [undefined],
         });
 
         restoreImagesInQueryCaches(queryClient, previous);
@@ -209,28 +207,24 @@ describe('imageQueryCache', () => {
         const inactiveFirst = image('1', { timestamp: 100, isPinned: true });
         const inactiveSecond = image('2', { timestamp: 200, isPinned: true });
         const previousOrder = [first, second, third];
-        const optimisticOrder = [
-            second,
-            { ...first, isPinned: true },
-            third
-        ];
+        const optimisticOrder = [second, { ...first, isPinned: true }, third];
 
         queryClient.setQueryData(activeKey, {
             pages: [
                 { images: optimisticOrder.slice(0, 2), totalCount: 3, globalCount: 3 },
-                { images: optimisticOrder.slice(2), totalCount: -1, globalCount: -1 }
+                { images: optimisticOrder.slice(2), totalCount: -1, globalCount: -1 },
             ],
-            pageParams: [undefined, { id: '1', val: 100 }]
+            pageParams: [undefined, { id: '1', val: 100 }],
         });
         queryClient.setQueryData(inactiveKey, {
             pages: [{ images: [inactiveFirst, inactiveSecond], totalCount: 2, globalCount: 2 }],
-            pageParams: [undefined]
+            pageParams: [undefined],
         });
 
         restoreImagesInQueryCaches(queryClient, previousOrder, {
             previousOrder: optimisticOrder,
             nextOrder: previousOrder,
-            reorderQueryKey: activeKey
+            reorderQueryKey: activeKey,
         });
 
         const data = queryClient.getQueryData<{
@@ -240,12 +234,9 @@ describe('imageQueryCache', () => {
             pages: Array<{ images: AIImage[] }>;
         }>(inactiveKey);
 
-        expect(data?.pages.map(page => page.images.map(item => item.id))).toEqual([
-            ['1', '2'],
-            ['3']
-        ]);
+        expect(data?.pages.map((page) => page.images.map((item) => item.id))).toEqual([['1', '2'], ['3']]);
         expect(data?.pages[0].images[0].isPinned).toBe(false);
-        expect(inactiveData?.pages[0].images.map(item => item.id)).toEqual(['1', '2']);
+        expect(inactiveData?.pages[0].images.map((item) => item.id)).toEqual(['1', '2']);
         expect(inactiveData?.pages[0].images[0].isPinned).toBe(false);
     });
 
@@ -262,14 +253,14 @@ describe('imageQueryCache', () => {
             pageParams: [undefined, 1],
         });
 
-        updateImagesQueryCaches(queryClient, current => current, {
+        updateImagesQueryCaches(queryClient, (current) => current, {
             previousOrder: [first, second],
             nextOrder: [second, first],
             reorderQueryKey: ['images', { scope: 'order-only' }],
         });
 
         const data = queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key);
-        expect(data?.pages.map(page => page.images[0].id)).toEqual(['2', '1']);
+        expect(data?.pages.map((page) => page.images[0].id)).toEqual(['2', '1']);
     });
 
     it('preserves cache identity for an unchanged reorder and skips missing query data', () => {
@@ -283,7 +274,7 @@ describe('imageQueryCache', () => {
         queryClient.setQueryData(key, data);
         const setQueryData = vi.spyOn(queryClient, 'setQueryData');
 
-        updateImagesQueryCaches(queryClient, current => current, {
+        updateImagesQueryCaches(queryClient, (current) => current, {
             previousOrder: [first],
             nextOrder: [first],
             reorderQueryKey: key,
@@ -296,7 +287,7 @@ describe('imageQueryCache', () => {
             getQueriesData: () => [[['images'], undefined]],
             setQueryData: vi.fn(),
         } as unknown as QueryClient;
-        updateImagesQueryCaches(missingClient, current => current);
+        updateImagesQueryCaches(missingClient, (current) => current);
         expect(missingClient.setQueryData).not.toHaveBeenCalled();
     });
 
@@ -310,18 +301,16 @@ describe('imageQueryCache', () => {
             pageParams: [undefined],
         });
 
-        updateImagesQueryCaches(queryClient, current => current);
-        updateImagesQueryCaches(queryClient, current => current, {
+        updateImagesQueryCaches(queryClient, (current) => current);
+        updateImagesQueryCaches(queryClient, (current) => current, {
             previousOrder: [first],
             nextOrder: [absent],
             reorderQueryKey: key,
         });
 
-        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images)
-            .toEqual([absent]);
+        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images).toEqual([absent]);
 
         restoreImagesInQueryCaches(queryClient, []);
-        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images)
-            .toEqual([absent]);
+        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images).toEqual([absent]);
     });
 });

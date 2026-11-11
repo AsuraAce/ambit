@@ -3,11 +3,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContextMenu } from '../ContextMenu';
 
 const callbacks = () => ({
-    onClose: vi.fn(), onCopyPrompt: vi.fn(), onCopySeed: vi.fn(), onCopyGenerationInfo: vi.fn(),
-    onCopyImage: vi.fn(), onCopyFilePath: vi.fn(), onOpenInDefaultApp: vi.fn(), onAddToCollection: vi.fn(),
-    onMoveToCollection: vi.fn(), onRemoveFromCollection: vi.fn(), onTogglePin: vi.fn(), onDelete: vi.fn(),
-    onShowInFolder: vi.fn(), onRecoverMetadata: vi.fn(), onSetThumbnail: vi.fn(), onUnsetThumbnail: vi.fn(),
-    onToggleMask: vi.fn(), onToggleFavorite: vi.fn(), onToggleIntermediate: vi.fn(), onSetModelThumbnail: vi.fn(),
+    onClose: vi.fn(),
+    onCopyPrompt: vi.fn(),
+    onCopySeed: vi.fn(),
+    onCopyGenerationInfo: vi.fn(),
+    onCopyImage: vi.fn(),
+    onCopyFilePath: vi.fn(),
+    onOpenInDefaultApp: vi.fn(),
+    onAddToCollection: vi.fn(),
+    onMoveToCollection: vi.fn(),
+    onRemoveFromCollection: vi.fn(),
+    onTogglePin: vi.fn(),
+    onDelete: vi.fn(),
+    onShowInFolder: vi.fn(),
+    onRecoverMetadata: vi.fn(),
+    onSetThumbnail: vi.fn(),
+    onUnsetThumbnail: vi.fn(),
+    onToggleMask: vi.fn(),
+    onToggleFavorite: vi.fn(),
+    onToggleIntermediate: vi.fn(),
+    onSetModelThumbnail: vi.fn(),
 });
 
 const openSubmenu = (label: string) => {
@@ -28,23 +43,33 @@ describe('ContextMenu', () => {
         const model = { name: 'Flux', hash: 'abc', type: 'checkpoint' };
         const { container } = render(
             <ContextMenu
-                x={950} y={750} isPinned enableAI activeCollectionName="Favorites"
-                isFavorite isMasked={false} userMasked isIntermediate
-                modelsForThumbnail={[model]} {...cb}
+                x={950}
+                y={750}
+                isPinned
+                enableAI
+                activeCollectionName="Favorites"
+                isFavorite
+                isMasked={false}
+                userMasked
+                isIntermediate
+                modelsForThumbnail={[model]}
+                {...cb}
             />
         );
         const root = container.firstElementChild as HTMLElement;
         expect(root.style.left).toBe('760px');
         expect(root.style.top).toBe('500px');
 
-        for (const label of ['Unfavorite', 'Unpin', 'Show in Folder', 'Remove from Library']) fireEvent.click(screen.getByRole('button', { name: label }));
+        for (const label of ['Unfavorite', 'Unpin', 'Show in Folder', 'Remove from Library'])
+            fireEvent.click(screen.getByRole('button', { name: label }));
         expect(cb.onToggleFavorite).toHaveBeenCalledOnce();
         expect(cb.onTogglePin).toHaveBeenCalledOnce();
         expect(cb.onShowInFolder).toHaveBeenCalledOnce();
         expect(cb.onDelete).toHaveBeenCalledOnce();
 
         openSubmenu('Copy Data');
-        for (const label of ['Copy Prompt', 'Copy Seed', 'Copy All Info', 'Copy Image', 'Copy File Path']) fireEvent.click(screen.getByRole('button', { name: label }));
+        for (const label of ['Copy Prompt', 'Copy Seed', 'Copy All Info', 'Copy Image', 'Copy File Path'])
+            fireEvent.click(screen.getByRole('button', { name: label }));
         expect(cb.onCopyPrompt).toHaveBeenCalledOnce();
         expect(cb.onCopySeed).toHaveBeenCalledOnce();
         expect(cb.onCopyGenerationInfo).toHaveBeenCalledOnce();
@@ -52,7 +77,13 @@ describe('ContextMenu', () => {
         expect(cb.onCopyFilePath).toHaveBeenCalledOnce();
 
         openSubmenu('Organize');
-        for (const label of ['Add to Collection...', 'Move to Collection...', 'Remove from Collection', 'Set as Collection Thumb', 'Reset Collection Thumb']) {
+        for (const label of [
+            'Add to Collection...',
+            'Move to Collection...',
+            'Remove from Collection',
+            'Set as Collection Thumb',
+            'Reset Collection Thumb',
+        ]) {
             fireEvent.click(screen.getByRole('button', { name: label }));
         }
         fireEvent.click(screen.getByRole('button', { name: 'Flux' }));
@@ -79,11 +110,21 @@ describe('ContextMenu', () => {
         const cb = callbacks();
         render(
             <ContextMenu
-                x={10} y={20} isPinned={false} enableAI={false} isFavorite={false} isMasked
-                isIntermediate={false} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt}
-                onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin}
-                onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder}
-                onToggleMask={cb.onToggleMask} onToggleIntermediate={cb.onToggleIntermediate}
+                x={10}
+                y={20}
+                isPinned={false}
+                enableAI={false}
+                isFavorite={false}
+                isMasked
+                isIntermediate={false}
+                onClose={cb.onClose}
+                onCopyPrompt={cb.onCopyPrompt}
+                onAddToCollection={cb.onAddToCollection}
+                onTogglePin={cb.onTogglePin}
+                onDelete={cb.onDelete}
+                onShowInFolder={cb.onShowInFolder}
+                onToggleMask={cb.onToggleMask}
+                onToggleIntermediate={cb.onToggleIntermediate}
             />
         );
         expect(screen.getByRole('button', { name: 'Favorite' })).toBeTruthy();
@@ -104,7 +145,16 @@ describe('ContextMenu', () => {
     it('delays submenu closing, cancels pending close on reentry, and dismisses outside', () => {
         const cb = callbacks();
         const { container, unmount } = render(
-            <ContextMenu x={100} y={100} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt} onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin} onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder} />
+            <ContextMenu
+                x={100}
+                y={100}
+                onClose={cb.onClose}
+                onCopyPrompt={cb.onCopyPrompt}
+                onAddToCollection={cb.onAddToCollection}
+                onTogglePin={cb.onTogglePin}
+                onDelete={cb.onDelete}
+                onShowInFolder={cb.onShowInFolder}
+            />
         );
         const group = screen.getByRole('button', { name: /Copy Data/ }).closest('.relative') as Element;
         fireEvent.mouseEnter(group);
@@ -129,7 +179,18 @@ describe('ContextMenu', () => {
 
     it('uses no-op favorite behavior when no callback is supplied', () => {
         const cb = callbacks();
-        render(<ContextMenu x={0} y={0} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt} onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin} onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder} />);
+        render(
+            <ContextMenu
+                x={0}
+                y={0}
+                onClose={cb.onClose}
+                onCopyPrompt={cb.onCopyPrompt}
+                onAddToCollection={cb.onAddToCollection}
+                onTogglePin={cb.onTogglePin}
+                onDelete={cb.onDelete}
+                onShowInFolder={cb.onShowInFolder}
+            />
+        );
         expect(() => fireEvent.click(screen.getByRole('button', { name: 'Favorite' }))).not.toThrow();
     });
 });

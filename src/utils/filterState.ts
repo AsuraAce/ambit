@@ -2,27 +2,19 @@ import { FilterState, type ImageKindFilter, type MediaTypeFilter } from '../type
 
 type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'showInvokeImageAssets' | 'sortOption'>;
 
-export const normalizeImageKindFilter = (value: unknown): ImageKindFilter => (
-    value === 'generated' || value === 'photograph' || value === 'other'
-        ? value
-        : 'all'
-);
+export const normalizeImageKindFilter = (value: unknown): ImageKindFilter =>
+    value === 'generated' || value === 'photograph' || value === 'other' ? value : 'all';
 
-export const normalizeMediaTypeFilter = (
-    value: unknown,
-    legacyImageKind: unknown = 'all'
-): MediaTypeFilter => (
+export const normalizeMediaTypeFilter = (value: unknown, legacyImageKind: unknown = 'all'): MediaTypeFilter =>
     value === 'all' || value === 'image' || value === 'video'
         ? value
-        : normalizeImageKindFilter(legacyImageKind) === 'all' ? 'all' : 'image'
-);
+        : normalizeImageKindFilter(legacyImageKind) === 'all'
+          ? 'all'
+          : 'image';
 
 /** Legacy saved collections may omit mediaType; explicit All media ignores kind. */
-export const getEffectiveImageKind = (
-    filters: Pick<FilterState, 'mediaType' | 'sourceKind'>
-): ImageKindFilter => normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === 'image'
-    ? normalizeImageKindFilter(filters.sourceKind)
-    : 'all';
+export const getEffectiveImageKind = (filters: Pick<FilterState, 'mediaType' | 'sourceKind'>): ImageKindFilter =>
+    normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === 'image' ? normalizeImageKindFilter(filters.sourceKind) : 'all';
 
 /** Save effective constraints, not dormant browsing preferences. */
 export const normalizeCollectionScope = (filters: FilterState): FilterState => ({
@@ -31,9 +23,7 @@ export const normalizeCollectionScope = (filters: FilterState): FilterState => (
     sourceKind: getEffectiveImageKind(filters),
 });
 
-export const createDefaultFilters = (
-    overrides: Partial<FilterState> = {}
-): FilterState => {
+export const createDefaultFilters = (overrides: Partial<FilterState> = {}): FilterState => {
     const normalizedSourceKind = normalizeImageKindFilter(overrides.sourceKind);
 
     return {
@@ -68,10 +58,9 @@ export const createDefaultFilters = (
     };
 };
 
-const hasRangeFilter = (value: number | null | undefined): boolean =>
-    value !== undefined && value !== null;
+const hasRangeFilter = (value: number | null | undefined): boolean => value !== undefined && value !== null;
 
-export const hasNonCollectionResultFilters = (filters: FilterState): boolean => (
+export const hasNonCollectionResultFilters = (filters: FilterState): boolean =>
     filters.searchQuery.trim().length > 0 ||
     getEffectiveImageKind(filters) !== 'all' ||
     (!!filters.mediaType && filters.mediaType !== 'all') ||
@@ -95,26 +84,16 @@ export const hasNonCollectionResultFilters = (filters: FilterState): boolean => 
     hasRangeFilter(filters.minSteps) ||
     hasRangeFilter(filters.maxSteps) ||
     hasRangeFilter(filters.minCfg) ||
-    hasRangeFilter(filters.maxCfg)
-);
+    hasRangeFilter(filters.maxCfg);
 
-export const hasActiveResultFilters = (filters: FilterState): boolean => (
-    hasNonCollectionResultFilters(filters) ||
-    !!filters.collectionId
-);
+export const hasActiveResultFilters = (filters: FilterState): boolean => hasNonCollectionResultFilters(filters) || !!filters.collectionId;
 
 export const shouldPrefetchResultPages = (
     filters: FilterState,
     hasNextPage: boolean,
     isFetchingNextPage: boolean,
     currentPageCount: number
-): boolean => (
-    !hasActiveResultFilters(filters) &&
-    hasNextPage &&
-    !isFetchingNextPage &&
-    currentPageCount > 0 &&
-    currentPageCount < 3
-);
+): boolean => !hasActiveResultFilters(filters) && hasNextPage && !isFetchingNextPage && currentPageCount > 0 && currentPageCount < 3;
 
 const preserveViewFilters = (filters: FilterState): PreservedViewFilters => ({
     showGrids: filters.showGrids,
@@ -123,12 +102,10 @@ const preserveViewFilters = (filters: FilterState): PreservedViewFilters => ({
     sortOption: filters.sortOption,
 });
 
-export const createCollectionSelectionFilters = (
-    previousFilters: FilterState,
-    collectionId: string
-): FilterState => createDefaultFilters({
-    ...preserveViewFilters(previousFilters),
-    mediaType: 'all',
-    sourceKind: 'all',
-    collectionId,
-});
+export const createCollectionSelectionFilters = (previousFilters: FilterState, collectionId: string): FilterState =>
+    createDefaultFilters({
+        ...preserveViewFilters(previousFilters),
+        mediaType: 'all',
+        sourceKind: 'all',
+        collectionId,
+    });

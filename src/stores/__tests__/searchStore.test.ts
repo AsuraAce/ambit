@@ -47,21 +47,26 @@ describe('searchStore', () => {
     it('supports direct and functional state setters', () => {
         const state = useSearchStore.getState();
         state.setImages([image('one')]);
-        state.setImages(previous => [...previous, image('two')]);
+        state.setImages((previous) => [...previous, image('two')]);
         state.setRecentSearches(['first']);
-        state.setRecentSearches(previous => [...previous, 'second']);
+        state.setRecentSearches((previous) => [...previous, 'second']);
         state.setFilters({ searchQuery: 'portrait', favoritesOnly: true });
-        state.setFilters(previous => ({ searchQuery: `${previous.searchQuery} refined`, pinnedOnly: true }));
+        state.setFilters((previous) => ({ searchQuery: `${previous.searchQuery} refined`, pinnedOnly: true }));
         state.setSortOption('name_asc');
 
         const next = useSearchStore.getState();
-        expect(next.images.map(item => item.id)).toEqual(['one', 'two']);
+        expect(next.images.map((item) => item.id)).toEqual(['one', 'two']);
         expect(next.recentSearches).toEqual(['first', 'second']);
         expect(next.filters).toMatchObject({ searchQuery: 'portrait refined', favoritesOnly: true, pinnedOnly: true });
         expect(next.sortOption).toBe('name_asc');
 
         next.clearAllFilters();
-        expect(useSearchStore.getState().filters).toMatchObject({ searchQuery: '', favoritesOnly: false, pinnedOnly: false, collectionId: null });
+        expect(useSearchStore.getState().filters).toMatchObject({
+            searchQuery: '',
+            favoritesOnly: false,
+            pinnedOnly: false,
+            collectionId: null,
+        });
     });
 
     it('clears result criteria while preserving collection scope and view options', () => {
@@ -104,7 +109,7 @@ describe('searchStore', () => {
     it('optimistically toggles favorites and persists the change', async () => {
         useSearchStore.getState().setImages([image('one'), image('two', { isFavorite: true })]);
         await useSearchStore.getState().toggleFavorite('one');
-        expect(useSearchStore.getState().images.map(item => item.isFavorite)).toEqual([true, true]);
+        expect(useSearchStore.getState().images.map((item) => item.isFavorite)).toEqual([true, true]);
         expect(mockedUpdateFavorite).toHaveBeenCalledWith('one', true);
 
         await useSearchStore.getState().toggleFavorite('two');
@@ -126,14 +131,14 @@ describe('searchStore', () => {
         const original = [image('one'), image('two', { isPinned: true })];
         useSearchStore.getState().setImages(original);
         await useSearchStore.getState().togglePin('one');
-        expect(useSearchStore.getState().images.map(item => item.isPinned)).toEqual([true, true]);
+        expect(useSearchStore.getState().images.map((item) => item.isPinned)).toEqual([true, true]);
         expect(mockedUpdatePinned).toHaveBeenCalledWith('one', true);
 
         await useSearchStore.getState().togglePin('missing');
         expect(mockedUpdatePinned).toHaveBeenCalledOnce();
         mockedUpdatePinned.mockRejectedValueOnce(new Error('disk full'));
         await useSearchStore.getState().togglePin('two');
-        expect(useSearchStore.getState().images.map(item => item.isPinned)).toEqual([true, true]);
+        expect(useSearchStore.getState().images.map((item) => item.isPinned)).toEqual([true, true]);
         expect(console.error).toHaveBeenCalledWith('Toggle pin failed', expect.any(Error));
     });
 });

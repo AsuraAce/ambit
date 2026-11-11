@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '../../../test/testUtils';
 
 vi.mock('../../../constants/support', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../../../constants/support')>(),
+    ...(await importOriginal<typeof import('../../../constants/support')>()),
     ENABLED_DONATION_PROVIDERS: [],
 }));
 

@@ -30,10 +30,15 @@ vi.mock('framer-motion', () => {
         animate?: unknown;
     };
 
-    const MotionDiv = ({ initial, animate: _animate, exit: _exit, transition: _transition, onAnimationComplete, ...props }: MotionDivProps) => {
-        const initialY = typeof initial === 'object' && initial !== null && 'y' in initial
-            ? (initial as { y?: unknown }).y
-            : undefined;
+    const MotionDiv = ({
+        initial,
+        animate: _animate,
+        exit: _exit,
+        transition: _transition,
+        onAnimationComplete,
+        ...props
+    }: MotionDivProps) => {
+        const initialY = typeof initial === 'object' && initial !== null && 'y' in initial ? (initial as { y?: unknown }).y : undefined;
 
         React.useEffect(() => {
             onAnimationComplete?.();
@@ -59,14 +64,13 @@ vi.mock('../../../hooks/useToast', () => ({
 }));
 
 vi.mock('../../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: {
-        settings: AppSettings;
-        geminiApiKey: string | null;
-        setGeminiApiKey: typeof mocks.setGeminiApiKey;
-    }) => unknown) => selector({
-        ...mocks.state,
-        setGeminiApiKey: mocks.setGeminiApiKey,
-    }),
+    useSettingsStore: (
+        selector: (state: { settings: AppSettings; geminiApiKey: string | null; setGeminiApiKey: typeof mocks.setGeminiApiKey }) => unknown
+    ) =>
+        selector({
+            ...mocks.state,
+            setGeminiApiKey: mocks.setGeminiApiKey,
+        }),
 }));
 
 vi.mock('../../../services/geminiService', () => ({
@@ -267,9 +271,7 @@ describe('OnboardingWizard', () => {
             onComplete: vi.fn(),
             onOpenSettings: vi.fn(),
         };
-        const { rerender } = render(
-            <OnboardingWizard isOpen={true} {...props} />
-        );
+        const { rerender } = render(<OnboardingWizard isOpen={true} {...props} />);
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
         expect(screen.getByRole('heading', { name: 'Connect your generators' })).not.toBeNull();
 
@@ -324,9 +326,11 @@ describe('OnboardingWizard', () => {
 
     it('prevents leaving AI setup while verification or secure storage is pending', async () => {
         let finishStorage: (() => void) | undefined;
-        mocks.setGeminiApiKey.mockReturnValueOnce(new Promise<void>(resolve => {
-            finishStorage = resolve;
-        }));
+        mocks.setGeminiApiKey.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishStorage = resolve;
+            })
+        );
         renderWizard();
         continueToIntelligence();
 

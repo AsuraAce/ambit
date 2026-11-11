@@ -14,11 +14,16 @@ interface ShortcutsModalProps {
 const getSearchOperatorIcon = (category: SearchOperatorCategory) => {
     const className = 'w-3 h-3';
     switch (category) {
-        case 'content': return <Search className={className} />;
-        case 'resource': return <Puzzle className={className} />;
-        case 'parameter': return <Sliders className={className} />;
-        case 'date': return <Calendar className={className} />;
-        case 'dimension': return <Monitor className={className} />;
+        case 'content':
+            return <Search className={className} />;
+        case 'resource':
+            return <Puzzle className={className} />;
+        case 'parameter':
+            return <Sliders className={className} />;
+        case 'date':
+            return <Calendar className={className} />;
+        case 'dimension':
+            return <Monitor className={className} />;
     }
 };
 
@@ -30,9 +35,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
     useEffect(() => {
         if (!isOpen) return;
 
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         closeButtonRef.current?.focus();
 
         return () => {
@@ -48,11 +51,11 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 setExpandedCategories(JSON.parse(saved) as Record<string, boolean>);
             } catch {
                 // Fail silently, use defaults
-                setExpandedCategories({ 'General': true });
+                setExpandedCategories({ General: true });
             }
         } else {
             // Default: General is open
-            setExpandedCategories({ 'General': true });
+            setExpandedCategories({ General: true });
         }
     }, []);
 
@@ -64,9 +67,9 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
     }, [expandedCategories]);
 
     const toggleCategory = (title: string) => {
-        setExpandedCategories(prev => ({
+        setExpandedCategories((prev) => ({
             ...prev,
-            [title]: !prev[title]
+            [title]: !prev[title],
         }));
     };
 
@@ -91,7 +94,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'Shift + H', desc: 'Toggle Global Privacy Mode' },
                 { key: 'Esc', desc: 'Clear selection / Close dialog' },
                 { key: 'F11', desc: 'Toggle fullscreen (desktop app)' },
-            ]
+            ],
         },
         {
             title: 'Library Navigation',
@@ -99,7 +102,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'Arrow Keys', desc: 'Navigate grid' },
                 { key: 'Enter', desc: 'Open details / Save search' },
                 { key: 'Space', desc: 'Open Quick View for selection' },
-            ]
+            ],
         },
         {
             title: 'Library Actions',
@@ -109,7 +112,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'M', desc: 'Toggle selected Content Masks' },
                 { key: 'C', desc: 'Add selection to Collection' },
                 { key: 'Del', desc: 'Remove selected from Library' },
-            ]
+            ],
         },
         {
             title: 'Selection',
@@ -117,7 +120,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'Ctrl/Cmd + A', desc: 'Select all visible' },
                 { key: 'Ctrl/Cmd + Click', desc: 'Toggle selection' },
                 { key: 'Shift + Click', desc: 'Range selection' },
-            ]
+            ],
         },
         {
             title: 'Viewer',
@@ -131,7 +134,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'Z', desc: 'Toggle Theater Mode' },
                 { key: 'Del', desc: 'Remove viewed item from Library' },
                 { key: 'Esc', desc: 'Exit Theater Mode / Close Viewer' },
-            ]
+            ],
         },
         {
             title: 'Slideshow',
@@ -140,8 +143,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'Space', desc: 'Play / Pause' },
                 { key: 'I', desc: 'Toggle image information' },
                 { key: 'Esc', desc: 'Close slideshow' },
-            ]
-        }
+            ],
+        },
     ];
 
     return (
@@ -151,13 +154,18 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         >
             <div
                 className="w-full max-w-lg bg-white dark:bg-slate-950 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transform scale-100 animate-in zoom-in-95 duration-300 ease-spring"
-                onClick={e => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
             >
-
                 {/* Header */}
                 <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/20">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white pl-2">{APP_NAME} Help & Guide</h2>
-                    <button ref={closeButtonRef} type="button" aria-label="Close Help & Guide" onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                    <button
+                        ref={closeButtonRef}
+                        type="button"
+                        aria-label="Close Help & Guide"
+                        onClick={onClose}
+                        className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                    >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -189,7 +197,6 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
 
                 {/* Content */}
                 <div className="p-6 overflow-y-auto custom-scrollbar">
-
                     {activeTab === 'shortcuts' && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
                             {shortcutCategories.map((cat, ci) => {
@@ -206,13 +213,18 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                                 {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                                                 {cat.title}
                                             </span>
-                                            <span className="text-[8px] opacity-0 group-hover:opacity-100 transition-opacity">Click to toggle</span>
+                                            <span className="text-[8px] opacity-0 group-hover:opacity-100 transition-opacity">
+                                                Click to toggle
+                                            </span>
                                         </button>
 
                                         {isExpanded && (
                                             <div className="grid grid-cols-1 gap-1 mt-1 animate-in fade-in slide-in-from-top-1 duration-200">
                                                 {cat.items.map((s, i) => (
-                                                    <div key={i} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group/item">
+                                                    <div
+                                                        key={i}
+                                                        className="flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group/item"
+                                                    >
                                                         <span className="text-sm text-gray-600 dark:text-gray-300">{s.desc}</span>
                                                         <kbd className="px-2 py-1 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded text-[10px] font-mono font-bold text-gray-500 dark:text-gray-400 shadow-sm min-w-[2rem] text-center group-hover/item:text-gray-900 dark:group-hover/item:text-white group-hover/item:border-gray-300 dark:group-hover/item:border-white/20 transition-colors">
                                                             {s.key}
@@ -234,7 +246,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div>
                                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
-                                    By default, search matches the <strong>positive prompt only</strong>. Spaces narrow results, while explicit OR matches alternatives. Use operators below to search other fields.
+                                    By default, search matches the <strong>positive prompt only</strong>. Spaces narrow results, while
+                                    explicit OR matches alternatives. Use operators below to search other fields.
                                 </p>
 
                                 <div className="bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden">
@@ -243,12 +256,17 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                         <div className="col-span-7">Description</div>
                                     </div>
                                     <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                        {SEARCH_OPERATOR_DEFINITIONS.map(operator => (
-                                            <div key={operator.example} className="grid grid-cols-12 p-2 text-sm border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-white dark:hover:bg-white/5 transition-colors">
+                                        {SEARCH_OPERATOR_DEFINITIONS.map((operator) => (
+                                            <div
+                                                key={operator.example}
+                                                className="grid grid-cols-12 p-2 text-sm border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-white dark:hover:bg-white/5 transition-colors"
+                                            >
                                                 <div className="col-span-5 font-mono text-sage-600 dark:text-sage-400 pl-2 flex items-center gap-2 whitespace-nowrap overflow-hidden text-ellipsis">
                                                     {getSearchOperatorIcon(operator.category)} {operator.example}
                                                 </div>
-                                                <div className="col-span-7 text-xs text-gray-600 dark:text-gray-400">{operator.description}</div>
+                                                <div className="col-span-7 text-xs text-gray-600 dark:text-gray-400">
+                                                    {operator.description}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -259,31 +277,44 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                 <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1">Date Syntax</h4>
                                 <div className="p-3 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 space-y-2">
                                     <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
-                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2025</span>
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">
+                                            date:2025
+                                        </span>
                                         <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Images from a year</span>
                                     </div>
                                     <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
-                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2026-04</span>
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">
+                                            date:2026-04
+                                        </span>
                                         <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Images from a month</span>
                                     </div>
                                     <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
-                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2026-04-15</span>
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">
+                                            date:2026-04-15
+                                        </span>
                                         <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Images from one day</span>
                                     </div>
                                     <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
-                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2026-04..2026-06</span>
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">
+                                            date:2026-04..2026-06
+                                        </span>
                                         <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Inclusive date range</span>
                                     </div>
                                     <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
-                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">after:2026-04</span>
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">
+                                            after:2026-04
+                                        </span>
                                         <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">From Apr 2026 onward</span>
                                     </div>
                                     <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
-                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">before:2025</span>
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">
+                                            before:2025
+                                        </span>
                                         <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Through 2025</span>
                                     </div>
                                     <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-tight pt-1 border-t border-gray-200 dark:border-white/10">
-                                        Use ISO dates to avoid country-specific ambiguity. Dates use local calendar days and combine with other terms using AND.
+                                        Use ISO dates to avoid country-specific ambiguity. Dates use local calendar days and combine with
+                                        other terms using AND.
                                     </p>
                                 </div>
                             </div>
@@ -302,7 +333,9 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                         </div>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="text-xs font-bold text-sage-600 dark:text-sage-400 font-mono">OR</span>
-                                            <span className="text-xs text-gray-600 dark:text-gray-300">Match either adjacent prompt term</span>
+                                            <span className="text-xs text-gray-600 dark:text-gray-300">
+                                                Match either adjacent prompt term
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -328,7 +361,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                 </div>
                                 <h3 className="text-base font-bold text-gray-900 dark:text-white">Review your setup</h3>
                                 <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-                                    Walk through integrations, Intelligence, and privacy again without resetting your library or existing preferences. Only guide controls you change are saved when you finish.
+                                    Walk through integrations, Intelligence, and privacy again without resetting your library or existing
+                                    preferences. Only guide controls you change are saved when you finish.
                                 </p>
                             </div>
                             <button
@@ -340,7 +374,6 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                             </button>
                         </div>
                     )}
-
                 </div>
             </div>
         </div>

@@ -1,4 +1,3 @@
-
 import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiSearchLogic } from '../useAiSearchLogic';
@@ -21,8 +20,8 @@ vi.mock('../../services/geminiService', () => ({
 // Mock useSettingsStore
 vi.mock('../../stores/settingsStore', () => ({
     useSettingsStore: {
-        getState: () => ({ geminiApiKey: 'test-key' })
-    }
+        getState: () => ({ geminiApiKey: 'test-key' }),
+    },
 }));
 
 describe('useAiSearchLogic', () => {
@@ -40,7 +39,7 @@ describe('useAiSearchLogic', () => {
         monitoredFolders: [],
         promptMaskingEnabled: true,
         maskedKeywords: [],
-        maskingMode: 'blur'
+        maskingMode: 'blur',
     };
 
     const mockFilters: FilterState = {
@@ -56,7 +55,7 @@ describe('useAiSearchLogic', () => {
         generationTypes: [],
         dateRange: 'all',
         favoritesOnly: false,
-        collectionId: null
+        collectionId: null,
     };
 
     const props = {
@@ -131,20 +130,14 @@ describe('useAiSearchLogic', () => {
             models: ['SDXL'],
             searchQuery: 'sunset',
             dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
+            dateTo: '2026-04-30',
         });
 
         await act(async () => {
             await result.current.submitSearch('find sunsets');
         });
 
-        expect(mockGenerateFilters).toHaveBeenCalledWith(
-            'find sunsets',
-            'test-key',
-            DEFAULT_AI_MODEL,
-            undefined,
-            'default'
-        );
+        expect(mockGenerateFilters).toHaveBeenCalledWith('find sunsets', 'test-key', DEFAULT_AI_MODEL, undefined, 'default');
         expect(mockSetFilters).toHaveBeenCalledTimes(1);
         const aiUpdate = mockSetFilters.mock.calls[0][0] as (prev: FilterState) => FilterState;
         expect(aiUpdate(mockFilters)).toMatchObject({
@@ -152,7 +145,7 @@ describe('useAiSearchLogic', () => {
             models: ['SDXL'],
             dateRange: 'custom',
             dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
+            dateTo: '2026-04-30',
         });
         expect(mockAddToast).toHaveBeenCalledWith('Filters updated by AI', 'success');
         expect(blur).toHaveBeenCalledOnce();
@@ -168,10 +161,12 @@ describe('useAiSearchLogic', () => {
             devMode: true,
             systemPrompts,
         };
-        const { result } = renderHook(() => useAiSearchLogic({
-            ...props,
-            settings: developerSettings,
-        }));
+        const { result } = renderHook(() =>
+            useAiSearchLogic({
+                ...props,
+                settings: developerSettings,
+            })
+        );
 
         act(() => {
             result.current.toggleAiSearch();
@@ -183,13 +178,7 @@ describe('useAiSearchLogic', () => {
             await result.current.submitSearch('find portraits');
         });
 
-        expect(mockGenerateFilters).toHaveBeenCalledWith(
-            'find portraits',
-            'test-key',
-            DEFAULT_AI_MODEL,
-            systemPrompts,
-            'default'
-        );
+        expect(mockGenerateFilters).toHaveBeenCalledWith('find portraits', 'test-key', DEFAULT_AI_MODEL, systemPrompts, 'default');
     });
 
     it('should handle AI search failure gracefully', async () => {
@@ -217,10 +206,9 @@ describe('useAiSearchLogic', () => {
     it('activates pending AI search after Settings enables the feature and focuses the input', async () => {
         vi.useFakeTimers();
         const disabledSettings = { ...mockSettings, enableAI: false };
-        const { result, rerender } = renderHook(
-            ({ settings }) => useAiSearchLogic({ ...props, settings }),
-            { initialProps: { settings: disabledSettings } }
-        );
+        const { result, rerender } = renderHook(({ settings }) => useAiSearchLogic({ ...props, settings }), {
+            initialProps: { settings: disabledSettings },
+        });
         const focus = vi.fn();
         result.current.inputRef.current = { focus } as unknown as HTMLInputElement;
         act(() => result.current.toggleAiSearch());
@@ -274,7 +262,7 @@ describe('useAiSearchLogic', () => {
 
     it('ignores repeated AI submissions while the first request is active', async () => {
         let resolveFilters: ((value: Record<string, never>) => void) | undefined;
-        const pendingFilters = new Promise<Record<string, never>>(resolve => {
+        const pendingFilters = new Promise<Record<string, never>>((resolve) => {
             resolveFilters = resolve;
         });
         const { result } = renderHook(() => useAiSearchLogic(props));

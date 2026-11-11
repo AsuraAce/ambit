@@ -1,4 +1,3 @@
-
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useMaintenanceData, type MaintenanceTab } from '../useMaintenanceData';
@@ -18,14 +17,14 @@ const mockBackfillImageFileHashes = vi.fn().mockResolvedValue({
     missing: 0,
     errors: 0,
     remaining: 0,
-    wasCancelled: false
+    wasCancelled: false,
 });
 const libraryContextMock = vi.hoisted(() => ({
     activeSqlWhere: 'WHERE x=1',
-    activeSqlParams: [1]
+    activeSqlParams: [1],
 }));
 
-const deferred = <T,>() => {
+const deferred = <T>() => {
     let resolve!: (value: T) => void;
     let reject!: (reason?: unknown) => void;
     const promise = new Promise<T>((resolvePromise, rejectPromise) => {
@@ -68,7 +67,7 @@ describe('useMaintenanceData', () => {
         renderHook(() => useMaintenanceData('duplicates', 'global'));
 
         // Wait a bit to ensure it doesn't trigger
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 100));
         expect(mockGetDuplicateCandidates).not.toHaveBeenCalled();
     });
 
@@ -130,7 +129,7 @@ describe('useMaintenanceData', () => {
         await act(async () => {
             await result.current.refreshData('thumbnails', true, {
                 scope: 'filtered',
-                includeUpgradeable: true
+                includeUpgradeable: true,
             });
         });
 
@@ -184,9 +183,7 @@ describe('useMaintenanceData', () => {
     });
 
     it('refreshes global candidates and clears scan state after hash backfill succeeds', async () => {
-        mockGetDuplicateCandidates
-            .mockResolvedValueOnce([{ id: 'before' }])
-            .mockResolvedValueOnce([{ id: 'after' }]);
+        mockGetDuplicateCandidates.mockResolvedValueOnce([{ id: 'before' }]).mockResolvedValueOnce([{ id: 'after' }]);
         const { result } = renderHook(() => useMaintenanceData('untagged', 'filtered'));
 
         await act(async () => {
@@ -272,10 +269,9 @@ describe('useMaintenanceData', () => {
         const pendingTrash = deferred<never[]>();
         mockGetMissingImages.mockReturnValueOnce(pendingMissing.promise);
         mockGetDeletedImages.mockReturnValueOnce(pendingTrash.promise);
-        const { result, rerender } = renderHook(
-            ({ tab }: { tab: MaintenanceTab }) => useMaintenanceData(tab, 'global'),
-            { initialProps: { tab: 'missing' as MaintenanceTab } }
-        );
+        const { result, rerender } = renderHook(({ tab }: { tab: MaintenanceTab }) => useMaintenanceData(tab, 'global'), {
+            initialProps: { tab: 'missing' as MaintenanceTab },
+        });
 
         await waitFor(() => expect(mockGetMissingImages).toHaveBeenCalledTimes(1));
         rerender({ tab: 'trash' });
@@ -297,9 +293,7 @@ describe('useMaintenanceData', () => {
     it('ignores an older scoped response after a newer request succeeds', async () => {
         const filtered = deferred<Array<{ id: string }>>();
         const global = deferred<Array<{ id: string }>>();
-        mockGetUntaggedImages
-            .mockReturnValueOnce(filtered.promise)
-            .mockReturnValueOnce(global.promise);
+        mockGetUntaggedImages.mockReturnValueOnce(filtered.promise).mockReturnValueOnce(global.promise);
         const { result } = renderHook(() => useMaintenanceData('untagged', 'global'));
 
         let filteredRequest!: Promise<void>;
@@ -326,9 +320,7 @@ describe('useMaintenanceData', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const filtered = deferred<Array<{ id: string }>>();
         const global = deferred<Array<{ id: string }>>();
-        mockGetUntaggedImages
-            .mockReturnValueOnce(filtered.promise)
-            .mockReturnValueOnce(global.promise);
+        mockGetUntaggedImages.mockReturnValueOnce(filtered.promise).mockReturnValueOnce(global.promise);
         const { result } = renderHook(() => useMaintenanceData('untagged', 'global'));
 
         let filteredRequest!: Promise<void>;
@@ -354,9 +346,7 @@ describe('useMaintenanceData', () => {
 
     it('retries the failed request with its last scope', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mockGetUntaggedImages
-            .mockRejectedValueOnce(new Error('sqlite busy'))
-            .mockResolvedValueOnce([{ id: 'recovered' }]);
+        mockGetUntaggedImages.mockRejectedValueOnce(new Error('sqlite busy')).mockResolvedValueOnce([{ id: 'recovered' }]);
         const { result } = renderHook(() => useMaintenanceData('untagged', 'global'));
 
         await act(async () => {
@@ -377,9 +367,7 @@ describe('useMaintenanceData', () => {
 
     it('keeps the last successful data visible when a refresh fails', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mockGetUntaggedImages
-            .mockResolvedValueOnce([{ id: 'last-good' }])
-            .mockRejectedValueOnce(new Error('refresh failed'));
+        mockGetUntaggedImages.mockResolvedValueOnce([{ id: 'last-good' }]).mockRejectedValueOnce(new Error('refresh failed'));
         const { result } = renderHook(() => useMaintenanceData('untagged', 'global'));
 
         await act(async () => {
@@ -401,8 +389,8 @@ describe('useMaintenanceData', () => {
                 missing: 0,
                 errors: 0,
                 remaining: 0,
-                wasCancelled: false
-            }
+                wasCancelled: false,
+            },
         });
 
         renderHook(() => useMaintenanceData('duplicates', 'global'));

@@ -23,13 +23,13 @@ export const MaintenanceHeader: React.FC<MaintenanceHeaderProps> = ({
     extraControls,
     onSelectAll,
     onClearSelection,
-    variant = 'sage'
+    variant = 'sage',
 }) => {
     const bgColors = {
         sage: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
         harbor: 'bg-harbor-100 text-harbor-600 dark:bg-harbor-500/10 dark:text-harbor-300',
         ember: 'bg-ember-100 text-ember-600 dark:bg-ember-500/10 dark:text-ember-300',
-        red: 'bg-red-500/10 text-red-600 dark:text-red-400'
+        red: 'bg-red-500/10 text-red-600 dark:text-red-400',
     };
 
     const textColor = bgColors[variant];
@@ -38,9 +38,7 @@ export const MaintenanceHeader: React.FC<MaintenanceHeaderProps> = ({
         <div className="flex-shrink-0 px-6 py-2 z-10">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md rounded-2xl border border-gray-100 dark:border-white/5">
                 <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-xl ${textColor}`}>
-                        {icon}
-                    </div>
+                    <div className={`p-3 rounded-xl ${textColor}`}>{icon}</div>
                     <div>
                         <div className="flex items-center gap-2">
                             <h3 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3>
@@ -66,10 +64,7 @@ export const MaintenanceHeader: React.FC<MaintenanceHeaderProps> = ({
                                     Deselect All
                                 </button>
                             ) : (
-                                <button
-                                    onClick={onSelectAll}
-                                    className="text-xs font-bold text-sage-600 hover:text-sage-500"
-                                >
+                                <button onClick={onSelectAll} className="text-xs font-bold text-sage-600 hover:text-sage-500">
                                     Select All
                                 </button>
                             )}

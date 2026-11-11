@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings, InvokeDbSnapshotState } from '../../../types';
-import {
-    INVOKE_IMPORT_SCHEMA_VERSION,
-    INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
-} from '../dbSnapshot';
+import { INVOKE_IMPORT_SCHEMA_VERSION, INVOKE_PATH_REPAIR_SNAPSHOT_VERSION } from '../dbSnapshot';
 import { readTrustedInvokeOwnerScope } from '../trustedOwnerScope';
 
 const mocks = vi.hoisted(() => ({
@@ -32,22 +29,25 @@ const snapshot = (overrides: Partial<InvokeDbSnapshotState> = {}): InvokeDbSnaps
     ...overrides,
 });
 
-const settings = (overrides: Partial<AppSettings> = {}) => ({
-    invokeDbSnapshot: snapshot(),
-    invokeOwnerSelection: { dbPath, mode: 'owner', ownerId: 'owner-a' },
-    ...overrides,
-} as Pick<AppSettings, 'invokeDbSnapshot' | 'invokeOwnerSelection'>);
+const settings = (overrides: Partial<AppSettings> = {}) =>
+    ({
+        invokeDbSnapshot: snapshot(),
+        invokeOwnerSelection: { dbPath, mode: 'owner', ownerId: 'owner-a' },
+        ...overrides,
+    }) as Pick<AppSettings, 'invokeDbSnapshot' | 'invokeOwnerSelection'>;
 
 describe('readTrustedInvokeOwnerScope', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getDb.mockResolvedValue({ select: mocks.select });
-        mocks.select.mockResolvedValue([{
-            db_path: dbPath,
-            images_root: imagesRoot,
-            scope_mode: 'owner',
-            owner_id: 'owner-a',
-        }]);
+        mocks.select.mockResolvedValue([
+            {
+                db_path: dbPath,
+                images_root: imagesRoot,
+                scope_mode: 'owner',
+                owner_id: 'owner-a',
+            },
+        ]);
     });
 
     it('accepts an exact current snapshot, saved selection, and native visibility row', async () => {
@@ -60,21 +60,28 @@ describe('readTrustedInvokeOwnerScope', () => {
     });
 
     it('accepts trusted Windows state when persisted path casing differs', async () => {
-        mocks.select.mockResolvedValue([{
-            db_path: dbPath.toLowerCase(),
-            images_root: imagesRoot.toLowerCase(),
-            scope_mode: 'owner',
-            owner_id: 'owner-a',
-        }]);
-
-        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings({
-            invokeDbSnapshot: snapshot({ dbPath: dbPath.toLowerCase() }),
-            invokeOwnerSelection: {
-                dbPath: dbPath.toLowerCase(),
-                mode: 'owner',
-                ownerId: 'owner-a',
+        mocks.select.mockResolvedValue([
+            {
+                db_path: dbPath.toLowerCase(),
+                images_root: imagesRoot.toLowerCase(),
+                scope_mode: 'owner',
+                owner_id: 'owner-a',
             },
-        }))).resolves.toEqual({
+        ]);
+
+        await expect(
+            readTrustedInvokeOwnerScope(
+                'D:/Invoke',
+                settings({
+                    invokeDbSnapshot: snapshot({ dbPath: dbPath.toLowerCase() }),
+                    invokeOwnerSelection: {
+                        dbPath: dbPath.toLowerCase(),
+                        mode: 'owner',
+                        ownerId: 'owner-a',
+                    },
+                })
+            )
+        ).resolves.toEqual({
             dbPath,
             imagesRoot,
             mode: 'owner',
@@ -93,12 +100,14 @@ describe('readTrustedInvokeOwnerScope', () => {
     });
 
     it('rejects a native visibility row that does not exactly match the saved scope', async () => {
-        mocks.select.mockResolvedValue([{
-            db_path: dbPath,
-            images_root: imagesRoot,
-            scope_mode: 'owner',
-            owner_id: 'owner-b',
-        }]);
+        mocks.select.mockResolvedValue([
+            {
+                db_path: dbPath,
+                images_root: imagesRoot,
+                scope_mode: 'owner',
+                owner_id: 'owner-b',
+            },
+        ]);
 
         await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings())).resolves.toBeNull();
     });
@@ -112,39 +121,63 @@ describe('readTrustedInvokeOwnerScope', () => {
     });
 
     it('requires an explicit matching selection for all-user scope', async () => {
-        mocks.select.mockResolvedValue([{
-            db_path: dbPath,
-            images_root: imagesRoot,
-            scope_mode: 'all',
-            owner_id: null,
-        }]);
+        mocks.select.mockResolvedValue([
+            {
+                db_path: dbPath,
+                images_root: imagesRoot,
+                scope_mode: 'all',
+                owner_id: null,
+            },
+        ]);
         const allSnapshot = snapshot({ scopeMode: 'all', scopeOwnerId: null });
 
-        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings({
-            invokeDbSnapshot: allSnapshot,
-            invokeOwnerSelection: { dbPath, mode: 'all' },
-        }))).resolves.toEqual({ dbPath, imagesRoot, mode: 'all' });
-        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings({
-            invokeDbSnapshot: allSnapshot,
-            invokeOwnerSelection: undefined,
-        }))).resolves.toBeNull();
+        await expect(
+            readTrustedInvokeOwnerScope(
+                'D:/Invoke',
+                settings({
+                    invokeDbSnapshot: allSnapshot,
+                    invokeOwnerSelection: { dbPath, mode: 'all' },
+                })
+            )
+        ).resolves.toEqual({ dbPath, imagesRoot, mode: 'all' });
+        await expect(
+            readTrustedInvokeOwnerScope(
+                'D:/Invoke',
+                settings({
+                    invokeDbSnapshot: allSnapshot,
+                    invokeOwnerSelection: undefined,
+                })
+            )
+        ).resolves.toBeNull();
     });
 
     it('trusts legacy scope only when no owner selection remains', async () => {
-        mocks.select.mockResolvedValue([{
-            db_path: dbPath,
-            images_root: imagesRoot,
-            scope_mode: 'legacy',
-            owner_id: null,
-        }]);
+        mocks.select.mockResolvedValue([
+            {
+                db_path: dbPath,
+                images_root: imagesRoot,
+                scope_mode: 'legacy',
+                owner_id: null,
+            },
+        ]);
         const legacySnapshot = snapshot({ scopeMode: 'legacy', scopeOwnerId: null });
 
-        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings({
-            invokeDbSnapshot: legacySnapshot,
-            invokeOwnerSelection: undefined,
-        }))).resolves.toEqual({ dbPath, imagesRoot, mode: 'legacy' });
-        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings({
-            invokeDbSnapshot: legacySnapshot,
-        }))).resolves.toBeNull();
+        await expect(
+            readTrustedInvokeOwnerScope(
+                'D:/Invoke',
+                settings({
+                    invokeDbSnapshot: legacySnapshot,
+                    invokeOwnerSelection: undefined,
+                })
+            )
+        ).resolves.toEqual({ dbPath, imagesRoot, mode: 'legacy' });
+        await expect(
+            readTrustedInvokeOwnerScope(
+                'D:/Invoke',
+                settings({
+                    invokeDbSnapshot: legacySnapshot,
+                })
+            )
+        ).resolves.toBeNull();
     });
 });

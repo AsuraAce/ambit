@@ -15,13 +15,13 @@ interface LibraryHealthProps {
 const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
     const { refreshMaintenanceCounts } = useLibraryContext();
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
-    const isScanningMissingFiles = useLibraryStore(s => s.isScanningMissingFiles);
-    const missingScanProgress = useLibraryStore(s => s.missingScanProgress);
-    const lastMissingScanResult = useLibraryStore(s => s.lastMissingScanResult);
-    const setIsScanningMissingFiles = useLibraryStore(s => s.setIsScanningMissingFiles);
-    const setMissingScanProgress = useLibraryStore(s => s.setMissingScanProgress);
-    const setMissingScanAbortController = useLibraryStore(s => s.setMissingScanAbortController);
-    const setLastMissingScanResult = useLibraryStore(s => s.setLastMissingScanResult);
+    const isScanningMissingFiles = useLibraryStore((s) => s.isScanningMissingFiles);
+    const missingScanProgress = useLibraryStore((s) => s.missingScanProgress);
+    const lastMissingScanResult = useLibraryStore((s) => s.lastMissingScanResult);
+    const setIsScanningMissingFiles = useLibraryStore((s) => s.setIsScanningMissingFiles);
+    const setMissingScanProgress = useLibraryStore((s) => s.setMissingScanProgress);
+    const setMissingScanAbortController = useLibraryStore((s) => s.setMissingScanAbortController);
+    const setLastMissingScanResult = useLibraryStore((s) => s.setLastMissingScanResult);
     const result = lastMissingScanResult;
     const status: 'idle' | 'running' | 'done' = isScanningMissingFiles ? 'running' : result ? 'done' : 'idle';
     const progress = missingScanProgress?.total ? Math.round((missingScanProgress.current / missingScanProgress.total) * 100) : 0;
@@ -40,7 +40,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         setMissingScanProgress({
             current: 0,
             total: 0,
-            message: 'Preparing missing file audit...'
+            message: 'Preparing missing file audit...',
         });
         if (onScanComplete) onScanComplete([]);
         try {
@@ -49,7 +49,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                 setMissingScanProgress({
                     current: curr,
                     total,
-                    message: 'Checking file paths for missing images...'
+                    message: 'Checking file paths for missing images...',
                 });
             }, abortController.signal);
             if (isCurrentAudit()) {
@@ -80,14 +80,14 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         }
     };
 
-
-
     if (mode === 'compact') {
         return (
             <div className="bg-sage-50/50 dark:bg-white/[0.02] border border-sage-100 dark:border-white/5 rounded-2xl p-5">
                 <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                        <div className={`rounded-xl p-3 ${status === 'done' && result?.missingIds.length === 0 ? 'bg-sage-100 text-sage-600 dark:bg-sage-500/10 dark:text-sage-300' : 'bg-sage-100 text-sage-600 dark:bg-white/5 dark:text-sage-300'}`}>
+                        <div
+                            className={`rounded-xl p-3 ${status === 'done' && result?.missingIds.length === 0 ? 'bg-sage-100 text-sage-600 dark:bg-sage-500/10 dark:text-sage-300' : 'bg-sage-100 text-sage-600 dark:bg-white/5 dark:text-sage-300'}`}
+                        >
                             {status === 'running' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
                         </div>
                         <div>
@@ -100,7 +100,9 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                         {status === 'done' && result ? (
                             <div className="flex items-center gap-3">
                                 <div className="text-right">
-                                    <div className={`text-xs font-black ${result.missingIds.length > 0 ? 'text-ember-600 dark:text-ember-300' : 'text-sage-600 dark:text-sage-300'}`}>
+                                    <div
+                                        className={`text-xs font-black ${result.missingIds.length > 0 ? 'text-ember-600 dark:text-ember-300' : 'text-sage-600 dark:text-sage-300'}`}
+                                    >
                                         {result.missingIds.length > 0 ? `${result.missingIds.length} Missing` : 'File Links Healthy'}
                                     </div>
                                     <div className="text-[10px] text-gray-400">{result.scanned} Scanned</div>
@@ -138,7 +140,9 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                     </div>
                     <div>
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">File Link Audit</h3>
-                        <p className="text-sm text-gray-500">Deep-scan the database to identify images whose source files are no longer on disk.</p>
+                        <p className="text-sm text-gray-500">
+                            Deep-scan the database to identify images whose source files are no longer on disk.
+                        </p>
                     </div>
                 </div>
 
@@ -169,21 +173,32 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
             {status === 'done' && result && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500 bg-white/50 dark:bg-black/20 backdrop-blur-md rounded-2xl p-8 border border-gray-200 dark:border-white/5 shadow-2xl relative overflow-hidden group">
                     {/* Background Decorative Element */}
-                    <div className={`absolute -right-24 -top-24 h-64 w-64 rounded-full opacity-20 blur-[100px] transition-colors ${result.missingIds.length > 0 ? 'bg-ember-500' : 'bg-sage-500'}`} />
+                    <div
+                        className={`absolute -right-24 -top-24 h-64 w-64 rounded-full opacity-20 blur-[100px] transition-colors ${result.missingIds.length > 0 ? 'bg-ember-500' : 'bg-sage-500'}`}
+                    />
 
                     <div className="relative z-10 flex flex-col md:flex-row gap-8 items-start justify-between">
                         <div className="space-y-6 flex-1">
                             <div>
-                                <h4 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] mb-4">Audit Summary</h4>
+                                <h4 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] mb-4">
+                                    Audit Summary
+                                </h4>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-white dark:bg-white/5 p-4 rounded-xl border border-gray-100 dark:border-white/5">
                                         <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums">
-                                            {result.scanned.toLocaleString()}{result.wasCancelled && result.total > result.scanned ? ` / ${result.total.toLocaleString()}` : ''}
+                                            {result.scanned.toLocaleString()}
+                                            {result.wasCancelled && result.total > result.scanned
+                                                ? ` / ${result.total.toLocaleString()}`
+                                                : ''}
                                         </div>
                                         <div className="text-[10px] font-bold text-gray-400 uppercase">Images Scanned</div>
                                     </div>
-                                    <div className={`rounded-xl border p-4 transition-colors ${result.missingIds.length > 0 ? 'border-ember-200 bg-ember-50 dark:border-ember-500/20 dark:bg-ember-500/10' : 'border-sage-200 bg-sage-50 dark:border-sage-500/20 dark:bg-sage-500/10'}`}>
-                                        <div className={`text-2xl font-black tabular-nums ${result.missingIds.length > 0 ? 'text-ember-600 dark:text-ember-300' : 'text-sage-600 dark:text-sage-300'}`}>
+                                    <div
+                                        className={`rounded-xl border p-4 transition-colors ${result.missingIds.length > 0 ? 'border-ember-200 bg-ember-50 dark:border-ember-500/20 dark:bg-ember-500/10' : 'border-sage-200 bg-sage-50 dark:border-sage-500/20 dark:bg-sage-500/10'}`}
+                                    >
+                                        <div
+                                            className={`text-2xl font-black tabular-nums ${result.missingIds.length > 0 ? 'text-ember-600 dark:text-ember-300' : 'text-sage-600 dark:text-sage-300'}`}
+                                        >
                                             {result.missingIds.length.toLocaleString()}
                                         </div>
                                         <div className="text-[10px] font-bold text-gray-400 uppercase">Missing Files</div>
@@ -199,7 +214,9 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
 
                             {result.missingIds.length > 0 && (
                                 <div className="space-y-3">
-                                    <h4 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em]">Sample Missing Paths</h4>
+                                    <h4 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em]">
+                                        Sample Missing Paths
+                                    </h4>
                                     <div className="bg-black/5 dark:bg-black/40 rounded-xl p-4 border border-black/5 dark:border-white/5 font-mono text-[10px] space-y-2 max-h-[150px] overflow-y-auto scrollbar-thin">
                                         {result.sampleMissingPaths.map((path, idx) => (
                                             <div key={idx} className="flex items-center gap-3 text-gray-500 dark:text-gray-400 group/path">
@@ -208,7 +225,9 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                             </div>
                                         ))}
                                         {result.missingIds.length > 10 && (
-                                            <div className="pt-2 text-gray-500 italic border-t border-white/5">... and {result.missingIds.length - 10} more entries.</div>
+                                            <div className="pt-2 text-gray-500 italic border-t border-white/5">
+                                                ... and {result.missingIds.length - 10} more entries.
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -228,10 +247,11 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                     <button
                                         onClick={handlePrune}
                                         disabled={pruningStatus !== 'idle'}
-                                        className={`w-full flex items-center justify-center gap-3 py-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-lg ${pruningStatus === 'done'
-                                            ? 'bg-sage-600 text-white'
-                                            : 'bg-ember-600 hover:bg-ember-500 text-white'
-                                            }`}
+                                        className={`w-full flex items-center justify-center gap-3 py-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-lg ${
+                                            pruningStatus === 'done'
+                                                ? 'bg-sage-600 text-white'
+                                                : 'bg-ember-600 hover:bg-ember-500 text-white'
+                                        }`}
                                     >
                                         {pruningStatus === 'running' ? (
                                             <>
@@ -257,8 +277,12 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                         <CheckCircle2 className="w-6 h-6" />
                                     </div>
                                     <div>
-                                        <div className="text-sm font-black uppercase tracking-widest text-sage-600 dark:text-sage-300">File Links Healthy</div>
-                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">All database links point to valid files on your disk.</p>
+                                        <div className="text-sm font-black uppercase tracking-widest text-sage-600 dark:text-sage-300">
+                                            File Links Healthy
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                                            All database links point to valid files on your disk.
+                                        </p>
                                     </div>
                                 </div>
                             )}

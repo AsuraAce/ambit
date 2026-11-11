@@ -19,13 +19,7 @@ interface ImportModalProps {
     onImportVideos: () => void;
 }
 
-export const ImportModal: React.FC<ImportModalProps> = ({
-    isOpen,
-    onClose,
-    onOpenSettings,
-    onImportFiles,
-    onImportVideos
-}) => {
+export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onOpenSettings, onImportFiles, onImportVideos }) => {
     const dialogRef = React.useRef<HTMLDivElement>(null);
     const headingRef = React.useRef<HTMLHeadingElement>(null);
 
@@ -36,9 +30,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
         if (event.key !== 'Tab' || !dialogRef.current) return;
 
-        const focusableElements = Array.from(
-            dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-        ).filter(element => element.tabIndex >= 0 && !element.hasAttribute('disabled'));
+        const focusableElements = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+            (element) => element.tabIndex >= 0 && !element.hasAttribute('disabled')
+        );
 
         if (focusableElements.length === 0) {
             event.preventDefault();
@@ -48,9 +42,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
         const firstElement = focusableElements[0];
         const lastElement = focusableElements[focusableElements.length - 1];
-        const activeElement = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
         if (!activeElement || !focusableElements.includes(activeElement)) {
             event.preventDefault();
@@ -125,7 +117,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                             {/* RECOMMENDED SECTION */}
                             <section>
                                 <div className="flex items-center justify-between mb-4">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-400 bg-sage-500/10 px-2 py-0.5 rounded">Recommended</span>
+                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-400 bg-sage-500/10 px-2 py-0.5 rounded">
+                                        Recommended
+                                    </span>
                                 </div>
 
                                 <motion.div
@@ -144,8 +138,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                         </div>
 
                                         <div className="flex-1">
-                                            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-1 tracking-tight">Set Up Integration</h3>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium">Automatic imports from connected generator output folders.</p>
+                                            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-1 tracking-tight">
+                                                Set Up Integration
+                                            </h3>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium">
+                                                Automatic imports from connected generator output folders.
+                                            </p>
 
                                             <ul className="grid grid-cols-1 gap-2 mb-6">
                                                 <FeatureItem text="Auto-import new images" />
@@ -168,7 +166,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                 <div className="absolute inset-0 flex items-center">
                                     <div className="w-full border-t border-gray-100 dark:border-white/5" />
                                 </div>
-                                <span className="relative px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-gray-500 bg-white dark:bg-surface-modal">or</span>
+                                <span className="relative px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-gray-500 bg-white dark:bg-surface-modal">
+                                    or
+                                </span>
                             </div>
 
                             {/* MANUAL IMPORT SECTION */}
@@ -178,19 +178,26 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     <h3 className="font-black text-sm text-gray-900 dark:text-white tracking-tight">One-Time Import</h3>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium leading-relaxed">
-                                    Add generated images, camera photos, screenshots, or supported videos. Image formats: PNG, JPEG, and WebP.
+                                    Add generated images, camera photos, screenshots, or supported videos. Image formats: PNG, JPEG, and
+                                    WebP.
                                 </p>
 
                                 <div className="grid grid-cols-3 gap-3">
                                     <button
-                                        onClick={() => { onImportFiles(); onClose(); }}
+                                        onClick={() => {
+                                            onImportFiles();
+                                            onClose();
+                                        }}
                                         className="flex-1 px-4 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-xs font-black transition-all hover:translate-y-[-2px] hover:shadow-xl active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 group shadow-lg"
                                     >
                                         <FileUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
                                         Select Images
                                     </button>
                                     <button
-                                        onClick={() => { onImportVideos(); onClose(); }}
+                                        onClick={() => {
+                                            onImportVideos();
+                                            onClose();
+                                        }}
                                         className="flex-1 px-4 py-4 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-xs font-black transition-all hover:translate-y-[-2px] active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 group shadow-lg"
                                     >
                                         <Video className="w-4 h-4 group-hover:scale-110 transition-transform" />
@@ -206,7 +213,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                 </div>
                             </section>
                         </div>
-
                     </motion.div>
                 </div>
             )}
@@ -223,8 +229,7 @@ const FeatureItem = ({ text }: { text: string }) => (
     </li>
 );
 
-const IntegrationButton = ({ label, onClick }: { label: string, onClick: () => void }) => {
-
+const IntegrationButton = ({ label, onClick }: { label: string; onClick: () => void }) => {
     return (
         <button
             onClick={onClick}

@@ -6,7 +6,7 @@ import { InvokeReferenceLinks } from '../InvokeReferenceLinks';
 
 const mocks = vi.hoisted(() => ({ getInvokeReferenceGraph: vi.fn() }));
 
-vi.mock('../../../../../services/db/invokeReferenceRepo', async importOriginal => {
+vi.mock('../../../../../services/db/invokeReferenceRepo', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../../../services/db/invokeReferenceRepo')>();
     return { ...actual, getInvokeReferenceGraph: mocks.getInvokeReferenceGraph };
 });
@@ -73,15 +73,22 @@ describe('InvokeReferenceLinks', () => {
 
     it('opens a resolved image once, exposes pending state, and refetches when it vanished', async () => {
         let resolveOpen!: (value: boolean) => void;
-        const onOpenImage = vi.fn(() => new Promise<boolean>(resolve => { resolveOpen = resolve; }));
+        const onOpenImage = vi.fn(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    resolveOpen = resolve;
+                })
+        );
         mocks.getInvokeReferenceGraph
             .mockResolvedValueOnce({
-                sourceImages: [{
-                    imageId: 'source',
-                    invokeImageName: 'source.png',
-                    availability: 'available',
-                    roles: ['init_image'],
-                }],
+                sourceImages: [
+                    {
+                        imageId: 'source',
+                        invokeImageName: 'source.png',
+                        availability: 'available',
+                        roles: ['init_image'],
+                    },
+                ],
                 usedBy: [],
             })
             .mockResolvedValueOnce({ sourceImages: [], usedBy: [] });

@@ -15,88 +15,98 @@ interface UseThumbnailOpsProps {
     refreshCollectionThumbnails: (debounced?: boolean, force?: boolean) => Promise<void>;
 }
 
-export const useThumbnailOps = ({
-    images,
-    setImages,
-    refreshCollectionThumbnails
-}: UseThumbnailOpsProps) => {
+export const useThumbnailOps = ({ images, setImages, refreshCollectionThumbnails }: UseThumbnailOpsProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
-    const {
-        setIsRegeneratingThumbnails,
-        setThumbnailProgress,
-        setThumbnailAbortController
-    } = useLibraryStore();
+    const { setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController } = useLibraryStore();
 
-    const regenerateThumbnails = useCallback(async (arg?: string[] | ((current: number, total: number) => void)) => {
-        if (isBrowserMockMode()) {
-            addToast('Unavailable in browser mock mode.', 'info');
-            return;
-        }
+    const regenerateThumbnails = useCallback(
+        async (arg?: string[] | ((current: number, total: number) => void)) => {
+            if (isBrowserMockMode()) {
+                addToast('Unavailable in browser mock mode.', 'info');
+                return;
+            }
 
-        const targetIds = Array.isArray(arg) ? arg : undefined;
-        const onProgress = typeof arg === 'function' ? arg : undefined;
+            const targetIds = Array.isArray(arg) ? arg : undefined;
+            const onProgress = typeof arg === 'function' ? arg : undefined;
 
-        let candidates: AIImage[];
+            let candidates: AIImage[];
 
-        if (targetIds && targetIds.length > 0) {
+            if (targetIds && targetIds.length > 0) {
+                try {
+                    candidates = await getImagesByIds(targetIds);
+                } catch (e) {
+                    console.error('Failed to fetch images for regeneration', e);
+                    candidates = [];
+                }
+            } else {
+                candidates = images.filter(
+                    (img) => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:')
+                );
+            }
+
+            if (candidates.length === 0) {
+                if (!targetIds) addToast('No unoptimized images found correctly.', 'success');
+                return;
+            }
+
+            const abortCtrl = new AbortController();
+            setThumbnailAbortController(abortCtrl);
+            setIsRegeneratingThumbnails(true);
+            setThumbnailProgress({ current: 0, total: candidates.length });
+
             try {
-                candidates = await getImagesByIds(targetIds);
+                const updates = await regenerateThumbnailsForImages(
+                    candidates,
+                    (curr, tot) => {
+                        setThumbnailProgress({ current: curr, total: tot });
+                        if (onProgress) onProgress(curr, tot);
+                    },
+                    abortCtrl.signal
+                );
+
+                if (updates.length > 0) {
+                    setImages((prev) => {
+                        const updateMap = new Map(updates.map((u) => [u.id, u]));
+                        return prev.map((p) => updateMap.get(p.id) || p);
+                    });
+                    const msg = abortCtrl.signal.aborted
+                        ? `Cancelled after optimizing ${updates.length} thumbnails.`
+                        : `Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`;
+                    addToast(msg, 'success');
+                }
             } catch (e) {
-                console.error("Failed to fetch images for regeneration", e);
-                candidates = [];
+                console.error('Regeneration error', e);
+                addToast('Thumbnail optimization failed partway through', 'error');
+            } finally {
+                try {
+                    await refreshThumbnailConsumers({
+                        queryClient,
+                        refreshCollectionThumbnails,
+                        logPrefix: '[Thumb]',
+                    });
+                } catch (error) {
+                    console.error('[Thumb] Thumbnail changes were saved, but consumers failed to refresh', error);
+                    addToast('Thumbnail changes were saved, but the library view failed to refresh', 'error');
+                }
+                setIsRegeneratingThumbnails(false);
+                setThumbnailProgress(null);
+                setThumbnailAbortController(null);
             }
-        } else {
-            candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
-        }
-
-        if (candidates.length === 0) {
-            if (!targetIds) addToast("No unoptimized images found correctly.", "success");
-            return;
-        }
-
-        const abortCtrl = new AbortController();
-        setThumbnailAbortController(abortCtrl);
-        setIsRegeneratingThumbnails(true);
-        setThumbnailProgress({ current: 0, total: candidates.length });
-
-        try {
-            const updates = await regenerateThumbnailsForImages(candidates, (curr, tot) => {
-                setThumbnailProgress({ current: curr, total: tot });
-                if (onProgress) onProgress(curr, tot);
-            }, abortCtrl.signal);
-
-            if (updates.length > 0) {
-                setImages(prev => {
-                    const updateMap = new Map(updates.map(u => [u.id, u]));
-                    return prev.map(p => updateMap.get(p.id) || p);
-                });
-                const msg = abortCtrl.signal.aborted
-                    ? `Cancelled after optimizing ${updates.length} thumbnails.`
-                    : `Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`;
-                addToast(msg, "success");
-            }
-        } catch (e) {
-            console.error("Regeneration error", e);
-            addToast("Thumbnail optimization failed partway through", "error");
-        } finally {
-            try {
-                await refreshThumbnailConsumers({
-                    queryClient,
-                    refreshCollectionThumbnails,
-                    logPrefix: '[Thumb]',
-                });
-            } catch (error) {
-                console.error('[Thumb] Thumbnail changes were saved, but consumers failed to refresh', error);
-                addToast('Thumbnail changes were saved, but the library view failed to refresh', 'error');
-            }
-            setIsRegeneratingThumbnails(false);
-            setThumbnailProgress(null);
-            setThumbnailAbortController(null);
-        }
-    }, [images, setImages, addToast, queryClient, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController]);
+        },
+        [
+            images,
+            setImages,
+            addToast,
+            queryClient,
+            refreshCollectionThumbnails,
+            setIsRegeneratingThumbnails,
+            setThumbnailProgress,
+            setThumbnailAbortController,
+        ]
+    );
 
     return {
-        regenerateThumbnails
+        regenerateThumbnails,
     };
 };

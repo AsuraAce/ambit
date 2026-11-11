@@ -6,7 +6,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 vi.mock('../../../features/library/components/SmartImage', () => ({
     SmartImage: ({ src, alt, imgClassName }: { src: string; alt: string; imgClassName?: string }) => (
         <img data-testid="smart-image" src={src} alt={alt} className={imgClassName} />
-    )
+    ),
 }));
 
 describe('PrivacyAwareThumbnail', () => {
@@ -16,8 +16,8 @@ describe('PrivacyAwareThumbnail', () => {
             privacyMaskIndexStatus: 'ready',
             settings: {
                 ...useSettingsStore.getState().settings,
-                maskingMode: 'blur'
-            }
+                maskingMode: 'blur',
+            },
         });
     });
 
@@ -55,8 +55,8 @@ describe('PrivacyAwareThumbnail', () => {
         useSettingsStore.setState({
             settings: {
                 ...useSettingsStore.getState().settings,
-                maskingMode: 'hide'
-            }
+                maskingMode: 'hide',
+            },
         });
 
         render(<PrivacyAwareThumbnail src="unsafe.webp" safeSrc="safe.webp" alt="Example" isSensitive />);
@@ -68,8 +68,8 @@ describe('PrivacyAwareThumbnail', () => {
         useSettingsStore.setState({
             settings: {
                 ...useSettingsStore.getState().settings,
-                maskingMode: 'hide'
-            }
+                maskingMode: 'hide',
+            },
         });
 
         render(<PrivacyAwareThumbnail src="unsafe.webp" alt="Example" isSensitive />);

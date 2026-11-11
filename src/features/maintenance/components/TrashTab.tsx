@@ -33,21 +33,24 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     scrollContainerRef,
     onRangeSelection,
     onBackgroundClick,
-    busyAction = null
+    busyAction = null,
 }) => {
-    const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
-        return (
-            <MaintenanceItem
-                key={img.id}
-                img={img}
-                style={style}
-                isSelected={selectedIds.has(img.id)}
-                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
-                maskedKeywords={maskedKeywords}
-                imageClassName={selectedIds.has(img.id) ? 'opacity-100' : 'opacity-70 grayscale'}
-            />
-        );
-    }, [selectedIds, onItemClick, maskedKeywords]);
+    const renderItem = useCallback(
+        (img: AIImage, style: React.CSSProperties, index: number) => {
+            return (
+                <MaintenanceItem
+                    key={img.id}
+                    img={img}
+                    style={style}
+                    isSelected={selectedIds.has(img.id)}
+                    onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
+                    maskedKeywords={maskedKeywords}
+                    imageClassName={selectedIds.has(img.id) ? 'opacity-100' : 'opacity-70 grayscale'}
+                />
+            );
+        },
+        [selectedIds, onItemClick, maskedKeywords]
+    );
 
     if (images.length === 0) {
         return (
@@ -72,7 +75,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                         disabled={busyAction !== null}
                         className="px-4 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                     >
-                        {busyAction === 'restoring' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />} {busyAction === 'restoring' ? 'Restoring...' : 'Restore to Library'}
+                        {busyAction === 'restoring' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />}{' '}
+                        {busyAction === 'restoring' ? 'Restoring...' : 'Restore to Library'}
                         <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{selectedIds.size}</span>
                     </button>
                     <button
@@ -80,13 +84,12 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                         disabled={busyAction !== null}
                         className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                     >
-                        {busyAction === 'deleting' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} {busyAction === 'deleting' ? 'Deleting from Disk...' : 'Delete File'}
+                        {busyAction === 'deleting' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}{' '}
+                        {busyAction === 'deleting' ? 'Deleting from Disk...' : 'Delete File'}
                     </button>
                 </>
             ) : (
-                <div className="px-4 py-2 text-gray-400 text-xs font-medium italic">
-                    Select items to restore or delete from disk
-                </div>
+                <div className="px-4 py-2 text-gray-400 text-xs font-medium italic">Select items to restore or delete from disk</div>
             )}
         </div>
     );

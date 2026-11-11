@@ -9,7 +9,7 @@ vi.mock('../ImageCard', () => ({
         <button type="button" data-testid={`timeline-card-${image.id}`} onClick={onClick}>
             {image.id}
         </button>
-    )
+    ),
 }));
 
 let resizeObserverCallback: ResizeObserverCallback | null = null;
@@ -20,20 +20,25 @@ const emitResize = (target: Element, width: number) => {
         throw new Error('ResizeObserver mock has not been initialized');
     }
 
-    resizeObserverCallback([{
-        target,
-        contentRect: {
-            x: 0,
-            y: 0,
-            width,
-            height: 600,
-            top: 0,
-            right: width,
-            bottom: 600,
-            left: 0,
-            toJSON: () => ({})
-        }
-    } as ResizeObserverEntry], resizeObserverInstance);
+    resizeObserverCallback(
+        [
+            {
+                target,
+                contentRect: {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height: 600,
+                    top: 0,
+                    right: width,
+                    bottom: 600,
+                    left: 0,
+                    toJSON: () => ({}),
+                },
+            } as ResizeObserverEntry,
+        ],
+        resizeObserverInstance
+    );
 };
 
 const createImage = (id: string, timestamp: number, isPinned = false): AIImage => ({
@@ -54,32 +59,35 @@ const createImage = (id: string, timestamp: number, isPinned = false): AIImage =
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: '',
-        negativePrompt: ''
-    }
+        negativePrompt: '',
+    },
 });
 
 describe('TimelineView', () => {
     beforeEach(() => {
         resizeObserverCallback = null;
         resizeObserverInstance = null;
-        vi.stubGlobal('ResizeObserver', class ResizeObserver {
-            constructor(callback: ResizeObserverCallback) {
-                resizeObserverCallback = callback;
-                resizeObserverInstance = this as unknown as ResizeObserver;
-            }
+        vi.stubGlobal(
+            'ResizeObserver',
+            class ResizeObserver {
+                constructor(callback: ResizeObserverCallback) {
+                    resizeObserverCallback = callback;
+                    resizeObserverInstance = this as unknown as ResizeObserver;
+                }
 
-            observe(target: Element) {
-                emitResize(target, 600);
-            }
+                observe(target: Element) {
+                    emitResize(target, 600);
+                }
 
-            unobserve() {
-                return undefined;
-            }
+                unobserve() {
+                    return undefined;
+                }
 
-            disconnect() {
-                return undefined;
+                disconnect() {
+                    return undefined;
+                }
             }
-        });
+        );
     });
 
     afterEach(() => {
@@ -91,7 +99,7 @@ describe('TimelineView', () => {
         const onImageClick = vi.fn();
         const images = [
             createImage('regular-first', new Date(2020, 0, 1, 11, 0, 0).getTime(), false),
-            createImage('pinned-second', new Date(2020, 0, 1, 10, 0, 0).getTime(), true)
+            createImage('pinned-second', new Date(2020, 0, 1, 10, 0, 0).getTime(), true),
         ];
 
         render(

@@ -3,10 +3,9 @@ import { mapRawInvokeMetadata, parseFiniteDecimalF32 } from '../invoke/metadataM
 
 type MetadataRecord = Record<string, unknown>;
 
-const isRecord = (value: unknown): value is MetadataRecord =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is MetadataRecord => !!value && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): MetadataRecord => isRecord(value) ? value : {};
+const asRecord = (value: unknown): MetadataRecord => (isRecord(value) ? value : {});
 
 const readString = (record: MetadataRecord, key: string): string | undefined => {
     const value = record[key];
@@ -18,8 +17,7 @@ const readNumber = (record: MetadataRecord, key: string): number | undefined => 
     return typeof value === 'number' ? value : undefined;
 };
 
-const hasNumericNodeKeys = (record: MetadataRecord): boolean =>
-    Object.keys(record).some(k => !isNaN(Number(k)));
+const hasNumericNodeKeys = (record: MetadataRecord): boolean => Object.keys(record).some((k) => !isNaN(Number(k)));
 
 const isComfyWorkflowRecord = (record: MetadataRecord): boolean =>
     Boolean(record.workflow || (record.prompt && typeof record.prompt === 'object') || record.nodes || hasNumericNodeKeys(record));
@@ -36,14 +34,14 @@ const toComfyMetadata = (workflowJson?: string): Partial<ImageMetadata> => {
 /**
  * Maps raw PNG/EXIF chunks to the standard ImageMetadata format based on the detected tool.
  * This is used to reconstruct "Original" metadata for comparison in the UI.
- * 
- * NOTE: This must be HIGHLY ROBUST and match the Rust-side reparse logic 
+ *
+ * NOTE: This must be HIGHLY ROBUST and match the Rust-side reparse logic
  * (`src-tauri/src/metadata/reparse.rs`) to prevent data loss on revert.
  */
 export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Partial<ImageMetadata> {
     if (!chunks) return {};
 
-    const toolLower = tool?.toLowerCase() || "";
+    const toolLower = tool?.toLowerCase() || '';
 
     // If chunks is a raw string, we might need to parse it (could be JSON object or JSON-escaped string)
     if (typeof chunks === 'string') {
@@ -52,7 +50,9 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
             if (trimmed.startsWith('"')) {
                 try {
                     return toComfyMetadata(JSON.parse(trimmed) as string);
-                } catch { /* ignore and preserve the raw string */ }
+                } catch {
+                    /* ignore and preserve the raw string */
+                }
             }
             return toComfyMetadata(chunks);
         }
@@ -60,14 +60,16 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
         if (trimmed.startsWith('{') || trimmed.startsWith('"')) {
             try {
                 const parsed = JSON.parse(trimmed) as unknown;
-                // If it parsed as a string (was a JSON-escaped string), 
+                // If it parsed as a string (was a JSON-escaped string),
                 // we recurse to handle the unescaped content.
                 // If it parsed as an object, we recurse to use object mapping.
                 if (isRecord(parsed) && isComfyWorkflowRecord(parsed)) {
                     return toComfyMetadata(chunks);
                 }
                 return mapRawChunksToMetadata(parsed, tool);
-            } catch { /* ignore and treat as raw text */ }
+            } catch {
+                /* ignore and treat as raw text */
+            }
         }
 
         // It's a raw string, not JSON-encoded object/string
@@ -93,11 +95,16 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
         detectedTool = GeneratorTool.AUTOMATIC1111;
     } else if (isComfyWorkflowRecord(chunkRecord)) {
         detectedTool = GeneratorTool.COMFYUI;
-    } else if (chunkRecord.invokeai_metadata || chunkRecord['sd-metadata'] || chunkRecord.dream_metadata || (isRecord(chunkRecord.image) && chunkRecord.image.prompt)) {
+    } else if (
+        chunkRecord.invokeai_metadata ||
+        chunkRecord['sd-metadata'] ||
+        chunkRecord.dream_metadata ||
+        (isRecord(chunkRecord.image) && chunkRecord.image.prompt)
+    ) {
         detectedTool = GeneratorTool.INVOKEAI;
     }
 
-    const effectiveToolLower = detectedTool?.toLowerCase() || "";
+    const effectiveToolLower = detectedTool?.toLowerCase() || '';
 
     // 2. ComfyUI flat structure check (no 'prompt'/'workflow' keys, just nodes/IDs)
     if (effectiveToolLower.includes('comfy') && (chunkRecord.nodes || hasNumericNodeKeys(chunkRecord))) {
@@ -121,7 +128,7 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
                     negativePrompt: readString(chunkRecord, 'negative_prompt') || '',
                     seed: readNumber(chunkRecord, 'seed'),
                     steps: readNumber(chunkRecord, 'steps'),
-                    cfg: readNumber(chunkRecord, 'cfg') ?? readNumber(chunkRecord, 'cfg_scale')
+                    cfg: readNumber(chunkRecord, 'cfg') ?? readNumber(chunkRecord, 'cfg_scale'),
                 };
                 return metadata;
             }
@@ -152,31 +159,31 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
  */
 export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool): Partial<ImageMetadata> {
     const metadata: Partial<ImageMetadata> = {
-        tool: (defaultTool && defaultTool !== GeneratorTool.UNKNOWN) ? defaultTool : GeneratorTool.AUTOMATIC1111,
-        rawParameters: text
+        tool: defaultTool && defaultTool !== GeneratorTool.UNKNOWN ? defaultTool : GeneratorTool.AUTOMATIC1111,
+        rawParameters: text,
     };
 
-    const lines = text.split('\n').map(l => l.trim());
+    const lines = text.split('\n').map((l) => l.trim());
     const positiveParts: string[] = [];
-    let negativePrompt = "";
-    let paramsLine = "";
+    let negativePrompt = '';
+    let paramsLine = '';
     let state = 0; // 0: positive, 1: negative, 2: params
 
     for (const line of lines) {
-        if (line.startsWith("Negative prompt: ")) {
+        if (line.startsWith('Negative prompt: ')) {
             state = 1;
             negativePrompt = line.substring(17).trim();
-        } else if (line.startsWith("Steps: ")) {
+        } else if (line.startsWith('Steps: ')) {
             state = 2;
             paramsLine = line.trim();
         } else if (state === 0) {
             positiveParts.push(line);
         } else if (state === 1) {
-            negativePrompt += " " + line;
+            negativePrompt += ' ' + line;
         }
     }
 
-    metadata.positivePrompt = positiveParts.join("\n").trim();
+    metadata.positivePrompt = positiveParts.join('\n').trim();
     metadata.negativePrompt = negativePrompt.trim();
 
     // --- Extract LoRAs from Prompts ---
@@ -234,10 +241,15 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
             const name = match[2];
             const closing = match[3] || '';
 
-            if (prefix === "<") {
-                if (closing !== ">") continue;
+            if (prefix === '<') {
+                if (closing !== '>') continue;
                 const nameLower = name.toLowerCase();
-                if (nameLower === "lora" || nameLower === "hypernet" || nameLower.startsWith("lora:") || nameLower.startsWith("hypernet:")) {
+                if (
+                    nameLower === 'lora' ||
+                    nameLower === 'hypernet' ||
+                    nameLower.startsWith('lora:') ||
+                    nameLower.startsWith('hypernet:')
+                ) {
                     continue;
                 }
             }
@@ -260,22 +272,42 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
                 }
 
                 switch (k) {
-                    case 'Steps': metadata.steps = parseInt(v); break;
-                    case 'Sampler': metadata.sampler = v; break;
-                    case 'Seed': metadata.seed = parseInt(v); break;
+                    case 'Steps':
+                        metadata.steps = parseInt(v);
+                        break;
+                    case 'Sampler':
+                        metadata.sampler = v;
+                        break;
+                    case 'Seed':
+                        metadata.seed = parseInt(v);
+                        break;
                     case 'Model':
                     case 'Checkpoint':
                     case 'Model name':
                     case 'SD model':
                         metadata.model = v;
                         break;
-                    case 'VAE': metadata.vae = v; break;
-                    case 'Clip skip': metadata.clipSkip = parseInt(v); break;
-                    case 'Denoising strength': metadata.denoisingStrength = parseFiniteDecimalF32(v); break;
-                    case 'Hires upscale': metadata.hiresUpscale = parseFloat(v); break;
-                    case 'Hires steps': metadata.hiresSteps = parseInt(v); break;
-                    case 'Hires upscaler': metadata.hiresUpscaler = v; break;
-                    case 'Model hash': metadata.modelHash = v; break;
+                    case 'VAE':
+                        metadata.vae = v;
+                        break;
+                    case 'Clip skip':
+                        metadata.clipSkip = parseInt(v);
+                        break;
+                    case 'Denoising strength':
+                        metadata.denoisingStrength = parseFiniteDecimalF32(v);
+                        break;
+                    case 'Hires upscale':
+                        metadata.hiresUpscale = parseFloat(v);
+                        break;
+                    case 'Hires steps':
+                        metadata.hiresSteps = parseInt(v);
+                        break;
+                    case 'Hires upscaler':
+                        metadata.hiresUpscaler = v;
+                        break;
+                    case 'Model hash':
+                        metadata.modelHash = v;
+                        break;
                     case 'App': {
                         const lowVal = v.toLowerCase();
                         if (lowVal.includes('sd.next') || lowVal.includes('sdnext')) {

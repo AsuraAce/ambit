@@ -7,13 +7,10 @@ interface PrivacyProtectionGateProps {
     className?: string;
 }
 
-export const PrivacyProtectionGate: React.FC<PrivacyProtectionGateProps> = ({
-    onOpenSettings,
-    className = '',
-}) => {
-    const status = useSettingsStore(state => state.privacyMaskIndexStatus);
-    const error = useSettingsStore(state => state.privacyMaskIndexError);
-    const retry = useSettingsStore(state => state.retryPrivacyMaskIndex);
+export const PrivacyProtectionGate: React.FC<PrivacyProtectionGateProps> = ({ onOpenSettings, className = '' }) => {
+    const status = useSettingsStore((state) => state.privacyMaskIndexStatus);
+    const error = useSettingsStore((state) => state.privacyMaskIndexError);
+    const retry = useSettingsStore((state) => state.retryPrivacyMaskIndex);
     const failed = status === 'failed';
 
     return (
@@ -37,9 +34,7 @@ export const PrivacyProtectionGate: React.FC<PrivacyProtectionGateProps> = ({
                         ? 'Library content remains hidden because the privacy index could not be refreshed.'
                         : 'Library content will appear after the latest masking rules are ready.'}
                 </p>
-                {failed && error && (
-                    <p className="mt-3 text-xs text-red-600 dark:text-red-300 break-words">{error}</p>
-                )}
+                {failed && error && <p className="mt-3 text-xs text-red-600 dark:text-red-300 break-words">{error}</p>}
                 {failed && (
                     <div className="mt-5 flex flex-wrap justify-center gap-3">
                         <button

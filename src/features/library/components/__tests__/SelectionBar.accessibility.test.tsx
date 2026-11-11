@@ -40,7 +40,7 @@ describe('SelectionBar tooltips', () => {
 
         render(
             <SelectionBar
-                selectedIds={new Set(images.map(image => image.id))}
+                selectedIds={new Set(images.map((image) => image.id))}
                 filteredImages={images}
                 lastSelectedId="two"
                 isExporting={false}

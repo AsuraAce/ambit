@@ -10,16 +10,14 @@ interface AddFolderFormProps {
     placeholder?: string;
 }
 
-export const AddFolderForm: React.FC<AddFolderFormProps> = ({
-    value, onChange, onBrowse, onSubmit, placeholder
-}) => {
+export const AddFolderForm: React.FC<AddFolderFormProps> = ({ value, onChange, onBrowse, onSubmit, placeholder }) => {
     return (
         <form onSubmit={onSubmit} className="flex gap-2">
             <input
                 type="text"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder || "e.g. D:/StableDiffusion/outputs"}
+                placeholder={placeholder || 'e.g. D:/StableDiffusion/outputs'}
                 className="flex-1 bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm focus:border-sage-500 outline-none text-gray-900 dark:text-white placeholder-gray-400"
             />
             <TooltipButton

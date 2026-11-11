@@ -15,7 +15,8 @@ describe('invokeReferenceRepo', () => {
     });
 
     it('queries both indexed directions and groups repeated images by ordered role', async () => {
-        const select = vi.fn()
+        const select = vi
+            .fn()
             .mockResolvedValueOnce([
                 {
                     role: 'ip_adapter_image',
@@ -78,17 +79,20 @@ describe('invokeReferenceRepo', () => {
                     roles: ['init_image', 'ip_adapter_image'],
                 },
             ],
-            usedBy: [{
-                imageId: 'C:/invoke/result.png',
-                invokeImageName: 'Result.PNG',
-                availability: 'available',
-                roles: ['controlnet_image', 'controlnet_processed_image'],
-            }],
+            usedBy: [
+                {
+                    imageId: 'C:/invoke/result.png',
+                    invokeImageName: 'Result.PNG',
+                    availability: 'available',
+                    roles: ['controlnet_image', 'controlnet_processed_image'],
+                },
+            ],
         });
     });
 
     it('keeps Removed backlinks disabled and falls back to the source basename', async () => {
-        const select = vi.fn()
+        const select = vi
+            .fn()
             .mockResolvedValueOnce([])
             .mockResolvedValueOnce([
                 {

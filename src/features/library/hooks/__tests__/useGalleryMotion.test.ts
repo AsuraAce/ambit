@@ -3,16 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGalleryMotion, UseGalleryMotionOptions } from '../useGalleryMotion';
 
 const createMatchMedia = (matches: boolean) =>
-    vi.fn((query: string): MediaQueryList => ({
-        matches,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn()
-    } as unknown as MediaQueryList));
+    vi.fn(
+        (query: string): MediaQueryList =>
+            ({
+                matches,
+                media: query,
+                onchange: null,
+                addEventListener: vi.fn(),
+                removeEventListener: vi.fn(),
+                addListener: vi.fn(),
+                removeListener: vi.fn(),
+                dispatchEvent: vi.fn(),
+            }) as unknown as MediaQueryList
+    );
 
 const renderGalleryMotion = (initialProps: UseGalleryMotionOptions) =>
     renderHook((props: UseGalleryMotionOptions) => useGalleryMotion(props), { initialProps });
@@ -129,7 +132,10 @@ describe('useGalleryMotion', () => {
             removeListener,
             dispatchEvent: vi.fn(),
         } as unknown as MediaQueryList;
-        vi.stubGlobal('matchMedia', vi.fn(() => mediaQuery));
+        vi.stubGlobal(
+            'matchMedia',
+            vi.fn(() => mediaQuery)
+        );
 
         const { unmount } = renderGalleryMotion({ transitionKey: 'initial', visibleItemCount: 20 });
 

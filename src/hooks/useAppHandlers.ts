@@ -28,23 +28,29 @@ interface UseAppHandlersProps {
     activeImageState?: ActiveImageStateAdapter;
 }
 
-export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability, activeImageState }: UseAppHandlersProps) => {
+export const useAppHandlers = ({
+    images,
+    setImages,
+    refreshMaintenanceCounts,
+    refreshHiddenAvailability,
+    activeImageState,
+}: UseAppHandlersProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
-    const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
+    const incrementFacetCacheVersion = useLibraryStore((state) => state.incrementFacetCacheVersion);
 
     const refreshFacets = () => {
         void rebuildFacetCache()
             .then(() => incrementFacetCacheVersion())
-            .catch(error => console.error('Failed to refresh facet cache', error));
+            .catch((error) => console.error('Failed to refresh facet cache', error));
     };
-    const getImage = (id: string) => activeImageState?.getImage(id) ?? images.find(image => image.id === id);
+    const getImage = (id: string) => activeImageState?.getImage(id) ?? images.find((image) => image.id === id);
     const updateImage = (id: string, updater: (image: AIImage) => AIImage) => {
         if (activeImageState) {
             activeImageState.updateImage(id, updater);
             return;
         }
-        setImages(prev => prev.map(image => image.id === id ? updater(image) : image));
+        setImages((prev) => prev.map((image) => (image.id === id ? updater(image) : image)));
     };
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
@@ -59,10 +65,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: {
                 ...img.metadata,
                 positivePrompt: prompt,
-                fieldSources: img.mediaType === 'video'
-                    ? { ...img.metadata.fieldSources, positivePrompt: 'user_override' as const }
-                    : img.metadata.fieldSources
-            }
+                fieldSources:
+                    img.mediaType === 'video'
+                        ? { ...img.metadata.fieldSources, positivePrompt: 'user_override' as const }
+                        : img.metadata.fieldSources,
+            },
         };
 
         updateImage(id, () => updatedImg);
@@ -82,10 +89,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: {
                 ...img.metadata,
                 negativePrompt,
-                fieldSources: img.mediaType === 'video'
-                    ? { ...img.metadata.fieldSources, negativePrompt: 'user_override' as const }
-                    : img.metadata.fieldSources
-            }
+                fieldSources:
+                    img.mediaType === 'video'
+                        ? { ...img.metadata.fieldSources, negativePrompt: 'user_override' as const }
+                        : img.metadata.fieldSources,
+            },
         };
 
         updateImage(id, () => updatedImg);
@@ -106,10 +114,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: {
                 ...img.metadata,
                 overrideModel: normalizedModel,
-                fieldSources: img.mediaType === 'video'
-                    ? { ...img.metadata.fieldSources, model: 'user_override' as const, overrideModel: 'user_override' as const }
-                    : img.metadata.fieldSources
-            }
+                fieldSources:
+                    img.mediaType === 'video'
+                        ? { ...img.metadata.fieldSources, model: 'user_override' as const, overrideModel: 'user_override' as const }
+                        : img.metadata.fieldSources,
+            },
         };
 
         updateImage(id, () => updatedImg);
@@ -118,7 +127,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         // Ensure filter panel is updated
         rebuildFacetCacheIncremental('checkpoints')
             .then(() => incrementFacetCacheVersion())
-            .catch(error => console.error('Failed to refresh facet cache', error));
+            .catch((error) => console.error('Failed to refresh facet cache', error));
 
         addToast('Updated', 'success');
     };
@@ -135,10 +144,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: {
                 ...img.metadata,
                 tool,
-                fieldSources: img.mediaType === 'video'
-                    ? { ...img.metadata.fieldSources, tool: 'user_override' as const }
-                    : img.metadata.fieldSources
-            }
+                fieldSources:
+                    img.mediaType === 'video'
+                        ? { ...img.metadata.fieldSources, tool: 'user_override' as const }
+                        : img.metadata.fieldSources,
+            },
         };
 
         updateImage(id, () => updatedImg);
@@ -147,7 +157,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         // Ensure filter panel is updated
         rebuildFacetCacheIncremental('tools')
             .then(() => incrementFacetCacheVersion())
-            .catch(error => console.error('Failed to refresh facet cache', error));
+            .catch((error) => console.error('Failed to refresh facet cache', error));
 
         addToast('Updated', 'success');
     };
@@ -165,9 +175,9 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
                 fieldSources: {
                     ...img.metadata.fieldSources,
                     generationMode: 'user_override' as const,
-                    generationType: 'user_override' as const
-                }
-            }
+                    generationType: 'user_override' as const,
+                },
+            },
         } as AIImage;
         updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { generationMode, generationType: generationMode });
@@ -176,9 +186,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
     const handleGroupImages = (ids: string[]) => {
         const groupId = `stack_${Date.now()}`;
-        setImages(prev => prev.map(img =>
-            ids.includes(img.id) ? { ...img, groupId } : img
-        ));
+        setImages((prev) => prev.map((img) => (ids.includes(img.id) ? { ...img, groupId } : img)));
         addToast(`Grouped ${ids.length} images into a stack`, 'success');
     };
 
@@ -194,26 +202,23 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         }
 
         const removedIds = new Set(result.removedIds);
-        const keeperStates = new Map(result.keepers.map(keeper => [keeper.id, keeper]));
+        const keeperStates = new Map(result.keepers.map((keeper) => [keeper.id, keeper]));
         const applyKeeperState = (image: AIImage): AIImage => {
             const keeper = keeperStates.get(image.id);
-            return keeper ? {
-                ...image,
-                isFavorite: keeper.isFavorite,
-                isPinned: keeper.isPinned,
-                userMasked: keeper.userMasked ?? undefined,
-            } : image;
+            return keeper
+                ? {
+                      ...image,
+                      isFavorite: keeper.isFavorite,
+                      isPinned: keeper.isPinned,
+                      userMasked: keeper.userMasked ?? undefined,
+                  }
+                : image;
         };
-        setImages(previous => previous
-            .filter(image => !removedIds.has(image.id))
-            .map(applyKeeperState));
+        setImages((previous) => previous.filter((image) => !removedIds.has(image.id)).map(applyKeeperState));
         removeImagesFromQueryCaches(queryClient, removedIds);
         updateImagesQueryCaches(queryClient, applyKeeperState);
         try {
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ['images'] }),
-                invalidateInvokeReferenceQueries(queryClient),
-            ]);
+            await Promise.all([queryClient.invalidateQueries({ queryKey: ['images'] }), invalidateInvokeReferenceQueries(queryClient)]);
         } catch (error) {
             console.error('Failed to refresh image queries after resolving duplicates', error);
         }
@@ -223,7 +228,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     };
 
     const handleRestoreImages = async (ids: string[]) => {
-        const result = await restoreRemovedImages(ids).catch(error => {
+        const result = await restoreRemovedImages(ids).catch((error) => {
             console.error('[Restore] Failed to restore removed images', error);
             addToast('Could not restore the selected items. Their Removed entries were kept.', 'error');
             throw error;
@@ -244,38 +249,38 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             addToast('Items were restored, but some views may need a refresh.', 'warning');
         }
         if (result.membershipWarningIds.length > 0) {
-            addToast(`${result.membershipWarningIds.length} restored ${result.membershipWarningIds.length === 1 ? 'item has' : 'items have'} legacy collection data that could not be recovered.`, 'warning');
+            addToast(
+                `${result.membershipWarningIds.length} restored ${result.membershipWarningIds.length === 1 ? 'item has' : 'items have'} legacy collection data that could not be recovered.`,
+                'warning'
+            );
         }
         void refreshMaintenanceCounts();
         void refreshFacetCacheForResourcesStrict(result.touchedResources)
             .then(() => incrementFacetCacheVersion())
-            .catch(error => console.error('Failed to refresh restored facet resources', error));
+            .catch((error) => console.error('Failed to refresh restored facet resources', error));
     };
 
     const handleRemoveFromLibrary = async (ids: string[]) => {
-        const result = await removeImagesFromLibrary(ids).catch(error => {
+        const result = await removeImagesFromLibrary(ids).catch((error) => {
             console.error('[Removed] Failed to remove images from the library', error);
             addToast('Could not remove the selected items. The library was left unchanged.', 'error');
             throw error;
         });
 
         const affectedIds = new Set(result.affectedIds);
-        setImages(p => p.filter(i => !affectedIds.has(i.id)));
+        setImages((p) => p.filter((i) => !affectedIds.has(i.id)));
         removeImagesFromQueryCaches(queryClient, affectedIds);
         addToast(`Removed ${result.affectedIds.length} item${result.affectedIds.length === 1 ? '' : 's'} from the library`, 'success');
         void refreshMaintenanceCounts();
         try {
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ['images'] }),
-                invalidateInvokeReferenceQueries(queryClient),
-            ]);
+            await Promise.all([queryClient.invalidateQueries({ queryKey: ['images'] }), invalidateInvokeReferenceQueries(queryClient)]);
         } catch (error) {
             console.error('[Removed] Images were removed, but dependent views failed to refresh', error);
             addToast('Items were removed, but some views may need a refresh.', 'warning');
         }
         void refreshFacetCacheForResourcesStrict(result.touchedResources)
             .then(() => incrementFacetCacheVersion())
-            .catch(error => console.error('Failed to refresh affected facet resources', error));
+            .catch((error) => console.error('Failed to refresh affected facet resources', error));
     };
 
     const handleDeleteFile = async (ids: string[]): Promise<DeleteRemovedImagesResult> => {
@@ -286,7 +291,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
             if (result.clearedIds.length > 0) {
                 const clearedIds = new Set(result.clearedIds);
-                setImages(previous => previous.filter(image => !clearedIds.has(image.id)));
+                setImages((previous) => previous.filter((image) => !clearedIds.has(image.id)));
                 removeImagesFromQueryCaches(queryClient, clearedIds);
                 void refreshMaintenanceCounts();
                 try {
@@ -302,16 +307,15 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
             if (unresolvedCount === 0 && result.thumbnailWarningIds.length === 0 && result.notFoundIds.length === 0) {
                 const recoveredCount = result.alreadyMissingIds.length;
-                const message = recoveredCount > 0
-                    ? `Removed ${result.clearedIds.length} ${result.clearedIds.length === 1 ? 'entry' : 'entries'} from Ambit; ${recoveredCount} source ${recoveredCount === 1 ? 'file was' : 'files were'} already missing.`
-                    : `Moved ${result.trashedIds.length} file${result.trashedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.clearedIds.length === 1 ? 'it' : 'them'} from Ambit`;
+                const message =
+                    recoveredCount > 0
+                        ? `Removed ${result.clearedIds.length} ${result.clearedIds.length === 1 ? 'entry' : 'entries'} from Ambit; ${recoveredCount} source ${recoveredCount === 1 ? 'file was' : 'files were'} already missing.`
+                        : `Moved ${result.trashedIds.length} file${result.trashedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.clearedIds.length === 1 ? 'it' : 'them'} from Ambit`;
                 addToast(message, 'success');
             } else if (result.clearedIds.length > 0 || result.cleanupPendingIds.length > 0 || result.notFoundIds.length > 0) {
                 const details = [
                     unresolvedCount > 0 ? `${unresolvedCount} still need attention` : null,
-                    result.thumbnailWarningIds.length > 0
-                        ? `${result.thumbnailWarningIds.length} had thumbnail cleanup warnings`
-                        : null,
+                    result.thumbnailWarningIds.length > 0 ? `${result.thumbnailWarningIds.length} had thumbnail cleanup warnings` : null,
                     result.notFoundIds.length > 0
                         ? `${result.notFoundIds.length} selected ${result.notFoundIds.length === 1 ? 'entry was' : 'entries were'} already unavailable`
                         : null,
@@ -365,24 +369,19 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             return;
         }
 
-        const applyRevertedImage = (current: AIImage): AIImage => (
-            current.id === id
-                ? { ...revertedImage, stack: current.stack }
-                : current
-        );
+        const applyRevertedImage = (current: AIImage): AIImage =>
+            current.id === id ? { ...revertedImage, stack: current.stack } : current;
         if (activeImageState) {
             activeImageState.updateImage(id, applyRevertedImage);
         } else {
-            setImages(prev => prev.map(applyRevertedImage));
+            setImages((prev) => prev.map(applyRevertedImage));
         }
         updateImagesQueryCaches(queryClient, applyRevertedImage);
 
         // Revert can change tools and models, so we rebuild both incrementally
-        Promise.all([
-            rebuildFacetCacheIncremental('tools'),
-            rebuildFacetCacheIncremental('checkpoints')
-        ]).then(() => incrementFacetCacheVersion())
-            .catch(error => console.error('Failed to refresh facet cache', error));
+        Promise.all([rebuildFacetCacheIncremental('tools'), rebuildFacetCacheIncremental('checkpoints')])
+            .then(() => incrementFacetCacheVersion())
+            .catch((error) => console.error('Failed to refresh facet cache', error));
 
         addToast('Reverted to original', 'success');
     };
@@ -400,6 +399,6 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         handleRestoreImages,
         handleRemoveFromLibrary,
         handleDeleteFile,
-        handleEmptyTrash
+        handleEmptyTrash,
     };
 };

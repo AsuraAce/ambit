@@ -25,10 +25,12 @@ describe('ShortcutsModal', () => {
         expect(screen.queryByText('Batch Rename')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /Library Navigation/ }));
         expect(screen.queryByText('Navigate grid')).toBeNull();
-        await waitFor(() => expect(JSON.parse(localStorage.getItem('ambit_shortcuts_expanded') ?? '{}')).toMatchObject({
-            'Library Navigation': false,
-            'Library Actions': true,
-        }));
+        await waitFor(() =>
+            expect(JSON.parse(localStorage.getItem('ambit_shortcuts_expanded') ?? '{}')).toMatchObject({
+                'Library Navigation': false,
+                'Library Actions': true,
+            })
+        );
     });
 
     it('documents system, viewer, and slideshow shortcuts', () => {

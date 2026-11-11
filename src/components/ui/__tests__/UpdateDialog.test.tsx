@@ -16,12 +16,7 @@ const defaultProps = {
 
 describe('UpdateDialog', () => {
     it("presents Markdown release notes as What's New", () => {
-        render(
-            <UpdateDialog
-                {...defaultProps}
-                notes={'### Features\n\n- **Faster** library browsing\n- Safer updates'}
-            />
-        );
+        render(<UpdateDialog {...defaultProps} notes={'### Features\n\n- **Faster** library browsing\n- Safer updates'} />);
 
         expect(screen.getByRole('dialog', { name: 'Ambit 0.8.0' })).toBeTruthy();
         expect(screen.getByText("What's New")).toBeTruthy();
@@ -51,7 +46,9 @@ describe('UpdateDialog', () => {
         render(
             <UpdateDialog
                 {...defaultProps}
-                notes={'# One\n\n## Two\n\n#### Four\n\n1. Ordered\n\n`code` [link](https://example.com) ![image](https://example.com/image.png)'}
+                notes={
+                    '# One\n\n## Two\n\n#### Four\n\n1. Ordered\n\n`code` [link](https://example.com) ![image](https://example.com/image.png)'
+                }
             />
         );
 

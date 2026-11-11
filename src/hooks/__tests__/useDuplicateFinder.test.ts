@@ -36,25 +36,23 @@ describe('useDuplicateFinder', () => {
     });
 
     it('groups only repeated non-empty SHA-256 values', () => {
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('one', 1, 'same-hash'),
-            image('two', 2, 'same-hash'),
-            image('other', 3, 'other-hash'),
-        ], onResolve));
+        const { result } = renderHook(() =>
+            useDuplicateFinder([image('one', 1, 'same-hash'), image('two', 2, 'same-hash'), image('other', 3, 'other-hash')], onResolve)
+        );
 
         expect(result.current.groups).toHaveLength(1);
         expect(result.current.groups[0].id).toBe('exact_same-hash');
-        expect(result.current.groups[0].images.map(candidate => candidate.id)).toEqual(['one', 'two']);
+        expect(result.current.groups[0].images.map((candidate) => candidate.id)).toEqual(['one', 'two']);
         expect(result.current.totalRedundantCount).toBe(1);
     });
 
     it('does not group matching metadata, dimensions, and file size without an equal hash', () => {
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('unhashed-one', 1),
-            image('unhashed-two', 2),
-            image('hash-one', 3, 'hash-a'),
-            image('hash-two', 4, 'hash-b'),
-        ], onResolve));
+        const { result } = renderHook(() =>
+            useDuplicateFinder(
+                [image('unhashed-one', 1), image('unhashed-two', 2), image('hash-one', 3, 'hash-a'), image('hash-two', 4, 'hash-b')],
+                onResolve
+            )
+        );
 
         expect(result.current.groups).toEqual([]);
     });
@@ -74,10 +72,7 @@ describe('useDuplicateFinder', () => {
     });
 
     it('passes the selected keeper mapping for a single group', async () => {
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('one', 1, 'same'),
-            image('two', 2, 'same'),
-        ], onResolve));
+        const { result } = renderHook(() => useDuplicateFinder([image('one', 1, 'same'), image('two', 2, 'same')], onResolve));
 
         await act(async () => result.current.handleResolve('two', ['one', 'two']));
 
@@ -85,12 +80,12 @@ describe('useDuplicateFinder', () => {
     });
 
     it('keeps the latest modified record in every exact group during bulk resolution', async () => {
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('old-a', 1, 'hash-a'),
-            image('new-a', 3, 'hash-a'),
-            image('old-b', 2, 'hash-b'),
-            image('new-b', 4, 'hash-b'),
-        ], onResolve));
+        const { result } = renderHook(() =>
+            useDuplicateFinder(
+                [image('old-a', 1, 'hash-a'), image('new-a', 3, 'hash-a'), image('old-b', 2, 'hash-b'), image('new-b', 4, 'hash-b')],
+                onResolve
+            )
+        );
 
         await act(async () => result.current.handleBulkResolve('latestModified'));
 
@@ -101,29 +96,25 @@ describe('useDuplicateFinder', () => {
     });
 
     it('keeps the earliest modified record and uses ID as a deterministic timestamp tie-breaker', async () => {
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('b', 1, 'same'),
-            image('a', 1, 'same'),
-            image('new', 2, 'same'),
-        ], onResolve));
+        const { result } = renderHook(() =>
+            useDuplicateFinder([image('b', 1, 'same'), image('a', 1, 'same'), image('new', 2, 'same')], onResolve)
+        );
 
         expect(result.current.groups[0].latestModifiedId).toBe('new');
         await act(async () => result.current.handleBulkResolve('earliestModified'));
 
-        expect(onResolve).toHaveBeenCalledWith([
-            { keepId: 'a', removeIds: ['b', 'new'] },
-        ]);
+        expect(onResolve).toHaveBeenCalledWith([{ keepId: 'a', removeIds: ['b', 'new'] }]);
     });
 
     it('stays pending until persistence finishes and leaves canonical groups visible on failure', async () => {
         let rejectResolution: (reason?: unknown) => void = () => undefined;
-        onResolve.mockImplementation(() => new Promise<void>((_resolve, reject) => {
-            rejectResolution = reject;
-        }));
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('one', 1, 'same'),
-            image('two', 2, 'same'),
-        ], onResolve));
+        onResolve.mockImplementation(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectResolution = reject;
+                })
+        );
+        const { result } = renderHook(() => useDuplicateFinder([image('one', 1, 'same'), image('two', 2, 'same')], onResolve));
 
         let pending: Promise<void> | undefined;
         act(() => {
@@ -142,13 +133,13 @@ describe('useDuplicateFinder', () => {
 
     it('ignores a second resolution while the first transaction is pending', async () => {
         let finishResolution: () => void = () => undefined;
-        onResolve.mockImplementation(() => new Promise<void>(resolve => {
-            finishResolution = resolve;
-        }));
-        const { result } = renderHook(() => useDuplicateFinder([
-            image('one', 1, 'same'),
-            image('two', 2, 'same'),
-        ], onResolve));
+        onResolve.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishResolution = resolve;
+                })
+        );
+        const { result } = renderHook(() => useDuplicateFinder([image('one', 1, 'same'), image('two', 2, 'same')], onResolve));
 
         let first: Promise<void> | undefined;
         let second: Promise<void> | undefined;

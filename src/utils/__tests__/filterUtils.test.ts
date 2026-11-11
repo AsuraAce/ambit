@@ -46,9 +46,9 @@ describe('parseAndApplyFilter', () => {
 
     it('appends tool terms to an existing query and replaces plain searches', () => {
         expect(applyTerm('tool:comfyui').filters.searchQuery).toBe('tool:comfyui');
-        expect(applyTerm('tool:invokeai', { ...createFilters(), searchQuery: 'portrait' }).filters.searchQuery)
-            .toBe('portrait tool:invokeai');
-        expect(applyTerm('new prompt', { ...createFilters(), searchQuery: 'old' }).filters.searchQuery)
-            .toBe('new prompt');
+        expect(applyTerm('tool:invokeai', { ...createFilters(), searchQuery: 'portrait' }).filters.searchQuery).toBe(
+            'portrait tool:invokeai'
+        );
+        expect(applyTerm('new prompt', { ...createFilters(), searchQuery: 'old' }).filters.searchQuery).toBe('new prompt');
     });
 });

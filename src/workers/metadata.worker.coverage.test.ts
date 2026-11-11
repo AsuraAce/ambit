@@ -1,4 +1,3 @@
-
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { parseA1111Parameters } from '../services/metadata/mappingUtils';
 import { GeneratorTool, type ImageMetadata } from '../types';
@@ -57,38 +56,39 @@ describe('Metadata Worker Tests', () => {
 
     describe('parseA1111Parameters', () => {
         it('should parse basic A1111 parameters', () => {
-            const raw = "Positive prompt here\nNegative prompt: Negative content\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: v1-5-pruned, Model hash: abcde";
+            const raw =
+                'Positive prompt here\nNegative prompt: Negative content\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: v1-5-pruned, Model hash: abcde';
             const meta = parseA1111Parameters(raw);
 
-            expect(meta.positivePrompt).toBe("Positive prompt here");
-            expect(meta.negativePrompt).toBe("Negative content");
+            expect(meta.positivePrompt).toBe('Positive prompt here');
+            expect(meta.negativePrompt).toBe('Negative content');
             expect(meta.steps).toBe(20);
             expect(meta.cfg).toBe(7.0);
             expect(meta.seed).toBe(12345);
-            expect(meta.model).toBe("v1-5-pruned");
-            expect(meta.modelHash).toBe("abcde");
+            expect(meta.model).toBe('v1-5-pruned');
+            expect(meta.modelHash).toBe('abcde');
         });
 
         it('should preserve an explicit zero seed', () => {
-            const meta = parseA1111Parameters("Prompt\nSteps: 20, Seed: 0");
+            const meta = parseA1111Parameters('Prompt\nSteps: 20, Seed: 0');
 
             expect(meta.seed).toBe(0);
         });
 
         it('should detect SD.Next via App key', () => {
-            const raw = "Prompt\nSteps: 20, App: SD.Next";
+            const raw = 'Prompt\nSteps: 20, App: SD.Next';
             const meta = parseA1111Parameters(raw);
             expect(meta.tool).toBe('SD.Next');
         });
 
         it('should detect Forge via Version key', () => {
-            const raw = "Prompt\nSteps: 20, Version: forge";
+            const raw = 'Prompt\nSteps: 20, Version: forge';
             const meta = parseA1111Parameters(raw);
             expect(meta.tool).toBe('Forge');
         });
 
         it('should extract LoRAs', () => {
-            const raw = "A beautiful <lora:cool_style:0.8> painting";
+            const raw = 'A beautiful <lora:cool_style:0.8> painting';
             const meta = parseA1111Parameters(raw);
             expect(meta.loras).toContain('cool_style');
         });
@@ -96,8 +96,8 @@ describe('Metadata Worker Tests', () => {
 
     describe('parseFilenameMetadata', () => {
         it('should parse generic filename', () => {
-            const res = parseFilenameMetadata("image_0001.png");
-            expect(res.tool).toBe("Unknown");
+            const res = parseFilenameMetadata('image_0001.png');
+            expect(res.tool).toBe('Unknown');
         });
 
         it('should infer Midjourney prompts from prompt-like names with UUID suffixes', () => {
@@ -111,7 +111,7 @@ describe('Metadata Worker Tests', () => {
         it('should infer Midjourney from filenames that name the generator', () => {
             expect(parseFilenameMetadata('midjourney_misty_castle.png')).toMatchObject({
                 tool: GeneratorTool.MIDJOURNEY,
-                positivePrompt: 'midjourney misty castle'
+                positivePrompt: 'midjourney misty castle',
             });
         });
 
@@ -127,7 +127,7 @@ describe('Metadata Worker Tests', () => {
                 tool: GeneratorTool.UNKNOWN,
                 positivePrompt: '',
                 steps: 0,
-                cfg: 0
+                cfg: 0,
             });
         });
     });
@@ -142,7 +142,7 @@ describe('Metadata Worker Tests', () => {
                 controlNets: ['shared-control'],
                 hypernetworks: ['shared-hyper'],
                 embeddings: ['shared-embedding'],
-                ipAdapters: ['shared-adapter']
+                ipAdapters: ['shared-adapter'],
             };
             const secondary: Partial<ImageMetadata> = {
                 tool: GeneratorTool.COMFYUI,
@@ -165,24 +165,26 @@ describe('Metadata Worker Tests', () => {
                 hiresUpscale: 2,
                 hiresSteps: 10,
                 hiresUpscaler: 'upscaler',
-                modelHash: 'hash'
+                modelHash: 'hash',
             };
 
             mergeMetadata(base, secondary);
 
-            expect(base).toEqual(expect.objectContaining({
-                tool: GeneratorTool.COMFYUI,
-                model: 'model',
-                seed: 0,
-                positivePrompt: 'positive',
-                workflowJson: '{}',
-                loras: ['shared', 'new-lora'],
-                controlNets: ['shared-control', 'new-control'],
-                hypernetworks: ['shared-hyper', 'new-hyper'],
-                embeddings: ['shared-embedding', 'new-embedding'],
-                ipAdapters: ['shared-adapter', 'new-adapter'],
-                modelHash: 'hash'
-            }));
+            expect(base).toEqual(
+                expect.objectContaining({
+                    tool: GeneratorTool.COMFYUI,
+                    model: 'model',
+                    seed: 0,
+                    positivePrompt: 'positive',
+                    workflowJson: '{}',
+                    loras: ['shared', 'new-lora'],
+                    controlNets: ['shared-control', 'new-control'],
+                    hypernetworks: ['shared-hyper', 'new-hyper'],
+                    embeddings: ['shared-embedding', 'new-embedding'],
+                    ipAdapters: ['shared-adapter', 'new-adapter'],
+                    modelHash: 'hash',
+                })
+            );
         });
 
         it('initializes resource arrays and preserves established scalar fields', () => {
@@ -202,7 +204,7 @@ describe('Metadata Worker Tests', () => {
                 hiresUpscale: 1,
                 hiresSteps: 1,
                 hiresUpscaler: 'base-upscaler',
-                modelHash: 'base-hash'
+                modelHash: 'base-hash',
             };
             mergeMetadata(base, {
                 ...base,
@@ -212,19 +214,21 @@ describe('Metadata Worker Tests', () => {
                 controlNets: ['control'],
                 hypernetworks: ['hyper'],
                 embeddings: ['embedding'],
-                ipAdapters: ['adapter']
+                ipAdapters: ['adapter'],
             });
 
-            expect(base).toEqual(expect.objectContaining({
-                tool: GeneratorTool.AUTOMATIC1111,
-                model: 'base-model',
-                loras: ['lora'],
-                controlNets: ['control'],
-                hypernetworks: ['hyper'],
-                embeddings: ['embedding'],
-                ipAdapters: ['adapter'],
-                vae: 'base-vae'
-            }));
+            expect(base).toEqual(
+                expect.objectContaining({
+                    tool: GeneratorTool.AUTOMATIC1111,
+                    model: 'base-model',
+                    loras: ['lora'],
+                    controlNets: ['control'],
+                    hypernetworks: ['hyper'],
+                    embeddings: ['embedding'],
+                    ipAdapters: ['adapter'],
+                    vae: 'base-vae',
+                })
+            );
         });
 
         it('leaves absent optional metadata untouched', () => {
@@ -242,7 +246,7 @@ describe('Metadata Worker Tests', () => {
         it('replaces invalid f32 base values and ignores invalid secondary values', () => {
             const base: Partial<ImageMetadata> = {
                 cfg: Number.NaN,
-                denoisingStrength: Number.MAX_VALUE
+                denoisingStrength: Number.MAX_VALUE,
             };
             mergeMetadata(base, { cfg: 7, denoisingStrength: 0.45 });
             expect(base).toMatchObject({ cfg: 7, denoisingStrength: 0.45 });
@@ -250,7 +254,7 @@ describe('Metadata Worker Tests', () => {
             const missing: Partial<ImageMetadata> = {};
             mergeMetadata(missing, {
                 cfg: Number.POSITIVE_INFINITY,
-                denoisingStrength: Number.MAX_VALUE
+                denoisingStrength: Number.MAX_VALUE,
             });
             expect(missing.cfg).toBeUndefined();
             expect(missing.denoisingStrength).toBeUndefined();
@@ -271,9 +275,9 @@ describe('Metadata Worker Tests', () => {
 
         it('rejects invalid TIFF headers, signatures, and IFD offsets', () => {
             expect(parseExifData(new Uint8Array(8))).toBeNull();
-            expect(parseExifData(tiff(view => view.setUint16(2, 0, true)))).toBeNull();
-            expect(parseExifData(tiff(view => view.setUint32(4, 4, true)))).toBeNull();
-            expect(parseExifData(tiff(view => view.setUint32(4, 100, true)))).toBeNull();
+            expect(parseExifData(tiff((view) => view.setUint16(2, 0, true)))).toBeNull();
+            expect(parseExifData(tiff((view) => view.setUint32(4, 4, true)))).toBeNull();
+            expect(parseExifData(tiff((view) => view.setUint32(4, 100, true)))).toBeNull();
         });
 
         it('returns null for empty, truncated, and comment-free IFDs', () => {
@@ -295,7 +299,7 @@ describe('Metadata Worker Tests', () => {
         });
 
         it('rejects Exif pointers outside the data and decodes little-endian Unicode comments', () => {
-            const invalidPointer = tiff(view => {
+            const invalidPointer = tiff((view) => {
                 view.setUint16(8, 1, true);
                 view.setUint16(10, 0x8769, true);
                 view.setUint32(18, 100, true);
@@ -320,9 +324,11 @@ describe('Metadata Worker Tests', () => {
 
     describe('parseSdNextJsonMetadata', () => {
         it('should parse SD.Next JSON parameters through the A1111-compatible path', () => {
-            const meta = parseSdNextJsonMetadata(JSON.stringify({
-                parameters: 'Prompt\nNegative prompt: blur\nSteps: 12, CFG scale: 4, Seed: 99, Sampler: Euler, Model: model-a',
-            }));
+            const meta = parseSdNextJsonMetadata(
+                JSON.stringify({
+                    parameters: 'Prompt\nNegative prompt: blur\nSteps: 12, CFG scale: 4, Seed: 99, Sampler: Euler, Model: model-a',
+                })
+            );
 
             expect(meta.tool).toBe('SD.Next');
             expect(meta.positivePrompt).toBe('Prompt');
@@ -335,12 +341,14 @@ describe('Metadata Worker Tests', () => {
         });
 
         it('should parse prompt-style SD.Next JSON with optional negative prompt and numeric steps', () => {
-            const meta = parseSdNextJsonMetadata(JSON.stringify({
-                prompt: 'Prompt',
-                negative_prompt: 'blur',
-                seed: '123',
-                steps: '18',
-            }));
+            const meta = parseSdNextJsonMetadata(
+                JSON.stringify({
+                    prompt: 'Prompt',
+                    negative_prompt: 'blur',
+                    seed: '123',
+                    steps: '18',
+                })
+            );
 
             expect(meta.tool).toBe('SD.Next');
             expect(meta.positivePrompt).toBe('Prompt');
@@ -373,7 +381,7 @@ describe('Metadata Worker Tests', () => {
 
             expect(response).toEqual({
                 error: 'No data provided',
-                requestId: 'empty-request'
+                requestId: 'empty-request',
             });
         });
 
@@ -381,7 +389,7 @@ describe('Metadata Worker Tests', () => {
             const response = await sendWorkerMessage({
                 requestId: 'filename-request',
                 filename: 'misty_castle_01234567-89ab-cdef-0123-456789abcdef.png',
-                path: 'C:/outputs/img2img/misty_castle.png'
+                path: 'C:/outputs/img2img/misty_castle.png',
             });
 
             expect(response).toMatchObject({
@@ -392,8 +400,8 @@ describe('Metadata Worker Tests', () => {
                     tool: 'Midjourney',
                     model: 'Midjourney v6',
                     positivePrompt: 'misty castle',
-                    generationType: 'img2img'
-                }
+                    generationType: 'img2img',
+                },
             });
         });
 
@@ -433,25 +441,21 @@ describe('Metadata Worker Tests', () => {
                         model: { model_name: 'Invoke Model' },
                         vae: { name: 'Invoke VAE' },
                         generation_mode: 'sdxl_txt2img',
-                        control_adapters: [
-                            'C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'
-                        ],
-                        t2iAdapters: [
-                            { model: { name: 'T2I-Adapter-Canny-SDXL.safetensors' } }
-                        ],
+                        control_adapters: ['C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'],
+                        t2iAdapters: [{ model: { name: 'T2I-Adapter-Canny-SDXL.safetensors' } }],
                         t2i_adapter: {
-                            model: 'C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'
+                            model: 'C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS',
                         },
                         loras: [
                             'string-lora',
                             { model: { name: 'model-lora' } },
                             { lora: { model_name: 'nested-lora' } },
-                            { name: 'plain-lora' }
+                            { name: 'plain-lora' },
                         ],
-                        workflow: { nodes: [] }
+                        workflow: { nodes: [] },
                     }),
-                    invokeai_graph: '{"graph":[]}'
-                }
+                    invokeai_graph: '{"graph":[]}',
+                },
             });
 
             expect(response).toMatchObject({
@@ -469,15 +473,10 @@ describe('Metadata Worker Tests', () => {
                     vae: 'Invoke VAE',
                     controlNets: ['t2i_adapter_depth', 't2i_adapter_canny_sdxl'],
                     workflowJson: JSON.stringify({ nodes: [] }),
-                    generationType: 'sdxl_txt2img'
-                }
+                    generationType: 'sdxl_txt2img',
+                },
             });
-            expect((response.metadata as { loras?: string[] }).loras).toEqual([
-                'string-lora',
-                'model-lora',
-                'nested-lora',
-                'plain-lora'
-            ]);
+            expect((response.metadata as { loras?: string[] }).loras).toEqual(['string-lora', 'model-lora', 'nested-lora', 'plain-lora']);
         });
 
         it('falls through invalid A1111 f32 values but preserves explicit zero across Invoke chunks', async () => {
@@ -485,33 +484,33 @@ describe('Metadata Worker Tests', () => {
                 {
                     parameters: 'prompt\nSteps: 20, CFG scale: NaN, Denoising strength: 3.4028236e38',
                     invoke: { cfg_scale: 7, denoising_strength: 0.45 },
-                    expected: { cfg: 7, denoisingStrength: 0.45 }
+                    expected: { cfg: 7, denoisingStrength: 0.45 },
                 },
                 {
                     parameters: 'prompt\nSteps: 20, CFG scale: 3.4028236e38, Denoising strength: NaN',
                     invoke: { cfg_scale: 8, denoising_strength: 0.55 },
-                    expected: { cfg: 8, denoisingStrength: 0.55 }
+                    expected: { cfg: 8, denoisingStrength: 0.55 },
                 },
                 {
                     parameters: 'prompt\nSteps: 20, CFG scale: 7junk, Denoising strength: 0x10',
                     invoke: { cfg_scale: 6.5, denoising_strength: 0.35 },
-                    expected: { cfg: 6.5, denoisingStrength: 0.35 }
+                    expected: { cfg: 6.5, denoisingStrength: 0.35 },
                 },
                 {
                     parameters: 'prompt\nSteps: 20, CFG scale: 0x10, Denoising strength: 4junk',
                     invoke: { cfg_scale: 7.5, denoising_strength: 0.4 },
-                    expected: { cfg: 7.5, denoisingStrength: 0.4 }
+                    expected: { cfg: 7.5, denoisingStrength: 0.4 },
                 },
                 {
                     parameters: 'prompt\nSteps: 20, CFG scale: 0, Denoising strength: 0',
                     invoke: { cfg_scale: 9, denoising_strength: 0.65 },
-                    expected: { cfg: 0, denoisingStrength: 0 }
+                    expected: { cfg: 0, denoisingStrength: 0 },
                 },
                 {
                     parameters: 'prompt\nSteps: 20, cFg: 0',
                     invoke: { cfg_scale: 10 },
-                    expected: { cfg: 0 }
-                }
+                    expected: { cfg: 0 },
+                },
             ];
 
             for (const [index, testCase] of cases.entries()) {
@@ -520,8 +519,8 @@ describe('Metadata Worker Tests', () => {
                     filename: `cumulative-${index}.png`,
                     chunks: {
                         parameters: testCase.parameters,
-                        invokeai_metadata: JSON.stringify(testCase.invoke)
-                    }
+                        invokeai_metadata: JSON.stringify(testCase.invoke),
+                    },
                 });
                 expect(response).toMatchObject({ metadata: testCase.expected });
             }
@@ -533,24 +532,18 @@ describe('Metadata Worker Tests', () => {
                 chunks: {
                     dream_metadata: JSON.stringify({
                         model: 'String Model',
-                        loras: [
-                            { model: { other: true } },
-                            { lora: { other: true } },
-                            { lora: { name: 'lora-name' } },
-                            {},
-                            null
-                        ],
-                        graph: 'graph-json'
-                    })
-                }
+                        loras: [{ model: { other: true } }, { lora: { other: true } }, { lora: { name: 'lora-name' } }, {}, null],
+                        graph: 'graph-json',
+                    }),
+                },
             });
             expect(response).toMatchObject({
                 metadata: {
                     tool: GeneratorTool.INVOKEAI,
                     model: 'String Model',
                     loras: ['lora-name'],
-                    workflowJson: 'graph-json'
-                }
+                    workflowJson: 'graph-json',
+                },
             });
         });
 
@@ -561,21 +554,21 @@ describe('Metadata Worker Tests', () => {
             postMessageMock.mockClear();
             const nonRecord = await sendWorkerMessage({
                 filename: 'invoke.png',
-                chunks: { invokeai_metadata: JSON.stringify({ model: 5, workflow: { nodes: [] } }) }
+                chunks: { invokeai_metadata: JSON.stringify({ model: 5, workflow: { nodes: [] } }) },
             });
             expect(nonRecord).toMatchObject({ metadata: { tool: GeneratorTool.INVOKEAI, workflowJson: '{"nodes":[]}' } });
 
             postMessageMock.mockClear();
             const named = await sendWorkerMessage({
                 filename: 'invoke.png',
-                chunks: { invokeai_metadata: JSON.stringify({ model: { name: 'Named Model' } }) }
+                chunks: { invokeai_metadata: JSON.stringify({ model: { name: 'Named Model' } }) },
             });
             expect(named).toMatchObject({ metadata: { model: 'Named Model' } });
 
             postMessageMock.mockClear();
             const unknown = await sendWorkerMessage({
                 filename: 'invoke.png',
-                chunks: { invokeai_metadata: JSON.stringify({ model: {} }) }
+                chunks: { invokeai_metadata: JSON.stringify({ model: {} }) },
             });
             expect(unknown).toMatchObject({ metadata: { model: 'Unknown' } });
         });
@@ -584,7 +577,7 @@ describe('Metadata Worker Tests', () => {
             const response = await sendWorkerMessage({
                 filename: 'parameters.png',
                 defaultTool: GeneratorTool.FORGE,
-                chunks: { PARAMETERS: 'Prompt\nSteps: 2' }
+                chunks: { PARAMETERS: 'Prompt\nSteps: 2' },
             });
             expect(response).toMatchObject({ metadata: { tool: GeneratorTool.FORGE, positivePrompt: 'Prompt' } });
         });
@@ -595,11 +588,11 @@ describe('Metadata Worker Tests', () => {
                 filename: 12,
                 path: null,
                 defaultTool: 'not-a-tool',
-                chunks: { parameters: 42, valid: 'value' }
+                chunks: { parameters: 42, valid: 'value' },
             });
             expect(response).toMatchObject({
                 requestId: undefined,
-                metadata: { tool: GeneratorTool.UNKNOWN, generationType: 'unknown' }
+                metadata: { tool: GeneratorTool.UNKNOWN, generationType: 'unknown' },
             });
         });
 
@@ -612,15 +605,15 @@ describe('Metadata Worker Tests', () => {
             const workflow = JSON.stringify({
                 nodes: [
                     { id: 1, type: 'CheckpointLoaderSimple', widgets_values: ['dream.safetensors'] },
-                    { id: 2, type: 'KSampler', widgets_values: [7, 'fixed', 18, 5.5, 'euler', 'karras'] }
-                ]
+                    { id: 2, type: 'KSampler', widgets_values: [7, 'fixed', 18, 5.5, 'euler', 'karras'] },
+                ],
             });
 
             const response = await sendWorkerMessage({
                 requestId: 'comfy-request',
                 filename: 'ComfyUI_00001.png',
                 path: 'C:/outputs/txt2img-grids/grid.png',
-                chunks: { workflow }
+                chunks: { workflow },
             });
 
             expect(response).toMatchObject({
@@ -628,8 +621,8 @@ describe('Metadata Worker Tests', () => {
                 metadata: {
                     tool: 'ComfyUI',
                     workflowJson: workflow,
-                    generationType: 'txt2img'
-                }
+                    generationType: 'txt2img',
+                },
             });
         });
 
@@ -641,8 +634,8 @@ describe('Metadata Worker Tests', () => {
                     Parameters: 'Prompt\nSteps: 4, Seed: 0',
                     metadata: '{bad json',
                     prompt: '{bad workflow',
-                    dream_metadata: '{bad invoke'
-                }
+                    dream_metadata: '{bad invoke',
+                },
             });
 
             expect(response).toMatchObject({
@@ -652,13 +645,15 @@ describe('Metadata Worker Tests', () => {
                     positivePrompt: 'Prompt',
                     steps: 4,
                     seed: 0,
-                    generationType: 'unknown'
-                }
+                    generationType: 'unknown',
+                },
             });
         });
 
         it('posts the safe fallback when response delivery throws during parsing', async () => {
-            postMessageMock.mockImplementationOnce(() => { throw new Error('delivery failed'); });
+            postMessageMock.mockImplementationOnce(() => {
+                throw new Error('delivery failed');
+            });
             await sendWorkerMessage({ filename: 'plain.png' });
             expect(postMessageMock.mock.calls[1][0]).toEqual({ metadata: { tool: 'Unknown' }, extra: {}, requestId: undefined });
         });

@@ -4,7 +4,7 @@ import { GeneratorTool, type AIImage } from '../../../../types';
 import { PinnedShelf } from '../PinnedShelf';
 
 vi.mock('../GridItem', () => ({
-    GridItem: () => <div data-testid="grid-item" />
+    GridItem: () => <div data-testid="grid-item" />,
 }));
 
 const image: AIImage = {
@@ -24,8 +24,8 @@ const image: AIImage = {
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: '',
-        negativePrompt: ''
-    }
+        negativePrompt: '',
+    },
 };
 
 describe('PinnedShelf collapse control', () => {

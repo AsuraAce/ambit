@@ -6,15 +6,15 @@ const LOG_LEVELS: Record<LogLevel, number> = {
     info: 1,
     warn: 2,
     error: 3,
-    none: 4
+    none: 4,
 };
 
 let originalConsole: {
-    log: typeof console.log,
-    debug: typeof console.debug,
-    info: typeof console.info,
-    warn: typeof console.warn,
-    error: typeof console.error
+    log: typeof console.log;
+    debug: typeof console.debug;
+    info: typeof console.info;
+    warn: typeof console.warn;
+    error: typeof console.error;
 } | null = null;
 
 export const setupGlobalLogging = () => {
@@ -25,7 +25,7 @@ export const setupGlobalLogging = () => {
         debug: console.debug,
         info: console.info,
         warn: console.warn,
-        error: console.error
+        error: console.error,
     };
 
     const getLevelValue = (): number => {

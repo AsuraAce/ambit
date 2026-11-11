@@ -66,9 +66,10 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
     const field = FIELD_PRESENTATION[kind];
     const Icon = field.icon;
     const textareaId = React.useId();
-    const dirtyClassName = isDirty && kind !== 'notes'
-        ? 'border-ember-300 bg-ember-50/70 dark:border-ember-500/50 dark:bg-ember-500/10'
-        : 'border-gray-200 dark:border-white/10';
+    const dirtyClassName =
+        isDirty && kind !== 'notes'
+            ? 'border-ember-300 bg-ember-50/70 dark:border-ember-500/50 dark:bg-ember-500/10'
+            : 'border-gray-200 dark:border-white/10';
     const [isEditing, setIsEditing] = React.useState(readContent === undefined);
     const editButtonRef = React.useRef<HTMLButtonElement>(null);
     const editStartValueRef = React.useRef(value);
@@ -100,18 +101,19 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
         setIsEditing(true);
     };
 
-    const editAction = canEdit && showsReadSurface ? (
-        <button
-            ref={editButtonRef}
-            type="button"
-            aria-label={'Edit ' + field.label}
-            title={'Edit ' + field.label}
-            onClick={handleStartEditing}
-            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-sage-300"
-        >
-            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-    ) : null;
+    const editAction =
+        canEdit && showsReadSurface ? (
+            <button
+                ref={editButtonRef}
+                type="button"
+                aria-label={'Edit ' + field.label}
+                title={'Edit ' + field.label}
+                onClick={handleStartEditing}
+                className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-sage-300"
+            >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+        ) : null;
 
     return (
         <div className={className}>
@@ -121,9 +123,15 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
                 iconClassName={field.iconClassName}
                 labelFor={showsReadSurface ? undefined : textareaId}
                 headingId={showsReadSurface ? textareaId + '-heading' : undefined}
-                trailing={headerAction || source || editAction
-                    ? <>{headerAction}{editAction}<MetadataSourceBadge source={source} /></>
-                    : undefined}
+                trailing={
+                    headerAction || source || editAction ? (
+                        <>
+                            {headerAction}
+                            {editAction}
+                            <MetadataSourceBadge source={source} />
+                        </>
+                    ) : undefined
+                }
                 className="mb-2"
             />
             <div className="relative">
@@ -134,7 +142,15 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
                         aria-readonly="true"
                         aria-multiline="true"
                         aria-labelledby={textareaId + '-heading'}
-                        className={'w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 font-sans text-sm text-gray-800 outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-200 ' + field.heightClassName + ' ' + field.textareaClassName + ' ' + dirtyClassName + (readOnly ? ' cursor-default opacity-80' : '')}
+                        className={
+                            'w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 font-sans text-sm text-gray-800 outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-200 ' +
+                            field.heightClassName +
+                            ' ' +
+                            field.textareaClassName +
+                            ' ' +
+                            dirtyClassName +
+                            (readOnly ? ' cursor-default opacity-80' : '')
+                        }
                     >
                         {value ? readContent : <span className="text-gray-400">{field.placeholder}</span>}
                     </div>

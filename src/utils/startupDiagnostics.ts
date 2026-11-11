@@ -1,4 +1,12 @@
-import { commands, type StartupDiagnosticEvent, type StartupPhase, type StartupPhaseStatus, type StartupCacheAction, type StartupDatabaseRole, type StartupFailureKind } from '../bindings';
+import {
+    commands,
+    type StartupDiagnosticEvent,
+    type StartupPhase,
+    type StartupPhaseStatus,
+    type StartupCacheAction,
+    type StartupDatabaseRole,
+    type StartupFailureKind,
+} from '../bindings';
 import { isTauriRuntime } from '../services/runtime';
 import { createStartupHeartbeat, type StartupHeartbeat } from './startupHeartbeat';
 import type { StartupRepairDecision } from '../bindings';
@@ -82,11 +90,18 @@ const classifyFailure = (error: unknown): StartupFailureKind => {
 };
 
 const terminalPhases = new Set<StartupPhase>([
-    'ready', 'splash', 'first-page', 'startup-failure', 'react-mount', 'frontend-entry', 'invoke-catch-up', 'renderer-stall',
+    'ready',
+    'splash',
+    'first-page',
+    'startup-failure',
+    'react-mount',
+    'frontend-entry',
+    'invoke-catch-up',
+    'renderer-stall',
 ]);
 
 const removeOldestNonTerminal = (events: PendingDiagnosticEvent[]): boolean => {
-    const index = events.findIndex(event => !terminalPhases.has(event.phase));
+    const index = events.findIndex((event) => !terminalPhases.has(event.phase));
     if (index < 0) return false;
     events.splice(index, 1);
     return true;
@@ -119,8 +134,11 @@ export function createStartupDiagnosticBridge({
     const deliverRepair = (key: string, event: PendingDiagnosticEvent) => {
         if (!launchId || deliveredRepairEvents.has(key)) return;
         deliveredRepairEvents.add(key);
-        try { void Promise.resolve(send({ ...event, launchId })).catch(() => undefined); }
-        catch { /* Best effort; never retry a failed transport. */ }
+        try {
+            void Promise.resolve(send({ ...event, launchId })).catch(() => undefined);
+        } catch {
+            /* Best effort; never retry a failed transport. */
+        }
     };
 
     // Seven fixed records have their own allowance; never evict terminal milestones.
@@ -164,7 +182,7 @@ export function createStartupDiagnosticBridge({
         durationMs: number | null,
         cacheAction: StartupCacheAction | null,
         failureKind?: StartupFailureKind,
-        elapsedMs = Math.max(0, Math.round(now() - originMs)),
+        elapsedMs = Math.max(0, Math.round(now() - originMs))
     ): PendingDiagnosticEvent => ({
         phase,
         status,
@@ -177,7 +195,7 @@ export function createStartupDiagnosticBridge({
     const notifyFailure = (phase: StartupPhase) => {
         if (phase !== 'startup-failure') return;
         startupFailureObserved = true;
-        failureListeners.forEach(listener => {
+        failureListeners.forEach((listener) => {
             try {
                 listener(phase);
             } catch {
@@ -196,26 +214,28 @@ export function createStartupDiagnosticBridge({
                 } catch {
                     launchPromise = Promise.reject(new Error('Native startup diagnostics are unavailable'));
                 }
-                connecting = launchPromise.then(launch => {
-                    launchId = launch.launchId;
-                    launchIdListeners.forEach(listener => {
-                        try {
-                            listener(launch.launchId);
-                        } catch {
-                            // A UI listener must not strand buffered diagnostics.
+                connecting = launchPromise
+                    .then((launch) => {
+                        launchId = launch.launchId;
+                        launchIdListeners.forEach((listener) => {
+                            try {
+                                listener(launch.launchId);
+                            } catch {
+                                // A UI listener must not strand buffered diagnostics.
+                            }
+                        });
+                        if (typeof window !== 'undefined') {
+                            try {
+                                window.__AMBIT_STARTUP_BOOTSTRAP__?.setFailureLaunchId(launch.launchId);
+                            } catch {
+                                // The fallback UI is optional for diagnostics delivery.
+                            }
                         }
-                    });
-                    if (typeof window !== 'undefined') {
-                        try {
-                            window.__AMBIT_STARTUP_BOOTSTRAP__?.setFailureLaunchId(launch.launchId);
-                        } catch {
-                            // The fallback UI is optional for diagnostics delivery.
-                        }
-                    }
-                    const queued = buffered.splice(0);
-                    queued.forEach(deliver);
-                    repairEvents.forEach((event, key) => deliverRepair(key, event));
-                }).catch(() => undefined);
+                        const queued = buffered.splice(0);
+                        queued.forEach(deliver);
+                        repairEvents.forEach((event, key) => deliverRepair(key, event));
+                    })
+                    .catch(() => undefined);
             }
             await connecting;
         },
@@ -229,12 +249,16 @@ export function createStartupDiagnosticBridge({
             repairClaimed = true;
             return createStartupRepairCollector({
                 now,
-                stage: repairStage => sendRepair(`stage:${repairStage}`, {
-                    ...makeEvent('owner-repair-stage', 'completed', null, null), repairStage,
-                }),
-                report: repairReport => sendRepair('report', {
-                    ...makeEvent('owner-repair-report', repairReport.status, repairReport.durationMs, null), repairReport,
-                }),
+                stage: (repairStage) =>
+                    sendRepair(`stage:${repairStage}`, {
+                        ...makeEvent('owner-repair-stage', 'completed', null, null),
+                        repairStage,
+                    }),
+                report: (repairReport) =>
+                    sendRepair('report', {
+                        ...makeEvent('owner-repair-report', repairReport.status, repairReport.durationMs, null),
+                        repairReport,
+                    }),
             });
         },
         subscribe(listener: (resolvedLaunchId: string) => void) {
@@ -250,7 +274,7 @@ export function createStartupDiagnosticBridge({
         },
         subscribeMarks(listener: (phase: StartupPhase) => void) {
             markListeners.add(listener);
-            marks.forEach(phase => {
+            marks.forEach((phase) => {
                 try {
                     listener(phase);
                 } catch {
@@ -273,12 +297,21 @@ export function createStartupDiagnosticBridge({
         start(phase: StartupPhase, cacheAction: StartupCacheAction | null = null, attempt = 1): FinishPhase {
             const startedAt = now();
             let finished = false;
-            admit({ ...makeEvent(phase, 'started', null, cacheAction), ...(databaseRoles[phase] ? { databaseRole: databaseRoles[phase], attempt } : {}) });
+            admit({
+                ...makeEvent(phase, 'started', null, cacheAction),
+                ...(databaseRoles[phase] ? { databaseRole: databaseRoles[phase], attempt } : {}),
+            });
             return (status = 'completed', error) => {
                 if (finished) return;
                 finished = true;
                 admit({
-                    ...makeEvent(phase, status, Math.max(0, Math.round(now() - startedAt)), cacheAction, status === 'failed' ? classifyFailure(error) : undefined),
+                    ...makeEvent(
+                        phase,
+                        status,
+                        Math.max(0, Math.round(now() - startedAt)),
+                        cacheAction,
+                        status === 'failed' ? classifyFailure(error) : undefined
+                    ),
                     ...(databaseRoles[phase] ? { databaseRole: databaseRoles[phase], attempt } : {}),
                 });
             };
@@ -287,7 +320,7 @@ export function createStartupDiagnosticBridge({
             if (marks.has(phase)) return;
             marks.add(phase);
             admit(makeEvent(phase, 'completed', null, null));
-            markListeners.forEach(listener => {
+            markListeners.forEach((listener) => {
                 try {
                     listener(phase);
                 } catch {
@@ -305,15 +338,17 @@ export function createStartupDiagnosticBridge({
             notifyFailure(phase);
         },
         ingestBootstrapEvents(events: readonly BootstrapDiagnosticEvent[]) {
-            events.forEach(bootstrapEvent => {
-                admit(makeEvent(
-                    bootstrapEvent.phase,
-                    bootstrapEvent.status,
-                    bootstrapEvent.durationMs,
-                    bootstrapEvent.cacheAction,
-                    bootstrapEvent.failureKind,
-                    bootstrapEvent.elapsedMs,
-                ));
+            events.forEach((bootstrapEvent) => {
+                admit(
+                    makeEvent(
+                        bootstrapEvent.phase,
+                        bootstrapEvent.status,
+                        bootstrapEvent.durationMs,
+                        bootstrapEvent.cacheAction,
+                        bootstrapEvent.failureKind,
+                        bootstrapEvent.elapsedMs
+                    )
+                );
                 if (bootstrapEvent.status === 'failed') notifyFailure(bootstrapEvent.phase);
             });
         },
@@ -324,17 +359,31 @@ export function createStartupDiagnostics(send: DiagnosticSink, now: () => number
     const origin = now();
     let emittedNonTerminal = 0;
     const marks = new Set<StartupPhase>();
-    const emit = (phase: StartupPhase, status: StartupPhaseStatus, durationMs: number | null, cacheAction: StartupCacheAction | null, error?: unknown, attempt = 1) => {
+    const emit = (
+        phase: StartupPhase,
+        status: StartupPhaseStatus,
+        durationMs: number | null,
+        cacheAction: StartupCacheAction | null,
+        error?: unknown,
+        attempt = 1
+    ) => {
         const isTerminal = terminalPhases.has(phase);
         if (!isTerminal && emittedNonTerminal >= 256) return;
         if (!isTerminal) emittedNonTerminal += 1;
         try {
             const databaseRole = databaseRoles[phase];
-            void Promise.resolve(send({
-                launchId, phase, status, elapsedMs: Math.max(0, Math.round(now() - origin)), durationMs, cacheAction,
-                ...(databaseRole ? { databaseRole, attempt } : {}),
-                ...(status === 'failed' ? { failureKind: classifyFailure(error) } : {}),
-            })).catch(() => undefined);
+            void Promise.resolve(
+                send({
+                    launchId,
+                    phase,
+                    status,
+                    elapsedMs: Math.max(0, Math.round(now() - origin)),
+                    durationMs,
+                    cacheAction,
+                    ...(databaseRole ? { databaseRole, attempt } : {}),
+                    ...(status === 'failed' ? { failureKind: classifyFailure(error) } : {}),
+                })
+            ).catch(() => undefined);
         } catch {
             // Diagnostics must never interrupt library preparation.
         }
@@ -359,7 +408,7 @@ export function createStartupDiagnostics(send: DiagnosticSink, now: () => number
 }
 
 export const startupDiagnostics = createStartupDiagnosticBridge({
-    send: event => {
+    send: (event) => {
         if (!isTauriRuntime()) return;
         void commands.recordStartupDiagnostic(event).catch(() => undefined);
     },
@@ -369,7 +418,7 @@ export const startupDiagnostics = createStartupDiagnosticBridge({
     },
     now: () => performance.now(),
     originMs: 0,
-    onMark: phase => {
+    onMark: (phase) => {
         if (phase === 'ready') window.__AMBIT_STARTUP_BOOTSTRAP__?.markReady();
     },
 });
@@ -381,7 +430,7 @@ export const startStartupHeartbeat = () => {
 
     const heartbeat = createStartupHeartbeat({
         now: () => performance.now(),
-        transport: launchId => commands.recordStartupHeartbeat(launchId),
+        transport: (launchId) => commands.recordStartupHeartbeat(launchId),
         timers: {
             setTimeout: window.setTimeout.bind(window),
             clearTimeout: window.clearTimeout.bind(window),
@@ -389,7 +438,7 @@ export const startStartupHeartbeat = () => {
     });
     startupHeartbeat = heartbeat;
     startupDiagnostics.subscribe(heartbeat.connect);
-    startupDiagnostics.subscribeMarks(phase => {
+    startupDiagnostics.subscribeMarks((phase) => {
         if (phase === 'ready') heartbeat.stop();
     });
     startupDiagnostics.subscribeFailures(() => heartbeat.stop());
@@ -402,7 +451,7 @@ void startupDiagnostics.connect();
 const startupBootstrap = typeof window === 'undefined' ? undefined : window.__AMBIT_STARTUP_BOOTSTRAP__;
 if (startupBootstrap) {
     startupDiagnostics.ingestBootstrapEvents(startupBootstrap.takeEvents());
-    window.addEventListener('ambit-startup-diagnostic', event => {
+    window.addEventListener('ambit-startup-diagnostic', (event) => {
         startupDiagnostics.ingestBootstrapEvents([(event as CustomEvent<BootstrapDiagnosticEvent>).detail]);
     });
 }
@@ -412,7 +461,11 @@ export const markReactMounted = () => {
     startupBootstrap?.markReactMounted();
 };
 
-export async function measureStartupPhase<T>(phase: StartupPhase, work: () => Promise<T>, cacheAction: StartupCacheAction | null = null): Promise<T> {
+export async function measureStartupPhase<T>(
+    phase: StartupPhase,
+    work: () => Promise<T>,
+    cacheAction: StartupCacheAction | null = null
+): Promise<T> {
     const finish = startupDiagnostics.start(phase, cacheAction);
     try {
         const result = await work();

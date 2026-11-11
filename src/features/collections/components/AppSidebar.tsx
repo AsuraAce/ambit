@@ -5,96 +5,163 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface AppSidebarProps {
-  viewMode: ViewMode;
-  setViewMode: (mode: ViewMode) => void;
-  filters: FilterState;
-  setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
-  isFilterPanelOpen: boolean;
-  setIsFilterPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onOpenSettings: () => void;
-  onOpenShortcuts: () => void;
-  onOpenDonation: () => void;
-  showSupportPulse: boolean;
+    viewMode: ViewMode;
+    setViewMode: (mode: ViewMode) => void;
+    filters: FilterState;
+    setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
+    isFilterPanelOpen: boolean;
+    setIsFilterPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
+    onOpenSettings: () => void;
+    onOpenShortcuts: () => void;
+    onOpenDonation: () => void;
+    showSupportPulse: boolean;
 }
 
 export const AppSidebar: React.FC<AppSidebarProps> = ({
-  viewMode,
-  setViewMode,
-  filters,
-  setFilters,
-  isFilterPanelOpen,
-  setIsFilterPanelOpen,
-  onOpenSettings,
-  onOpenShortcuts,
-  onOpenDonation,
-  showSupportPulse
+    viewMode,
+    setViewMode,
+    filters,
+    setFilters,
+    isFilterPanelOpen,
+    setIsFilterPanelOpen,
+    onOpenSettings,
+    onOpenShortcuts,
+    onOpenDonation,
+    showSupportPulse,
 }) => {
-  const brandGlyphSrc = '/branding/ambit-glyph.svg';
+    const brandGlyphSrc = '/branding/ambit-glyph.svg';
 
-  return (
-    <aside className="hidden md:flex w-20 flex-col items-center py-6 h-full rounded-3xl bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 z-20 shadow-2xl transition-all duration-500 ease-spring">
-      <div className="mb-8 p-3 bg-sage-500/10 dark:bg-sage-500/20 rounded-2xl shadow-lg border border-sage-500/20">
-        <img
-          src={brandGlyphSrc}
-          alt=""
-          className="w-10 h-10 drop-shadow-[0_4px_12px_rgba(0,0,0,0.25)]"
-        />
-      </div>
+    return (
+        <aside className="hidden md:flex w-20 flex-col items-center py-6 h-full rounded-3xl bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 z-20 shadow-2xl transition-all duration-500 ease-spring">
+            <div className="mb-8 p-3 bg-sage-500/10 dark:bg-sage-500/20 rounded-2xl shadow-lg border border-sage-500/20">
+                <img src={brandGlyphSrc} alt="" className="w-10 h-10 drop-shadow-[0_4px_12px_rgba(0,0,0,0.25)]" />
+            </div>
 
-      <nav className="flex-1 flex flex-col gap-6 w-full items-center">
-        <NavButton state="view" active={viewMode === 'grid' && !filters.favoritesOnly} current={viewMode === 'grid'} onClick={() => { setViewMode('grid'); setFilters(f => ({ ...f, favoritesOnly: false })); }} icon={<Grid />} tooltip="Grid View" />
-        <NavButton state="view" active={viewMode === 'timeline'} onClick={() => setViewMode('timeline')} icon={<Clock />} tooltip="Timeline View" />
-        <NavButton state="view" active={viewMode === 'dashboard'} onClick={() => setViewMode('dashboard')} icon={<BarChart3 />} tooltip="Statistics" />
-        <NavButton
-          state="view"
-          active={viewMode === 'maintenance'}
-          onClick={() => setViewMode('maintenance')}
-          icon={<Eraser />}
-          tooltip="Maintenance"
-        />
+            <nav className="flex-1 flex flex-col gap-6 w-full items-center">
+                <NavButton
+                    state="view"
+                    active={viewMode === 'grid' && !filters.favoritesOnly}
+                    current={viewMode === 'grid'}
+                    onClick={() => {
+                        setViewMode('grid');
+                        setFilters((f) => ({ ...f, favoritesOnly: false }));
+                    }}
+                    icon={<Grid />}
+                    tooltip="Grid View"
+                />
+                <NavButton
+                    state="view"
+                    active={viewMode === 'timeline'}
+                    onClick={() => setViewMode('timeline')}
+                    icon={<Clock />}
+                    tooltip="Timeline View"
+                />
+                <NavButton
+                    state="view"
+                    active={viewMode === 'dashboard'}
+                    onClick={() => setViewMode('dashboard')}
+                    icon={<BarChart3 />}
+                    tooltip="Statistics"
+                />
+                <NavButton
+                    state="view"
+                    active={viewMode === 'maintenance'}
+                    onClick={() => setViewMode('maintenance')}
+                    icon={<Eraser />}
+                    tooltip="Maintenance"
+                />
 
-        <div className="h-px w-8 bg-gray-300 dark:bg-white/10 my-2" />
+                <div className="h-px w-8 bg-gray-300 dark:bg-white/10 my-2" />
 
-        <NavButton state="toggle" active={isFilterPanelOpen && (viewMode === 'grid' || viewMode === 'timeline' || viewMode === 'dashboard')} pressed={isFilterPanelOpen} onClick={() => setIsFilterPanelOpen(p => !p)} icon={<Filter />} tooltip={isFilterPanelOpen ? "Hide Filters" : "Show Filters"} />
-        <NavButton state="toggle" active={filters.favoritesOnly} onClick={() => setFilters(prev => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))} icon={<Heart className={filters.favoritesOnly ? "fill-red-500 text-red-500" : ""} />} tooltip={filters.favoritesOnly ? "Disable Favorites Only" : "Show Favorites Only"} />
-        <NavButton state="toggle" active={!!filters.pinnedOnly} onClick={() => setFilters(prev => ({ ...prev, pinnedOnly: !prev.pinnedOnly }))} icon={<Pin className={filters.pinnedOnly ? "fill-white text-white" : ""} />} tooltip={filters.pinnedOnly ? "Disable Pinned Only" : "Show Pinned Only"} />
-      </nav>
+                <NavButton
+                    state="toggle"
+                    active={isFilterPanelOpen && (viewMode === 'grid' || viewMode === 'timeline' || viewMode === 'dashboard')}
+                    pressed={isFilterPanelOpen}
+                    onClick={() => setIsFilterPanelOpen((p) => !p)}
+                    icon={<Filter />}
+                    tooltip={isFilterPanelOpen ? 'Hide Filters' : 'Show Filters'}
+                />
+                <NavButton
+                    state="toggle"
+                    active={filters.favoritesOnly}
+                    onClick={() => setFilters((prev) => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))}
+                    icon={<Heart className={filters.favoritesOnly ? 'fill-red-500 text-red-500' : ''} />}
+                    tooltip={filters.favoritesOnly ? 'Disable Favorites Only' : 'Show Favorites Only'}
+                />
+                <NavButton
+                    state="toggle"
+                    active={!!filters.pinnedOnly}
+                    onClick={() => setFilters((prev) => ({ ...prev, pinnedOnly: !prev.pinnedOnly }))}
+                    icon={<Pin className={filters.pinnedOnly ? 'fill-white text-white' : ''} />}
+                    tooltip={filters.pinnedOnly ? 'Disable Pinned Only' : 'Show Pinned Only'}
+                />
+            </nav>
 
-      <div className="mt-auto flex flex-col items-center gap-4">
-        <TooltipButton label="Support Ambit" content="Support Ambit" onClick={onOpenDonation} className={`w-10 h-10 rounded-xl flex items-center justify-center hover:text-red-500 dark:hover:text-red-400 transition-all mb-2 ${showSupportPulse ? 'animate-pulse hover:animate-none text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500'}`}>
-          <Gift className="w-5 h-5" />
-        </TooltipButton>
-        <TooltipButton label="Open Help & Guide" content="Open Help & Guide" onClick={onOpenShortcuts} className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-white mb-2">
-          <HelpCircle className="w-5 h-5" />
-        </TooltipButton>
-        <NavButton active={false} onClick={onOpenSettings} icon={<Settings />} tooltip="Settings" />
-      </div>
-    </aside>
-  );
+            <div className="mt-auto flex flex-col items-center gap-4">
+                <TooltipButton
+                    label="Support Ambit"
+                    content="Support Ambit"
+                    onClick={onOpenDonation}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center hover:text-red-500 dark:hover:text-red-400 transition-all mb-2 ${showSupportPulse ? 'animate-pulse hover:animate-none text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500'}`}
+                >
+                    <Gift className="w-5 h-5" />
+                </TooltipButton>
+                <TooltipButton
+                    label="Open Help & Guide"
+                    content="Open Help & Guide"
+                    onClick={onOpenShortcuts}
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-white mb-2"
+                >
+                    <HelpCircle className="w-5 h-5" />
+                </TooltipButton>
+                <NavButton active={false} onClick={onOpenSettings} icon={<Settings />} tooltip="Settings" />
+            </div>
+        </aside>
+    );
 };
 
-const NavButton = ({ active, current, pressed, onClick, icon, tooltip, state = 'action', badgeContent, badgeColor = "bg-sage-500" }: { active: boolean, current?: boolean, pressed?: boolean, onClick: () => void, icon: React.ReactNode, tooltip: string, state?: 'view' | 'toggle' | 'action', badgeContent?: string | number, badgeColor?: string }) => (
-  <TooltipButton
-    label={tooltip}
-    content={tooltip}
-    onClick={onClick}
-    aria-current={state === 'view' && (current ?? active) ? 'page' : undefined}
-    aria-pressed={state === 'toggle' ? (pressed ?? active) : undefined}
-    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ease-spring group relative ${active ? 'bg-sage-500 text-white shadow-lg shadow-sage-500/30' : 'text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-zinc-200'}`}
-  >
-    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 20 }) : icon}
+const NavButton = ({
+    active,
+    current,
+    pressed,
+    onClick,
+    icon,
+    tooltip,
+    state = 'action',
+    badgeContent,
+    badgeColor = 'bg-sage-500',
+}: {
+    active: boolean;
+    current?: boolean;
+    pressed?: boolean;
+    onClick: () => void;
+    icon: React.ReactNode;
+    tooltip: string;
+    state?: 'view' | 'toggle' | 'action';
+    badgeContent?: string | number;
+    badgeColor?: string;
+}) => (
+    <TooltipButton
+        label={tooltip}
+        content={tooltip}
+        onClick={onClick}
+        aria-current={state === 'view' && (current ?? active) ? 'page' : undefined}
+        aria-pressed={state === 'toggle' ? (pressed ?? active) : undefined}
+        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ease-spring group relative ${active ? 'bg-sage-500 text-white shadow-lg shadow-sage-500/30' : 'text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-zinc-200'}`}
+    >
+        {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 20 }) : icon}
 
-    <AnimatePresence>
-      {badgeContent !== undefined && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.5, y: 5 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.5, y: 5 }}
-          className={`absolute -top-1 -right-1 ${badgeColor} text-white text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900 shadow-sm z-10`}
-        >
-          {badgeContent}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  </TooltipButton>
+        <AnimatePresence>
+            {badgeContent !== undefined && (
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.5, y: 5 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.5, y: 5 }}
+                    className={`absolute -top-1 -right-1 ${badgeColor} text-white text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900 shadow-sm z-10`}
+                >
+                    {badgeContent}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    </TooltipButton>
 );

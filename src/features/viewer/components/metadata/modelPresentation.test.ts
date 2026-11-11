@@ -15,11 +15,15 @@ const metadata = (overrides: Partial<ImageMetadata> = {}): ImageMetadata => ({
 
 describe('getModelPresentation', () => {
     it('keeps user overrides ahead of extracted names and hashes', () => {
-        expect(getModelPresentation(metadata({
-            overrideModel: 'User model',
-            model: 'Resolved model',
-            modelHash: 'abc123',
-        }))).toEqual({ value: 'User model', isHashFallback: false, isOverride: true });
+        expect(
+            getModelPresentation(
+                metadata({
+                    overrideModel: 'User model',
+                    model: 'Resolved model',
+                    modelHash: 'abc123',
+                })
+            )
+        ).toEqual({ value: 'User model', isHashFallback: false, isOverride: true });
     });
 
     it('shows a resolved or parsed name ahead of its supporting hash', () => {

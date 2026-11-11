@@ -21,18 +21,23 @@ const DuplicateItem: React.FC<{
     canCompare: boolean;
     disabled?: boolean;
 }> = ({ img, onKeepOnly, onView, onCompare, maskedKeywords, isLatestModified, canCompare, disabled = false }) => {
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
     const effectiveMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
     const isMasked = !isRevealed && effectiveMasked;
     const useVideoPlaceholder = isVideoAsset(img) && img.thumbnailSource !== 'ambit-video-v1';
 
     return (
-        <div className="group relative flex flex-col min-w-[160px] w-[calc(50%-0.5rem)] flex-shrink-0" onMouseLeave={() => isRevealed && setRevealed(false)}>
+        <div
+            className="group relative flex flex-col min-w-[160px] w-[calc(50%-0.5rem)] flex-shrink-0"
+            onMouseLeave={() => isRevealed && setRevealed(false)}
+        >
             {/* Image Preview */}
             <div className="relative aspect-[2/3] bg-gray-100 dark:bg-slate-950 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 group-hover:border-sage-500/50 transition-colors">
                 {useVideoPlaceholder ? (
-                    <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}>
+                    <div
+                        className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
+                    >
                         <Video className="h-10 w-10 text-white/30" aria-hidden="true" />
                     </div>
                 ) : (
@@ -132,8 +137,10 @@ const DuplicateGroupCard: React.FC<{
 }> = React.memo(({ group, latestModifiedId, onResolve, onViewImage, onCompareImages, maskedKeywords, isResolving, style }) => {
     const getComparePeer = (img: AIImage) => {
         if (isVideoAsset(img)) return undefined;
-        return group.images.find(candidate => !isVideoAsset(candidate) && candidate.id === latestModifiedId && candidate.id !== img.id)
-            || group.images.find(candidate => !isVideoAsset(candidate) && candidate.id !== img.id);
+        return (
+            group.images.find((candidate) => !isVideoAsset(candidate) && candidate.id === latestModifiedId && candidate.id !== img.id) ||
+            group.images.find((candidate) => !isVideoAsset(candidate) && candidate.id !== img.id)
+        );
     };
 
     return (
@@ -146,7 +153,9 @@ const DuplicateGroupCard: React.FC<{
                             Exact Duplicate Group
                         </span>
                     </div>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${group.images.length > 2 ? 'border border-ember-200 bg-ember-100 text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/15 dark:text-ember-300' : 'text-gray-400'}`}>
+                    <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${group.images.length > 2 ? 'border border-ember-200 bg-ember-100 text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/15 dark:text-ember-300' : 'text-gray-400'}`}
+                    >
                         {group.images.length} copies
                     </span>
                 </div>
@@ -159,7 +168,10 @@ const DuplicateGroupCard: React.FC<{
                                 key={img.id}
                                 img={img}
                                 onKeepOnly={(imgId) => {
-                                    void onResolve(imgId, group.images.map(i => i.id)).catch(() => undefined);
+                                    void onResolve(
+                                        imgId,
+                                        group.images.map((i) => i.id)
+                                    ).catch(() => undefined);
                                 }}
                                 onView={(viewImage, revealGranted) => onViewImage?.(viewImage.id, revealGranted)}
                                 onCompare={(compareImage) => {
@@ -201,14 +213,18 @@ const DuplicateScanStatus: React.FC<{
     const percent = total > 0 ? Math.round((current / total) * 100) : 0;
 
     return (
-        <div className={`border border-sage-200/60 dark:border-sage-800/40 bg-sage-50/80 dark:bg-sage-950/20 rounded-2xl ${compact ? 'p-3' : 'p-5'} shadow-sm`}>
+        <div
+            className={`border border-sage-200/60 dark:border-sage-800/40 bg-sage-50/80 dark:bg-sage-950/20 rounded-2xl ${compact ? 'p-3' : 'p-5'} shadow-sm`}
+        >
             <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="p-2 rounded-xl bg-sage-500/10 text-sage-600 dark:text-sage-400">
                         <Fingerprint className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-xs font-black uppercase tracking-widest text-sage-700 dark:text-sage-300">Duplicate Scan Running</p>
+                        <p className="text-xs font-black uppercase tracking-widest text-sage-700 dark:text-sage-300">
+                            Duplicate Scan Running
+                        </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                             {progress?.message || 'Preparing exact duplicate detection...'}
                         </p>
@@ -225,10 +241,7 @@ const DuplicateScanStatus: React.FC<{
             </div>
             <div className="mt-4">
                 <div className="w-full h-2 bg-white/70 dark:bg-black/30 rounded-full overflow-hidden">
-                    <div
-                        className="h-full bg-sage-500 transition-all duration-300"
-                        style={{ width: total > 0 ? `${percent}%` : '12%' }}
-                    />
+                    <div className="h-full bg-sage-500 transition-all duration-300" style={{ width: total > 0 ? `${percent}%` : '12%' }} />
                 </div>
                 <div className="mt-1 flex justify-between text-[10px] font-mono text-gray-400">
                     <span>{total > 0 ? `${current.toLocaleString()} / ${total.toLocaleString()}` : 'Scanning candidates'}</span>
@@ -256,167 +269,171 @@ interface DuplicateFinderProps {
     onBackgroundClick?: () => void;
 }
 
-export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
-    images,
-    onResolve,
-    maskedKeywords,
-    onRefresh,
-    isScanning = false,
-    scanProgress = null,
-    scanResult = null,
-    onCancelScan,
-    onViewImage,
-    onCompareImages,
-    scrollContainerRef,
-    onRangeSelection,
-    onBackgroundClick
-}) => {
-    const { groups, totalRedundantCount, isResolving, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
-    const scanIncomplete = !isScanning && Boolean(
-        scanResult && (scanResult.wasCancelled || scanResult.errors > 0 || scanResult.remaining > 0)
-    );
+export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(
+    ({
+        images,
+        onResolve,
+        maskedKeywords,
+        onRefresh,
+        isScanning = false,
+        scanProgress = null,
+        scanResult = null,
+        onCancelScan,
+        onViewImage,
+        onCompareImages,
+        scrollContainerRef,
+        onRangeSelection,
+        onBackgroundClick,
+    }) => {
+        const { groups, totalRedundantCount, isResolving, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
+        const scanIncomplete =
+            !isScanning && Boolean(scanResult && (scanResult.wasCancelled || scanResult.errors > 0 || scanResult.remaining > 0));
 
-    if (groups.length === 0) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 animate-in fade-in py-20">
-                {isScanning && (
-                    <div className="w-full max-w-xl mb-8">
-                        <DuplicateScanStatus progress={scanProgress} onCancel={onCancelScan} />
+        if (groups.length === 0) {
+            return (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 animate-in fade-in py-20">
+                    {isScanning && (
+                        <div className="w-full max-w-xl mb-8">
+                            <DuplicateScanStatus progress={scanProgress} onCancel={onCancelScan} />
+                        </div>
+                    )}
+                    <div className="p-6 bg-sage-500/10 rounded-full mb-6 border border-sage-500/20">
+                        {isScanning ? (
+                            <Fingerprint className="w-16 h-16 text-sage-500" />
+                        ) : scanIncomplete ? (
+                            <AlertTriangle className="h-16 w-16 text-ember-600 dark:text-ember-300" />
+                        ) : (
+                            <Check className="w-16 h-16 text-sage-500" />
+                        )}
                     </div>
-                )}
-                <div className="p-6 bg-sage-500/10 rounded-full mb-6 border border-sage-500/20">
-                    {isScanning ? (
-                        <Fingerprint className="w-16 h-16 text-sage-500" />
-                    ) : scanIncomplete ? (
-                        <AlertTriangle className="h-16 w-16 text-ember-600 dark:text-ember-300" />
-                    ) : (
-                        <Check className="w-16 h-16 text-sage-500" />
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">
+                        {isScanning ? 'Scanning for Duplicates' : scanIncomplete ? 'Scan Incomplete' : 'Library is Clean'}
+                    </h2>
+                    <p className="max-w-md text-center text-gray-500 dark:text-gray-400 mb-6">
+                        {isScanning
+                            ? 'Exact duplicate detection is hashing candidate files across the entire library.'
+                            : scanIncomplete
+                              ? `Some candidates remain unchecked${scanResult?.errors ? ` (${scanResult.errors} scan ${scanResult.errors === 1 ? 'error' : 'errors'})` : ''}. Run the global scan again to complete exact duplicate detection.`
+                              : 'No exact SHA-256 duplicate groups were found in the entire library.'}
+                    </p>
+                    {onRefresh && (
+                        <div className="flex flex-col items-center gap-4">
+                            <button
+                                onClick={() => onRefresh()}
+                                disabled={isScanning || isResolving}
+                                className="px-6 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg shadow-sage-500/20 flex items-center gap-2"
+                            >
+                                <Zap className="w-4 h-4" /> Run Global Scan
+                            </button>
+                        </div>
                     )}
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">
-                    {isScanning ? 'Scanning for Duplicates' : scanIncomplete ? 'Scan Incomplete' : 'Library is Clean'}
-                </h2>
-                <p className="max-w-md text-center text-gray-500 dark:text-gray-400 mb-6">
-                    {isScanning
-                        ? 'Exact duplicate detection is hashing candidate files across the entire library.'
-                        : scanIncomplete
-                            ? `Some candidates remain unchecked${scanResult?.errors ? ` (${scanResult.errors} scan ${scanResult.errors === 1 ? 'error' : 'errors'})` : ''}. Run the global scan again to complete exact duplicate detection.`
-                            : 'No exact SHA-256 duplicate groups were found in the entire library.'}
-                </p>
-                {onRefresh && (
-                    <div className="flex flex-col items-center gap-4">
-                        <button
-                            onClick={() => onRefresh()}
-                            disabled={isScanning || isResolving}
-                            className="px-6 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg shadow-sage-500/20 flex items-center gap-2"
-                        >
-                            <Zap className="w-4 h-4" /> Run Global Scan
-                        </button>
+            );
+        }
+
+        return (
+            <div className="w-full pb-32 flex flex-col h-full">
+                {isScanning && (
+                    <div className="mb-4 shrink-0">
+                        <DuplicateScanStatus progress={scanProgress} onCancel={onCancelScan} compact />
                     </div>
                 )}
+
+                {/* Combined Header & Bulk Actions */}
+                <div className="mb-4 p-4 bg-sage-100/30 dark:bg-sage-900/10 border border-sage-200/50 dark:border-sage-800/30 rounded-2xl flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm shrink-0">
+                    <div className="flex items-center gap-4 flex-1">
+                        <div className="p-3 bg-white dark:bg-black/20 rounded-xl shadow-sm border border-sage-200/50 dark:border-white/5 relative">
+                            <AlertTriangle className="w-6 h-6 text-sage-600 dark:text-sage-400" />
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-sage-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Duplicate Detection</h3>
+                                <span className="px-1.5 py-0.5 bg-sage-500/20 text-sage-600 dark:text-sage-400 rounded text-[9px] font-bold uppercase tracking-tighter">
+                                    Global Scan
+                                </span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                Found {groups.length} exact groups ({totalRedundantCount} redundant records) across your library. Files stay
+                                on disk.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        {onRefresh && (
+                            <button
+                                onClick={() => onRefresh()}
+                                disabled={isScanning || isResolving}
+                                className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-sage-500 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all border border-transparent hover:border-sage-200/50 flex items-center gap-2"
+                                title="Rescan entire library"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
+                                Rescan
+                            </button>
+                        )}
+
+                        {totalRedundantCount > 0 && (
+                            <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+                                <div className="px-3 py-1 flex items-center gap-2 border-r border-sage-200/50 dark:border-white/5 mr-1">
+                                    <Zap className="w-3.5 h-3.5 text-sage-500" />
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                                        Exact Bulk
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        void handleBulkResolve('latestModified').catch(() => undefined);
+                                    }}
+                                    disabled={isResolving}
+                                    className="px-4 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
+                                >
+                                    <Clock className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+                                    Keep Latest Modified
+                                    <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalRedundantCount}</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        void handleBulkResolve('earliestModified').catch(() => undefined);
+                                    }}
+                                    disabled={isResolving}
+                                    className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-50 text-gray-600 dark:text-gray-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 group"
+                                >
+                                    <Clock className="w-3.5 h-3.5 opacity-40 group-hover:-rotate-12 transition-transform" />
+                                    Keep Earliest Modified
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex-1 min-h-[600px] mt-4">
+                    <VirtualGrid
+                        items={groups}
+                        layout="masonry"
+                        minItemWidth={500}
+                        gap={24}
+                        padding={0}
+                        scrollContainerRef={scrollContainerRef}
+                        onRangeSelection={onRangeSelection}
+                        onBackgroundClick={onBackgroundClick}
+                        getItemRatio={() => 1.5}
+                        renderItem={(group, style) => (
+                            <DuplicateGroupCard
+                                key={group.id}
+                                group={group}
+                                latestModifiedId={group.latestModifiedId}
+                                onResolve={handleResolve}
+                                onViewImage={onViewImage}
+                                onCompareImages={onCompareImages}
+                                maskedKeywords={maskedKeywords}
+                                isResolving={isResolving}
+                                style={style}
+                            />
+                        )}
+                    />
+                </div>
             </div>
         );
     }
-
-    return (
-        <div className="w-full pb-32 flex flex-col h-full">
-            {isScanning && (
-                <div className="mb-4 shrink-0">
-                    <DuplicateScanStatus progress={scanProgress} onCancel={onCancelScan} compact />
-                </div>
-            )}
-
-            {/* Combined Header & Bulk Actions */}
-            <div className="mb-4 p-4 bg-sage-100/30 dark:bg-sage-900/10 border border-sage-200/50 dark:border-sage-800/30 rounded-2xl flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm shrink-0">
-                <div className="flex items-center gap-4 flex-1">
-                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl shadow-sm border border-sage-200/50 dark:border-white/5 relative">
-                        <AlertTriangle className="w-6 h-6 text-sage-600 dark:text-sage-400" />
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-sage-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm" />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Duplicate Detection</h3>
-                            <span className="px-1.5 py-0.5 bg-sage-500/20 text-sage-600 dark:text-sage-400 rounded text-[9px] font-bold uppercase tracking-tighter">
-                                Global Scan
-                            </span>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Found {groups.length} exact groups ({totalRedundantCount} redundant records) across your library. Files stay on disk.
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                    {onRefresh && (
-                        <button
-                            onClick={() => onRefresh()}
-                            disabled={isScanning || isResolving}
-                            className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-sage-500 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all border border-transparent hover:border-sage-200/50 flex items-center gap-2"
-                            title="Rescan entire library"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
-                            Rescan
-                        </button>
-                    )}
-
-                    {totalRedundantCount > 0 && (
-                        <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-2xl shadow-sm">
-                            <div className="px-3 py-1 flex items-center gap-2 border-r border-sage-200/50 dark:border-white/5 mr-1">
-                                <Zap className="w-3.5 h-3.5 text-sage-500" />
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Exact Bulk</span>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    void handleBulkResolve('latestModified').catch(() => undefined);
-                                }}
-                                disabled={isResolving}
-                                className="px-4 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
-                            >
-                                <Clock className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
-                                Keep Latest Modified
-                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalRedundantCount}</span>
-                            </button>
-                            <button
-                                onClick={() => {
-                                    void handleBulkResolve('earliestModified').catch(() => undefined);
-                                }}
-                                disabled={isResolving}
-                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-50 text-gray-600 dark:text-gray-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 group"
-                            >
-                                <Clock className="w-3.5 h-3.5 opacity-40 group-hover:-rotate-12 transition-transform" />
-                                Keep Earliest Modified
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex-1 min-h-[600px] mt-4">
-                <VirtualGrid
-                    items={groups}
-                    layout="masonry"
-                    minItemWidth={500}
-                    gap={24}
-                    padding={0}
-                    scrollContainerRef={scrollContainerRef}
-                    onRangeSelection={onRangeSelection}
-                    onBackgroundClick={onBackgroundClick}
-                    getItemRatio={() => 1.5}
-                    renderItem={(group, style) => (
-                        <DuplicateGroupCard
-                            key={group.id}
-                            group={group}
-                            latestModifiedId={group.latestModifiedId}
-                            onResolve={handleResolve}
-                            onViewImage={onViewImage}
-                            onCompareImages={onCompareImages}
-                            maskedKeywords={maskedKeywords}
-                            isResolving={isResolving}
-                            style={style}
-                        />
-                    )}
-                />
-            </div>
-        </div >
-    );
-});
+);

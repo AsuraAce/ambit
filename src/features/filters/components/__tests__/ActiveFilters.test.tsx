@@ -27,7 +27,7 @@ vi.mock('../../../../contexts/CollectionContext', () => ({
 }));
 
 vi.mock('../../../../utils/dateFilters', () => ({
-    getDateFilterLabel: (filters: FilterState) => filters.dateRange === 'all' ? null : `Date:${filters.dateRange}`,
+    getDateFilterLabel: (filters: FilterState) => (filters.dateRange === 'all' ? null : `Date:${filters.dateRange}`),
 }));
 
 const createFilters = (overrides: Partial<FilterState> = {}): FilterState => ({
@@ -69,11 +69,7 @@ const clickChipButton = (element: HTMLElement) => {
 };
 
 const ActiveFiltersUnderTest = () => (
-    <ActiveFilters
-        filters={searchMocks.state.filters}
-        setFilters={searchMocks.setFilters}
-        clearAllFilters={searchMocks.clearAllFilters}
-    />
+    <ActiveFilters filters={searchMocks.state.filters} setFilters={searchMocks.setFilters} clearAllFilters={searchMocks.clearAllFilters} />
 );
 
 describe('ActiveFilters', () => {
@@ -268,9 +264,7 @@ describe('ActiveFilters', () => {
             minCfg: 3,
             maxCfg: 9,
         });
-        collectionMocks.state.smartCollections = [
-            createCollection({ id: 'smart', name: 'Smart', filters: smartFilters }),
-        ];
+        collectionMocks.state.smartCollections = [createCollection({ id: 'smart', name: 'Smart', filters: smartFilters })];
         searchMocks.state.filters = createFilters({
             collectionId: 'smart',
             searchQuery: 'smart search',
@@ -343,9 +337,7 @@ describe('ActiveFilters', () => {
             const usesLegacyArrayFallback = ['samplers', 'generationTypes', 'controlNets', 'ipAdapters'].includes(field);
             const next = applyLatestFilterUpdate(filters);
             expect(next[field]).not.toContain(removed);
-            const updateBase = usesLegacyArrayFallback
-                ? { ...filters, [field]: undefined } as unknown as FilterState
-                : filters;
+            const updateBase = usesLegacyArrayFallback ? ({ ...filters, [field]: undefined } as unknown as FilterState) : filters;
             const legacyNext = applyLatestFilterUpdate(updateBase);
             expect(legacyNext[field]).not.toContain(removed);
         }
@@ -418,9 +410,7 @@ describe('ActiveFilters', () => {
             maxSteps: 25,
             minCfg: 5,
         } as unknown as FilterState;
-        collectionMocks.state.smartCollections = [
-            createCollection({ id: 'sparse', filters: sparseRules }),
-        ];
+        collectionMocks.state.smartCollections = [createCollection({ id: 'sparse', filters: sparseRules })];
         searchMocks.state.filters = createFilters({ collectionId: 'sparse' });
 
         const { rerender } = render(<ActiveFiltersUnderTest />);
@@ -435,9 +425,7 @@ describe('ActiveFilters', () => {
             minCfg: undefined,
             maxCfg: 6,
         } as unknown as FilterState;
-        collectionMocks.state.smartCollections = [
-            createCollection({ id: 'inverse-sparse', filters: inverseSparseRules }),
-        ];
+        collectionMocks.state.smartCollections = [createCollection({ id: 'inverse-sparse', filters: inverseSparseRules })];
         searchMocks.state.filters = createFilters({ collectionId: 'inverse-sparse' });
         rerender(<ActiveFiltersUnderTest />);
 

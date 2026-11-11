@@ -15,9 +15,12 @@ describe('imageToAnalysisBase64', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 4096, height: 2048, close })));
+        vi.stubGlobal(
+            'createImageBitmap',
+            vi.fn(async () => ({ width: 4096, height: 2048, close }))
+        );
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
-        vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => {
             callback(new Blob(['SANITIZED_PIXELS'], { type: 'image/webp' }));
         });
     });
@@ -39,10 +42,7 @@ describe('imageToAnalysisBase64', () => {
         const result = await imageToAnalysisBase64('C:/library/photo.jpg');
 
         expect(mockReadFile).toHaveBeenCalledWith('C:/library/photo.jpg');
-        expect(createImageBitmap).toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'image/jpeg' }),
-            { imageOrientation: 'from-image' },
-        );
+        expect(createImageBitmap).toHaveBeenCalledWith(expect.objectContaining({ type: 'image/jpeg' }), { imageOrientation: 'from-image' });
         expect(result).toMatch(/^data:image\/webp;base64,/);
         expect(atob(result.split(',')[1])).toBe('SANITIZED_PIXELS');
         expect(result).not.toContain(btoa(privateMetadataSentinel));
@@ -71,22 +71,23 @@ describe('imageToAnalysisBase64', () => {
         vi.mocked(createImageBitmap).mockRejectedValueOnce(new Error('decode failed'));
         await expect(imageToAnalysisBase64('C:/library/broken.jpg')).rejects.toThrow('decode failed');
 
-        vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementationOnce(callback => callback(null));
+        vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementationOnce((callback) => callback(null));
         await expect(imageToAnalysisBase64('C:/library/broken.jpg')).rejects.toThrow(
-            'Browser could not create a sanitized WebP analysis image',
+            'Browser could not create a sanitized WebP analysis image'
         );
     });
 
     it('rejects non-image remote responses', async () => {
-        vi.stubGlobal('fetch', vi.fn(async () => ({
-            ok: true,
-            status: 200,
-            blob: async () => new Blob(['html'], { type: 'text/html' }),
-        })));
-
-        await expect(imageToAnalysisBase64('https://example.test/not-an-image')).rejects.toThrow(
-            'Analysis source is not an image',
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({
+                ok: true,
+                status: 200,
+                blob: async () => new Blob(['html'], { type: 'text/html' }),
+            }))
         );
+
+        await expect(imageToAnalysisBase64('https://example.test/not-an-image')).rejects.toThrow('Analysis source is not an image');
     });
 });
 
@@ -96,7 +97,7 @@ describe('repairAssetUrl', () => {
         ['https://example.test/image.png', 'https://example.test/image.png'],
         ['blob:http://ambit/image', 'blob:http://ambit/image'],
         ['data:image/png;base64,abc', 'data:image/png;base64,abc'],
-        ['C:/library/image.png', 'C:/library/image.png']
+        ['C:/library/image.png', 'C:/library/image.png'],
     ])('returns %s unchanged', (input, expected) => {
         expect(repairAssetUrl(input)).toBe(expected);
     });

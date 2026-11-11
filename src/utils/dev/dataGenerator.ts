@@ -1,14 +1,10 @@
-
 import { AIImage, GeneratorTool } from '../../types';
 import { insertImagesBatch } from '../../services/db/imageRepo';
 
 /**
  * Generates and inserts a large number of mock images for stress testing.
  */
-export const generateStressTestData = async (
-    count: number,
-    onProgress?: (current: number, total: number) => void
-) => {
+export const generateStressTestData = async (count: number, onProgress?: (current: number, total: number) => void) => {
     const CHUNK_SIZE = 1000;
     const models = ['Stable Diffusion XL', 'SD 1.5', 'Midjourney v6', 'DALL-E 3', 'Flux.1'];
     const tags = ['nature', 'portrait', 'scifi', 'architecture', 'abstract', 'character', 'landscape'];
@@ -46,8 +42,8 @@ export const generateStressTestData = async (
                     steps: 20 + Math.floor(Math.random() * 30),
                     seed: Math.floor(Math.random() * 1000000000),
                     tool: GeneratorTool.AUTOMATIC1111,
-                    loras: []
-                }
+                    loras: [],
+                },
             });
         }
 
@@ -56,7 +52,7 @@ export const generateStressTestData = async (
         if (onProgress) onProgress(totalGenerated, count);
 
         // Yield to prevent UI freeze
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
     console.log(`[StressTest] Generated ${totalGenerated} mock images.`);

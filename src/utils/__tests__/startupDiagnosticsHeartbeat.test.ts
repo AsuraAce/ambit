@@ -59,14 +59,16 @@ describe('startup diagnostics heartbeat integration', () => {
         startupDiagnostics.mark('frontend-entry');
         startStartupHeartbeat();
         await vi.advanceTimersByTimeAsync(0);
-        startupDiagnostics.ingestBootstrapEvents([{
-            phase: 'startup-failure',
-            status: 'failed',
-            elapsedMs: 1,
-            durationMs: null,
-            cacheAction: null,
-            failureKind: 'script-load',
-        }]);
+        startupDiagnostics.ingestBootstrapEvents([
+            {
+                phase: 'startup-failure',
+                status: 'failed',
+                elapsedMs: 1,
+                durationMs: null,
+                cacheAction: null,
+                failureKind: 'script-load',
+            },
+        ]);
         await vi.advanceTimersByTimeAsync(2_000);
 
         expect(mocks.recordStartupHeartbeat).toHaveBeenCalledOnce();

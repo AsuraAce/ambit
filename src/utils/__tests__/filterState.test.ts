@@ -6,7 +6,7 @@ import {
     getEffectiveImageKind,
     hasActiveResultFilters,
     hasNonCollectionResultFilters,
-    shouldPrefetchResultPages
+    shouldPrefetchResultPages,
 } from '../filterState';
 
 const activeFilters: FilterState = {
@@ -40,19 +40,22 @@ const activeFilters: FilterState = {
     },
     assetFilterAliases: {
         loras: {
-            'lora-a': ['lora-a', 'lora_a']
-        }
+            'lora-a': ['lora-a', 'lora_a'],
+        },
     },
 };
 
 describe('filterState', () => {
-    it.each(['image', 'video', 'all'] as const)('opens collections in All Media from %s without retaining a hidden subtype', mediaType => {
-        const previous = { ...activeFilters, mediaType, sourceKind: 'photograph' as const };
-        const next = { ...previous, ...createCollectionSelectionFilters(previous, 'collection-1') };
-        expect(next).toMatchObject({ mediaType: 'all', sourceKind: 'all', collectionId: 'collection-1', searchQuery: '' });
-        expect(getEffectiveImageKind(next)).toBe('all');
-        expect(getEffectiveImageKind({ ...next, mediaType: 'image' })).toBe('all');
-    });
+    it.each(['image', 'video', 'all'] as const)(
+        'opens collections in All Media from %s without retaining a hidden subtype',
+        (mediaType) => {
+            const previous = { ...activeFilters, mediaType, sourceKind: 'photograph' as const };
+            const next = { ...previous, ...createCollectionSelectionFilters(previous, 'collection-1') };
+            expect(next).toMatchObject({ mediaType: 'all', sourceKind: 'all', collectionId: 'collection-1', searchQuery: '' });
+            expect(getEffectiveImageKind(next)).toBe('all');
+            expect(getEffectiveImageKind({ ...next, mediaType: 'image' })).toBe('all');
+        }
+    );
 
     it('clears all non-view filters when selecting a collection', () => {
         const nextFilters = createCollectionSelectionFilters(activeFilters, 'collection-1');
@@ -131,15 +134,12 @@ describe('filterState', () => {
         expect(hasActiveResultFilters(createDefaultFilters({ showInvokeImageAssets: true }))).toBe(true);
     });
 
-    it.each([
-        { mediaType: 'video' as const },
-        { samplers: ['Euler'] },
-        { generationTypes: ['txt2img'] },
-        { minSteps: 0 },
-        { maxCfg: 0 },
-    ])('identifies non-collection result criteria for filter controls: $mediaType$samplers$generationTypes$minSteps$maxCfg', overrides => {
-        expect(hasNonCollectionResultFilters(createDefaultFilters(overrides))).toBe(true);
-    });
+    it.each([{ mediaType: 'video' as const }, { samplers: ['Euler'] }, { generationTypes: ['txt2img'] }, { minSteps: 0 }, { maxCfg: 0 }])(
+        'identifies non-collection result criteria for filter controls: $mediaType$samplers$generationTypes$minSteps$maxCfg',
+        (overrides) => {
+            expect(hasNonCollectionResultFilters(createDefaultFilters(overrides))).toBe(true);
+        }
+    );
 
     it('excludes collection navigation scope from non-collection result criteria', () => {
         expect(hasNonCollectionResultFilters(createDefaultFilters({ collectionId: 'collection-1' }))).toBe(false);

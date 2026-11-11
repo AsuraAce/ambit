@@ -10,7 +10,7 @@ import { createDefaultAppSettings } from '../../constants/defaultSettings';
 const mocks = vi.hoisted(() => ({
     browserMockMode: false,
     ensureAssetPathAccessible: vi.fn(),
-    ensureConfiguredAssetPathsAccessible: vi.fn()
+    ensureConfiguredAssetPathsAccessible: vi.fn(),
 }));
 
 const appState = (settings: AppSettings): AppState => ({
@@ -18,7 +18,7 @@ const appState = (settings: AppSettings): AppState => ({
     collections: [],
     smartCollections: [],
     settings,
-    recentSearches: []
+    recentSearches: [],
 });
 
 // --- Mocks ---
@@ -40,12 +40,12 @@ vi.mock('../../bindings', () => ({
 }));
 
 vi.mock('../../services/runtime', () => ({
-    isBrowserMockMode: () => mocks.browserMockMode
+    isBrowserMockMode: () => mocks.browserMockMode,
 }));
 
 vi.mock('../../services/assetScope', () => ({
     ensureAssetPathAccessible: mocks.ensureAssetPathAccessible,
-    ensureConfiguredAssetPathsAccessible: mocks.ensureConfiguredAssetPathsAccessible
+    ensureConfiguredAssetPathsAccessible: mocks.ensureConfiguredAssetPathsAccessible,
 }));
 
 describe('SettingsStore', () => {
@@ -84,8 +84,8 @@ describe('SettingsStore', () => {
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
                 enableAI: false,
-                libraryLayoutMode: 'masonry'
-            }
+                libraryLayoutMode: 'masonry',
+            },
         });
     });
 
@@ -96,38 +96,52 @@ describe('SettingsStore', () => {
 
     it('should initialize with default settings', async () => {
         vi.mocked(appRepository.load).mockResolvedValue({ settings: null } as unknown as AppState);
-        
+
         await useSettingsStore.getState().initialize();
 
         expect(useSettingsStore.getState().isLoaded).toBe(true);
         expect(useSettingsStore.getState().geminiApiKey).toBeNull();
     });
 
-    it.each([true, false, undefined])('normalizes the retired board setting on load and save while retaining cursors (%s)', async (parent) => {
-        const historical = { dbPath: 'D:/Invoke/invokeai.db', lastSyncedAt: 123,
-            syncBoardsToCollections: false } as AppSettings['invokeDbSnapshot'];
-        const saved = { ...createDefaultAppSettings(), invokeSyncBoards: parent,
-            syncBoardsToCollections: parent === false, lastSyncedAt: 123,
-            invokeDbSnapshot: historical, invokeDbSnapshots: historical ? [historical] : [] };
-        vi.mocked(appRepository.load).mockResolvedValue(appState(saved));
-        await useSettingsStore.getState().initialize();
-        expect(useSettingsStore.getState().settings).toMatchObject({
-            invokeSyncBoards: parent !== false, syncBoardsToCollections: parent !== false,
-            lastSyncedAt: 123,
-        });
-        expect(useSettingsStore.getState().settings.invokeDbSnapshot).toBe(historical);
-        useSettingsStore.getState().setSettings({ syncBoardsToCollections: parent === false, theme: 'light' });
-        await useSettingsStore.getState().flushSettings();
-        const updater = vi.mocked(appRepository.update).mock.calls.at(-1)?.[0];
-        if (!updater) throw new Error('Expected a settings write');
-        const persisted = await updater(appState(saved));
-        expect(persisted.settings).toMatchObject({
-            invokeSyncBoards: parent !== false, syncBoardsToCollections: parent !== false,
-            theme: 'light', lastSyncedAt: 123,
-        });
-        expect(persisted.settings.invokeDbSnapshot).toBe(historical);
-        expect(persisted.settings.invokeDbSnapshots).toEqual([historical]);
-    });
+    it.each([true, false, undefined])(
+        'normalizes the retired board setting on load and save while retaining cursors (%s)',
+        async (parent) => {
+            const historical = {
+                dbPath: 'D:/Invoke/invokeai.db',
+                lastSyncedAt: 123,
+                syncBoardsToCollections: false,
+            } as AppSettings['invokeDbSnapshot'];
+            const saved = {
+                ...createDefaultAppSettings(),
+                invokeSyncBoards: parent,
+                syncBoardsToCollections: parent === false,
+                lastSyncedAt: 123,
+                invokeDbSnapshot: historical,
+                invokeDbSnapshots: historical ? [historical] : [],
+            };
+            vi.mocked(appRepository.load).mockResolvedValue(appState(saved));
+            await useSettingsStore.getState().initialize();
+            expect(useSettingsStore.getState().settings).toMatchObject({
+                invokeSyncBoards: parent !== false,
+                syncBoardsToCollections: parent !== false,
+                lastSyncedAt: 123,
+            });
+            expect(useSettingsStore.getState().settings.invokeDbSnapshot).toBe(historical);
+            useSettingsStore.getState().setSettings({ syncBoardsToCollections: parent === false, theme: 'light' });
+            await useSettingsStore.getState().flushSettings();
+            const updater = vi.mocked(appRepository.update).mock.calls.at(-1)?.[0];
+            if (!updater) throw new Error('Expected a settings write');
+            const persisted = await updater(appState(saved));
+            expect(persisted.settings).toMatchObject({
+                invokeSyncBoards: parent !== false,
+                syncBoardsToCollections: parent !== false,
+                theme: 'light',
+                lastSyncedAt: 123,
+            });
+            expect(persisted.settings.invokeDbSnapshot).toBe(historical);
+            expect(persisted.settings.invokeDbSnapshots).toEqual([historical]);
+        }
+    );
 
     it('should load API key from keyring on initialize', async () => {
         vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
@@ -162,7 +176,7 @@ describe('SettingsStore', () => {
             collections: [],
             smartCollections: [],
             settings: {} as AppSettings,
-            recentSearches: []
+            recentSearches: [],
         });
 
         await useSettingsStore.getState().initialize();
@@ -187,7 +201,7 @@ describe('SettingsStore', () => {
                 monitoredFolders: [savedFolder],
                 invokeSyncBoards: false,
             } as AppSettings,
-            recentSearches: []
+            recentSearches: [],
         });
 
         await useSettingsStore.getState().initialize();
@@ -213,7 +227,7 @@ describe('SettingsStore', () => {
         const legacySettings = {
             googleGeminiApiKey: 'legacy-key',
             theme: 'light',
-            monitoredFolders: []
+            monitoredFolders: [],
         };
         vi.mocked(appRepository.load).mockResolvedValue(appState(legacySettings as unknown as AppSettings));
         vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: null });
@@ -222,7 +236,7 @@ describe('SettingsStore', () => {
 
         // Should have called saveApiKey with the legacy key
         expect(commands.saveApiKey).toHaveBeenCalledWith('legacy-key');
-        
+
         // Should have cleared legacy key from settings
         expect(useSettingsStore.getState().settings.googleGeminiApiKey).toBeUndefined();
         expect(useSettingsStore.getState().geminiApiKey).toBe('legacy-key');
@@ -233,36 +247,37 @@ describe('SettingsStore', () => {
 
     it('hydrates loaded settings when best-effort legacy API key cleanup fails', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        vi.mocked(appRepository.load).mockResolvedValue(appState({
-            googleGeminiApiKey: 'legacy-key',
-            theme: 'light',
-            monitoredFolders: [],
-            maskedKeywords: ['private'],
-        } as unknown as AppSettings));
+        vi.mocked(appRepository.load).mockResolvedValue(
+            appState({
+                googleGeminiApiKey: 'legacy-key',
+                theme: 'light',
+                monitoredFolders: [],
+                maskedKeywords: ['private'],
+            } as unknown as AppSettings)
+        );
         vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: 'secure-key' });
         vi.mocked(appRepository.update).mockRejectedValueOnce(new Error('disk full'));
 
         await useSettingsStore.getState().initialize();
 
-        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
-            isLoaded: true,
-            geminiApiKey: 'secure-key',
-            settings: expect.objectContaining({
-                theme: 'light',
-                maskedKeywords: ['private'],
-            }),
-        }));
-        expect(useSettingsStore.getState().settings.googleGeminiApiKey).toBeUndefined();
-        expect(error).toHaveBeenCalledWith(
-            '[SettingsStore] Failed to remove legacy API key from persisted settings:',
-            expect.any(Error)
+        expect(useSettingsStore.getState()).toEqual(
+            expect.objectContaining({
+                isLoaded: true,
+                geminiApiKey: 'secure-key',
+                settings: expect.objectContaining({
+                    theme: 'light',
+                    maskedKeywords: ['private'],
+                }),
+            })
         );
+        expect(useSettingsStore.getState().settings.googleGeminiApiKey).toBeUndefined();
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to remove legacy API key from persisted settings:', expect.any(Error));
         error.mockRestore();
     });
 
     it('should update API key via setGeminiApiKey', async () => {
         const store = useSettingsStore.getState();
-        
+
         await store.setGeminiApiKey('new-key');
 
         expect(commands.saveApiKey).toHaveBeenCalledWith('new-key');
@@ -271,7 +286,7 @@ describe('SettingsStore', () => {
 
     it('should delete API key via setGeminiApiKey(null)', async () => {
         const store = useSettingsStore.getState();
-        
+
         await store.setGeminiApiKey(null);
 
         expect(commands.deleteApiKey).toHaveBeenCalled();
@@ -288,7 +303,7 @@ describe('SettingsStore', () => {
 
     it.each([
         ['save', 'key'],
-        ['delete', null]
+        ['delete', null],
     ] as const)('rejects %s API key command errors', async (operation, key) => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         if (operation === 'save') {
@@ -305,12 +320,15 @@ describe('SettingsStore', () => {
     it('applies object and functional settings updates and debounces repository persistence', async () => {
         vi.mocked(appRepository.load).mockResolvedValue({
             settings: useSettingsStore.getState().settings,
-            images: [], collections: [], smartCollections: [], recentSearches: []
+            images: [],
+            collections: [],
+            smartCollections: [],
+            recentSearches: [],
         });
         useSettingsStore.setState({ initializationStatus: 'ready', isLoaded: true });
 
         useSettingsStore.getState().setSettings({ theme: 'light' });
-        useSettingsStore.getState().setSettings(previous => ({ thumbnailSize: previous.thumbnailSize + 25 }));
+        useSettingsStore.getState().setSettings((previous) => ({ thumbnailSize: previous.thumbnailSize + 25 }));
         expect(useSettingsStore.getState().settings.theme).toBe('light');
         expect(useSettingsStore.getState().settings.thumbnailSize).toBe(225);
 
@@ -378,7 +396,7 @@ describe('SettingsStore', () => {
         useSettingsStore.getState().setSettings({
             monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
             resourceFolders: ['C:/models'],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
         await Promise.resolve();
 
@@ -389,17 +407,20 @@ describe('SettingsStore', () => {
 
     it('skips existing and browser-mock asset paths', async () => {
         const folder = { id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 };
-        useSettingsStore.setState(state => ({
-            settings: { ...state.settings, monitoredFolders: [folder], resourceFolders: ['C:/models'], invokeAiPath: 'C:/invokeai' }
+        useSettingsStore.setState((state) => ({
+            settings: { ...state.settings, monitoredFolders: [folder], resourceFolders: ['C:/models'], invokeAiPath: 'C:/invokeai' },
         }));
         useSettingsStore.getState().setSettings({ theme: 'light' });
         expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
 
         mocks.browserMockMode = true;
         useSettingsStore.getState().setSettings({
-            monitoredFolders: [...useSettingsStore.getState().settings.monitoredFolders, { id: 'new', path: 'D:/new', isActive: true, imageCount: 0 }],
+            monitoredFolders: [
+                ...useSettingsStore.getState().settings.monitoredFolders,
+                { id: 'new', path: 'D:/new', isActive: true, imageCount: 0 },
+            ],
             resourceFolders: ['C:/models', 'D:/models'],
-            invokeAiPath: 'D:/invokeai'
+            invokeAiPath: 'D:/invokeai',
         });
         expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
     });
@@ -410,7 +431,7 @@ describe('SettingsStore', () => {
         useSettingsStore.getState().setSettings({
             monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
             resourceFolders: ['C:/models'],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
         await Promise.resolve();
         await Promise.resolve();
@@ -422,25 +443,27 @@ describe('SettingsStore', () => {
     });
 
     it('updates privacy and only the matching folder scan cursor', () => {
-        useSettingsStore.setState(state => ({
+        useSettingsStore.setState((state) => ({
             settings: {
                 ...state.settings,
                 monitoredFolders: [
                     { id: 'one', path: 'C:/one', isActive: true, imageCount: 0, initialScanPending: true, initialScanCancelled: true },
-                    { id: 'two', path: 'C:/two', isActive: true, imageCount: 0 }
-                ]
-            }
+                    { id: 'two', path: 'C:/two', isActive: true, imageCount: 0 },
+                ],
+            },
         }));
 
         useSettingsStore.getState().setPrivacyEnabled(false);
         useSettingsStore.getState().updateFolderLastScanned('one', 123);
 
         expect(useSettingsStore.getState().privacyEnabled).toBe(false);
-        expect(useSettingsStore.getState().settings.monitoredFolders[0]).toEqual(expect.objectContaining({
-            lastScanned: 123,
-            initialScanPending: false,
-            initialScanCancelled: false
-        }));
+        expect(useSettingsStore.getState().settings.monitoredFolders[0]).toEqual(
+            expect.objectContaining({
+                lastScanned: 123,
+                initialScanPending: false,
+                initialScanCancelled: false,
+            })
+        );
         expect(useSettingsStore.getState().settings.monitoredFolders[1].lastScanned).toBeUndefined();
     });
 
@@ -452,16 +475,18 @@ describe('SettingsStore', () => {
 
     it('shares concurrent initialization so a stale second load cannot overwrite a later settings flush', async () => {
         let resolveScope!: () => void;
-        mocks.ensureConfiguredAssetPathsAccessible.mockReturnValueOnce(new Promise<void>(resolve => {
-            resolveScope = resolve;
-        }));
-        vi.mocked(appRepository.load).mockResolvedValue(appState({
-            ...useSettingsStore.getState().settings,
-            maskedKeywords: ['persisted-old']
-        }));
-        vi.mocked(appRepository.update).mockImplementation(async updater => (
-            updater(appState(useSettingsStore.getState().settings))
-        ));
+        mocks.ensureConfiguredAssetPathsAccessible.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                resolveScope = resolve;
+            })
+        );
+        vi.mocked(appRepository.load).mockResolvedValue(
+            appState({
+                ...useSettingsStore.getState().settings,
+                maskedKeywords: ['persisted-old'],
+            })
+        );
+        vi.mocked(appRepository.update).mockImplementation(async (updater) => updater(appState(useSettingsStore.getState().settings)));
 
         const first = useSettingsStore.getState().initialize();
         const concurrent = useSettingsStore.getState().initialize();
@@ -484,10 +509,12 @@ describe('SettingsStore', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         vi.mocked(commands.loadApiKey).mockRejectedValueOnce(new Error('keyring failed'));
         vi.mocked(commands.saveApiKey).mockRejectedValueOnce(new Error('migration failed'));
-        vi.mocked(appRepository.load).mockResolvedValue(appState({
-            ...useSettingsStore.getState().settings,
-            googleGeminiApiKey: 'legacy'
-        }));
+        vi.mocked(appRepository.load).mockResolvedValue(
+            appState({
+                ...useSettingsStore.getState().settings,
+                googleGeminiApiKey: 'legacy',
+            })
+        );
 
         await useSettingsStore.getState().initialize();
 
@@ -500,10 +527,12 @@ describe('SettingsStore', () => {
     it('prefers the environment key and preserves an explicit development mode', async () => {
         vi.stubEnv('API_KEY', 'environment-key');
         vi.mocked(commands.loadApiKey).mockResolvedValueOnce({ status: 'error', error: 'unavailable' });
-        vi.mocked(appRepository.load).mockResolvedValue(appState({
-            ...useSettingsStore.getState().settings,
-            devMode: false
-        }));
+        vi.mocked(appRepository.load).mockResolvedValue(
+            appState({
+                ...useSettingsStore.getState().settings,
+                devMode: false,
+            })
+        );
 
         await useSettingsStore.getState().initialize();
 
@@ -529,10 +558,12 @@ describe('SettingsStore', () => {
 
         await useSettingsStore.getState().initialize();
 
-        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
-            initializationStatus: 'failed',
-            isLoaded: false,
-        }));
+        expect(useSettingsStore.getState()).toEqual(
+            expect.objectContaining({
+                initializationStatus: 'failed',
+                isLoaded: false,
+            })
+        );
         expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to load settings', expect.any(Error));
 
         useSettingsStore.getState().setSettings({
@@ -543,16 +574,20 @@ describe('SettingsStore', () => {
         await vi.advanceTimersByTimeAsync(1000);
         expect(appRepository.update).not.toHaveBeenCalled();
 
-        vi.mocked(appRepository.load).mockResolvedValueOnce(appState({
-            ...createDefaultAppSettings(),
-            theme: 'dark',
-            maskedKeywords: ['retry-loaded']
-        }));
+        vi.mocked(appRepository.load).mockResolvedValueOnce(
+            appState({
+                ...createDefaultAppSettings(),
+                theme: 'dark',
+                maskedKeywords: ['retry-loaded'],
+            })
+        );
         await useSettingsStore.getState().initialize();
-        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
-            initializationStatus: 'ready',
-            isLoaded: true,
-        }));
+        expect(useSettingsStore.getState()).toEqual(
+            expect.objectContaining({
+                initializationStatus: 'ready',
+                isLoaded: true,
+            })
+        );
         expect(useSettingsStore.getState().settings.theme).toBe('dark');
         expect(useSettingsStore.getState().settings.maskedKeywords).toEqual(['retry-loaded']);
         error.mockRestore();
@@ -573,7 +608,7 @@ describe('SettingsStore', () => {
     });
 
     it('does not stale the privacy index when only inactive saved keywords change', () => {
-        useSettingsStore.setState(state => ({
+        useSettingsStore.setState((state) => ({
             privacyEnabled: true,
             privacyMaskIndexStatus: 'ready',
             settings: {
@@ -590,7 +625,7 @@ describe('SettingsStore', () => {
     });
 
     it('marks the privacy index stale when prompt masking changes the effective list', () => {
-        useSettingsStore.setState(state => ({
+        useSettingsStore.setState((state) => ({
             privacyEnabled: true,
             privacyMaskIndexStatus: 'ready',
             settings: {
@@ -614,17 +649,21 @@ describe('SettingsStore', () => {
         });
 
         useSettingsStore.getState().setPrivacyEnabled(false);
-        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
-            privacyEnabled: false,
-            privacyMaskIndexStatus: 'ready',
-            privacyMaskIndexError: null,
-        }));
+        expect(useSettingsStore.getState()).toEqual(
+            expect.objectContaining({
+                privacyEnabled: false,
+                privacyMaskIndexStatus: 'ready',
+                privacyMaskIndexError: null,
+            })
+        );
 
         useSettingsStore.getState().setPrivacyEnabled(true);
-        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
-            privacyEnabled: true,
-            privacyMaskIndexStatus: 'pending',
-            privacyMaskIndexError: null,
-        }));
+        expect(useSettingsStore.getState()).toEqual(
+            expect.objectContaining({
+                privacyEnabled: true,
+                privacyMaskIndexStatus: 'pending',
+                privacyMaskIndexError: null,
+            })
+        );
     });
 });

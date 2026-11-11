@@ -26,8 +26,8 @@ export class StartupBoundary extends React.Component<StartupBoundaryProps, Start
     }
 
     componentDidMount() {
-        this.unsubscribeLaunchId = startupDiagnostics.subscribe(launchId => this.setState({ launchId }));
-        this.unsubscribeMarks = startupDiagnostics.subscribeMarks(phase => {
+        this.unsubscribeLaunchId = startupDiagnostics.subscribe((launchId) => this.setState({ launchId }));
+        this.unsubscribeMarks = startupDiagnostics.subscribeMarks((phase) => {
             if (phase === 'ready') this.setState({ startupComplete: true });
         });
     }
@@ -50,10 +50,7 @@ export class StartupBoundary extends React.Component<StartupBoundaryProps, Start
 
         if (this.state.startupComplete) {
             return (
-                <main
-                    className="flex min-h-screen items-center justify-center bg-zinc-950 p-8 text-center text-zinc-100"
-                    role="alert"
-                >
+                <main className="flex min-h-screen items-center justify-center bg-zinc-950 p-8 text-center text-zinc-100" role="alert">
                     <div className="max-w-md space-y-3">
                         <h1 className="text-xl font-semibold">Something went wrong</h1>
                         <p className="text-sm text-zinc-300">Ambit was already open, but this view stopped rendering.</p>

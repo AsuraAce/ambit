@@ -10,21 +10,21 @@ const expectedSha256 = '30f2828a45a1895b033c3cd7784581033327e7b393033c55f4a03bb1
 const expectedSize = 9_293_720;
 
 const [binary, binaryStat, license, provenance] = await Promise.all([
-  readFile(binaryPath),
-  stat(binaryPath),
-  readFile(licensePath, 'utf8'),
-  readFile(provenancePath, 'utf8'),
+    readFile(binaryPath),
+    stat(binaryPath),
+    readFile(licensePath, 'utf8'),
+    readFile(provenancePath, 'utf8'),
 ]);
 
 const actualSha256 = createHash('sha256').update(binary).digest('hex');
 if (actualSha256 !== expectedSha256 || binaryStat.size !== expectedSize) {
-  throw new Error(`MediaInfo binary drift: ${actualSha256}, ${binaryStat.size} bytes`);
+    throw new Error(`MediaInfo binary drift: ${actualSha256}, ${binaryStat.size} bytes`);
 }
 if (!license.includes('BSD 2-Clause License') || !license.includes('MediaArea.net SARL')) {
-  throw new Error('MediaInfo license notice is missing or incomplete');
+    throw new Error('MediaInfo license notice is missing or incomplete');
 }
 if (!provenance.includes(expectedSha256)) {
-  throw new Error('MediaInfo provenance does not contain the pinned executable checksum');
+    throw new Error('MediaInfo provenance does not contain the pinned executable checksum');
 }
 
 console.log(`MediaInfo verified: ${actualSha256} (${binaryStat.size} bytes)`);

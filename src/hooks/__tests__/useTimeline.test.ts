@@ -1,4 +1,3 @@
-
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useTimeline } from '../useTimeline';
@@ -27,17 +26,14 @@ describe('useTimeline', () => {
         width: 100,
         height: 100,
         isFavorite: false,
-        metadata: {} as any
+        metadata: {} as any,
     });
 
     it('should group images into Today and Yesterday', () => {
         const today = MOCK_NOW; // Oct 25
         const yesterday = MOCK_NOW - 86400000; // Oct 24
 
-        const images = [
-            createMockImage('1', today),
-            createMockImage('2', yesterday),
-        ];
+        const images = [createMockImage('1', today), createMockImage('2', yesterday)];
 
         const { result } = renderHook(() => useTimeline(images));
 
@@ -72,7 +68,7 @@ describe('useTimeline', () => {
         const today = MOCK_NOW;
         const images = [
             createMockImage('1', today, false), // Regular
-            createMockImage('2', today, true),  // Pinned
+            createMockImage('2', today, true), // Pinned
             createMockImage('3', today, false), // Regular
         ];
 
@@ -86,10 +82,7 @@ describe('useTimeline', () => {
         const today = MOCK_NOW;
         const lastMonth = new Date(2023, 8, 1).getTime();
 
-        const images = [
-            createMockImage('old', lastMonth),
-            createMockImage('new', today),
-        ];
+        const images = [createMockImage('old', lastMonth), createMockImage('new', today)];
 
         const { result } = renderHook(() => useTimeline(images));
 
@@ -118,7 +111,7 @@ describe('useTimeline', () => {
 
         const { result } = renderHook(() => useTimeline([beta, alpha], sortOption));
 
-        expect(result.current.groups[0].images.map(image => image.id)).toEqual(expectedIds);
+        expect(result.current.groups[0].images.map((image) => image.id)).toEqual(expectedIds);
     });
 
     it('keeps pinned images first even when their selected sort value is lower', () => {
@@ -127,7 +120,7 @@ describe('useTimeline', () => {
 
         const { result } = renderHook(() => useTimeline([pinned, regular], 'name_asc'));
 
-        expect(result.current.groups[0].images.map(image => image.id)).toEqual(['pinned', 'regular']);
+        expect(result.current.groups[0].images.map((image) => image.id)).toEqual(['pinned', 'regular']);
     });
 
     it('treats missing file sizes as zero on both sort sides', () => {

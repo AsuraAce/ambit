@@ -30,13 +30,21 @@ vi.mock('../../../hooks/useToast', () => ({
 }));
 
 vi.mock('../../../services/thumbnailService', () => ({
-    cleanupOrphanThumbnails: (...args: Parameters<typeof thumbnailMocks.cleanupOrphanThumbnails>) => thumbnailMocks.cleanupOrphanThumbnails(...args),
-    pruneBrokenThumbnails: (...args: Parameters<typeof thumbnailMocks.pruneBrokenThumbnails>) => thumbnailMocks.pruneBrokenThumbnails(...args),
-    syncExistingThumbnailsToDB: (...args: Parameters<typeof thumbnailMocks.syncExistingThumbnailsToDB>) => thumbnailMocks.syncExistingThumbnailsToDB(...args),
+    cleanupOrphanThumbnails: (...args: Parameters<typeof thumbnailMocks.cleanupOrphanThumbnails>) =>
+        thumbnailMocks.cleanupOrphanThumbnails(...args),
+    pruneBrokenThumbnails: (...args: Parameters<typeof thumbnailMocks.pruneBrokenThumbnails>) =>
+        thumbnailMocks.pruneBrokenThumbnails(...args),
+    syncExistingThumbnailsToDB: (...args: Parameters<typeof thumbnailMocks.syncExistingThumbnailsToDB>) =>
+        thumbnailMocks.syncExistingThumbnailsToDB(...args),
 }));
 
 vi.mock('../../library/components/VirtualGrid', () => ({
-    VirtualGrid: ({ items, renderItem, onRangeSelection, onBackgroundClick }: {
+    VirtualGrid: ({
+        items,
+        renderItem,
+        onRangeSelection,
+        onBackgroundClick,
+    }: {
         items: AIImage[];
         renderItem: (image: AIImage, style: React.CSSProperties, index: number) => React.ReactNode;
         onRangeSelection: (indexes: number[], additive: boolean) => void;
@@ -47,15 +55,15 @@ vi.mock('../../library/components/VirtualGrid', () => ({
             <button onClick={() => onRangeSelection([0], true)}>Range</button>
             <button onClick={onBackgroundClick}>Background</button>
         </div>
-    )
+    ),
 }));
 
 vi.mock('./MaintenanceItem', () => ({
-    MaintenanceItem: ({ img, isSelected, onClick }: {
-        img: AIImage;
-        isSelected: boolean;
-        onClick: (event: React.MouseEvent) => void;
-    }) => <button data-selected={isSelected} onClick={onClick}>{img.filename}</button>
+    MaintenanceItem: ({ img, isSelected, onClick }: { img: AIImage; isSelected: boolean; onClick: (event: React.MouseEvent) => void }) => (
+        <button data-selected={isSelected} onClick={onClick}>
+            {img.filename}
+        </button>
+    ),
 }));
 
 const renderThumbnailsTab = (onRepairComplete = vi.fn().mockResolvedValue(undefined)) => {
@@ -84,25 +92,26 @@ const renderThumbnailsTab = (onRepairComplete = vi.fn().mockResolvedValue(undefi
     return { onRepairComplete, onRegenerate, onScopeChange };
 };
 
-const imageFixture = (id: string): AIImage => ({
-    id,
-    filename: `${id}.png`,
-    url: '',
-    thumbnailUrl: '',
-    timestamp: 1,
-    width: 100,
-    height: 100,
-    isFavorite: false,
-    metadata: {
-        tool: 'Unknown',
-        model: 'Unknown',
-        steps: 0,
-        cfg: 0,
-        sampler: 'Unknown',
-        positivePrompt: '',
-        negativePrompt: ''
-    }
-} as AIImage);
+const imageFixture = (id: string): AIImage =>
+    ({
+        id,
+        filename: `${id}.png`,
+        url: '',
+        thumbnailUrl: '',
+        timestamp: 1,
+        width: 100,
+        height: 100,
+        isFavorite: false,
+        metadata: {
+            tool: 'Unknown',
+            model: 'Unknown',
+            steps: 0,
+            cfg: 0,
+            sampler: 'Unknown',
+            positivePrompt: '',
+            negativePrompt: '',
+        },
+    }) as AIImage;
 
 const renderCustomTab = (overrides: Partial<React.ComponentProps<typeof ThumbnailsTab>> = {}) => {
     const props: React.ComponentProps<typeof ThumbnailsTab> = {
@@ -122,7 +131,7 @@ const renderCustomTab = (overrides: Partial<React.ComponentProps<typeof Thumbnai
         includeUpgradeable: false,
         onIncludeUpgradeableChange: vi.fn(),
         onRepairComplete: vi.fn().mockResolvedValue(undefined),
-        ...overrides
+        ...overrides,
     };
     render(<ThumbnailsTab {...props} />);
     return props;
@@ -130,11 +139,11 @@ const renderCustomTab = (overrides: Partial<React.ComponentProps<typeof Thumbnai
 
 const enableDeveloperFeatures = () => {
     vi.stubEnv('DEV', true);
-    useSettingsStore.setState(state => ({
+    useSettingsStore.setState((state) => ({
         settings: {
             ...state.settings,
-            devMode: true
-        }
+            devMode: true,
+        },
     }));
 };
 
@@ -200,11 +209,11 @@ describe('ThumbnailsTab', () => {
 
     it('hides Sync DB in production despite a stale persisted developer flag', () => {
         vi.stubEnv('DEV', false);
-        useSettingsStore.setState(state => ({
+        useSettingsStore.setState((state) => ({
             settings: {
                 ...state.settings,
-                devMode: true
-            }
+                devMode: true,
+            },
         }));
 
         renderThumbnailsTab();
@@ -286,17 +295,22 @@ describe('ThumbnailsTab', () => {
         renderThumbnailsTab();
 
         expectMaintenanceControlsDisabled();
-        expect(screen.getByRole('button', { name: /repair broken thumbnails/i }).getAttribute('title'))
-            .toBe('Wait for Smart Thumbnail Optimization to finish');
+        expect(screen.getByRole('button', { name: /repair broken thumbnails/i }).getAttribute('title')).toBe(
+            'Wait for Smart Thumbnail Optimization to finish'
+        );
     });
 
     it('rechecks background healing at click time before claiming maintenance', () => {
         enableDeveloperFeatures();
         renderThumbnailsTab();
         const repairButton = screen.getByRole('button', { name: /repair broken thumbnails/i });
-        repairButton.addEventListener('click', () => {
-            useLibraryStore.setState({ isBackgroundHealingActive: true });
-        }, { capture: true, once: true });
+        repairButton.addEventListener(
+            'click',
+            () => {
+                useLibraryStore.setState({ isBackgroundHealingActive: true });
+            },
+            { capture: true, once: true }
+        );
 
         fireEvent.click(repairButton);
 
@@ -306,7 +320,7 @@ describe('ThumbnailsTab', () => {
 
     it.each([
         [1, 'Cleaned up 1 orphan thumbnail'],
-        [2, 'Cleaned up 2 orphan thumbnails']
+        [2, 'Cleaned up 2 orphan thumbnails'],
     ])('reports cleanup success for %i removed files', async (count, message) => {
         thumbnailMocks.cleanupOrphanThumbnails.mockResolvedValueOnce(count);
         renderThumbnailsTab();
@@ -328,7 +342,7 @@ describe('ThumbnailsTab', () => {
 
     it.each([
         [1, 'Synced 1 existing thumbnail to database'],
-        [2, 'Synced 2 existing thumbnails to database']
+        [2, 'Synced 2 existing thumbnails to database'],
     ])('reports sync success for %i database updates', async (count, message) => {
         enableDeveloperFeatures();
         thumbnailMocks.syncExistingThumbnailsToDB.mockResolvedValueOnce(count);
@@ -391,7 +405,7 @@ describe('ThumbnailsTab', () => {
             images: [first, second],
             totalCount: 4,
             selectedIds: new Set(['first']),
-            thumbnailsScope: 'filtered'
+            thumbnailsScope: 'filtered',
         });
 
         fireEvent.click(screen.getByRole('button', { name: /regenerate selected/i }));
@@ -414,7 +428,7 @@ describe('ThumbnailsTab', () => {
             totalCount: 1,
             selectedIds: new Set(['only']),
             thumbnailsScope: 'filtered',
-            includeUpgradeable: true
+            includeUpgradeable: true,
         });
 
         expect(screen.getByText('Processing...')).not.toBeNull();
@@ -433,9 +447,13 @@ describe('ThumbnailsTab', () => {
         enableDeveloperFeatures();
         renderThumbnailsTab();
         const cleanup = screen.getByRole('button', { name: /clean up unused thumbnails/i });
-        cleanup.addEventListener('click', () => {
-            useLibraryStore.setState({ thumbnailMaintenanceOperation: 'repair' });
-        }, { capture: true, once: true });
+        cleanup.addEventListener(
+            'click',
+            () => {
+                useLibraryStore.setState({ thumbnailMaintenanceOperation: 'repair' });
+            },
+            { capture: true, once: true }
+        );
         fireEvent.click(cleanup);
         expect(thumbnailMocks.cleanupOrphanThumbnails).not.toHaveBeenCalled();
 
@@ -444,7 +462,7 @@ describe('ThumbnailsTab', () => {
         const currentState = useLibraryStore.getState();
         const getState = vi.spyOn(useLibraryStore, 'getState').mockReturnValue({
             ...currentState,
-            isRegeneratingThumbnails: true
+            isRegeneratingThumbnails: true,
         });
         fireEvent.click(sync);
         expect(thumbnailMocks.syncExistingThumbnailsToDB).not.toHaveBeenCalled();

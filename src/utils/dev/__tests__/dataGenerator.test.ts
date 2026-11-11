@@ -57,8 +57,10 @@ describe('generateStressTestData', () => {
 
         await generateStressTestData(1);
 
-        expect(mockedInsertImagesBatch).toHaveBeenCalledWith([expect.objectContaining({
-            id: expect.stringMatching(/^stress_test_0_/),
-        })]);
+        expect(mockedInsertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: expect.stringMatching(/^stress_test_0_/),
+            }),
+        ]);
     });
 });

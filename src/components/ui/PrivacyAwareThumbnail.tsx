@@ -28,9 +28,9 @@ export const PrivacyAwareThumbnail: React.FC<PrivacyAwareThumbnailProps> = ({
     draggable = false,
     ...imgProps
 }) => {
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
-    const maskingMode = useSettingsStore(s => s.settings.maskingMode);
-    const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
+    const maskingMode = useSettingsStore((s) => s.settings.maskingMode);
+    const privacyMaskIndexStatus = useSettingsStore((s) => s.privacyMaskIndexStatus);
 
     if (privacyEnabled && privacyMaskIndexStatus !== 'ready') {
         return (
@@ -50,7 +50,9 @@ export const PrivacyAwareThumbnail: React.FC<PrivacyAwareThumbnailProps> = ({
 
     if (!resolvedSrc || shouldHide) {
         return (
-            <div className={`flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 ${wrapperClassName} ${placeholderClassName}`}>
+            <div
+                className={`flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 ${wrapperClassName} ${placeholderClassName}`}
+            >
                 {fallback || <ImageOff className="w-1/3 h-1/3" />}
             </div>
         );

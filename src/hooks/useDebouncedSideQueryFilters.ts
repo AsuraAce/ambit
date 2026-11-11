@@ -12,10 +12,7 @@ export const getNonSearchFilterFingerprint = (filters: FilterState): string => {
  * Heavy side queries should trail search typing, but structural filter changes
  * should still update immediately so filter UI stays coherent.
  */
-export const useDebouncedSideQueryFilters = (
-    filters: FilterState,
-    delayMs: number = SIDE_QUERY_SEARCH_DEBOUNCE_MS
-): FilterState => {
+export const useDebouncedSideQueryFilters = (filters: FilterState, delayMs: number = SIDE_QUERY_SEARCH_DEBOUNCE_MS): FilterState => {
     const [debouncedFilters, setDebouncedFilters] = useState(filters);
     const debouncedFiltersRef = useRef(filters);
 

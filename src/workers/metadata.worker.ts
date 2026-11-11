@@ -46,8 +46,7 @@ const notePngBudgetLimit = (budget: PngMetadataBudget, reason: string) => {
     }
 };
 
-const isPngMetadataChunk = (type: string): boolean =>
-    type === 'tEXt' || type === 'iTXt' || type === 'zTXt' || type === 'eXIf';
+const isPngMetadataChunk = (type: string): boolean => type === 'tEXt' || type === 'iTXt' || type === 'zTXt' || type === 'eXIf';
 
 const allowPngMetadataChunk = (budget: PngMetadataBudget, length: number): boolean => {
     if (budget.rawExhausted) return false;
@@ -67,21 +66,14 @@ const allowPngMetadataChunk = (budget: PngMetadataBudget, length: number): boole
 };
 
 const remainingPngDecodedTextBytes = (budget: PngMetadataBudget): number =>
-    budget.decodedExhausted
-        ? 0
-        : Math.max(0, MAX_PNG_DECODED_TEXT_TOTAL_BYTES - budget.decodedTextBytes);
+    budget.decodedExhausted ? 0 : Math.max(0, MAX_PNG_DECODED_TEXT_TOTAL_BYTES - budget.decodedTextBytes);
 
 const exhaustPngDecodedTextBudget = (budget: PngMetadataBudget) => {
     budget.decodedExhausted = true;
     notePngBudgetLimit(budget, 'aggregate decoded text bytes exceed limit');
 };
 
-const acceptPngDecodedText = (
-    chunks: Record<string, string>,
-    budget: PngMetadataBudget,
-    key: string,
-    value: string,
-): boolean => {
+const acceptPngDecodedText = (chunks: Record<string, string>, budget: PngMetadataBudget, key: string, value: string): boolean => {
     if (budget.decodedExhausted) return false;
 
     const decodedBytes = textEncoder.encode(value).byteLength;
@@ -95,10 +87,7 @@ const acceptPngDecodedText = (
     return true;
 };
 
-type DecompressDeflateResult =
-    | { status: 'ok'; data: Uint8Array }
-    | { status: 'over-limit' }
-    | { status: 'invalid' };
+type DecompressDeflateResult = { status: 'ok'; data: Uint8Array } | { status: 'over-limit' } | { status: 'invalid' };
 
 type MetadataRecord = Record<string, unknown>;
 type DecompressionStreamConstructor = new (format: 'deflate') => TransformStream<Uint8Array, Uint8Array>;
@@ -106,10 +95,9 @@ type DecompressionGlobal = typeof globalThis & {
     DecompressionStream?: DecompressionStreamConstructor;
 };
 
-const isRecord = (value: unknown): value is MetadataRecord =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is MetadataRecord => !!value && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): MetadataRecord => isRecord(value) ? value : {};
+const asRecord = (value: unknown): MetadataRecord => (isRecord(value) ? value : {});
 
 const asStringRecord = (value: unknown): Record<string, string> | undefined => {
     if (!isRecord(value)) return undefined;
@@ -121,7 +109,7 @@ const asStringRecord = (value: unknown): Record<string, string> | undefined => {
 };
 
 const asGeneratorTool = (value: unknown): GeneratorTool | undefined =>
-    Object.values(GeneratorTool).includes(value as GeneratorTool) ? value as GeneratorTool : undefined;
+    Object.values(GeneratorTool).includes(value as GeneratorTool) ? (value as GeneratorTool) : undefined;
 
 const parseJsonRecord = (value: string): MetadataRecord => asRecord(JSON.parse(value));
 
@@ -160,12 +148,11 @@ const sanitize = (text: string): string => {
 };
 
 export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
-    const name = filename.replace(/\.[^/.]+$/, "");
+    const name = filename.replace(/\.[^/.]+$/, '');
     const parts = name.split('_');
     const lastPart = parts[parts.length - 1];
 
-    const isUUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(lastPart) ||
-        /^[0-9a-f]{32}$/i.test(lastPart);
+    const isUUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(lastPart) || /^[0-9a-f]{32}$/i.test(lastPart);
 
     if ((isUUID && parts.length > 1) || name.toLowerCase().includes('midjourney')) {
         const promptParts = isUUID ? parts.slice(0, -1) : parts;
@@ -210,11 +197,27 @@ export const detectGenerationType = (path: string, currentType?: string): string
     if (!path) return 'unknown';
 
     const lowerPath = path.toLowerCase().replace(/\\/g, '/');
-    if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img') || lowerPath.includes('/txt2img/') || lowerPath.includes('/text/')) {
+    if (
+        lowerPath.includes('/txt2img-images') ||
+        lowerPath.includes('/outputs/txt2img') ||
+        lowerPath.includes('/txt2img/') ||
+        lowerPath.includes('/text/')
+    ) {
         return 'txt2img';
-    } else if (lowerPath.includes('/img2img-images') || lowerPath.includes('/outputs/img2img') || lowerPath.includes('/img2img/') || lowerPath.includes('/image/')) {
+    } else if (
+        lowerPath.includes('/img2img-images') ||
+        lowerPath.includes('/outputs/img2img') ||
+        lowerPath.includes('/img2img/') ||
+        lowerPath.includes('/image/')
+    ) {
         return 'img2img';
-    } else if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras') || lowerPath.includes('/extras/') || lowerPath.includes('/save') || lowerPath.includes('/saved')) {
+    } else if (
+        lowerPath.includes('/extras-images') ||
+        lowerPath.includes('/outputs/extras') ||
+        lowerPath.includes('/extras/') ||
+        lowerPath.includes('/save') ||
+        lowerPath.includes('/saved')
+    ) {
         return 'extras';
     } else if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
         return 'grid';
@@ -223,8 +226,7 @@ export const detectGenerationType = (path: string, currentType?: string): string
     return 'unknown';
 };
 
-const isFiniteF32 = (value: unknown): value is number =>
-    typeof value === 'number' && Number.isFinite(Math.fround(value));
+const isFiniteF32 = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(Math.fround(value));
 
 export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
     if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
@@ -316,7 +318,7 @@ export const parseExifData = (data: Uint8Array): string | null => {
     let isLittleEndian = false;
     if (data[0] === 0x49 && data[1] === 0x49) {
         isLittleEndian = true;
-    } else if (data[0] === 0x4D && data[1] === 0x4D) {
+    } else if (data[0] === 0x4d && data[1] === 0x4d) {
         isLittleEndian = false;
     } else {
         return null; // Not valid TIFF/EXIF
@@ -329,7 +331,7 @@ export const parseExifData = (data: Uint8Array): string | null => {
     const getU32 = (offset: number) => view.getUint32(offset, isLittleEndian);
 
     // Verify 42 (0x002A) signature
-    if (getU16(2) !== 0x002A) return null;
+    if (getU16(2) !== 0x002a) return null;
 
     const firstIfdOffset = getU32(4);
     if (firstIfdOffset < 8 || firstIfdOffset >= data.length) return null;
@@ -348,7 +350,7 @@ export const parseExifData = (data: Uint8Array): string | null => {
         let exifIfdOffset = 0;
 
         for (let i = 0; i < entryCount; i++) {
-            const entryOffset = entriesStart + (i * 12);
+            const entryOffset = entriesStart + i * 12;
             if (entryOffset + 12 > data.length) break;
 
             const tag = getU16(entryOffset);
@@ -365,7 +367,8 @@ export const parseExifData = (data: Uint8Array): string | null => {
                 // UserComment is type 7 (undefined) usually
                 // It points to a data block
                 const dataOffset = valueOffsetOrData;
-                if (dataOffset + 8 < data.length) { // Minimum header size
+                if (dataOffset + 8 < data.length) {
+                    // Minimum header size
                     // Read 'ASCII\0\0\0' or 'UNICODE\0' etc
                     // SDNext/A1111 usually use ASCII header or just UTF-8
 
@@ -411,7 +414,7 @@ export const parseExifData = (data: Uint8Array): string | null => {
 // Decompression helper using browser-native DecompressionStream
 export const decompressDeflate = async (
     buffer: Uint8Array,
-    maxDecompressedSize = MAX_PNG_DECOMPRESSED_TEXT_BYTES,
+    maxDecompressedSize = MAX_PNG_DECOMPRESSED_TEXT_BYTES
 ): Promise<DecompressDeflateResult> => {
     if (maxDecompressedSize <= 0) return { status: 'over-limit' };
 
@@ -488,12 +491,7 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
             const nullPos = data.indexOf(0);
             if (nullPos !== -1) {
                 const key = textDecoder.decode(data.slice(0, nullPos));
-                acceptPngDecodedText(
-                    chunks,
-                    budget,
-                    key,
-                    textDecoder.decode(data.slice(nullPos + 1)),
-                );
+                acceptPngDecodedText(chunks, budget, key, textDecoder.decode(data.slice(nullPos + 1)));
             }
         } else if (type === 'zTXt') {
             const data = buffer.slice(pos, dataEnd);
@@ -501,20 +499,13 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
             if (nullPos !== -1) {
                 const key = textDecoder.decode(data.slice(0, nullPos));
                 // zTXt: key (null) method (1 byte, must be 0 for deflate) compressedData
-                if (data[nullPos + 1] === 0) { // Compression method 0 (deflate)
+                if (data[nullPos + 1] === 0) {
+                    // Compression method 0 (deflate)
                     const compressed = data.slice(nullPos + 2);
-                    const maxDecoded = Math.min(
-                        MAX_PNG_DECOMPRESSED_TEXT_BYTES,
-                        remainingPngDecodedTextBytes(budget),
-                    );
+                    const maxDecoded = Math.min(MAX_PNG_DECOMPRESSED_TEXT_BYTES, remainingPngDecodedTextBytes(budget));
                     const decompressed = await decompressDeflate(compressed, maxDecoded);
                     if (decompressed.status === 'ok') {
-                        acceptPngDecodedText(
-                            chunks,
-                            budget,
-                            key,
-                            textDecoder.decode(decompressed.data),
-                        );
+                        acceptPngDecodedText(chunks, budget, key, textDecoder.decode(decompressed.data));
                     } else if (decompressed.status === 'over-limit') {
                         exhaustPngDecodedTextBudget(budget);
                     }
@@ -536,31 +527,19 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
 
                 if (textStart <= data.byteLength) {
                     if (isCompressed) {
-                        if (method === 0) { // Compression method 0 (deflate)
+                        if (method === 0) {
+                            // Compression method 0 (deflate)
                             const compressed = data.slice(textStart);
-                            const maxDecoded = Math.min(
-                                MAX_PNG_DECOMPRESSED_TEXT_BYTES,
-                                remainingPngDecodedTextBytes(budget),
-                            );
+                            const maxDecoded = Math.min(MAX_PNG_DECOMPRESSED_TEXT_BYTES, remainingPngDecodedTextBytes(budget));
                             const decompressed = await decompressDeflate(compressed, maxDecoded);
                             if (decompressed.status === 'ok') {
-                                acceptPngDecodedText(
-                                    chunks,
-                                    budget,
-                                    key,
-                                    textDecoder.decode(decompressed.data),
-                                );
+                                acceptPngDecodedText(chunks, budget, key, textDecoder.decode(decompressed.data));
                             } else if (decompressed.status === 'over-limit') {
                                 exhaustPngDecodedTextBudget(budget);
                             }
                         }
                     } else {
-                        acceptPngDecodedText(
-                            chunks,
-                            budget,
-                            key,
-                            textDecoder.decode(data.slice(textStart)),
-                        );
+                        acceptPngDecodedText(chunks, budget, key, textDecoder.decode(data.slice(textStart)));
                     }
                 }
             }
@@ -646,7 +625,7 @@ self.onmessage = async (e: MessageEvent) => {
             if (workflowChunk) {
                 const secondary: Partial<ImageMetadata> = {
                     workflowJson: workflowChunk,
-                    tool: GeneratorTool.INVOKEAI
+                    tool: GeneratorTool.INVOKEAI,
                 };
                 mergeMetadata(metadata, secondary);
             }
@@ -668,10 +647,9 @@ self.onmessage = async (e: MessageEvent) => {
         metadata.generationType = detectGenerationType(path || '', metadata.generationType);
 
         self.postMessage({ metadata, extra, isIntermediate, requestId });
-
     } catch (err) {
         // Safe fallback
-        console.error("Worker parsing failed", err);
+        console.error('Worker parsing failed', err);
         self.postMessage({ metadata: { tool: 'Unknown' }, extra: {}, requestId });
     }
 };

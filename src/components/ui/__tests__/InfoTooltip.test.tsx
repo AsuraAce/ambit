@@ -31,7 +31,9 @@ const ModalLauncherHarness: React.FC = () => {
             </TooltipButton>
             {isOpen && (
                 <div role="dialog" aria-label="Example modal">
-                    <button ref={closeButtonRef} onClick={() => setIsOpen(false)}>Close</button>
+                    <button ref={closeButtonRef} onClick={() => setIsOpen(false)}>
+                        Close
+                    </button>
                 </div>
             )}
         </>
@@ -273,12 +275,7 @@ describe('InfoTooltip', () => {
 
         try {
             render(
-                <TooltipButton
-                    label="Run action"
-                    content="Run action"
-                    onClick={onClick}
-                    onKeyDown={onKeyDown}
-                >
+                <TooltipButton label="Run action" content="Run action" onClick={onClick} onKeyDown={onKeyDown}>
                     Run
                 </TooltipButton>
             );
@@ -318,14 +315,15 @@ describe('InfoTooltip', () => {
             bottom: top + height,
             toJSON: () => ({}),
         });
-        const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-            .mockImplementation(function (this: HTMLElement) {
-                if (this.getAttribute('role') === 'tooltip') {
-                    const width = this.textContent === 'Short help' ? 100 : 300;
-                    return rect(0, 0, width, 40);
-                }
-                return rect(400, 300, 20, 20);
-            });
+        const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+            this: HTMLElement
+        ) {
+            if (this.getAttribute('role') === 'tooltip') {
+                const width = this.textContent === 'Short help' ? 100 : 300;
+                return rect(0, 0, width, 40);
+            }
+            return rect(400, 300, 20, 20);
+        });
 
         try {
             const { rerender } = render(

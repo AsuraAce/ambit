@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_AI_MODEL, DEFAULT_AI_THINKING_MODE } from '../../constants/aiModels';
-import {
-    areDeveloperFeaturesEnabled,
-    getEffectiveAiModel,
-    getEffectiveAiThinkingMode,
-    getEffectiveSystemPrompts,
-} from '../settingsUtils';
+import { areDeveloperFeaturesEnabled, getEffectiveAiModel, getEffectiveAiThinkingMode, getEffectiveSystemPrompts } from '../settingsUtils';
 import type { AppSettings } from '../../types';
 
 const createAiSettings = (): Pick<AppSettings, 'aiModel' | 'aiThinkingMode' | 'devMode' | 'systemPrompts'> => ({

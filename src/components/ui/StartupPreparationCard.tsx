@@ -31,9 +31,7 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
 }) => {
     const isDeterminate = (progress?.total ?? 0) > 0;
     const current = Math.min(progress?.current ?? 0, progress?.total ?? 0);
-    const percentage = isDeterminate
-        ? Math.min(100, (current / progress!.total) * 100)
-        : 0;
+    const percentage = isDeterminate ? Math.min(100, (current / progress!.total) * 100) : 0;
 
     return (
         <section className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white/85 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/85 sm:p-8">
@@ -45,23 +43,19 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
                     {icon}
                 </div>
                 <div className="min-w-0">
-                    <p className="text-xs font-black uppercase tracking-[0.22em] text-gray-500">
-                        {phaseLabel}
-                    </p>
-                    <h1 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="mt-1 text-xl font-black tracking-tight text-gray-900 outline-none dark:text-white">
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-gray-500">{phaseLabel}</p>
+                    <h1
+                        ref={headingRef}
+                        tabIndex={headingRef ? -1 : undefined}
+                        className="mt-1 text-xl font-black tracking-tight text-gray-900 outline-none dark:text-white"
+                    >
                         {title}
                     </h1>
                 </div>
             </div>
 
-            <p className="mt-6 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {description}
-            </p>
-            {reassurance ? (
-                <p className="mt-3 text-sm font-semibold text-sage-700 dark:text-sage-300">
-                    {reassurance}
-                </p>
-            ) : null}
+            <p className="mt-6 text-sm leading-6 text-gray-600 dark:text-gray-300">{description}</p>
+            {reassurance ? <p className="mt-3 text-sm font-semibold text-sage-700 dark:text-sage-300">{reassurance}</p> : null}
 
             <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-black/20">
                 <div className="flex items-start justify-between gap-4 text-xs font-semibold text-gray-600 dark:text-gray-300">
@@ -72,7 +66,9 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
                                 aria-hidden="true"
                             />
                         )}
-                        <span role="status" aria-live="polite" aria-atomic="true">{statusMessage}</span>
+                        <span role="status" aria-live="polite" aria-atomic="true">
+                            {statusMessage}
+                        </span>
                     </div>
                     {isDeterminate ? (
                         <span className="shrink-0 font-mono text-gray-500" aria-hidden="true">

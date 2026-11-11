@@ -15,20 +15,19 @@ interface ImageQueryOrderOptions {
     reorderQueryKey?: QueryKey;
 }
 
-const hasSameImageOrder = (images: readonly AIImage[], order: readonly AIImage[]): boolean => (
-    images.length === order.length && images.every((image, index) => image.id === order[index]?.id)
-);
+const hasSameImageOrder = (images: readonly AIImage[], order: readonly AIImage[]): boolean =>
+    images.length === order.length && images.every((image, index) => image.id === order[index]?.id);
 
-const pageImagesChanged = (pages: ImagesPage[], nextPages: ImagesPage[]): boolean => (
-    pages.some((page, pageIndex) => (
-        page.images.length !== nextPages[pageIndex]?.images.length
-        || page.images.some((image, imageIndex) => image !== nextPages[pageIndex]?.images[imageIndex])
-    ))
-);
+const pageImagesChanged = (pages: ImagesPage[], nextPages: ImagesPage[]): boolean =>
+    pages.some(
+        (page, pageIndex) =>
+            page.images.length !== nextPages[pageIndex]?.images.length ||
+            page.images.some((image, imageIndex) => image !== nextPages[pageIndex]?.images[imageIndex])
+    );
 
 const repartitionImages = (images: readonly AIImage[], pages: ImagesPage[]): ImagesPage[] => {
     let offset = 0;
-    return pages.map(page => {
+    return pages.map((page) => {
         const pageLength = page.images.length;
         const nextImages = images.slice(offset, offset + pageLength);
         offset += pageLength;
@@ -36,9 +35,7 @@ const repartitionImages = (images: readonly AIImage[], pages: ImagesPage[]): Ima
     });
 };
 
-const queryKeysMatch = (left: QueryKey, right: QueryKey): boolean => (
-    left === right || JSON.stringify(left) === JSON.stringify(right)
-);
+const queryKeysMatch = (left: QueryKey, right: QueryKey): boolean => left === right || JSON.stringify(left) === JSON.stringify(right);
 
 const updateImagesQueryData = (
     data: ImagesQueryData,
@@ -46,17 +43,18 @@ const updateImagesQueryData = (
     updateImage: (image: AIImage) => AIImage,
     options: ImageQueryOrderOptions
 ): ImagesQueryData => {
-    const originalImages = data.pages.flatMap(page => page.images);
-    const shouldReorder = !!options.reorderQueryKey
-        && !!options.previousOrder
-        && !!options.nextOrder
-        && queryKeysMatch(queryKey, options.reorderQueryKey)
-        && hasSameImageOrder(originalImages, options.previousOrder);
+    const originalImages = data.pages.flatMap((page) => page.images);
+    const shouldReorder =
+        !!options.reorderQueryKey &&
+        !!options.previousOrder &&
+        !!options.nextOrder &&
+        queryKeysMatch(queryKey, options.reorderQueryKey) &&
+        hasSameImageOrder(originalImages, options.previousOrder);
 
     let changed = false;
-    const pages = data.pages.map(page => {
+    const pages = data.pages.map((page) => {
         let pageChanged = false;
-        const images = page.images.map(image => {
+        const images = page.images.map((image) => {
             const nextImage = updateImage(image);
             if (nextImage !== image) pageChanged = true;
             return nextImage;
@@ -68,12 +66,10 @@ const updateImagesQueryData = (
     });
 
     if (shouldReorder && options.nextOrder) {
-        const patchedById = new Map(pages.flatMap(page => page.images).map(image => [image.id, image]));
-        const orderedImages = options.nextOrder.map(image => patchedById.get(image.id) ?? image);
+        const patchedById = new Map(pages.flatMap((page) => page.images).map((image) => [image.id, image]));
+        const orderedImages = options.nextOrder.map((image) => patchedById.get(image.id) ?? image);
         const orderedPages = repartitionImages(orderedImages, pages);
-        return changed || pageImagesChanged(data.pages, orderedPages)
-            ? { ...data, pages: orderedPages }
-            : data;
+        return changed || pageImagesChanged(data.pages, orderedPages) ? { ...data, pages: orderedPages } : data;
     }
 
     return changed ? { ...data, pages } : data;
@@ -93,10 +89,7 @@ export const updateImagesQueryCaches = (
     });
 };
 
-export const removeImagesFromQueryCaches = (
-    queryClient: QueryClient,
-    ids: Iterable<string>
-): void => {
+export const removeImagesFromQueryCaches = (queryClient: QueryClient, ids: Iterable<string>): void => {
     const idSet = new Set(ids);
     if (idSet.size === 0) return;
 
@@ -104,8 +97,8 @@ export const removeImagesFromQueryCaches = (
         if (!data) return;
 
         const removedIds = new Set<string>();
-        const pages = data.pages.map(page => {
-            const images = page.images.filter(image => {
+        const pages = data.pages.map((page) => {
+            const images = page.images.filter((image) => {
                 if (!idSet.has(image.id)) return true;
                 removedIds.add(image.id);
                 return false;
@@ -116,16 +109,10 @@ export const removeImagesFromQueryCaches = (
         if (removedIds.size === 0) return;
 
         const removedCount = removedIds.size;
-        const nextPages = pages.map(page => {
-            const totalCount = page.totalCount < 0
-                ? page.totalCount
-                : Math.max(0, page.totalCount - removedCount);
-            const globalCount = page.globalCount < 0
-                ? page.globalCount
-                : Math.max(0, page.globalCount - removedCount);
-            return totalCount === page.totalCount && globalCount === page.globalCount
-                ? page
-                : { ...page, totalCount, globalCount };
+        const nextPages = pages.map((page) => {
+            const totalCount = page.totalCount < 0 ? page.totalCount : Math.max(0, page.totalCount - removedCount);
+            const globalCount = page.globalCount < 0 ? page.globalCount : Math.max(0, page.globalCount - removedCount);
+            return totalCount === page.totalCount && globalCount === page.globalCount ? page : { ...page, totalCount, globalCount };
         });
 
         queryClient.setQueryData(queryKey, { ...data, pages: nextPages });
@@ -139,16 +126,10 @@ export const patchImageFlagsInQueryCaches = (
     options?: ImageQueryOrderOptions
 ): void => {
     const idSet = new Set(ids);
-    updateImagesQueryCaches(queryClient, image => (
-        idSet.has(image.id) ? { ...image, ...patch } : image
-    ), options);
+    updateImagesQueryCaches(queryClient, (image) => (idSet.has(image.id) ? { ...image, ...patch } : image), options);
 };
 
-export const restoreImagesInQueryCaches = (
-    queryClient: QueryClient,
-    previousImages: AIImage[],
-    options?: ImageQueryOrderOptions
-): void => {
-    const previousById = new Map(previousImages.map(image => [image.id, image]));
-    updateImagesQueryCaches(queryClient, image => previousById.get(image.id) ?? image, options);
+export const restoreImagesInQueryCaches = (queryClient: QueryClient, previousImages: AIImage[], options?: ImageQueryOrderOptions): void => {
+    const previousById = new Map(previousImages.map((image) => [image.id, image]));
+    updateImagesQueryCaches(queryClient, (image) => previousById.get(image.id) ?? image, options);
 };

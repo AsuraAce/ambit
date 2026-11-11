@@ -11,18 +11,14 @@ import type { ImportResult } from '../../../services/importService';
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
+    onScanFolder?: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>;
 }
 
-export const FoldersTab: React.FC<TabProps> = React.memo(({
-    settings,
-    setSettings,
-    onScanFolder,
-    onInvokeSync
-}) => {
+export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder, onInvokeSync }) => {
     const {
-        newFolderPath, setNewFolderPath,
+        newFolderPath,
+        setNewFolderPath,
         scanningIds,
         combinedFolders,
         fileInputRef,
@@ -36,16 +32,19 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
 
     // Route refresh to the correct handler based on integration type.
     // InvokeAI folders re-sync from their database; all others refresh local image metadata.
-    const handleRefresh = useCallback((path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => {
-        if (isManaged && variant === GeneratorTool.INVOKEAI) {
-            const folder = combinedFolders.find((f) => (f.isManaged ? f.pathRaw : f.path) === path);
-            if (folder) {
-                handleRescan(folder.id, path, variant, true).catch(error => console.error('[FoldersTab] Rescan failed', error));
+    const handleRefresh = useCallback(
+        (path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => {
+            if (isManaged && variant === GeneratorTool.INVOKEAI) {
+                const folder = combinedFolders.find((f) => (f.isManaged ? f.pathRaw : f.path) === path);
+                if (folder) {
+                    handleRescan(folder.id, path, variant, true).catch((error) => console.error('[FoldersTab] Rescan failed', error));
+                }
+                return;
             }
-            return;
-        }
-        forceRefresh(path, force).catch(error => console.error('[FoldersTab] Metadata refresh failed', error));
-    }, [combinedFolders, handleRescan, forceRefresh]);
+            forceRefresh(path, force).catch((error) => console.error('[FoldersTab] Metadata refresh failed', error));
+        },
+        [combinedFolders, handleRescan, forceRefresh]
+    );
 
     const handleRefreshAll = useCallback(async () => {
         // 1. If we have a managed InvokeAI integration, sync it first
@@ -58,7 +57,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         // 2. Trigger the global reparse job
         console.log('[FoldersTab] Triggering global metadata reparse');
         // No path = all, force = false (version-gated)
-        forceRefresh(undefined, false).catch(error => console.error('[FoldersTab] Metadata refresh failed', error));
+        forceRefresh(undefined, false).catch((error) => console.error('[FoldersTab] Metadata refresh failed', error));
     }, [combinedFolders, handleRescan, forceRefresh]);
 
     return (
@@ -69,7 +68,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                     <Monitor className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Image Folders</strong>
-                        Add folders containing generated images, camera photos, or other local images. Ambit scans <span className="font-semibold">PNG, JPEG, and WebP</span> files without uploading them.
+                        Add folders containing generated images, camera photos, or other local images. Ambit scans{' '}
+                        <span className="font-semibold">PNG, JPEG, and WebP</span> files without uploading them.
                     </div>
                 </div>
 
@@ -89,7 +89,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                         </button>
                     </div>
                     <div className="p-2 space-y-1">
-                        {combinedFolders.map(folder => (
+                        {combinedFolders.map((folder) => (
                             <FolderItem
                                 key={folder.id}
                                 folder={folder}
@@ -121,7 +121,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                     </div>
                 </div>
             </div>
-
         </div>
     );
 });

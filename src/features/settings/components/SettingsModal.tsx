@@ -13,28 +13,27 @@ import { useInvokeConnectionDraft } from '../hooks/useInvokeConnectionDraft';
 import { useInvokeOwnerDiscovery } from '../hooks/useInvokeOwnerDiscovery';
 
 /* istanbul ignore next -- import.meta.env.DEV is fixed for a given build. */
-const DevTab = import.meta.env.DEV
-  ? React.lazy(() => import('./DevTab').then(module => ({ default: module.DevTab })))
-  : null;
+const DevTab = import.meta.env.DEV ? React.lazy(() => import('./DevTab').then((module) => ({ default: module.DevTab }))) : null;
 
 interface SettingsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  hasExternalBackdrop?: boolean;
-  settings: AppSettings;
-  onSave: (settings: AppSettingsUpdate) => void;
-  canCheckForUpdates: boolean;
-  initialTab?: 'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
-  onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
-  onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
-  hasPendingUpdate: boolean;
-  pendingUpdateVersion: string | null;
-  updateErrorMessage: string | null;
-  updateStatus: AppUpdaterStatus;
-  onCheckForUpdates: () => Promise<void>;
-  onOpenUpdatePrompt: () => void;
-  onNavigateToMaintenance: () => void;
-  onResetFirstRunOnboarding?: () => void;
+    isOpen: boolean;
+    onClose: () => void;
+    hasExternalBackdrop?: boolean;
+    settings: AppSettings;
+    onSave: (settings: AppSettingsUpdate) => void;
+    canCheckForUpdates: boolean;
+    initialTab?:
+        'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+    onScanFolder?: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>;
+    onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
+    hasPendingUpdate: boolean;
+    pendingUpdateVersion: string | null;
+    updateErrorMessage: string | null;
+    updateStatus: AppUpdaterStatus;
+    onCheckForUpdates: () => Promise<void>;
+    onOpenUpdatePrompt: () => void;
+    onNavigateToMaintenance: () => void;
+    onResetFirstRunOnboarding?: () => void;
 }
 
 type SettingsTab = 'general' | 'connections' | 'intelligence' | 'privacy' | 'dev' | 'advanced';
@@ -44,255 +43,305 @@ type DirectSettingsTab = Exclude<SettingsTab, 'connections' | 'advanced'>;
 const CONNECTION_SUB_TABS: readonly ConnectionSubTab[] = ['folders', 'resources', 'invokeai', 'a1111', 'comfyui'];
 
 const TAB_LABELS: Record<SettingsTab, string> = {
-  general: 'General',
-  connections: 'Connections',
-  intelligence: 'Intelligence',
-  privacy: 'Privacy',
-  dev: 'Dev Tools',
-  advanced: 'Advanced'
+    general: 'General',
+    connections: 'Connections',
+    intelligence: 'Intelligence',
+    privacy: 'Privacy',
+    dev: 'Dev Tools',
+    advanced: 'Advanced',
 };
 
 interface TabButtonProps {
-  id: SettingsTab;
-  label: string;
-  icon: React.ReactNode;
-  isActive: boolean;
-  onClick: (id: SettingsTab) => void;
+    id: SettingsTab;
+    label: string;
+    icon: React.ReactNode;
+    isActive: boolean;
+    onClick: (id: SettingsTab) => void;
 }
 
 const TabButton: React.FC<TabButtonProps> = ({ id, label, icon, isActive, onClick }) => (
-  <button
-    type="button"
-    onClick={() => onClick(id)}
-    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl border transition-colors duration-150 cursor-pointer mb-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-300/70 ${isActive
-      ? 'bg-white/10 text-white shadow-inner border-white/10'
-      : 'border-transparent text-gray-400 hover:bg-white/5 hover:text-white'
-      }`}
-  >
-    <div className={`${isActive ? (id === 'intelligence' ? 'text-amethyst-300' : 'text-sage-300') : 'text-gray-500 group-hover:text-gray-300'}`}>
-      {icon}
-    </div>
-    {label}
-  </button>
+    <button
+        type="button"
+        onClick={() => onClick(id)}
+        className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl border transition-colors duration-150 cursor-pointer mb-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-300/70 ${
+            isActive
+                ? 'bg-white/10 text-white shadow-inner border-white/10'
+                : 'border-transparent text-gray-400 hover:bg-white/5 hover:text-white'
+        }`}
+    >
+        <div
+            className={`${isActive ? (id === 'intelligence' ? 'text-amethyst-300' : 'text-sage-300') : 'text-gray-500 group-hover:text-gray-300'}`}
+        >
+            {icon}
+        </div>
+        {label}
+    </button>
 );
 
-export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
-  isOpen,
-  onClose,
-  hasExternalBackdrop = false,
-  settings,
-  onSave,
-  canCheckForUpdates,
-  initialTab = 'general',
-  onScanFolder,
-  onInvokeSync,
-  hasPendingUpdate,
-  pendingUpdateVersion,
-  updateErrorMessage,
-  updateStatus,
-  onCheckForUpdates,
-  onOpenUpdatePrompt,
-  onNavigateToMaintenance,
-  onResetFirstRunOnboarding
-}) => {
-  const appVersion = useAppVersion();
-  const showDevTools = isDevelopmentBuild();
-  const prefersReducedMotion = useReducedMotion();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
-  const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const restoreFocusOnCloseRef = useRef(true);
-  const invokeDraftSession = useInvokeConnectionDraft(settings, isOpen);
-  const invokeOwnerDiscoverySession = useInvokeOwnerDiscovery(invokeDraftSession.draft.invokeAiPath);
-  const wasSettingsOpenRef = useRef(isOpen);
+export const SettingsModal: React.FC<SettingsModalProps> = React.memo(
+    ({
+        isOpen,
+        onClose,
+        hasExternalBackdrop = false,
+        settings,
+        onSave,
+        canCheckForUpdates,
+        initialTab = 'general',
+        onScanFolder,
+        onInvokeSync,
+        hasPendingUpdate,
+        pendingUpdateVersion,
+        updateErrorMessage,
+        updateStatus,
+        onCheckForUpdates,
+        onOpenUpdatePrompt,
+        onNavigateToMaintenance,
+        onResetFirstRunOnboarding,
+    }) => {
+        const appVersion = useAppVersion();
+        const showDevTools = isDevelopmentBuild();
+        const prefersReducedMotion = useReducedMotion();
+        const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+        const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
+        const closeButtonRef = useRef<HTMLButtonElement>(null);
+        const restoreFocusOnCloseRef = useRef(true);
+        const invokeDraftSession = useInvokeConnectionDraft(settings, isOpen);
+        const invokeOwnerDiscoverySession = useInvokeOwnerDiscovery(invokeDraftSession.draft.invokeAiPath);
+        const wasSettingsOpenRef = useRef(isOpen);
 
-  useEffect(() => {
-    if (!isOpen && wasSettingsOpenRef.current) {
-      invokeOwnerDiscoverySession.reset();
+        useEffect(() => {
+            if (!isOpen && wasSettingsOpenRef.current) {
+                invokeOwnerDiscoverySession.reset();
+            }
+            wasSettingsOpenRef.current = isOpen;
+            // eslint-disable-next-line react-hooks/exhaustive-deps -- lists .reset, the only member used; the session object is new every render
+        }, [invokeOwnerDiscoverySession.reset, isOpen]);
+
+        // Reset to initial tab when modal opens
+        useEffect(() => {
+            if (isOpen) {
+                if (CONNECTION_SUB_TABS.includes(initialTab as ConnectionSubTab)) {
+                    setActiveTab('connections');
+                    setConnectionSubTab(initialTab as ConnectionSubTab);
+                } else if (initialTab === 'experiments') {
+                    setActiveTab('intelligence');
+                    setConnectionSubTab(undefined);
+                } else if (initialTab === 'dev' && !showDevTools) {
+                    setActiveTab('advanced');
+                    setConnectionSubTab(undefined);
+                } else {
+                    setActiveTab(initialTab as DirectSettingsTab);
+                    setConnectionSubTab(undefined);
+                }
+            }
+        }, [isOpen, initialTab, showDevTools]);
+
+        useEffect(() => {
+            if (!isOpen) return;
+
+            restoreFocusOnCloseRef.current = true;
+            const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            closeButtonRef.current?.focus();
+
+            return () => {
+                if (restoreFocusOnCloseRef.current && previousFocus?.isConnected) previousFocus.focus();
+            };
+        }, [isOpen]);
+
+        // Auto-save wrapper: calls onSave directly on any change
+        const handleSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>> = useCallback(
+            (updater) => {
+                if (typeof updater === 'function') {
+                    onSave((latest) => updater(latest));
+                } else {
+                    onSave(updater);
+                }
+            },
+            [onSave]
+        );
+
+        return (
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.15 }}
+                        className={`fixed inset-0 z-[200] flex items-center justify-center ${
+                            hasExternalBackdrop ? 'bg-transparent' : 'bg-black/60 dark:bg-black/80 backdrop-blur-sm'
+                        }`}
+                        onClick={onClose}
+                    >
+                        <motion.div
+                            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+                            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+                            transition={
+                                prefersReducedMotion
+                                    ? { duration: 0 }
+                                    : {
+                                          opacity: { duration: 0.15, delay: 0.05 },
+                                          scale: { type: 'spring', stiffness: 400, damping: 30, delay: 0.05 },
+                                      }
+                            }
+                            className="w-full max-w-5xl bg-card border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-[680px] max-h-[85vh] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Sidebar */}
+                            <div className="w-64 bg-gradient-to-b from-gray-900 to-sage-950 flex flex-col p-4 shrink-0 relative overflow-hidden">
+                                {/* Noise Texture Overlay - inline SVG to prevent network-related flash */}
+                                <div
+                                    className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay"
+                                    style={{
+                                        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+                                    }}
+                                />
+
+                                <div className="relative z-10">
+                                    <h2 className="text-lg font-bold text-white mb-8 px-4 mt-2 tracking-tight">{APP_NAME} Preferences</h2>
+                                    <nav className="space-y-6">
+                                        <div>
+                                            <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">
+                                                Application
+                                            </h4>
+                                            <TabButton
+                                                id="general"
+                                                label="General"
+                                                icon={<Monitor className="w-4 h-4" />}
+                                                isActive={activeTab === 'general'}
+                                                onClick={setActiveTab}
+                                            />
+                                            <TabButton
+                                                id="connections"
+                                                label="Connections"
+                                                icon={<Link className="w-4 h-4" />}
+                                                isActive={activeTab === 'connections'}
+                                                onClick={setActiveTab}
+                                            />
+                                            <TabButton
+                                                id="intelligence"
+                                                label="Intelligence"
+                                                icon={<Sparkles className="w-4 h-4" />}
+                                                isActive={activeTab === 'intelligence'}
+                                                onClick={setActiveTab}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">
+                                                Security
+                                            </h4>
+                                            <TabButton
+                                                id="privacy"
+                                                label="Privacy"
+                                                icon={<Shield className="w-4 h-4" />}
+                                                isActive={activeTab === 'privacy'}
+                                                onClick={setActiveTab}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">
+                                                Advanced
+                                            </h4>
+                                            <TabButton
+                                                id="advanced"
+                                                label="Advanced"
+                                                icon={<Shield className="w-4 h-4" />}
+                                                isActive={activeTab === 'advanced'}
+                                                onClick={setActiveTab}
+                                            />
+                                            {showDevTools && (
+                                                <TabButton
+                                                    id="dev"
+                                                    label="Dev Tools"
+                                                    icon={<Terminal className="w-4 h-4" />}
+                                                    isActive={activeTab === 'dev'}
+                                                    onClick={setActiveTab}
+                                                />
+                                            )}
+                                        </div>
+                                    </nav>
+                                </div>
+
+                                <div className="mt-auto relative z-10 text-xs text-gray-500 px-4">v{appVersion ?? '...'}</div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 flex flex-col min-w-0 bg-background">
+                                <div className="flex items-center justify-between p-8 pb-4 shrink-0">
+                                    <div className="flex flex-col">
+                                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{TAB_LABELS[activeTab]}</h3>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                            Manage your application preferences and connections.
+                                        </p>
+                                    </div>
+                                    <button
+                                        ref={closeButtonRef}
+                                        type="button"
+                                        aria-label="Close Settings"
+                                        onClick={onClose}
+                                        className="p-2 bg-gray-200 dark:bg-white/5 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <div
+                                    className={
+                                        activeTab === 'dev'
+                                            ? 'flex-1 flex flex-col min-h-0 overflow-hidden'
+                                            : 'flex-1 overflow-y-auto custom-scrollbar p-8 pt-4'
+                                    }
+                                >
+                                    {activeTab === 'general' && <GeneralTab settings={settings} setSettings={handleSettingsChange} />}
+                                    {activeTab === 'connections' && (
+                                        <ConnectionsTab
+                                            settings={settings}
+                                            setSettings={handleSettingsChange}
+                                            onScanFolder={onScanFolder}
+                                            onInvokeSync={onInvokeSync}
+                                            initialSubTab={connectionSubTab}
+                                            onClose={onClose}
+                                            onInvokeAccepted={() => {
+                                                restoreFocusOnCloseRef.current = false;
+                                                onClose();
+                                            }}
+                                            invokeDraftSession={invokeDraftSession}
+                                            invokeOwnerDiscoverySession={invokeOwnerDiscoverySession}
+                                        />
+                                    )}
+                                    {activeTab === 'intelligence' && (
+                                        <IntelligenceTab settings={settings} setSettings={handleSettingsChange} />
+                                    )}
+                                    {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
+                                    {activeTab === 'advanced' && (
+                                        <AdvancedTab
+                                            settings={settings}
+                                            setSettings={handleSettingsChange}
+                                            canCheckForUpdates={canCheckForUpdates}
+                                            hasPendingUpdate={hasPendingUpdate}
+                                            pendingUpdateVersion={pendingUpdateVersion}
+                                            updateErrorMessage={updateErrorMessage}
+                                            updateStatus={updateStatus}
+                                            onCheckForUpdates={onCheckForUpdates}
+                                            onOpenUpdatePrompt={onOpenUpdatePrompt}
+                                            onNavigateToMaintenance={onNavigateToMaintenance}
+                                            onClose={onClose}
+                                        />
+                                    )}
+                                    {activeTab === 'dev' && showDevTools && DevTab && (
+                                        <React.Suspense fallback={null}>
+                                            <DevTab onResetFirstRunOnboarding={onResetFirstRunOnboarding} />
+                                        </React.Suspense>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        );
     }
-    wasSettingsOpenRef.current = isOpen;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- lists .reset, the only member used; the session object is new every render
-  }, [invokeOwnerDiscoverySession.reset, isOpen]);
-
-  // Reset to initial tab when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      if (CONNECTION_SUB_TABS.includes(initialTab as ConnectionSubTab)) {
-        setActiveTab('connections');
-        setConnectionSubTab(initialTab as ConnectionSubTab);
-      } else if (initialTab === 'experiments') {
-        setActiveTab('intelligence');
-        setConnectionSubTab(undefined);
-      } else if (initialTab === 'dev' && !showDevTools) {
-        setActiveTab('advanced');
-        setConnectionSubTab(undefined);
-      } else {
-        setActiveTab(initialTab as DirectSettingsTab);
-        setConnectionSubTab(undefined);
-      }
-    }
-  }, [isOpen, initialTab, showDevTools]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    restoreFocusOnCloseRef.current = true;
-    const previousFocus = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    closeButtonRef.current?.focus();
-
-    return () => {
-      if (restoreFocusOnCloseRef.current && previousFocus?.isConnected) previousFocus.focus();
-    };
-  }, [isOpen]);
-
-  // Auto-save wrapper: calls onSave directly on any change
-  const handleSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>> = useCallback(
-    (updater) => {
-      if (typeof updater === 'function') {
-        onSave((latest) => updater(latest));
-      } else {
-        onSave(updater);
-      }
-    },
-    [onSave]
-  );
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.15 }}
-          className={`fixed inset-0 z-[200] flex items-center justify-center ${hasExternalBackdrop
-            ? 'bg-transparent'
-            : 'bg-black/60 dark:bg-black/80 backdrop-blur-sm'
-            }`}
-          onClick={onClose}
-        >
-          <motion.div
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
-            transition={prefersReducedMotion
-              ? { duration: 0 }
-              : {
-                opacity: { duration: 0.15, delay: 0.05 },
-                scale: { type: "spring", stiffness: 400, damping: 30, delay: 0.05 }
-              }}
-            className="w-full max-w-5xl bg-card border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-[680px] max-h-[85vh] overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-
-            {/* Sidebar */}
-            <div className="w-64 bg-gradient-to-b from-gray-900 to-sage-950 flex flex-col p-4 shrink-0 relative overflow-hidden">
-              {/* Noise Texture Overlay - inline SVG to prevent network-related flash */}
-              <div
-                className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-                }}
-              />
-
-              <div className="relative z-10">
-                <h2 className="text-lg font-bold text-white mb-8 px-4 mt-2 tracking-tight">{APP_NAME} Preferences</h2>
-                <nav className="space-y-6">
-                  <div>
-                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Application</h4>
-                    <TabButton id="general" label="General" icon={<Monitor className="w-4 h-4" />} isActive={activeTab === 'general'} onClick={setActiveTab} />
-                    <TabButton id="connections" label="Connections" icon={<Link className="w-4 h-4" />} isActive={activeTab === 'connections'} onClick={setActiveTab} />
-                    <TabButton id="intelligence" label="Intelligence" icon={<Sparkles className="w-4 h-4" />} isActive={activeTab === 'intelligence'} onClick={setActiveTab} />
-                  </div>
-
-                  <div>
-                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Security</h4>
-                    <TabButton id="privacy" label="Privacy" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'privacy'} onClick={setActiveTab} />
-                  </div>
-
-                  <div>
-                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Advanced</h4>
-                    <TabButton id="advanced" label="Advanced" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'advanced'} onClick={setActiveTab} />
-                    {showDevTools && (
-                      <TabButton id="dev" label="Dev Tools" icon={<Terminal className="w-4 h-4" />} isActive={activeTab === 'dev'} onClick={setActiveTab} />
-                    )}
-                  </div>
-                </nav>
-              </div>
-
-              <div className="mt-auto relative z-10 text-xs text-gray-500 px-4">
-                v{appVersion ?? '...'}
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 flex flex-col min-w-0 bg-background">
-              <div className="flex items-center justify-between p-8 pb-4 shrink-0">
-                <div className="flex flex-col">
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {TAB_LABELS[activeTab]}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and connections.</p>
-                </div>
-                <button
-                  ref={closeButtonRef}
-                  type="button"
-                  aria-label="Close Settings"
-                  onClick={onClose}
-                  className="p-2 bg-gray-200 dark:bg-white/5 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className={activeTab === 'dev' ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto custom-scrollbar p-8 pt-4"}>
-                {activeTab === 'general' && <GeneralTab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'connections' && (
-                  <ConnectionsTab
-                    settings={settings}
-                    setSettings={handleSettingsChange}
-                    onScanFolder={onScanFolder}
-                    onInvokeSync={onInvokeSync}
-                    initialSubTab={connectionSubTab}
-                    onClose={onClose}
-                    onInvokeAccepted={() => {
-                      restoreFocusOnCloseRef.current = false;
-                      onClose();
-                    }}
-                    invokeDraftSession={invokeDraftSession}
-                    invokeOwnerDiscoverySession={invokeOwnerDiscoverySession}
-                  />
-                )}
-                {activeTab === 'intelligence' && <IntelligenceTab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'advanced' && (
-                  <AdvancedTab
-                    settings={settings}
-                    setSettings={handleSettingsChange}
-                    canCheckForUpdates={canCheckForUpdates}
-                    hasPendingUpdate={hasPendingUpdate}
-                    pendingUpdateVersion={pendingUpdateVersion}
-                    updateErrorMessage={updateErrorMessage}
-                    updateStatus={updateStatus}
-                    onCheckForUpdates={onCheckForUpdates}
-                    onOpenUpdatePrompt={onOpenUpdatePrompt}
-                    onNavigateToMaintenance={onNavigateToMaintenance}
-                    onClose={onClose}
-                  />
-                )}
-                {activeTab === 'dev' && showDevTools && DevTab && (
-                  <React.Suspense fallback={null}>
-                    <DevTab onResetFirstRunOnboarding={onResetFirstRunOnboarding} />
-                  </React.Suspense>
-                )}
-              </div>
-
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-});
+);

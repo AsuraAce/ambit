@@ -7,7 +7,7 @@ import { ToastContext } from '../../contexts/ToastContext';
 describe('useToast', () => {
     it('should throw an error when used outside of a ToastProvider', () => {
         // Suppress console.error for this test as it's expected
-        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         expect(() => renderHook(() => useToast())).toThrow('useToast must be used within a ToastProvider');
 
@@ -21,13 +21,11 @@ describe('useToast', () => {
         };
 
         const wrapper = ({ children }: { children: React.ReactNode }) => (
-            <ToastContext.Provider value= { mockContextValue as any } >
-            { children }
-            </ToastContext.Provider>
-    );
+            <ToastContext.Provider value={mockContextValue as any}>{children}</ToastContext.Provider>
+        );
 
-    const { result } = renderHook(() => useToast(), { wrapper });
+        const { result } = renderHook(() => useToast(), { wrapper });
 
-    expect(result.current).toBe(mockContextValue);
-});
+        expect(result.current).toBe(mockContextValue);
+    });
 });

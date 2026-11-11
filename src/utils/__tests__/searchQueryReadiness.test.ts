@@ -12,7 +12,7 @@ describe('getSearchQueryReadiness', () => {
         'forest OR ocean OR sky',
         'unknown:value',
         '"artist:name"',
-    ])('allows ready query %s', query => {
+    ])('allows ready query %s', (query) => {
         expect(getSearchQueryReadiness(query)).toEqual({ isReady: true, issue: null });
     });
 
@@ -44,20 +44,19 @@ describe('getSearchQueryReadiness', () => {
         expect(result.issue).toMatchObject({ kind: 'invalid', message });
     });
 
-    it.each([
-        `steps:${'9'.repeat(400)}`,
-        `cfg:${'9'.repeat(400)}`,
-        `width:>${'9'.repeat(400)}`,
-    ])('rejects non-finite numeric query %s', query => {
-        expect(getSearchQueryReadiness(query).issue?.kind).toBe('invalid');
-    });
+    it.each([`steps:${'9'.repeat(400)}`, `cfg:${'9'.repeat(400)}`, `width:>${'9'.repeat(400)}`])(
+        'rejects non-finite numeric query %s',
+        (query) => {
+            expect(getSearchQueryReadiness(query).issue?.kind).toBe('invalid');
+        }
+    );
 
-    it.each([
-        'steps:9007199254740993',
-        'height:>9007199254740993',
-    ])('rejects integer query %s when parsing would lose precision', query => {
-        expect(getSearchQueryReadiness(query).issue?.kind).toBe('invalid');
-    });
+    it.each(['steps:9007199254740993', 'height:>9007199254740993'])(
+        'rejects integer query %s when parsing would lose precision',
+        (query) => {
+            expect(getSearchQueryReadiness(query).issue?.kind).toBe('invalid');
+        }
+    );
 
     it('suggests OR only after a positive prompt operand', () => {
         expect(canAppendPromptOr('forest')).toBe(true);

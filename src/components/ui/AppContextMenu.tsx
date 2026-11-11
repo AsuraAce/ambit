@@ -35,27 +35,26 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     colOps,
     onMoveToCollection,
     modals,
-    filters
+    filters,
 }) => {
     const { addToast } = useToast();
     const browserMockMode = isBrowserMockMode();
-    const settings = useSettingsStore(s => s.settings);
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
-    const allCollections = useCollectionStore(s => s.collections);
+    const settings = useSettingsStore((s) => s.settings);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
+    const allCollections = useCollectionStore((s) => s.collections);
     const queryClient = useQueryClient();
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
-    const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
-    const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
-
+    const collections = React.useMemo(() => allCollections.filter((c) => !c.filters), [allCollections]);
+    const smartCollections = React.useMemo(() => allCollections.filter((c) => !!c.filters), [allCollections]);
 
     if (!contextMenu) return null;
 
-    const activeImage = images.find(i => i.id === contextMenu.imageId);
+    const activeImage = images.find((i) => i.id === contextMenu.imageId);
     const isGenerated = activeImage ? getEffectiveSourceKind(activeImage) === 'generated' : false;
     const collectionId = filters.collectionId;
     const activeCollection = collectionId
-        ? (collections.find((c) => c.id === collectionId) || smartCollections.find((c) => c.id === collectionId))
+        ? collections.find((c) => c.id === collectionId) || smartCollections.find((c) => c.id === collectionId)
         : undefined;
 
     return (
@@ -72,51 +71,69 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             onClose={onClose}
             detectedSourceKind={activeImage ? getDetectedSourceKind(activeImage) : undefined}
             sourceKindOverride={activeImage?.sourceKindOverride}
-            onSetImageKind={activeImage && !isVideoAsset(activeImage) ? async sourceKindOverride => {
-                await actions.handleSetImageSourceKind([activeImage.id], sourceKindOverride);
-                onClose();
-            } : undefined}
-            onCopyPrompt={isGenerated ? () => {
-                if (activeImage?.metadata.positivePrompt) {
-                    navigator.clipboard.writeText(activeImage.metadata.positivePrompt).catch(error => console.error('[Clipboard] Copy failed', error));
-                    addToast('Prompt copied', 'success');
-                }
-                onClose();
-            } : undefined}
-            onCopySeed={isGenerated && activeImage?.metadata.seed !== undefined ? () => {
-                navigator.clipboard.writeText(String(activeImage.metadata.seed)).catch(error => console.error('[Clipboard] Copy failed', error));
-                addToast('Seed copied', 'success');
-                onClose();
-            } : undefined}
-            onCopyGenerationInfo={isGenerated ? () => {
-                const meta = activeImage?.metadata;
-                if (!meta) return;
+            onSetImageKind={
+                activeImage && !isVideoAsset(activeImage)
+                    ? async (sourceKindOverride) => {
+                          await actions.handleSetImageSourceKind([activeImage.id], sourceKindOverride);
+                          onClose();
+                      }
+                    : undefined
+            }
+            onCopyPrompt={
+                isGenerated
+                    ? () => {
+                          if (activeImage?.metadata.positivePrompt) {
+                              navigator.clipboard
+                                  .writeText(activeImage.metadata.positivePrompt)
+                                  .catch((error) => console.error('[Clipboard] Copy failed', error));
+                              addToast('Prompt copied', 'success');
+                          }
+                          onClose();
+                      }
+                    : undefined
+            }
+            onCopySeed={
+                isGenerated && activeImage?.metadata.seed !== undefined
+                    ? () => {
+                          navigator.clipboard
+                              .writeText(String(activeImage.metadata.seed))
+                              .catch((error) => console.error('[Clipboard] Copy failed', error));
+                          addToast('Seed copied', 'success');
+                          onClose();
+                      }
+                    : undefined
+            }
+            onCopyGenerationInfo={
+                isGenerated
+                    ? () => {
+                          const meta = activeImage?.metadata;
+                          if (!meta) return;
 
-                // Construct a robust generation info string if rawParameters is missing
-                const infoLines = [
-                    meta.positivePrompt ? `Prompt: ${meta.positivePrompt}` : '',
-                    meta.negativePrompt ? `Negative Prompt: ${meta.negativePrompt}` : '',
-                    `Steps: ${meta.steps || '?'}, Sampler: ${meta.sampler || '?'}, CFG scale: ${meta.cfg || '?'}, Seed: ${meta.seed ?? '?'}, Size: ${activeImage?.width}x${activeImage?.height}, Model: ${meta.model || '?'}${meta.tool ? `, Tool: ${meta.tool}` : ''}`,
-                    meta.rawParameters ? `\nRaw Parameters:\n${meta.rawParameters}` : ''
-                ].filter(Boolean);
+                          // Construct a robust generation info string if rawParameters is missing
+                          const infoLines = [
+                              meta.positivePrompt ? `Prompt: ${meta.positivePrompt}` : '',
+                              meta.negativePrompt ? `Negative Prompt: ${meta.negativePrompt}` : '',
+                              `Steps: ${meta.steps || '?'}, Sampler: ${meta.sampler || '?'}, CFG scale: ${meta.cfg || '?'}, Seed: ${meta.seed ?? '?'}, Size: ${activeImage?.width}x${activeImage?.height}, Model: ${meta.model || '?'}${meta.tool ? `, Tool: ${meta.tool}` : ''}`,
+                              meta.rawParameters ? `\nRaw Parameters:\n${meta.rawParameters}` : '',
+                          ].filter(Boolean);
 
-                const text = infoLines.join('\n');
-                navigator.clipboard.writeText(text).catch(error => console.error('[Clipboard] Copy failed', error));
-                addToast('Generation info copied', 'success');
-                onClose();
-            } : undefined}
+                          const text = infoLines.join('\n');
+                          navigator.clipboard.writeText(text).catch((error) => console.error('[Clipboard] Copy failed', error));
+                          addToast('Generation info copied', 'success');
+                          onClose();
+                      }
+                    : undefined
+            }
             onCopyImage={async () => {
                 if (activeImage?.url) {
                     try {
                         const response = await fetch(activeImage.url);
                         const blob = await response.blob();
-                        await navigator.clipboard.write([
-                            new ClipboardItem({ [blob.type]: blob })
-                        ]);
+                        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
                         addToast('Image copied to clipboard', 'success');
                     } catch {
                         // Fallback to path if blob copy fails (e.g. browser security)
-                        navigator.clipboard.writeText(activeImage.url).catch(error => console.error('[Clipboard] Copy failed', error));
+                        navigator.clipboard.writeText(activeImage.url).catch((error) => console.error('[Clipboard] Copy failed', error));
                         addToast('Image path copied (fallback)', 'info');
                     }
                 }
@@ -124,7 +141,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             }}
             onCopyFilePath={() => {
                 if (activeImage?.id) {
-                    navigator.clipboard.writeText(activeImage.id).catch(error => console.error('[Clipboard] Copy failed', error));
+                    navigator.clipboard.writeText(activeImage.id).catch((error) => console.error('[Clipboard] Copy failed', error));
                     addToast('File path copied', 'success');
                 }
                 onClose();
@@ -151,24 +168,31 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             }}
             onTogglePin={() => {
                 const id = contextMenu.imageId;
-                const img = images.find(i => i.id === id);
+                const img = images.find((i) => i.id === id);
                 if (img) {
                     actions.handlePinImage(id, !img.isPinned);
                 }
                 onClose();
             }}
             onToggleMask={(val) => {
-                actions.handleBulkMask(contextMenu.imageId, val).catch(error => console.error('[Mask] Mask toggle failed', error));
+                actions.handleBulkMask(contextMenu.imageId, val).catch((error) => console.error('[Mask] Mask toggle failed', error));
                 onClose();
             }}
-            onToggleIntermediate={isGenerated ? async () => {
-                if (contextMenu.imageId) {
-                    await toggleImageIntermediate(contextMenu.imageId, !activeImage?.metadata?.isIntermediate);
-                    // We might need to refresh state here, but let's assume watchers handle it
-                    addToast(activeImage?.metadata?.isIntermediate ? "Unmarked as intermediate" : "Marked as intermediate", "info");
-                }
-                onClose();
-            } : undefined}
+            onToggleIntermediate={
+                isGenerated
+                    ? async () => {
+                          if (contextMenu.imageId) {
+                              await toggleImageIntermediate(contextMenu.imageId, !activeImage?.metadata?.isIntermediate);
+                              // We might need to refresh state here, but let's assume watchers handle it
+                              addToast(
+                                  activeImage?.metadata?.isIntermediate ? 'Unmarked as intermediate' : 'Marked as intermediate',
+                                  'info'
+                              );
+                          }
+                          onClose();
+                      }
+                    : undefined
+            }
             onDelete={() => {
                 if (contextMenu.imageId) {
                     actions.requestDeleteForId(contextMenu.imageId);
@@ -197,26 +221,34 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 }
                 onClose();
             }}
-            onSetThumbnail={collectionId && activeImage ? async () => {
-                try {
-                    await colOps.setCollectionThumbnail(collectionId, activeImage);
-                } catch (error) {
-                    console.error('[ContextMenu] Failed to set collection thumbnail', error);
-                    addToast('Failed to update thumbnail', 'error');
-                } finally {
-                    onClose();
-                }
-            } : undefined}
-            onUnsetThumbnail={collectionId && activeCollection?.customThumbnail ? async () => {
-                try {
-                    await colOps.resetCollectionThumbnail(collectionId);
-                } catch (error) {
-                    console.error('[ContextMenu] Failed to reset collection thumbnail', error);
-                    addToast('Failed to reset thumbnail', 'error');
-                } finally {
-                    onClose();
-                }
-            } : undefined}
+            onSetThumbnail={
+                collectionId && activeImage
+                    ? async () => {
+                          try {
+                              await colOps.setCollectionThumbnail(collectionId, activeImage);
+                          } catch (error) {
+                              console.error('[ContextMenu] Failed to set collection thumbnail', error);
+                              addToast('Failed to update thumbnail', 'error');
+                          } finally {
+                              onClose();
+                          }
+                      }
+                    : undefined
+            }
+            onUnsetThumbnail={
+                collectionId && activeCollection?.customThumbnail
+                    ? async () => {
+                          try {
+                              await colOps.resetCollectionThumbnail(collectionId);
+                          } catch (error) {
+                              console.error('[ContextMenu] Failed to reset collection thumbnail', error);
+                              addToast('Failed to reset thumbnail', 'error');
+                          } finally {
+                              onClose();
+                          }
+                      }
+                    : undefined
+            }
             modelsForThumbnail={(() => {
                 if (!activeImage?.metadata) return [];
                 const res: { name: string; hash: string; type: string }[] = [];
@@ -229,7 +261,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                         .split(':')[0]
                         .trim();
                 const pushResources = (values: string[] | undefined, hashPrefix: string, resourceType: string) => {
-                    values?.forEach(value => {
+                    values?.forEach((value) => {
                         const clean = cleanResourceName(value);
                         if (clean) res.push({ name: clean, hash: `${hashPrefix}${clean}`, type: resourceType });
                     });
@@ -237,12 +269,13 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
 
                 // Checkpoint
                 const modelValue = m.model as unknown;
-                const modelName = typeof modelValue === 'string'
-                    ? modelValue
-                    : modelValue && typeof modelValue === 'object' && 'name' in modelValue
-                        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
-                        ? String((modelValue as { name?: unknown }).name || '')
-                        : '';
+                const modelName =
+                    typeof modelValue === 'string'
+                        ? modelValue
+                        : modelValue && typeof modelValue === 'object' && 'name' in modelValue
+                          ? // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
+                            String((modelValue as { name?: unknown }).name || '')
+                          : '';
                 if (m.modelHash || modelName) {
                     const name = modelName || 'Checkpoint';
                     const hash = m.modelHash || `name:${name}`;
@@ -268,7 +301,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                         modelHash: model.hash,
                         modelName: model.name,
                         imagePath: activeImage.id,
-                        resourceType: model.type
+                        resourceType: model.type,
                     });
 
                     // Invalidate stats query to refresh thumbnails in FilterPanel

@@ -37,9 +37,8 @@ vi.mock('../../services/db/imageRepo', () => ({
 }));
 
 vi.mock('../../stores/libraryStore', () => ({
-    useLibraryStore: (selector: (state: { incrementFacetCacheVersion: () => void }) => unknown) => (
-        selector({ incrementFacetCacheVersion: mockIncrementFacetCacheVersion })
-    ),
+    useLibraryStore: (selector: (state: { incrementFacetCacheVersion: () => void }) => unknown) =>
+        selector({ incrementFacetCacheVersion: mockIncrementFacetCacheVersion }),
 }));
 
 vi.mock('../../stores/settingsStore', () => ({
@@ -110,12 +109,16 @@ describe('useMaintenanceOps metadata recovery', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         );
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image],
-            setImages,
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image],
+                    setImages,
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper }
+        );
 
         let recoveredImage: AIImage | null = null;
         await act(async () => {
@@ -129,7 +132,7 @@ describe('useMaintenanceOps metadata recovery', () => {
             'test-key',
             'gemini-3.1-flash-lite',
             undefined,
-            'default',
+            'default'
         );
         expect(mockUpdateImageMetadataFields).toHaveBeenCalledWith(image.id, {
             positivePrompt: 'Recovered prompt',
@@ -156,12 +159,16 @@ describe('useMaintenanceOps metadata recovery', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         );
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper }
+        );
 
         await act(async () => result.current.recoverMetadata('missing', 'generic'));
 
@@ -177,12 +184,16 @@ describe('useMaintenanceOps metadata recovery', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         );
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper }
+        );
 
         let recoveredImage: AIImage | null = null;
         await act(async () => {
@@ -201,12 +212,16 @@ describe('useMaintenanceOps metadata recovery', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         );
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper }
+        );
 
         await act(async () => result.current.recoverMetadata(image.id, 'generic'));
 
@@ -222,12 +237,16 @@ describe('useMaintenanceOps metadata recovery', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         );
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper }
+        );
 
         await act(async () => result.current.recoverMetadata(image.id, 'generic'));
 
@@ -241,12 +260,16 @@ describe('useMaintenanceOps metadata recovery', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         );
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper }
+        );
 
         let recoveredImage: AIImage | null = image;
         await act(async () => {
@@ -262,12 +285,16 @@ describe('useMaintenanceOps metadata recovery', () => {
     it('tombstones one image by default and reports downstream refresh failures', async () => {
         const refreshCollections = vi.fn().mockRejectedValue(new Error('refresh failed'));
         imageRepoMocks.refreshFacetCacheForResourcesStrict.mockRejectedValueOnce(new Error('facet failed'));
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image],
-            setImages: vi.fn(),
-            refreshCollections,
-            settings,
-        }), { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image],
+                    setImages: vi.fn(),
+                    refreshCollections,
+                    settings,
+                }),
+            { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> }
+        );
 
         await act(async () => result.current.deleteImages([image.id]));
 
@@ -287,32 +314,40 @@ describe('useMaintenanceOps metadata recovery', () => {
             pageParams: [undefined],
         });
         const setImages = vi.fn();
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image, other],
-            setImages,
-            refreshCollections: vi.fn().mockResolvedValue(undefined),
-            settings,
-        }), { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image, other],
+                    setImages,
+                    refreshCollections: vi.fn().mockResolvedValue(undefined),
+                    settings,
+                }),
+            { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> }
+        );
 
         await act(async () => result.current.deleteImages([image.id]));
 
         const cached = queryClient.getQueryData<{
             pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
         }>(queryKey);
-        expect(cached?.pages[0].images.map(item => item.id)).toEqual(['other']);
+        expect(cached?.pages[0].images.map((item) => item.id)).toEqual(['other']);
         expect(cached?.pages[0]).toMatchObject({ totalCount: 1, globalCount: 1 });
         const updater = setImages.mock.calls[0][0] as (previous: AIImage[]) => AIImage[];
-        expect(updater([image, other]).map(item => item.id)).toEqual(['other']);
+        expect(updater([image, other]).map((item) => item.id)).toEqual(['other']);
     });
 
     it('reports a failed library mutation', async () => {
         imageRepoMocks.removeImagesFromLibrary.mockRejectedValueOnce(new Error('write failed'));
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn(),
-            settings,
-        }), { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn(),
+                    settings,
+                }),
+            { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> }
+        );
 
         await act(async () => result.current.deleteImages([image.id]));
 
@@ -321,12 +356,16 @@ describe('useMaintenanceOps metadata recovery', () => {
 
     it('uses plural library-removal copy', async () => {
         const other = { ...image, id: 'other' };
-        const { result } = renderHook(() => useMaintenanceOps({
-            images: [image, other],
-            setImages: vi.fn(),
-            refreshCollections: vi.fn().mockResolvedValue(undefined),
-            settings,
-        }), { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> });
+        const { result } = renderHook(
+            () =>
+                useMaintenanceOps({
+                    images: [image, other],
+                    setImages: vi.fn(),
+                    refreshCollections: vi.fn().mockResolvedValue(undefined),
+                    settings,
+                }),
+            { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> }
+        );
 
         await act(async () => result.current.deleteImages([image.id, other.id]));
 

@@ -1,10 +1,5 @@
 import { FacetType } from '../types';
-import {
-    hasTouchedFacetResources,
-    orderFacetTypes,
-    TouchedFacetResources,
-    touchedFacetResourcesToTypes
-} from './touchedFacetTypes';
+import { hasTouchedFacetResources, orderFacetTypes, TouchedFacetResources, touchedFacetResourcesToTypes } from './touchedFacetTypes';
 import { elapsedMs, liveWatchNow } from './liveWatchPerf';
 import { rebuildFacetCacheStrict, refreshFacetCacheForResourcesStrict } from '../services/db/imageRepo';
 
@@ -13,11 +8,7 @@ export const STARTUP_INCREMENTAL_MAX_TOUCHED_RESOURCES = 64;
 
 export type StartupFacetRefreshSource = 'invoke' | 'folder';
 
-export type StartupFacetRefreshStrategy =
-    | 'skipped'
-    | 'resource-incremental'
-    | 'full'
-    | 'fallback-full';
+export type StartupFacetRefreshStrategy = 'skipped' | 'resource-incremental' | 'full' | 'fallback-full';
 
 export interface StartupFacetRefreshOptions {
     source: StartupFacetRefreshSource;
@@ -52,14 +43,8 @@ const formatErrorMessage = (error: unknown): string => {
     return String(error);
 };
 
-const resolveFacetTypes = (
-    touchedFacetTypes: FacetType[],
-    touchedFacetResources?: TouchedFacetResources
-): FacetType[] => {
-    return orderFacetTypes([
-        ...touchedFacetTypes,
-        ...(touchedFacetResources ? touchedFacetResourcesToTypes(touchedFacetResources) : [])
-    ]);
+const resolveFacetTypes = (touchedFacetTypes: FacetType[], touchedFacetResources?: TouchedFacetResources): FacetType[] => {
+    return orderFacetTypes([...touchedFacetTypes, ...(touchedFacetResources ? touchedFacetResourcesToTypes(touchedFacetResources) : [])]);
 };
 
 const logDecision = (
@@ -78,7 +63,7 @@ const logDecision = (
         touchedFacetTypes,
         touchedResourceCount,
         maxProcessed: options.maxProcessed ?? STARTUP_INCREMENTAL_MAX_PROCESSED,
-        maxTouchedResources: options.maxTouchedResources ?? STARTUP_INCREMENTAL_MAX_TOUCHED_RESOURCES
+        maxTouchedResources: options.maxTouchedResources ?? STARTUP_INCREMENTAL_MAX_TOUCHED_RESOURCES,
     });
 };
 
@@ -104,7 +89,7 @@ const runFullRefresh = async (
         touchedFacetTypes,
         touchedResourceCount,
         incrementalMs,
-        fullRefreshMs
+        fullRefreshMs,
     });
 
     return {
@@ -114,13 +99,11 @@ const runFullRefresh = async (
         touchedFacetTypes,
         touchedResourceCount,
         incrementalMs,
-        fullRefreshMs
+        fullRefreshMs,
     };
 };
 
-export const refreshStartupFacetCache = async (
-    options: StartupFacetRefreshOptions
-): Promise<StartupFacetRefreshResult> => {
+export const refreshStartupFacetCache = async (options: StartupFacetRefreshOptions): Promise<StartupFacetRefreshResult> => {
     const maxProcessed = options.maxProcessed ?? STARTUP_INCREMENTAL_MAX_PROCESSED;
     const maxTouchedResources = options.maxTouchedResources ?? STARTUP_INCREMENTAL_MAX_TOUCHED_RESOURCES;
     const touchedResourceCount = countTouchedFacetResources(options.touchedFacetResources);
@@ -134,7 +117,7 @@ export const refreshStartupFacetCache = async (
             reason,
             entryCount: 0,
             touchedFacetTypes,
-            touchedResourceCount
+            touchedResourceCount,
         };
     }
 
@@ -179,7 +162,7 @@ export const refreshStartupFacetCache = async (
             totalProcessed: options.totalProcessed,
             touchedFacetTypes,
             touchedResourceCount,
-            incrementalMs
+            incrementalMs,
         });
 
         return {
@@ -188,7 +171,7 @@ export const refreshStartupFacetCache = async (
             entryCount,
             touchedFacetTypes,
             touchedResourceCount,
-            incrementalMs
+            incrementalMs,
         };
     } catch (incrementalError) {
         const incrementalMs = elapsedMs(incrementalStartedAt);
@@ -200,15 +183,8 @@ export const refreshStartupFacetCache = async (
             touchedFacetTypes,
             touchedResourceCount,
             incrementalMs,
-            error: formatErrorMessage(incrementalError)
+            error: formatErrorMessage(incrementalError),
         });
-        return runFullRefresh(
-            options,
-            fallbackReason,
-            touchedFacetTypes,
-            touchedResourceCount,
-            'fallback-full',
-            incrementalMs
-        );
+        return runFullRefresh(options, fallbackReason, touchedFacetTypes, touchedResourceCount, 'fallback-full', incrementalMs);
     }
 };

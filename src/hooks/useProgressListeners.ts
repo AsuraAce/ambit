@@ -4,12 +4,7 @@ import { isBrowserMockMode } from '../services/runtime';
 import { listenWithCleanup } from '../utils/tauriListener';
 
 export function useProgressListeners() {
-    const {
-        setModelResolutionProgress,
-        setDiscoveryScanProgress,
-        setDuplicateScanProgress,
-        setIsScanningDuplicates
-    } = useLibraryStore();
+    const { setModelResolutionProgress, setDiscoveryScanProgress, setDuplicateScanProgress, setIsScanningDuplicates } = useLibraryStore();
 
     useEffect(() => {
         if (isBrowserMockMode()) return;

@@ -28,9 +28,13 @@ export const MetadataSectionHeader: React.FC<MetadataSectionHeaderProps> = ({
         <>
             <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${resolvedIconClassName}`} />
             {labelFor ? (
-                <label htmlFor={labelFor} className={textClassName}>{title}</label>
+                <label htmlFor={labelFor} className={textClassName}>
+                    {title}
+                </label>
             ) : (
-                <h3 id={headingId} className={textClassName}>{title}</h3>
+                <h3 id={headingId} className={textClassName}>
+                    {title}
+                </h3>
             )}
         </>
     );

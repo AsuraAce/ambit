@@ -18,7 +18,10 @@ const getBackups = vi.mocked(commands.getBackups);
 const backupDatabase = vi.mocked(commands.backupDatabase);
 const mockedShowPath = vi.mocked(showPathInFolder);
 const backup = (index: number, sizeBytes = 1024) => ({
-    name: `backup-${index}.db`, path: `C:/backups/backup-${index}.db`, sizeBytes, createdAt: '2026-07-11T10:00:00Z',
+    name: `backup-${index}.db`,
+    path: `C:/backups/backup-${index}.db`,
+    sizeBytes,
+    createdAt: '2026-07-11T10:00:00Z',
 });
 
 describe('BackupSettings', () => {

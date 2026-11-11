@@ -47,42 +47,39 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     onBackgroundClick,
     includeUpgradeable,
     onIncludeUpgradeableChange,
-    onRepairComplete
+    onRepairComplete,
 }) => {
-    const developerFeaturesEnabled = useSettingsStore(s => areDeveloperFeaturesEnabled(s.settings));
+    const developerFeaturesEnabled = useSettingsStore((s) => areDeveloperFeaturesEnabled(s.settings));
 
-    const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
-        return (
-            <MaintenanceItem
-                key={img.id}
-                img={img}
-                style={style}
-                isSelected={selectedIds.has(img.id)}
-                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
-                maskedKeywords={maskedKeywords}
-            />
-        );
-    }, [selectedIds, onItemClick, maskedKeywords]);
+    const renderItem = useCallback(
+        (img: AIImage, style: React.CSSProperties, index: number) => {
+            return (
+                <MaintenanceItem
+                    key={img.id}
+                    img={img}
+                    style={style}
+                    isSelected={selectedIds.has(img.id)}
+                    onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
+                    maskedKeywords={maskedKeywords}
+                />
+            );
+        },
+        [selectedIds, onItemClick, maskedKeywords]
+    );
 
     // Read directly from store for faster reactivity (context can lag)
-    const isRegeneratingThumbnails = useLibraryStore(s => s.isRegeneratingThumbnails);
-    const isBackgroundHealingActive = useLibraryStore(s => s.isBackgroundHealingActive);
-    const maintenanceOperation = useLibraryStore(s => s.thumbnailMaintenanceOperation);
-    const setMaintenanceOperation = useLibraryStore(s => s.setThumbnailMaintenanceOperation);
+    const isRegeneratingThumbnails = useLibraryStore((s) => s.isRegeneratingThumbnails);
+    const isBackgroundHealingActive = useLibraryStore((s) => s.isBackgroundHealingActive);
+    const maintenanceOperation = useLibraryStore((s) => s.thumbnailMaintenanceOperation);
+    const setMaintenanceOperation = useLibraryStore((s) => s.setThumbnailMaintenanceOperation);
     const { addToast } = useToast();
     const isMaintenanceBusy = maintenanceOperation !== null;
     const controlsDisabled = isRegeneratingThumbnails || isBackgroundHealingActive || isMaintenanceBusy;
-    const disabledReason = isBackgroundHealingActive
-        ? 'Wait for Smart Thumbnail Optimization to finish'
-        : undefined;
+    const disabledReason = isBackgroundHealingActive ? 'Wait for Smart Thumbnail Optimization to finish' : undefined;
 
     const claimMaintenanceOperation = (operation: NonNullable<typeof maintenanceOperation>): boolean => {
         const state = useLibraryStore.getState();
-        if (
-            state.isRegeneratingThumbnails
-            || state.isBackgroundHealingActive
-            || state.thumbnailMaintenanceOperation !== null
-        ) {
+        if (state.isRegeneratingThumbnails || state.isBackgroundHealingActive || state.thumbnailMaintenanceOperation !== null) {
             return false;
         }
 
@@ -173,7 +170,10 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                     title={disabledReason}
                     className="w-3.5 h-3.5 rounded-md border-gray-300 text-sage-600 focus:ring-sage-500 cursor-pointer"
                 />
-                <label htmlFor="includeUpgradeable" className="text-[10px] font-medium text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+                <label
+                    htmlFor="includeUpgradeable"
+                    className="text-[10px] font-medium text-gray-600 dark:text-gray-300 cursor-pointer select-none"
+                >
                     Include upgradeable
                 </label>
                 <InfoTooltip
@@ -200,9 +200,13 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                     onClick={() => onRegenerate()}
                     className="px-4 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
                 >
-                    <RefreshCw className={`w-4 h-4 ${!isRegeneratingThumbnails && 'group-hover:rotate-180'} transition-transform duration-700`} />
+                    <RefreshCw
+                        className={`w-4 h-4 ${!isRegeneratingThumbnails && 'group-hover:rotate-180'} transition-transform duration-700`}
+                    />
                     {isRegeneratingThumbnails ? 'Optimizing Library...' : 'Regenerate All Unoptimized'}
-                    {totalCount > 0 && <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalCount.toLocaleString()}</span>}
+                    {totalCount > 0 && (
+                        <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalCount.toLocaleString()}</span>
+                    )}
                 </button>
             )}
 
@@ -222,7 +226,9 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                     disabled={controlsDisabled}
                     onClick={handleSync}
                     className="flex items-center gap-2 rounded-xl border border-ember-200 bg-ember-100 px-3 py-2 text-xs font-bold text-ember-600 transition-colors hover:bg-ember-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ember-500/20 dark:bg-ember-500/15 dark:text-ember-300 dark:hover:bg-ember-500/25"
-                    title={disabledReason ?? 'Sync existing thumbnail files to database (heals thumbnails created before the persistence fix)'}
+                    title={
+                        disabledReason ?? 'Sync existing thumbnail files to database (heals thumbnails created before the persistence fix)'
+                    }
                 >
                     <Database className={`w-4 h-4 ${maintenanceOperation === 'sync' ? 'animate-pulse' : ''}`} />
                     {maintenanceOperation === 'sync' ? 'Syncing...' : 'Sync DB'}
@@ -235,9 +241,10 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col items-stretch">
             <MaintenanceHeader
                 title="Thumbnail Optimization"
-                description={totalCount > images.length
-                    ? `Found ${totalCount.toLocaleString()} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that need optimization. Showing first ${images.length}.`
-                    : `Found ${totalCount.toLocaleString()} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that could benefit from thumbnail regeneration.`
+                description={
+                    totalCount > images.length
+                        ? `Found ${totalCount.toLocaleString()} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that need optimization. Showing first ${images.length}.`
+                        : `Found ${totalCount.toLocaleString()} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that could benefit from thumbnail regeneration.`
                 }
                 icon={<Image className="w-6 h-6" />}
                 count={totalCount}

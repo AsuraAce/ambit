@@ -30,16 +30,17 @@ const favoriteImage: AIImage = {
     },
 };
 
-const renderCard = (onToggleFavorite = vi.fn(), onToggleSelection = vi.fn()) => render(
-    <ImageCard
-        image={favoriteImage}
-        isSelected={false}
-        onClick={vi.fn()}
-        onToggleSelection={onToggleSelection}
-        onToggleFavorite={onToggleFavorite}
-        onTogglePin={vi.fn()}
-    />
-);
+const renderCard = (onToggleFavorite = vi.fn(), onToggleSelection = vi.fn()) =>
+    render(
+        <ImageCard
+            image={favoriteImage}
+            isSelected={false}
+            onClick={vi.fn()}
+            onToggleSelection={onToggleSelection}
+            onToggleFavorite={onToggleFavorite}
+            onTogglePin={vi.fn()}
+        />
+    );
 
 describe('ImageCard keyboard actions', () => {
     it('reveals each newly focusable control when keyboard focus reaches it', () => {

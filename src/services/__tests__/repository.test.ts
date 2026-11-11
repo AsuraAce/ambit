@@ -37,25 +37,27 @@ vi.mock('../runtime', () => ({
 }));
 
 const stateFixture = (): AppState => ({
-    images: [{
-        id: 'image-a',
-        url: '',
-        thumbnailUrl: '',
-        filename: 'image-a.png',
-        timestamp: 1,
-        width: 100,
-        height: 100,
-        isFavorite: false,
-        metadata: {
-            tool: GeneratorTool.UNKNOWN,
-            model: 'Unknown',
-            steps: 0,
-            cfg: 0,
-            sampler: 'Unknown',
-            positivePrompt: '',
-            negativePrompt: '',
+    images: [
+        {
+            id: 'image-a',
+            url: '',
+            thumbnailUrl: '',
+            filename: 'image-a.png',
+            timestamp: 1,
+            width: 100,
+            height: 100,
+            isFavorite: false,
+            metadata: {
+                tool: GeneratorTool.UNKNOWN,
+                model: 'Unknown',
+                steps: 0,
+                cfg: 0,
+                sampler: 'Unknown',
+                positivePrompt: '',
+                negativePrompt: '',
+            },
         },
-    }],
+    ],
     collections: [],
     smartCollections: [],
     settings: {
@@ -91,16 +93,19 @@ describe('LocalStorageRepository', () => {
     });
 
     it('merges stored settings with current defaults during browser load', async () => {
-        localStorage.setItem('aigallery_state_v1', JSON.stringify({
-            images: [],
-            collections: [],
-            smartCollections: [],
-            settings: {
-                theme: 'light',
-                maskedKeywords: ['private'],
-            },
-            recentSearches: ['flux'],
-        }));
+        localStorage.setItem(
+            'aigallery_state_v1',
+            JSON.stringify({
+                images: [],
+                collections: [],
+                smartCollections: [],
+                settings: {
+                    theme: 'light',
+                    maskedKeywords: ['private'],
+                },
+                recentSearches: ['flux'],
+            })
+        );
         const { LocalStorageRepository } = await import('../repository');
 
         const state = await new LocalStorageRepository().load();
@@ -123,21 +128,31 @@ describe('LocalStorageRepository', () => {
             recentSearches: [],
         };
 
-        localStorage.setItem('aigallery_state_v1', JSON.stringify({
-            ...storedState,
-            settings: { maskedKeywords: [] },
-        }));
-        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
-            settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: [] }),
-        }));
+        localStorage.setItem(
+            'aigallery_state_v1',
+            JSON.stringify({
+                ...storedState,
+                settings: { maskedKeywords: [] },
+            })
+        );
+        await expect(repository.load()).resolves.toEqual(
+            expect.objectContaining({
+                settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: [] }),
+            })
+        );
 
-        localStorage.setItem('aigallery_state_v1', JSON.stringify({
-            ...storedState,
-            settings: { promptMaskingEnabled: false, maskedKeywords: ['retained'] },
-        }));
-        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
-            settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: ['retained'] }),
-        }));
+        localStorage.setItem(
+            'aigallery_state_v1',
+            JSON.stringify({
+                ...storedState,
+                settings: { promptMaskingEnabled: false, maskedKeywords: ['retained'] },
+            })
+        );
+        await expect(repository.load()).resolves.toEqual(
+            expect.objectContaining({
+                settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: ['retained'] }),
+            })
+        );
     });
 
     it('saves browser state to the expected localStorage key', async () => {
@@ -155,17 +170,19 @@ describe('LocalStorageRepository', () => {
         await repository.save(stateFixture());
 
         await Promise.all([
-            repository.update(state => ({
+            repository.update((state) => ({
                 ...state,
-                settings: { ...state.settings, maskedKeywords: ['durable'] }
+                settings: { ...state.settings, maskedKeywords: ['durable'] },
             })),
-            repository.update(state => ({ ...state, recentSearches: ['latest-search'] })),
+            repository.update((state) => ({ ...state, recentSearches: ['latest-search'] })),
         ]);
 
-        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
-            settings: expect.objectContaining({ maskedKeywords: ['durable'] }),
-            recentSearches: ['latest-search'],
-        }));
+        await expect(repository.load()).resolves.toEqual(
+            expect.objectContaining({
+                settings: expect.objectContaining({ maskedKeywords: ['durable'] }),
+                recentSearches: ['latest-search'],
+            })
+        );
     });
 
     it('falls back to defaults when browser storage cannot be read', async () => {
@@ -194,7 +211,6 @@ describe('LocalStorageRepository', () => {
         expect(error).toHaveBeenCalledWith('Failed to save state', expect.any(Error));
         error.mockRestore();
     });
-
 });
 
 describe('TauriFsRepository', () => {
@@ -225,13 +241,11 @@ describe('TauriFsRepository', () => {
 
     it('schedules purge from one immutable snapshot without changing committed JSON', async () => {
         const current = stateFixture();
-        fsMocks.exists.mockImplementation(async (fileName: string) => (
-            fileName === 'library.json' || fileName === 'library.json.bak'
-        ));
+        fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json' || fileName === 'library.json.bak');
         fsMocks.readTextFile.mockResolvedValue(JSON.stringify(current));
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
-        const result = await new TauriFsRepository().schedulePurge(state => ({
+        const result = await new TauriFsRepository().schedulePurge((state) => ({
             ...state,
             recentSearches: [],
             settings: { ...state.settings, maskedKeywords: ['nsfw', 'blood', 'gore'] },
@@ -241,22 +255,22 @@ describe('TauriFsRepository', () => {
         expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
         const [transactionId, journalJson] = commandMocks.schedulePurgeTransaction.mock.calls[0];
         const journal = JSON.parse(journalJson);
-        expect(journal).toEqual(expect.objectContaining({
-            version: 1,
-            transactionId,
-            before: expect.objectContaining({ recentSearches: ['portrait'] }),
-            after: expect.objectContaining({
-                recentSearches: [],
-                settings: expect.objectContaining({ maskedKeywords: ['nsfw', 'blood', 'gore'] }),
-            }),
-        }));
+        expect(journal).toEqual(
+            expect.objectContaining({
+                version: 1,
+                transactionId,
+                before: expect.objectContaining({ recentSearches: ['portrait'] }),
+                after: expect.objectContaining({
+                    recentSearches: [],
+                    settings: expect.objectContaining({ maskedKeywords: ['nsfw', 'blood', 'gore'] }),
+                }),
+            })
+        );
     });
 
     it('leaves committed JSON unchanged when native purge scheduling rejects', async () => {
         const current = stateFixture();
-        fsMocks.exists.mockImplementation(async (fileName: string) => (
-            fileName === 'library.json' || fileName === 'library.json.bak'
-        ));
+        fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json' || fileName === 'library.json.bak');
         fsMocks.readTextFile.mockResolvedValue(JSON.stringify(current));
         commandMocks.schedulePurgeTransaction.mockResolvedValueOnce({
             status: 'error',
@@ -264,10 +278,12 @@ describe('TauriFsRepository', () => {
         });
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
-        await expect(new TauriFsRepository().schedulePurge(state => ({
-            ...state,
-            recentSearches: [],
-        }))).rejects.toThrow('marker unavailable');
+        await expect(
+            new TauriFsRepository().schedulePurge((state) => ({
+                ...state,
+                recentSearches: [],
+            }))
+        ).rejects.toThrow('marker unavailable');
 
         expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
         expect(fsMocks.remove).not.toHaveBeenCalled();
@@ -281,12 +297,9 @@ describe('TauriFsRepository', () => {
             settings: { ...before.settings, maskedKeywords: ['nsfw', 'blood', 'gore'] },
         };
         const transactionId = 'purge-completed';
-        fsMocks.exists.mockImplementation(async (fileName: string) => [
-            'library.purge.json',
-            'library.purge.completed',
-            'library.json',
-            'library.json.bak',
-        ].includes(fileName));
+        fsMocks.exists.mockImplementation(async (fileName: string) =>
+            ['library.purge.json', 'library.purge.completed', 'library.json', 'library.json.bak'].includes(fileName)
+        );
         fsMocks.readTextFile.mockImplementation(async (fileName: string) => {
             if (fileName === 'library.purge.json') {
                 return JSON.stringify({ version: 1, transactionId, before, after });
@@ -302,24 +315,17 @@ describe('TauriFsRepository', () => {
 
         expect(recovered.settings.maskedKeywords).toEqual(['nsfw', 'blood', 'gore']);
         expect(recovered.recentSearches).toEqual([]);
-        expect(fsMocks.writeTextFile).toHaveBeenCalledWith(
-            'library.json',
-            expect.stringContaining('"maskedKeywords": [\n      "nsfw"'),
-            { baseDir: 11 }
-        );
-        expect(fsMocks.remove.mock.calls.slice(-2).map(call => call[0])).toEqual([
-            'library.purge.completed',
-            'library.purge.json',
-        ]);
+        expect(fsMocks.writeTextFile).toHaveBeenCalledWith('library.json', expect.stringContaining('"maskedKeywords": [\n      "nsfw"'), {
+            baseDir: 11,
+        });
+        expect(fsMocks.remove.mock.calls.slice(-2).map((call) => call[0])).toEqual(['library.purge.completed', 'library.purge.json']);
     });
 
     it('fails closed when native purge recovery artifacts are incomplete', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.purge.json');
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
-        await expect(new TauriFsRepository().load()).rejects.toThrow(
-            'Factory reset recovery artifacts are incomplete'
-        );
+        await expect(new TauriFsRepository().load()).rejects.toThrow('Factory reset recovery artifacts are incomplete');
         expect(fsMocks.remove).not.toHaveBeenCalled();
         expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
     });
@@ -328,12 +334,9 @@ describe('TauriFsRepository', () => {
         const before = stateFixture();
         const after = { ...before, recentSearches: [] };
         const transactionId = 'purge-retry';
-        fsMocks.exists.mockImplementation(async (fileName: string) => [
-            'library.purge.json',
-            'library.purge.completed',
-            'library.json',
-            'library.json.bak',
-        ].includes(fileName));
+        fsMocks.exists.mockImplementation(async (fileName: string) =>
+            ['library.purge.json', 'library.purge.completed', 'library.json', 'library.json.bak'].includes(fileName)
+        );
         fsMocks.readTextFile.mockImplementation(async (fileName: string) => {
             if (fileName === 'library.purge.json') {
                 return JSON.stringify({ version: 1, transactionId, before, after });
@@ -357,12 +360,14 @@ describe('TauriFsRepository', () => {
 
     it('loads library.json settings but strips legacy image rows from persisted JSON state', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
-        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
-            ...stateFixture(),
-            settings: {
-                theme: 'light',
-            },
-        }));
+        fsMocks.readTextFile.mockResolvedValue(
+            JSON.stringify({
+                ...stateFixture(),
+                settings: {
+                    theme: 'light',
+                },
+            })
+        );
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
         const state = await new TauriFsRepository().load();
@@ -377,77 +382,94 @@ describe('TauriFsRepository', () => {
         expect(state.settings.libraryMediaType).toBe('all');
         expect(state.settings.viewerPreferredTab).toBe('details');
         expect(fsMocks.writeTextFile).toHaveBeenCalled();
-        const [, serialized] = fsMocks.writeTextFile.mock.calls.find(([fileName]) => fileName === 'library.json') as [string, string, unknown];
+        const [, serialized] = fsMocks.writeTextFile.mock.calls.find(([fileName]) => fileName === 'library.json') as [
+            string,
+            string,
+            unknown,
+        ];
         expect(JSON.parse(serialized).images).toEqual([]);
     });
 
     it('loads shared viewer and media preferences without restoring an inactive image kind', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
-        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
-            ...stateFixture(),
-            settings: {
-                ...stateFixture().settings,
-                viewerPreferredTab: 'workflow', libraryMediaType: 'video', librarySourceKind: 'photograph',
-            },
-        }));
+        fsMocks.readTextFile.mockResolvedValue(
+            JSON.stringify({
+                ...stateFixture(),
+                settings: {
+                    ...stateFixture().settings,
+                    viewerPreferredTab: 'workflow',
+                    libraryMediaType: 'video',
+                    librarySourceKind: 'photograph',
+                },
+            })
+        );
         const { TauriFsRepository } = await import('../TauriFsRepository');
         const state = await new TauriFsRepository().load();
         expect(state.settings).toMatchObject({
-            viewerPreferredTab: 'workflow', libraryMediaType: 'video', librarySourceKind: 'all',
+            viewerPreferredTab: 'workflow',
+            libraryMediaType: 'video',
+            librarySourceKind: 'all',
         });
     });
 
     it('normalizes omitted legacy collection and smart-filter fields after validation', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
-        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
-            ...stateFixture(),
-            images: [],
-            collections: [{ id: 'legacy', name: 'Legacy' }],
-            smartCollections: [{ id: 'legacy-smart', name: 'Legacy Smart', filters: { searchQuery: 'portrait' } }],
-        }));
+        fsMocks.readTextFile.mockResolvedValue(
+            JSON.stringify({
+                ...stateFixture(),
+                images: [],
+                collections: [{ id: 'legacy', name: 'Legacy' }],
+                smartCollections: [{ id: 'legacy-smart', name: 'Legacy Smart', filters: { searchQuery: 'portrait' } }],
+            })
+        );
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
         const state = await new TauriFsRepository().load();
 
-        expect(state.collections[0]).toEqual(expect.objectContaining({
-            id: 'legacy',
-            imageIds: [],
-            createdAt: expect.any(Number),
-        }));
-        expect(state.smartCollections[0]).toEqual(expect.objectContaining({
-            id: 'legacy-smart',
-            imageIds: [],
-            createdAt: expect.any(Number),
-            filters: expect.objectContaining({
-                searchQuery: 'portrait',
-                sourceKind: 'all',
-                loras: [],
-                dateRange: 'all',
-            }),
-        }));
+        expect(state.collections[0]).toEqual(
+            expect.objectContaining({
+                id: 'legacy',
+                imageIds: [],
+                createdAt: expect.any(Number),
+            })
+        );
+        expect(state.smartCollections[0]).toEqual(
+            expect.objectContaining({
+                id: 'legacy-smart',
+                imageIds: [],
+                createdAt: expect.any(Number),
+                filters: expect.objectContaining({
+                    searchQuery: 'portrait',
+                    sourceKind: 'all',
+                    loras: [],
+                    dateRange: 'all',
+                }),
+            })
+        );
     });
 
     it('rejects an invalid persisted image-kind filter', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
-        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
-            ...stateFixture(),
-            images: [],
-            smartCollections: [{
-                id: 'invalid-smart',
-                name: 'Invalid Smart',
-                filters: { searchQuery: '', sourceKind: 'camera' },
-            }],
-        }));
+        fsMocks.readTextFile.mockResolvedValue(
+            JSON.stringify({
+                ...stateFixture(),
+                images: [],
+                smartCollections: [
+                    {
+                        id: 'invalid-smart',
+                        name: 'Invalid Smart',
+                        filters: { searchQuery: '', sourceKind: 'camera' },
+                    },
+                ],
+            })
+        );
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
         const state = await new TauriFsRepository().load();
 
         expect(state.smartCollections).toEqual([]);
-        expect(error).toHaveBeenCalledWith(
-            '[TauriFsRepository] Failed to read library.json:',
-            expect.any(Error)
-        );
+        expect(error).toHaveBeenCalledWith('[TauriFsRepository] Failed to read library.json:', expect.any(Error));
         error.mockRestore();
     });
 
@@ -460,11 +482,7 @@ describe('TauriFsRepository', () => {
 
         expect(state.images).toEqual([]);
         expect(fsMocks.writeTextFile).toHaveBeenCalledOnce();
-        expect(fsMocks.writeTextFile).toHaveBeenCalledWith(
-            'library.json.bak',
-            expect.any(String),
-            { baseDir: 11 }
-        );
+        expect(fsMocks.writeTextFile).toHaveBeenCalledWith('library.json.bak', expect.any(String), { baseDir: 11 });
     });
 
     it('never writes image rows to library.json saves because SQLite owns image data', async () => {
@@ -472,7 +490,11 @@ describe('TauriFsRepository', () => {
 
         await new TauriFsRepository().save(stateFixture());
 
-        const [fileName, serialized, options] = fsMocks.writeTextFile.mock.calls.find(([name]) => name === 'library.json') as [string, string, unknown];
+        const [fileName, serialized, options] = fsMocks.writeTextFile.mock.calls.find(([name]) => name === 'library.json') as [
+            string,
+            string,
+            unknown,
+        ];
         expect(fileName).toBe('library.json');
         expect(options).toEqual({ baseDir: 11 });
         expect(JSON.parse(serialized).images).toEqual([]);
@@ -496,11 +518,11 @@ describe('TauriFsRepository', () => {
         const repository = new TauriFsRepository();
 
         await Promise.all([
-            repository.update(state => ({
+            repository.update((state) => ({
                 ...state,
-                settings: { ...state.settings, maskedKeywords: ['durable'] }
+                settings: { ...state.settings, maskedKeywords: ['durable'] },
             })),
-            repository.update(state => ({ ...state, recentSearches: ['latest-search'] })),
+            repository.update((state) => ({ ...state, recentSearches: ['latest-search'] })),
         ]);
 
         const persisted = await repository.load();
@@ -529,7 +551,7 @@ describe('TauriFsRepository', () => {
         const repository = new TauriFsRepository();
         const updater = vi.fn((state: AppState) => ({
             ...state,
-            recentSearches: ['must-not-overwrite']
+            recentSearches: ['must-not-overwrite'],
         }));
 
         await expect(repository.update(updater)).rejects.toThrow('transport unavailable');
@@ -541,9 +563,11 @@ describe('TauriFsRepository', () => {
 
     it('treats a main file removed between existence check and read as absent', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
-        fsMocks.readTextFile.mockRejectedValueOnce(Object.assign(new Error('ENOENT: no such file or directory'), {
-            code: 'ENOENT'
-        }));
+        fsMocks.readTextFile.mockRejectedValueOnce(
+            Object.assign(new Error('ENOENT: no such file or directory'), {
+                code: 'ENOENT',
+            })
+        );
         const { TauriFsRepository } = await import('../TauriFsRepository');
 
         const state = await new TauriFsRepository().load();
@@ -563,10 +587,7 @@ describe('TauriFsRepository', () => {
 
         expect(state.images).toEqual([]);
         expect(state.recentSearches).toEqual([]);
-        expect(error).toHaveBeenCalledWith(
-            '[TauriFsRepository] Failed to read library.json:',
-            expect.any(Error)
-        );
+        expect(error).toHaveBeenCalledWith('[TauriFsRepository] Failed to read library.json:', expect.any(Error));
         error.mockRestore();
     });
 
@@ -712,7 +733,7 @@ describe('TauriFsRepository', () => {
         const main = {
             ...stateFixture(),
             images: [],
-            settings: { ...stateFixture().settings, maskedKeywords: ['main'] }
+            settings: { ...stateFixture().settings, maskedKeywords: ['main'] },
         };
         const files = new Map<string, string>([
             ['library.json.pending', '{partial'],

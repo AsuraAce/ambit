@@ -17,17 +17,17 @@ interface InvokeOwnerScopeGateProps {
 }
 
 const BusyGate: React.FC<{ state: InvokeOwnerScopeState; autoFocus: boolean }> = ({ state, autoFocus }) => {
-    const currentOperation = useInvokeOwnerScopeStore(store => store.operation);
-    const operation = currentOperation && !currentOperation.viewCommitted
-        && !['completed', 'cancelled', 'failed'].includes(currentOperation.phase)
-        && (!state.rootPath || normalizeInvokeRoot(currentOperation.rootPath) === normalizeInvokeRoot(state.rootPath))
-        ? currentOperation
-        : null;
+    const currentOperation = useInvokeOwnerScopeStore((store) => store.operation);
+    const operation =
+        currentOperation &&
+        !currentOperation.viewCommitted &&
+        !['completed', 'cancelled', 'failed'].includes(currentOperation.phase) &&
+        (!state.rootPath || normalizeInvokeRoot(currentOperation.rootPath) === normalizeInvokeRoot(state.rootPath))
+            ? currentOperation
+            : null;
     const headingRef = React.useRef<HTMLHeadingElement>(null);
     const progress = operation?.progress ?? state.progress;
-    const scopeIdentity = state.scope?.mode === 'owner'
-        ? state.scope.ownerId
-        : state.scope?.mode;
+    const scopeIdentity = state.scope?.mode === 'owner' ? state.scope.ownerId : state.scope?.mode;
     const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
     React.useEffect(() => {
         setElapsedSeconds(0);
@@ -42,50 +42,51 @@ const BusyGate: React.FC<{ state: InvokeOwnerScopeState; autoFocus: boolean }> =
         if (autoFocus) headingRef.current?.focus();
     }, [state.rootPath, scopeIdentity, operation?.id, autoFocus]);
 
-    const operationPhase = operation ? 'preparing' : state.operationPhase ?? 'preparing';
+    const operationPhase = operation ? 'preparing' : (state.operationPhase ?? 'preparing');
     const isCancelling = operation?.phase === 'cancelling';
     const isSettling = operation?.phase === 'settling';
-    const message = isCancelling ? 'Cancelling… Waiting for current work to finish safely.' : progress?.message
-        ?? (state.status === 'discovering'
-            ? 'Checking InvokeAI owner information...'
-            : operationPhase === 'importing'
+    const message = isCancelling
+        ? 'Cancelling… Waiting for current work to finish safely.'
+        : (progress?.message ??
+          (state.status === 'discovering'
+              ? 'Checking InvokeAI owner information...'
+              : operationPhase === 'importing'
                 ? 'Importing images into your InvokeAI view...'
-                : 'Preparing your InvokeAI library...');
+                : 'Preparing your InvokeAI library...'));
     const ownerId = state.scope?.mode === 'owner' ? state.scope.ownerId : undefined;
-    const ownerLabel = operation?.targetLabel ?? (state.scope?.mode === 'all'
-        ? 'All users'
-        : state.scope?.mode === 'legacy'
-            ? 'InvokeAI'
-            : ownerId
-                ? state.discovery?.owners.find(owner => owner.ownerId === ownerId)?.displayName
-                    || ownerId
+    const ownerLabel =
+        operation?.targetLabel ??
+        (state.scope?.mode === 'all'
+            ? 'All users'
+            : state.scope?.mode === 'legacy'
+              ? 'InvokeAI'
+              : ownerId
+                ? state.discovery?.owners.find((owner) => owner.ownerId === ownerId)?.displayName || ownerId
                 : undefined);
-    const statusMessage = elapsedSeconds >= 5
-        ? `${message} · ${elapsedSeconds}s elapsed`
-        : message;
+    const statusMessage = elapsedSeconds >= 5 ? `${message} · ${elapsedSeconds}s elapsed` : message;
 
     return (
         <StartupPreparationCard
             phaseLabel={operationPhase === 'importing' ? 'Importing images' : 'Preparing view'}
-            title={ownerLabel
-                ? `Preparing view — ${ownerLabel}`
-                : 'Preparing your InvokeAI view'}
+            title={ownerLabel ? `Preparing view — ${ownerLabel}` : 'Preparing your InvokeAI view'}
             headingRef={headingRef}
             icon={<ShieldCheck className="h-7 w-7" />}
             description="Ambit is loading the images, boards, and filters available in this view."
             statusMessage={statusMessage}
             reassurance="Existing images and collections are kept."
             progress={progress}
-            actions={operation && (
-                <button
-                    type="button"
-                    onClick={operation.cancel}
-                    disabled={isCancelling || isSettling || !operation.cancel}
-                    className="rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-200 disabled:cursor-wait disabled:opacity-60 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/15"
-                >
-                    {isCancelling ? 'Cancelling…' : isSettling ? 'Finishing…' : 'Cancel'}
-                </button>
-            )}
+            actions={
+                operation && (
+                    <button
+                        type="button"
+                        onClick={operation.cancel}
+                        disabled={isCancelling || isSettling || !operation.cancel}
+                        className="rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-200 disabled:cursor-wait disabled:opacity-60 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/15"
+                    >
+                        {isCancelling ? 'Cancelling…' : isSettling ? 'Finishing…' : 'Cancel'}
+                    </button>
+                )
+            }
         />
     );
 };
@@ -93,13 +94,11 @@ const BusyGate: React.FC<{ state: InvokeOwnerScopeState; autoFocus: boolean }> =
 const getAllUsersMessage = (discovery: InvokeOwnerDiscovery): string => {
     const unassignedBoards = discovery.unassignedBoardCount ?? 0;
     const unassignedDetails = [
-        discovery.unassignedImageCount > 0
-            ? `${discovery.unassignedImageCount.toLocaleString()} unassigned image rows`
-            : null,
-        unassignedBoards > 0
-            ? `${unassignedBoards.toLocaleString()} unassigned boards`
-            : null,
-    ].filter((value): value is string => value !== null).join(' and ');
+        discovery.unassignedImageCount > 0 ? `${discovery.unassignedImageCount.toLocaleString()} unassigned image rows` : null,
+        unassignedBoards > 0 ? `${unassignedBoards.toLocaleString()} unassigned boards` : null,
+    ]
+        .filter((value): value is string => value !== null)
+        .join(' and ');
 
     return unassignedDetails
         ? `Ambit will show every owner's InvokeAI content, including ${unassignedDetails}, across the gallery, collections, maintenance views, and references. You can return to a single owner at any time.`
@@ -113,7 +112,7 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
     onOpenSettings,
     autoFocus = true,
 }) => {
-    const operation = useInvokeOwnerScopeStore(store => store.operation);
+    const operation = useInvokeOwnerScopeStore((store) => store.operation);
     const headingRef = React.useRef<HTMLHeadingElement>(null);
     const openViewRef = React.useRef<HTMLButtonElement>(null);
     const submitErrorRef = React.useRef<HTMLParagraphElement>(null);
@@ -122,13 +121,9 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
     const [isAllUsersConfirmOpen, setIsAllUsersConfirmOpen] = React.useState(false);
     const [isSubmitting, setIsSubmitting] = React.useState(false);
     const [submitError, setSubmitError] = React.useState<string | null>(null);
-    const isBusy = state.status === 'idle'
-        || state.status === 'discovering'
-        || state.status === 'applying';
+    const isBusy = state.status === 'idle' || state.status === 'discovering' || state.status === 'applying';
     const discovery = state.discovery;
-    const discoverySource = discovery
-        ? `${discovery.dbPath}\u0000${discovery.imagesRoot}`
-        : '';
+    const discoverySource = discovery ? `${discovery.dbPath}\u0000${discovery.imagesRoot}` : '';
 
     React.useEffect(() => {
         if (!isBusy && autoFocus) headingRef.current?.focus();
@@ -158,23 +153,26 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
         if (submitError) submitErrorRef.current?.focus();
     }, [submitError]);
 
-    const submitSelection = React.useCallback(async (selection: InvokeOwnerSelection) => {
-        if (isSubmittingRef.current) return;
+    const submitSelection = React.useCallback(
+        async (selection: InvokeOwnerSelection) => {
+            if (isSubmittingRef.current) return;
 
-        isSubmittingRef.current = true;
-        setIsSubmitting(true);
-        setSubmitError(null);
-        try {
-            await onSelect(selection);
-            isSubmittingRef.current = false;
-            setIsSubmitting(false);
-            openViewRef.current?.focus();
-        } catch (error) {
-            isSubmittingRef.current = false;
-            setIsSubmitting(false);
-            setSubmitError(error instanceof Error ? error.message : 'Could not open this InvokeAI view.');
-        }
-    }, [onSelect]);
+            isSubmittingRef.current = true;
+            setIsSubmitting(true);
+            setSubmitError(null);
+            try {
+                await onSelect(selection);
+                isSubmittingRef.current = false;
+                setIsSubmitting(false);
+                openViewRef.current?.focus();
+            } catch (error) {
+                isSubmittingRef.current = false;
+                setIsSubmitting(false);
+                setSubmitError(error instanceof Error ? error.message : 'Could not open this InvokeAI view.');
+            }
+        },
+        [onSelect]
+    );
 
     const handleOpenView = React.useCallback(() => {
         if (!pendingSelection || isSubmitting) return;
@@ -214,7 +212,8 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
                         Choose which InvokeAI images to show
                     </h1>
                     <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                        This InvokeAI library contains multiple users. Choose one owner or explicitly show all users. Nothing is deleted, and you can change this later in Settings.
+                        This InvokeAI library contains multiple users. Choose one owner or explicitly show all users. Nothing is deleted,
+                        and you can change this later in Settings.
                     </p>
                     <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
                         Open the view to sync using your saved import options.
@@ -269,18 +268,18 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
 
     const isSourceUnavailable = state.failure?.kind === 'source_unavailable';
     const isCancelled = state.failure?.kind === 'preparation_cancelled';
-    const retryOperation = operation?.retry
-        && normalizeInvokeRoot(operation.rootPath) === normalizeInvokeRoot(state.rootPath)
-        ? operation.retry
-        : onRetry;
+    const retryOperation =
+        operation?.retry && normalizeInvokeRoot(operation.rootPath) === normalizeInvokeRoot(state.rootPath) ? operation.retry : onRetry;
     const title = isCancelled
         ? 'InvokeAI preparation cancelled'
-        : isSourceUnavailable ? 'InvokeAI needs attention' : 'InvokeAI library preparation failed';
+        : isSourceUnavailable
+          ? 'InvokeAI needs attention'
+          : 'InvokeAI library preparation failed';
     const description = isCancelled
         ? 'Your connection and import options are saved for retry. InvokeAI content stays hidden until preparation finishes.'
         : isSourceUnavailable
-            ? "Ambit couldn't open the configured InvokeAI database, so InvokeAI content is staying hidden."
-            : "Ambit couldn't finish verifying owner visibility. InvokeAI content is staying hidden to avoid showing the wrong library.";
+          ? "Ambit couldn't open the configured InvokeAI database, so InvokeAI content is staying hidden."
+          : "Ambit couldn't finish verifying owner visibility. InvokeAI content is staying hidden to avoid showing the wrong library.";
 
     return (
         <main
@@ -288,10 +287,14 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
             role={isCancelled ? 'status' : 'alert'}
             data-testid="invoke-owner-scope-gate"
         >
-            <div className={`w-full max-w-lg rounded-3xl border bg-white/90 p-5 shadow-2xl shadow-black/10 dark:bg-zinc-900/90 sm:p-8 ${isCancelled ? 'border-gray-200 dark:border-white/10' : 'border-red-200 dark:border-red-500/20'}`}>
-                {isCancelled
-                    ? <CircleStop className="mb-4 h-8 w-8 text-gray-600 dark:text-gray-300" />
-                    : <AlertTriangle className="mb-4 h-8 w-8 text-red-600 dark:text-red-300" />}
+            <div
+                className={`w-full max-w-lg rounded-3xl border bg-white/90 p-5 shadow-2xl shadow-black/10 dark:bg-zinc-900/90 sm:p-8 ${isCancelled ? 'border-gray-200 dark:border-white/10' : 'border-red-200 dark:border-red-500/20'}`}
+            >
+                {isCancelled ? (
+                    <CircleStop className="mb-4 h-8 w-8 text-gray-600 dark:text-gray-300" />
+                ) : (
+                    <AlertTriangle className="mb-4 h-8 w-8 text-red-600 dark:text-red-300" />
+                )}
                 <h1 ref={headingRef} tabIndex={-1} className="text-xl font-black text-gray-900 outline-none dark:text-white">
                     {title}
                 </h1>

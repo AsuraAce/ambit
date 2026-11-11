@@ -2,10 +2,8 @@ import { AIImage, AppSettings } from '../types';
 
 const EMPTY_MASKED_KEYWORDS: string[] = [];
 
-export const getEffectiveMaskedKeywords = (
-    settings: Pick<AppSettings, 'promptMaskingEnabled' | 'maskedKeywords'>
-): string[] => settings.promptMaskingEnabled
-    === false ? EMPTY_MASKED_KEYWORDS : settings.maskedKeywords;
+export const getEffectiveMaskedKeywords = (settings: Pick<AppSettings, 'promptMaskingEnabled' | 'maskedKeywords'>): string[] =>
+    settings.promptMaskingEnabled === false ? EMPTY_MASKED_KEYWORDS : settings.maskedKeywords;
 
 /**
  * Determines if an image should be masked (blurred/hidden) based on:
@@ -13,11 +11,7 @@ export const getEffectiveMaskedKeywords = (
  * 2. Explicit User Mask (Persistent)
  * 3. Keyword Matching in Positive Prompt
  */
-export const isImageMasked = (
-    image: AIImage,
-    privacyEnabled: boolean,
-    maskedKeywords: string[]
-): boolean => {
+export const isImageMasked = (image: AIImage, privacyEnabled: boolean, maskedKeywords: string[]): boolean => {
     // 0. Global Safety Switch - If off, nothing is masked (except maybe explicit hidden logic if we separate them later, but for now strict)
     if (!privacyEnabled) return false;
 
@@ -33,12 +27,10 @@ export const isImageMasked = (
 
     // 3. Scan POSITIVE PROMPT Only (User Requirement for precision)
     // We avoid scanning negative prompts or model names to prevent false positives.
-    const prompt = typeof image.metadata.positivePrompt === 'string'
-        ? image.metadata.positivePrompt.toLowerCase()
-        : '';
+    const prompt = typeof image.metadata.positivePrompt === 'string' ? image.metadata.positivePrompt.toLowerCase() : '';
 
     // Quick return if empty
     if (!prompt) return false;
 
-    return maskedKeywords.some(kw => prompt.includes(kw.toLowerCase()));
+    return maskedKeywords.some((kw) => prompt.includes(kw.toLowerCase()));
 };

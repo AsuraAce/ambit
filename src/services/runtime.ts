@@ -11,7 +11,4 @@ export const isTauriRuntime = (): boolean => {
 
 /* istanbul ignore next -- import.meta.env values are fixed for a given build. */
 export const isBrowserMockMode = (): boolean =>
-    import.meta.env.DEV &&
-    import.meta.env.MODE !== 'test' &&
-    typeof window !== 'undefined' &&
-    !isTauriRuntime();
+    import.meta.env.DEV && import.meta.env.MODE !== 'test' && typeof window !== 'undefined' && !isTauriRuntime();

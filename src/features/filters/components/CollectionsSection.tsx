@@ -46,12 +46,12 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
     onExportCollection,
     onResetCollectionThumbnail,
     isDirty,
-    onEditCollection
+    onEditCollection,
 }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [isSavingSearch, setIsSavingSearch] = useState(false);
     const [newName, setNewName] = useState('');
-    const retryCounts = useCollectionStore(state => state.retryOrdinaryCounts);
+    const retryCounts = useCollectionStore((state) => state.retryOrdinaryCounts);
 
     const handleCreate = (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,15 +71,10 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
 
     return (
         <div className="space-y-2">
-            <SectionHeader
-                title="Collections"
-                isOpen={isOpen}
-                onToggle={onToggle}
-            />
+            <SectionHeader title="Collections" isOpen={isOpen} onToggle={onToggle} />
 
-            {collections.some(collection => collection.countState === 'failed') && (
-                <button type="button" onClick={retryCounts}
-                    className="text-xs text-sage-600 dark:text-sage-400 underline">
+            {collections.some((collection) => collection.countState === 'failed') && (
+                <button type="button" onClick={retryCounts} className="text-xs text-sage-600 dark:text-sage-400 underline">
                     Retry counts
                 </button>
             )}
@@ -88,7 +83,7 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                     collections={collections}
                     filters={filters}
                     setFilters={setFilters}
-                    onDeleteCollection={onDeleteCollection || (() => { })}
+                    onDeleteCollection={onDeleteCollection || (() => {})}
                     onRenameCollection={onRenameCollection}
                     onDropOnCollection={onDropOnCollection}
                     onToggleArchiveCollection={onToggleArchiveCollection}
@@ -116,24 +111,24 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                                 </div>
                             </div>
                         ) : (
-                        <div className="flex flex-col items-center justify-center py-6 px-4 text-center space-y-3">
-                            <div className="w-10 h-10 rounded-full bg-sage-50 dark:bg-white/5 flex items-center justify-center">
-                                <FolderOpen className="w-5 h-5 text-sage-400 dark:text-zinc-500" />
+                            <div className="flex flex-col items-center justify-center py-6 px-4 text-center space-y-3">
+                                <div className="w-10 h-10 rounded-full bg-sage-50 dark:bg-white/5 flex items-center justify-center">
+                                    <FolderOpen className="w-5 h-5 text-sage-400 dark:text-zinc-500" />
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs font-medium text-gray-600 dark:text-gray-300">No collections yet</p>
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 max-w-[180px]">
+                                        Organize your generations into collections for easy access.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => startCreation(false)}
+                                    className="text-xs bg-sage-500 hover:bg-sage-600 text-white px-3 py-1.5 rounded-lg shadow-sm shadow-sage-500/20 transition-all flex items-center gap-1.5"
+                                >
+                                    <Plus className="w-3 h-3" />
+                                    <span>Create Collection</span>
+                                </button>
                             </div>
-                            <div className="space-y-1">
-                                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">No collections yet</p>
-                                <p className="text-[10px] text-gray-400 dark:text-gray-500 max-w-[180px]">
-                                    Organize your generations into collections for easy access.
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => startCreation(false)}
-                                className="text-xs bg-sage-500 hover:bg-sage-600 text-white px-3 py-1.5 rounded-lg shadow-sm shadow-sage-500/20 transition-all flex items-center gap-1.5"
-                            >
-                                <Plus className="w-3 h-3" />
-                                <span>Create Collection</span>
-                            </button>
-                        </div>
                         )
                     }
                     renderToolbarExtras={() => (
@@ -142,7 +137,10 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                                 <TooltipButton
                                     label="Save Filters as Collection"
                                     content="Save the current filters as a smart collection"
-                                    onClick={(e) => { e.stopPropagation(); startCreation(true); }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        startCreation(true);
+                                    }}
                                     className="text-sage-600 dark:text-sage-400 hover:text-white hover:bg-sage-500 transition-all bg-sage-50 dark:bg-sage-900/40 border border-sage-500/30 p-1.5 rounded-lg shadow-sm"
                                 >
                                     <Save className="w-3.5 h-3.5" />
@@ -151,26 +149,34 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                             <TooltipButton
                                 label="New Empty Collection"
                                 content="Create a collection without saving the current filters"
-                                onClick={(e) => { e.stopPropagation(); startCreation(false); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    startCreation(false);
+                                }}
                                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/5 p-1.5 rounded-lg shadow-sm"
                             >
                                 <Plus className="w-3.5 h-3.5" />
                             </TooltipButton>
                         </div>
                     )}
-                    renderCreationForm={() => isCreating && (
-                        <form onSubmit={handleCreate} className="mb-2 flex items-center gap-1 animate-in fade-in">
-                            <input
-                                autoFocus
-                                type="text"
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                placeholder={isSavingSearch ? "Save search as..." : "New collection name..."}
-                                className="w-full bg-white dark:bg-zinc-900 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs focus:border-sage-500 outline-none text-gray-900 dark:text-white"
-                                onBlur={() => { if (!newName) setIsCreating(false); setIsSavingSearch(false); }}
-                            />
-                        </form>
-                    )}
+                    renderCreationForm={() =>
+                        isCreating && (
+                            <form onSubmit={handleCreate} className="mb-2 flex items-center gap-1 animate-in fade-in">
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    placeholder={isSavingSearch ? 'Save search as...' : 'New collection name...'}
+                                    className="w-full bg-white dark:bg-zinc-900 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs focus:border-sage-500 outline-none text-gray-900 dark:text-white"
+                                    onBlur={() => {
+                                        if (!newName) setIsCreating(false);
+                                        setIsSavingSearch(false);
+                                    }}
+                                />
+                            </form>
+                        )
+                    }
                 />
             )}
         </div>

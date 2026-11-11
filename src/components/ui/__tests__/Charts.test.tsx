@@ -11,15 +11,15 @@ const createLibraryContextState = () => ({
         estSizeMB: '4.8',
         modelStats: [
             { name: 'Flux Super Long Model Name', fullName: 'Flux Super Long Model Name', count: 2 },
-            { name: 'Flux Super Long Model Name XL', fullName: 'Flux Super Long Model Name XL', count: 1 }
+            { name: 'Flux Super Long Model Name XL', fullName: 'Flux Super Long Model Name XL', count: 1 },
         ],
-        keywordStats: [{ text: 'aurora', value: 2 }]
+        keywordStats: [{ text: 'aurora', value: 2 }],
     },
     setFilters: vi.fn(),
     isFiltering: false,
     globalTotal: 118000,
     isStatsSummaryLoading: false,
-    isKeywordStatsLoading: false
+    isKeywordStatsLoading: false,
 });
 
 const libraryContextMocks = vi.hoisted(() => ({
@@ -30,27 +30,27 @@ const libraryContextMocks = vi.hoisted(() => ({
         estSizeMB: '4.8',
         modelStats: [
             { name: 'Flux Super Long Model Name', fullName: 'Flux Super Long Model Name', count: 2 },
-            { name: 'Flux Super Long Model Name XL', fullName: 'Flux Super Long Model Name XL', count: 1 }
+            { name: 'Flux Super Long Model Name XL', fullName: 'Flux Super Long Model Name XL', count: 1 },
         ],
-        keywordStats: [{ text: 'aurora', value: 2 }]
+        keywordStats: [{ text: 'aurora', value: 2 }],
     },
     setFilters: vi.fn(),
     isFiltering: false,
     globalTotal: 118000,
     isStatsSummaryLoading: false,
-    isKeywordStatsLoading: false
+    isKeywordStatsLoading: false,
 }));
 
 const libraryStoreMocks = vi.hoisted(() => ({
-    setKeywordStatsEnabled: vi.fn()
+    setKeywordStatsEnabled: vi.fn(),
 }));
 
 vi.mock('../../../hooks/useLibraryContext', () => ({
-    useLibraryContext: () => libraryContextMocks
+    useLibraryContext: () => libraryContextMocks,
 }));
 
 vi.mock('../../../stores/libraryStore', () => ({
-    useLibraryStore: (selector: (state: typeof libraryStoreMocks) => unknown) => selector(libraryStoreMocks)
+    useLibraryStore: (selector: (state: typeof libraryStoreMocks) => unknown) => selector(libraryStoreMocks),
 }));
 
 describe('StatsDashboard', () => {
@@ -90,7 +90,7 @@ describe('StatsDashboard', () => {
             avgSteps: 0,
             estSizeMB: '0',
             modelStats: [],
-            keywordStats: []
+            keywordStats: [],
         };
         libraryContextMocks.isStatsSummaryLoading = true;
 
@@ -150,7 +150,7 @@ describe('StatsDashboard', () => {
             avgSteps: 0,
             estSizeMB: '0',
             modelStats: [],
-            keywordStats: []
+            keywordStats: [],
         };
 
         render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
@@ -174,11 +174,13 @@ describe('StatsDashboard', () => {
     });
 
     it('does not filter model rows that lack an exact full name', () => {
-        libraryContextMocks.stats.modelStats = [{
-            name: 'Display Only',
-            fullName: undefined as unknown as string,
-            count: 1,
-        }];
+        libraryContextMocks.stats.modelStats = [
+            {
+                name: 'Display Only',
+                fullName: undefined as unknown as string,
+                count: 1,
+            },
+        ];
         const onFilter = vi.fn();
         render(<StatsDashboard images={[]} onFilter={onFilter} />);
 
@@ -193,9 +195,7 @@ describe('StatsDashboard', () => {
         fireEvent.click(screen.getByText('aurora'));
 
         expect(libraryContextMocks.setFilters).toHaveBeenCalledWith(expect.any(Function));
-        const update = libraryContextMocks.setFilters.mock.calls[0][0] as (
-            filters: { searchQuery: string }
-        ) => { searchQuery: string };
+        const update = libraryContextMocks.setFilters.mock.calls[0][0] as (filters: { searchQuery: string }) => { searchQuery: string };
         expect(update({ searchQuery: '  existing  ' }).searchQuery).toBe('existing aurora');
         expect(update({ searchQuery: '' }).searchQuery).toBe('aurora');
     });

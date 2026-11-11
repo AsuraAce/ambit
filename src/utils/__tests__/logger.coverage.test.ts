@@ -64,7 +64,11 @@ describe('setupGlobalLogging', () => {
         state.logLevel = level;
         const { setupGlobalLogging } = await import('../logger');
         setupGlobalLogging();
-        console.debug('d'); console.log('l'); console.info('i'); console.warn('w'); console.error('e');
+        console.debug('d');
+        console.log('l');
+        console.info('i');
+        console.warn('w');
+        console.error('e');
         expect(originals.debug.mock.calls.length > 0).toBe(debugAllowed);
         expect(originals.log.mock.calls.length > 0).toBe(infoAllowed);
         expect(originals.info.mock.calls.length > 0).toBe(infoAllowed);

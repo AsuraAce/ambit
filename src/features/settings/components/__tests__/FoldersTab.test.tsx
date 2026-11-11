@@ -31,16 +31,18 @@ vi.mock('../../../../hooks/useMetadataRefresh', () => ({
 }));
 
 vi.mock('../FolderItem', () => ({
-    FolderItem: ({ folder, onRefresh }: {
+    FolderItem: ({
+        folder,
+        onRefresh,
+    }: {
         folder: { path: string; pathRaw?: string; variant?: GeneratorTool; isManaged?: boolean };
         onRefresh: (path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => void;
     }) => (
-        <button onClick={() => onRefresh(
-            folder.isManaged ? (folder.pathRaw ?? folder.path) : folder.path,
-            true,
-            folder.variant,
-            folder.isManaged
-        )}>
+        <button
+            onClick={() =>
+                onRefresh(folder.isManaged ? (folder.pathRaw ?? folder.path) : folder.path, true, folder.variant, folder.isManaged)
+            }
+        >
             Refresh {folder.path}
         </button>
     ),
@@ -81,12 +83,14 @@ describe('FoldersTab', () => {
     });
 
     it('routes normal folder refreshes to metadata reparsing', () => {
-        mocks.combinedFolders = [{
-            id: 'folder-1',
-            path: 'D:/Images',
-            variant: GeneratorTool.COMFYUI,
-            isManaged: false,
-        }];
+        mocks.combinedFolders = [
+            {
+                id: 'folder-1',
+                path: 'D:/Images',
+                variant: GeneratorTool.COMFYUI,
+                isManaged: false,
+            },
+        ];
         render(<FoldersTab settings={settings} setSettings={vi.fn()} />);
 
         fireEvent.click(screen.getByText('Refresh D:/Images'));
@@ -96,38 +100,38 @@ describe('FoldersTab', () => {
     });
 
     it('routes managed InvokeAI refreshes through database sync using the raw path', () => {
-        mocks.combinedFolders = [{
-            id: 'regular',
-            path: 'D:/Images',
-            variant: GeneratorTool.COMFYUI,
-            isManaged: false,
-        }, {
-            id: 'invoke',
-            path: 'D:/Invoke/outputs/images',
-            pathRaw: 'D:/Invoke',
-            variant: GeneratorTool.INVOKEAI,
-            isManaged: true,
-        }];
+        mocks.combinedFolders = [
+            {
+                id: 'regular',
+                path: 'D:/Images',
+                variant: GeneratorTool.COMFYUI,
+                isManaged: false,
+            },
+            {
+                id: 'invoke',
+                path: 'D:/Invoke/outputs/images',
+                pathRaw: 'D:/Invoke',
+                variant: GeneratorTool.INVOKEAI,
+                isManaged: true,
+            },
+        ];
         render(<FoldersTab settings={settings} setSettings={vi.fn()} />);
 
         fireEvent.click(screen.getByText('Refresh D:/Invoke/outputs/images'));
 
-        expect(mocks.handleRescan).toHaveBeenCalledWith(
-            'invoke',
-            'D:/Invoke',
-            GeneratorTool.INVOKEAI,
-            true
-        );
+        expect(mocks.handleRescan).toHaveBeenCalledWith('invoke', 'D:/Invoke', GeneratorTool.INVOKEAI, true);
         expect(mocks.forceRefresh).not.toHaveBeenCalled();
     });
 
     it('ignores a managed refresh when its path no longer exists in the current folders', () => {
-        mocks.combinedFolders = [{
-            id: 'invoke',
-            path: 'D:/Invoke/outputs/images',
-            variant: GeneratorTool.INVOKEAI,
-            isManaged: true,
-        }];
+        mocks.combinedFolders = [
+            {
+                id: 'invoke',
+                path: 'D:/Invoke/outputs/images',
+                variant: GeneratorTool.INVOKEAI,
+                isManaged: true,
+            },
+        ];
         render(<FoldersTab settings={settings} setSettings={vi.fn()} />);
 
         const button = screen.getByText('Refresh D:/Invoke/outputs/images');
@@ -140,12 +144,14 @@ describe('FoldersTab', () => {
 
     it('syncs managed InvokeAI before triggering a global metadata refresh', async () => {
         const events: string[] = [];
-        mocks.combinedFolders = [{
-            id: 'invoke',
-            path: 'D:/Invoke/outputs/images',
-            variant: GeneratorTool.INVOKEAI,
-            isManaged: true,
-        }];
+        mocks.combinedFolders = [
+            {
+                id: 'invoke',
+                path: 'D:/Invoke/outputs/images',
+                variant: GeneratorTool.INVOKEAI,
+                isManaged: true,
+            },
+        ];
         mocks.handleRescan.mockImplementation(async () => {
             events.push('sync');
         });
@@ -157,12 +163,7 @@ describe('FoldersTab', () => {
         fireEvent.click(screen.getByText('Refresh All Metadata'));
 
         await waitFor(() => expect(events).toEqual(['sync', 'refresh']));
-        expect(mocks.handleRescan).toHaveBeenCalledWith(
-            'invoke',
-            'D:/Invoke/outputs/images',
-            GeneratorTool.INVOKEAI,
-            true
-        );
+        expect(mocks.handleRescan).toHaveBeenCalledWith('invoke', 'D:/Invoke/outputs/images', GeneratorTool.INVOKEAI, true);
         expect(mocks.forceRefresh).toHaveBeenCalledWith(undefined, false);
     });
 

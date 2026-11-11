@@ -4,7 +4,16 @@ import { act, fireEvent, render, screen, waitFor } from './test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultAppSettings } from './constants/defaultSettings';
 import { createDefaultFilters } from './utils/filterState';
-import { GeneratorTool, type AIImage, type AppSettings, type Collection, type FilterState, type LayoutMode, type SmartCollection, type ViewMode } from './types';
+import {
+    GeneratorTool,
+    type AIImage,
+    type AppSettings,
+    type Collection,
+    type FilterState,
+    type LayoutMode,
+    type SmartCollection,
+    type ViewMode,
+} from './types';
 import type { ApplyInvokeConnectionOptions, InvokeConnectionApplyOutcome, InvokeOwnerScopeState } from './contexts/SyncContext';
 import type { InvokeConnectionDraft } from './services/invoke/connectionDraft';
 import App from './App';
@@ -38,7 +47,7 @@ type AppLayoutProbe = {
         id: string,
         index: number,
         callback: (index: number) => void,
-        revealGranted?: boolean,
+        revealGranted?: boolean
     ) => void;
     searchProps: {
         onFocus: () => void;
@@ -147,7 +156,7 @@ const captured = vi.hoisted(() => ({
     importModal: null as ImportModalProbe | null,
     viewer: null as ViewerProbe | null,
     contextMenu: null as ContextMenuProbe | null,
-    updateDialog: null as Record<string, unknown> | null
+    updateDialog: null as Record<string, unknown> | null,
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -199,11 +208,7 @@ const mocks = vi.hoisted(() => ({
     handleImportPaths: vi.fn().mockResolvedValue(undefined),
     handleImportFolders: vi.fn().mockResolvedValue(undefined),
     importImages: vi.fn(),
-    removeImagesFromCollection: vi.fn(async (
-        _imageIds: string[],
-        _collectionId: string,
-        onPersisted?: () => void
-    ) => {
+    removeImagesFromCollection: vi.fn(async (_imageIds: string[], _collectionId: string, onPersisted?: () => void) => {
         onPersisted?.();
         return true;
     }),
@@ -228,7 +233,7 @@ const mocks = vi.hoisted(() => ({
         handleUpdateModel: vi.fn(),
         handleUpdateTool: vi.fn(),
         handleUpdateNotes: vi.fn(),
-        handleRevertMetadata: vi.fn()
+        handleRevertMetadata: vi.fn(),
     },
     startInvokeSync: vi.fn(),
     selectInvokeOwnerScope: vi.fn(),
@@ -250,7 +255,7 @@ const mocks = vi.hoisted(() => ({
         checkForUpdates: vi.fn().mockResolvedValue(undefined),
         openUpdateDialog: vi.fn(),
         dismissUpdateDialog: vi.fn(),
-        installUpdate: vi.fn()
+        installUpdate: vi.fn(),
     },
     modals: {
         modals: {} as Record<string, boolean>,
@@ -272,8 +277,8 @@ const mocks = vi.hoisted(() => ({
         sourceCollectionId: null as string | null,
         slideshowShuffle: false,
         initialSettingsTab: 'general',
-        shortcutsModalTab: 'shortcuts'
-    }
+        shortcutsModalTab: 'shortcuts',
+    },
 }));
 
 const image = (id: string): AIImage => ({
@@ -292,8 +297,8 @@ const image = (id: string): AIImage => ({
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: 'sunset, detailed sky',
-        negativePrompt: ''
-    }
+        negativePrompt: '',
+    },
 });
 
 const createDeferred = <T,>() => {
@@ -307,16 +312,18 @@ const createDeferred = <T,>() => {
 };
 
 vi.mock('./hooks/useToast', () => ({ useToast: () => ({ addToast: mocks.addToast }) }));
-vi.mock('./hooks/useModalManager', async importOriginal => {
+vi.mock('./hooks/useModalManager', async (importOriginal) => {
     const actual = await importOriginal<typeof import('./hooks/useModalManager')>();
-    return { useModalManager: () => {
-        const manager = actual.useModalManager();
-        return mocks.renderInvokeSurfaces ? manager : mocks.modals;
-    } };
+    return {
+        useModalManager: () => {
+            const manager = actual.useModalManager();
+            return mocks.renderInvokeSurfaces ? manager : mocks.modals;
+        },
+    };
 });
 vi.mock('./hooks/useAppVersion', () => ({ useAppVersion: () => '1.0.0' }));
 vi.mock('./services/db/imageRepo', () => ({
-    getImageWithFullMetadata: (id: string) => mocks.getImageWithFullMetadata(id)
+    getImageWithFullMetadata: (id: string) => mocks.getImageWithFullMetadata(id),
 }));
 vi.mock('./stores/settingsStore', () => {
     const storeState = () => ({
@@ -329,35 +336,39 @@ vi.mock('./stores/settingsStore', () => {
         rollbackSettings: mocks.rollbackSettings,
         flushSettings: mocks.flushSettings,
     });
-    const useSettingsStore = (selector: (state: ReturnType<typeof storeState>) => unknown) => selector({
-        isLoaded: mocks.settingsLoaded,
-        settings: mocks.settings,
-        privacyEnabled: mocks.privacyEnabled,
-        privacyMaskIndexStatus: mocks.privacyMaskIndexStatus,
-        geminiApiKey: mocks.geminiApiKey,
-        setSettings: mocks.setSettings,
-        rollbackSettings: mocks.rollbackSettings,
-        flushSettings: mocks.flushSettings,
-    });
+    const useSettingsStore = (selector: (state: ReturnType<typeof storeState>) => unknown) =>
+        selector({
+            isLoaded: mocks.settingsLoaded,
+            settings: mocks.settings,
+            privacyEnabled: mocks.privacyEnabled,
+            privacyMaskIndexStatus: mocks.privacyMaskIndexStatus,
+            geminiApiKey: mocks.geminiApiKey,
+            setSettings: mocks.setSettings,
+            rollbackSettings: mocks.rollbackSettings,
+            flushSettings: mocks.flushSettings,
+        });
     useSettingsStore.getState = storeState;
     return { useSettingsStore };
 });
 vi.mock('./stores/collectionStore', () => ({
-    useCollectionStore: (selector: (state: {
-        isLoaded: boolean;
-        collections: Collection[];
-        setCollections: typeof mocks.setCollections;
-        refreshCollections: typeof mocks.refreshCollections;
-        refreshCollectionThumbnails: typeof mocks.refreshCollectionThumbnails;
-        setOrdinaryCountsReady: typeof mocks.setOrdinaryCountsReady;
-    }) => unknown) => selector({
-        isLoaded: mocks.collectionsLoaded,
-        collections: mocks.collections,
-        setCollections: mocks.setCollections,
-        refreshCollections: mocks.refreshCollections,
-        refreshCollectionThumbnails: mocks.refreshCollectionThumbnails,
-        setOrdinaryCountsReady: mocks.setOrdinaryCountsReady,
-    })
+    useCollectionStore: (
+        selector: (state: {
+            isLoaded: boolean;
+            collections: Collection[];
+            setCollections: typeof mocks.setCollections;
+            refreshCollections: typeof mocks.refreshCollections;
+            refreshCollectionThumbnails: typeof mocks.refreshCollectionThumbnails;
+            setOrdinaryCountsReady: typeof mocks.setOrdinaryCountsReady;
+        }) => unknown
+    ) =>
+        selector({
+            isLoaded: mocks.collectionsLoaded,
+            collections: mocks.collections,
+            setCollections: mocks.setCollections,
+            refreshCollections: mocks.refreshCollections,
+            refreshCollectionThumbnails: mocks.refreshCollectionThumbnails,
+            setOrdinaryCountsReady: mocks.setOrdinaryCountsReady,
+        }),
 }));
 vi.mock('./contexts/SearchContext', () => ({
     useSearch: () => ({
@@ -374,13 +385,11 @@ vi.mock('./contexts/SearchContext', () => ({
         privacyExposureBlocked: mocks.privacyExposureBlocked,
         isLibraryReady: !mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
-        clearAllFilters: mocks.churnClearAllFiltersIdentity
-            ? () => mocks.clearAllFilters()
-            : mocks.clearAllFilters,
+        clearAllFilters: mocks.churnClearAllFiltersIdentity ? () => mocks.clearAllFilters() : mocks.clearAllFilters,
         recentSearches: ['old'],
         setRecentSearches: mocks.setRecentSearches,
-        refreshMetadata: mocks.refreshMetadata
-    })
+        refreshMetadata: mocks.refreshMetadata,
+    }),
 }));
 vi.mock('./hooks/useAppUpdater', () => ({ useAppUpdater: () => mocks.updater }));
 vi.mock('./hooks/useThumbnailQueue', () => ({ useThumbnailQueue: mocks.thumbnailQueue }));
@@ -395,8 +404,8 @@ vi.mock('./hooks/useSelection', () => ({
         handleImageClick: mocks.handleImageClick,
         handleSelectionToggle: mocks.handleSelectionToggle,
         handleRangeSelection: mocks.handleRangeSelection,
-        clearSelection: mocks.clearSelection
-    })
+        clearSelection: mocks.clearSelection,
+    }),
 }));
 vi.mock('./contexts/WatcherContext', () => ({ useWatchers: () => ({ refreshMaintenanceCounts: mocks.refreshMaintenanceCounts }) }));
 vi.mock('./hooks/useAppHandlers', () => ({ useAppHandlers: () => mocks.handlers }));
@@ -404,13 +413,13 @@ vi.mock('./hooks/useAiSearchLogic', () => ({
     useAiSearchLogic: (options: { onOpenSettings: () => void }) => {
         mocks.aiSearchOptions = options;
         return {
-        toggleAiSearch: mocks.toggleAiSearch,
-        submitSearch: mocks.submitSearch,
-        inputRef: { current: null },
-        isAiSearchEnabled: true,
-        isSearchingAi: false
+            toggleAiSearch: mocks.toggleAiSearch,
+            submitSearch: mocks.submitSearch,
+            inputRef: { current: null },
+            isAiSearchEnabled: true,
+            isSearchingAi: false,
         };
-    }
+    },
 }));
 vi.mock('./hooks/useFileOperations', () => ({
     useFileOperations: () => ({
@@ -420,8 +429,8 @@ vi.mock('./hooks/useFileOperations', () => ({
         importImages: mocks.importImages,
         fileInputRef: mocks.fileInputRef,
         isRecoveringMetadata: false,
-        isExporting: false
-    })
+        isExporting: false,
+    }),
 }));
 vi.mock('./hooks/useCollectionOperations', () => ({
     useCollectionOperations: () => ({
@@ -429,8 +438,8 @@ vi.mock('./hooks/useCollectionOperations', () => ({
         moveImagesBetweenCollections: mocks.moveImagesBetweenCollections,
         addImagesToCollection: mocks.addImagesToCollection,
         deleteCollection: mocks.deleteCollection,
-        updateCollectionFilters: mocks.updateCollectionFilters
-    })
+        updateCollectionFilters: mocks.updateCollectionFilters,
+    }),
 }));
 vi.mock('./hooks/useAppActions', () => ({
     useAppActions: () => ({
@@ -444,47 +453,45 @@ vi.mock('./hooks/useAppActions', () => ({
         handleTogglePrivacy: mocks.handleTogglePrivacy,
         handleBulkMask: mocks.handleBulkMask,
         handleShortcutFavorite: mocks.handleShortcutFavorite,
-        handleShortcutPin: mocks.handleShortcutPin
-    })
+        handleShortcutPin: mocks.handleShortcutPin,
+    }),
 }));
 vi.mock('./hooks/useDragDrop', () => ({
     useDragDrop: (options: { onImportFiles: (files: FileList) => void; onImportPaths: (paths: string[]) => void }) => {
         mocks.dragDropOptions = options;
         return { isDraggingExternal: true };
-    }
+    },
 }));
 vi.mock('./contexts/SyncContext', () => ({
     useSync: () => {
-        const ownerScopeState = useInvokeOwnerScopeStore(state => state.ownerScopeState);
+        const ownerScopeState = useInvokeOwnerScopeStore((state) => state.ownerScopeState);
         return {
-        startInvokeSync: mocks.startInvokeSync,
-        isInvokeSyncActive: mocks.isInvokeSyncActive,
-        isLiveSyncing: mocks.isLiveSyncing,
-        invokeOwnerScopeState: mocks.renderInvokeSurfaces
-            ? ownerScopeState
-            : mocks.invokeOwnerScopeState,
-        selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
-        retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
+            startInvokeSync: mocks.startInvokeSync,
+            isInvokeSyncActive: mocks.isInvokeSyncActive,
+            isLiveSyncing: mocks.isLiveSyncing,
+            invokeOwnerScopeState: mocks.renderInvokeSurfaces ? ownerScopeState : mocks.invokeOwnerScopeState,
+            selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
+            retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
         };
     },
 }));
 vi.mock('./contexts/LibraryContext', () => ({
     useLibrary: () => ({
-        invokeOwnerScopeState: useInvokeOwnerScopeStore(state => state.ownerScopeState),
+        invokeOwnerScopeState: useInvokeOwnerScopeStore((state) => state.ownerScopeState),
         applyInvokeConnection: mocks.applyInvokeConnection,
         retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
         startInvokeSync: mocks.startInvokeSync,
-        cancelSync: useLibraryStore(state => state.cancelSync),
-        syncState: { status: useLibraryStore(state => state.syncStatus) },
-        isInvokeSyncActive: useLibraryStore(state => state.syncStatus === 'syncing'),
+        cancelSync: useLibraryStore((state) => state.cancelSync),
+        syncState: { status: useLibraryStore((state) => state.syncStatus) },
+        isInvokeSyncActive: useLibraryStore((state) => state.syncStatus === 'syncing'),
         isLiveSyncing: false,
     }),
 }));
-vi.mock('./services/invoke/connection', async importOriginal => ({
+vi.mock('./services/invoke/connection', async (importOriginal) => ({
     ...(await importOriginal<typeof import('./services/invoke/connection')>()),
     inspectInvokeConnection: mocks.inspectInvokeConnection,
 }));
-vi.mock('./services/db/collectionRepo', async importOriginal => ({
+vi.mock('./services/db/collectionRepo', async (importOriginal) => ({
     ...(await importOriginal<typeof import('./services/db/collectionRepo')>()),
     getSuppressedInvokeCollections: vi.fn().mockResolvedValue([]),
 }));
@@ -495,19 +502,30 @@ vi.mock('./features/viewer/utils/searchHighlights', () => ({ derivePromptHighlig
 vi.mock('./components/AppLayout', () => ({
     AppLayout: (props: AppLayoutProbe) => {
         captured.appLayout = props;
-        return <main ref={props.workspaceRef} tabIndex={-1} data-testid="app-layout">
-            {mocks.renderInvokeSurfaces && <>
-                <button type="button" onClick={() => {
-                    props.modals.setInitialSettingsTab('invokeai');
-                    props.modals.openModal('settings');
-                }}>Open InvokeAI Settings</button>
-                <button type="button" onClick={mocks.browseGallery}>Browse gallery</button>
-                <ActivityDock />
-            </>}
-        </main>;
-    }
+        return (
+            <main ref={props.workspaceRef} tabIndex={-1} data-testid="app-layout">
+                {mocks.renderInvokeSurfaces && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                props.modals.setInitialSettingsTab('invokeai');
+                                props.modals.openModal('settings');
+                            }}
+                        >
+                            Open InvokeAI Settings
+                        </button>
+                        <button type="button" onClick={mocks.browseGallery}>
+                            Browse gallery
+                        </button>
+                        <ActivityDock />
+                    </>
+                )}
+            </main>
+        );
+    },
 }));
-vi.mock('./components/GlobalModals', async importOriginal => {
+vi.mock('./components/GlobalModals', async (importOriginal) => {
     const actual = await importOriginal<typeof import('./components/GlobalModals')>();
     // Load the real Settings tree before test timers/async assertions begin.
     await import('./features/settings/components/SettingsModal');
@@ -522,33 +540,35 @@ vi.mock('./components/ui/OnboardingWizard', () => ({
     OnboardingWizard: (props: OnboardingProbe) => {
         captured.onboarding = props;
         return <div data-testid="onboarding" />;
-    }
+    },
 }));
 vi.mock('./components/ui/ImportModal', () => ({
     ImportModal: (props: ImportModalProbe) => {
         captured.importModal = props;
         return <div data-testid="import-modal" />;
-    }
+    },
 }));
 vi.mock('./components/ui/UpdateDialog', () => ({
     UpdateDialog: (props: Record<string, unknown>) => {
         captured.updateDialog = props;
         return <div data-testid="update-dialog" />;
-    }
+    },
 }));
 vi.mock('./components/ui/AppContextMenu', () => ({
     AppContextMenu: (props: ContextMenuProbe) => {
         captured.contextMenu = props;
         return <div data-testid="context-menu" />;
-    }
+    },
 }));
 vi.mock('./components/ui/TitleBar', () => ({ TitleBar: () => <div data-testid="title-bar" /> }));
-vi.mock('./components/ui/DragOverlay', () => ({ DragOverlay: ({ isVisible }: { isVisible: boolean }) => <div data-visible={isVisible} /> }));
+vi.mock('./components/ui/DragOverlay', () => ({
+    DragOverlay: ({ isVisible }: { isVisible: boolean }) => <div data-visible={isVisible} />,
+}));
 vi.mock('./features/viewer/components/ImageViewer', () => ({
     ImageViewer: (props: ViewerProbe) => {
         captured.viewer = props;
         return <div data-testid="image-viewer" />;
-    }
+    },
 }));
 
 const requireProbe = <T,>(value: T | null, name: string): T => {
@@ -575,7 +595,7 @@ describe('App orchestration', () => {
             hasCompletedOnboarding: true,
             autoCheckForUpdates: true,
             enableAI: false,
-            defaultTheaterMode: false
+            defaultTheaterMode: false,
         });
         mocks.settingsLoaded = true;
         mocks.privacyEnabled = false;
@@ -620,14 +640,12 @@ describe('App orchestration', () => {
         mocks.setRecentSearches.mockImplementation((update: React.SetStateAction<string[]>) => {
             if (typeof update === 'function') update(['old']);
         });
-        mocks.removeImagesFromCollection.mockImplementation(async (
-            _imageIds: string[],
-            _collectionId: string,
-            onPersisted?: () => void
-        ) => {
-            onPersisted?.();
-            return true;
-        });
+        mocks.removeImagesFromCollection.mockImplementation(
+            async (_imageIds: string[], _collectionId: string, onPersisted?: () => void) => {
+                onPersisted?.();
+                return true;
+            }
+        );
         mocks.getImageWithFullMetadata.mockResolvedValue(null);
         vi.mocked(open).mockReset();
     });
@@ -642,23 +660,33 @@ describe('App orchestration', () => {
     describe('InvokeAI Settings, preparation gate, and Activity Dock journey', () => {
         const discovery = {
             schemaMode: 'multi_user' as const,
-            dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
             owners: [
                 { ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 },
                 { ownerId: 'owner-b', displayName: 'Odin', imageCount: 3 },
-            ], unassignedImageCount: 0,
+            ],
+            unassignedImageCount: 0,
         };
-        const scope = (ownerId: string) => ({ mode: 'owner' as const, ownerId, dbPath: discovery.dbPath, imagesRoot: discovery.imagesRoot });
+        const scope = (ownerId: string) => ({
+            mode: 'owner' as const,
+            ownerId,
+            dbPath: discovery.dbPath,
+            imagesRoot: discovery.imagesRoot,
+        });
         const prepareJourney = (connected = true) => {
             mocks.renderInvokeSurfaces = true;
             mocks.settings = createDefaultAppSettings({
-                hasCompletedOnboarding: true, enableAI: false,
+                hasCompletedOnboarding: true,
+                enableAI: false,
                 invokeAiPath: connected ? 'D:/Invoke' : undefined,
                 invokeOwnerSelection: connected ? { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' } : undefined,
             });
-            useInvokeOwnerScopeStore.getState().setOwnerScopeState(connected
-                ? { status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') }
-                : { status: 'idle' });
+            useInvokeOwnerScopeStore
+                .getState()
+                .setOwnerScopeState(
+                    connected ? { status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') } : { status: 'idle' }
+                );
             mocks.inspectInvokeConnection.mockResolvedValue(discovery);
         };
         const showPendingOwner = async (connected = true) => {
@@ -675,46 +703,73 @@ describe('App orchestration', () => {
             options?.onAccepted?.();
             mocks.settings = { ...mocks.settings, ...draft };
             useInvokeOwnerScopeStore.getState().setOwnerScopeState({
-                status: 'applying', rootPath: 'D:/Invoke', discovery, scope: scope('owner-b'),
+                status: 'applying',
+                rootPath: 'D:/Invoke',
+                discovery,
+                scope: scope('owner-b'),
             });
-            const cancel = vi.fn(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelling' })));
+            const cancel = vi.fn(() =>
+                useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling' })
+            );
             useInvokeOwnerScopeStore.getState().setOperation({
-                id: Symbol('owner operation'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
-                phase: 'preparing', viewCommitted: false, progress: { current: 1, total: 3, message: 'Updating InvokeAI image details...' }, cancel,
+                id: Symbol('owner operation'),
+                origin: 'user',
+                rootPath: 'D:/Invoke',
+                targetLabel: 'Odin',
+                phase: 'preparing',
+                viewCommitted: false,
+                progress: { current: 1, total: 3, message: 'Updating InvokeAI image details...' },
+                cancel,
             });
             return cancel;
         };
 
-        it.each([false, true])('shows accepted preparation immediately without flashing the gallery (existing connection: %s)', async connected => {
-            prepareJourney(connected);
-            const pending = createDeferred<InvokeConnectionApplyOutcome>();
-            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
-            render(<App />);
-            await showPendingOwner(connected);
-            const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
-            // Acceptance precedes settings persistence. Keep the old configured path until the write settles.
-            act(() => {
-                useInvokeOwnerScopeStore.getState().setOwnerScopeState({
-                    status: 'applying', rootPath: draft.invokeAiPath, discovery, scope: scope('owner-b'),
+        it.each([false, true])(
+            'shows accepted preparation immediately without flashing the gallery (existing connection: %s)',
+            async (connected) => {
+                prepareJourney(connected);
+                const pending = createDeferred<InvokeConnectionApplyOutcome>();
+                mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+                render(<App />);
+                await showPendingOwner(connected);
+                const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
+                // Acceptance precedes settings persistence. Keep the old configured path until the write settles.
+                act(() => {
+                    useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                        status: 'applying',
+                        rootPath: draft.invokeAiPath,
+                        discovery,
+                        scope: scope('owner-b'),
+                    });
+                    useInvokeOwnerScopeStore.getState().setOperation({
+                        id: Symbol('accepted preparation'),
+                        origin: 'user',
+                        rootPath: draft.invokeAiPath,
+                        targetLabel: 'Odin',
+                        phase: 'preparing',
+                        viewCommitted: false,
+                        progress: { current: 0, total: 0 },
+                        cancel: vi.fn(),
+                    });
+                    options.onAccepted?.();
                 });
-                useInvokeOwnerScopeStore.getState().setOperation({
-                    id: Symbol('accepted preparation'), origin: 'user', rootPath: draft.invokeAiPath, targetLabel: 'Odin',
-                    phase: 'preparing', viewCommitted: false, progress: { current: 0, total: 0 }, cancel: vi.fn(),
-                });
-                options.onAccepted?.();
-            });
-            expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
-            expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBeTruthy();
-            expect(screen.queryByTestId('app-layout')).toBeNull();
+                expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
+                expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBeTruthy();
+                expect(screen.queryByTestId('app-layout')).toBeNull();
 
-            await act(async () => {
-                mocks.settings = { ...mocks.settings, ...draft };
-                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: draft.invokeAiPath, discovery, scope: scope('owner-b') });
-                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'completed', viewCommitted: true }));
-                pending.resolve({ status: 'completed', viewCommitted: true });
-            });
-            expect(screen.getByTestId('app-layout')).toBeTruthy();
-        });
+                await act(async () => {
+                    mocks.settings = { ...mocks.settings, ...draft };
+                    useInvokeOwnerScopeStore
+                        .getState()
+                        .setOwnerScopeState({ status: 'ready', rootPath: draft.invokeAiPath, discovery, scope: scope('owner-b') });
+                    useInvokeOwnerScopeStore
+                        .getState()
+                        .setOperation((current) => current && { ...current, phase: 'completed', viewCommitted: true });
+                    pending.resolve({ status: 'completed', viewCommitted: true });
+                });
+                expect(screen.getByTestId('app-layout')).toBeTruthy();
+            }
+        );
 
         it('exposes Cancel on the actual App gate and restores the previous gallery only after preparation cancellation settles', async () => {
             prepareJourney();
@@ -726,7 +781,9 @@ describe('App orchestration', () => {
             expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy();
             const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
             let cancel!: ReturnType<typeof acceptPreparation>;
-            act(() => { cancel = acceptPreparation(draft, options); });
+            act(() => {
+                cancel = acceptPreparation(draft, options);
+            });
             await waitFor(() => expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull());
             await screen.findByRole('heading', { name: 'Preparing view — Odin' });
             expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
@@ -738,8 +795,12 @@ describe('App orchestration', () => {
 
             await act(async () => {
                 mocks.settings = previousSettings;
-                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
-                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', retry: vi.fn() }));
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOperation((current) => current && { ...current, phase: 'cancelled', retry: vi.fn() });
                 pending.resolve({ status: 'aborted', viewCommitted: false });
             });
             expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
@@ -754,7 +815,9 @@ describe('App orchestration', () => {
             render(<App />);
             await showPendingOwner(false);
             const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
-            act(() => { acceptPreparation(draft, options); });
+            act(() => {
+                acceptPreparation(draft, options);
+            });
             await screen.findByRole('heading', { name: 'Preparing view — Odin' });
             fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
             expect(screen.queryByTestId('app-layout')).toBeNull();
@@ -762,10 +825,12 @@ describe('App orchestration', () => {
             const retry = vi.fn();
             await act(async () => {
                 useInvokeOwnerScopeStore.getState().setOwnerScopeState({
-                    status: 'error', rootPath: 'D:/Invoke', discovery,
+                    status: 'error',
+                    rootPath: 'D:/Invoke',
+                    discovery,
                     failure: { kind: 'preparation_cancelled', details: 'Preparation cancelled.' },
                 });
-                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', retry }));
+                useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelled', retry });
                 pending.resolve({ status: 'aborted', viewCommitted: false });
             });
             expect(screen.getByRole('heading', { name: 'InvokeAI preparation cancelled' })).toBe(document.activeElement);
@@ -779,46 +844,66 @@ describe('App orchestration', () => {
             expect(mocks.applyInvokeConnection).toHaveBeenCalledTimes(1);
         });
 
-        it.each([false, true])('opens the prepared gallery while synchronization is still pending (existing connection: %s)', async connected => {
-            prepareJourney(connected);
-            const pending = createDeferred<InvokeConnectionApplyOutcome>();
-            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
-            render(<App />);
-            await showPendingOwner(connected);
-            const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
-            let cancel!: ReturnType<typeof acceptPreparation>;
-            act(() => { cancel = acceptPreparation(draft, options); });
-            await screen.findByRole('heading', { name: 'Preparing view — Odin' });
-            act(() => {
-                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-b') });
-                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
-                    ...current, phase: 'syncing', viewCommitted: true,
-                    progress: { current: 1, total: 3, message: 'Processing images: 1/3' },
-                }));
-            });
-            expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
-            expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
-            expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
-            const browse = screen.getByRole('button', { name: 'Browse gallery' });
-            browse.focus();
-            fireEvent.click(browse);
-            expect(mocks.browseGallery).toHaveBeenCalledTimes(1);
-            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
-                ...current, progress: { current: 2, total: 3, message: 'Processing images: 2/3' },
-            })));
-            expect(document.activeElement).toBe(browse);
-            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-            expect(cancel).toHaveBeenCalledTimes(1);
-            expect(screen.getByTestId('app-layout')).toBeTruthy();
-            expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
-            await act(async () => {
-                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', imported: 1, retry: vi.fn() }));
-                pending.resolve({ status: 'aborted', viewCommitted: true });
-            });
-            expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
-            expect(screen.getByText('1 added')).toBeTruthy();
-            expect(document.activeElement).toBe(browse);
-        });
+        it.each([false, true])(
+            'opens the prepared gallery while synchronization is still pending (existing connection: %s)',
+            async (connected) => {
+                prepareJourney(connected);
+                const pending = createDeferred<InvokeConnectionApplyOutcome>();
+                mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+                render(<App />);
+                await showPendingOwner(connected);
+                const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
+                let cancel!: ReturnType<typeof acceptPreparation>;
+                act(() => {
+                    cancel = acceptPreparation(draft, options);
+                });
+                await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+                act(() => {
+                    useInvokeOwnerScopeStore
+                        .getState()
+                        .setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-b') });
+                    useInvokeOwnerScopeStore.getState().setOperation(
+                        (current) =>
+                            current && {
+                                ...current,
+                                phase: 'syncing',
+                                viewCommitted: true,
+                                progress: { current: 1, total: 3, message: 'Processing images: 1/3' },
+                            }
+                    );
+                });
+                expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
+                expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
+                expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+                const browse = screen.getByRole('button', { name: 'Browse gallery' });
+                browse.focus();
+                fireEvent.click(browse);
+                expect(mocks.browseGallery).toHaveBeenCalledTimes(1);
+                act(() =>
+                    useInvokeOwnerScopeStore.getState().setOperation(
+                        (current) =>
+                            current && {
+                                ...current,
+                                progress: { current: 2, total: 3, message: 'Processing images: 2/3' },
+                            }
+                    )
+                );
+                expect(document.activeElement).toBe(browse);
+                fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+                expect(cancel).toHaveBeenCalledTimes(1);
+                expect(screen.getByTestId('app-layout')).toBeTruthy();
+                expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
+                await act(async () => {
+                    useInvokeOwnerScopeStore
+                        .getState()
+                        .setOperation((current) => current && { ...current, phase: 'cancelled', imported: 1, retry: vi.fn() });
+                    pending.resolve({ status: 'aborted', viewCommitted: true });
+                });
+                expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+                expect(screen.getByText('1 added')).toBeTruthy();
+                expect(document.activeElement).toBe(browse);
+            }
+        );
 
         it('keeps current-owner preparation cancellable inside Settings without focusing the gate behind it', async () => {
             prepareJourney();
@@ -830,12 +915,22 @@ describe('App orchestration', () => {
             sync.focus();
             fireEvent.click(sync);
             expect(mocks.applyInvokeConnection.mock.calls[0]).toHaveLength(1);
-            const cancel = vi.fn(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelling' })));
+            const cancel = vi.fn(() =>
+                useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling' })
+            );
             act(() => {
-                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'applying', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOwnerScopeState({ status: 'applying', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
                 useInvokeOwnerScopeStore.getState().setOperation({
-                    id: Symbol('current owner'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Artemis',
-                    phase: 'preparing', viewCommitted: false, progress: { current: 1, total: 2 }, cancel,
+                    id: Symbol('current owner'),
+                    origin: 'user',
+                    rootPath: 'D:/Invoke',
+                    targetLabel: 'Artemis',
+                    phase: 'preparing',
+                    viewCommitted: false,
+                    progress: { current: 1, total: 2 },
+                    cancel,
                 });
             });
             const heading = await screen.findByRole('heading', { name: 'Preparing view — Artemis' });
@@ -847,8 +942,12 @@ describe('App orchestration', () => {
             await waitFor(() => expect(document.activeElement).toBe(heading));
             expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
             await act(async () => {
-                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
-                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', retry: vi.fn() }));
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOperation((current) => current && { ...current, phase: 'cancelled', retry: vi.fn() });
                 pending.resolve({ status: 'aborted', viewCommitted: false });
             });
             expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
@@ -856,7 +955,11 @@ describe('App orchestration', () => {
 
         it('keeps a rejected replacement in Settings for correction', async () => {
             prepareJourney();
-            mocks.applyInvokeConnection.mockResolvedValue({ status: 'source_unavailable', message: 'InvokeAI source unavailable.', viewCommitted: false });
+            mocks.applyInvokeConnection.mockResolvedValue({
+                status: 'source_unavailable',
+                message: 'InvokeAI source unavailable.',
+                viewCommitted: false,
+            });
             render(<App />);
             await showPendingOwner();
             await screen.findByText('InvokeAI source unavailable.');
@@ -886,12 +989,14 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.appLayout, 'AppLayout').scopeName).toBe('Library');
         expect(requireProbe(captured.appLayout, 'AppLayout').scopeTotal).toBe(7);
         expect(staticLoader.style.opacity).toBe('0');
-        expect(mocks.folderMonitor).toHaveBeenCalledWith(expect.objectContaining({
-            isLoaded: true,
-            monitoredFolders: mocks.settings.monitoredFolders,
-            addToast: mocks.addToast,
-            refreshMetadata: mocks.refreshMetadata
-        }));
+        expect(mocks.folderMonitor).toHaveBeenCalledWith(
+            expect.objectContaining({
+                isLoaded: true,
+                monitoredFolders: mocks.settings.monitoredFolders,
+                addToast: mocks.addToast,
+                refreshMetadata: mocks.refreshMetadata,
+            })
+        );
         expect(mocks.shortcuts).toHaveBeenCalledWith(expect.objectContaining({ viewMode: 'grid' }));
 
         await act(async () => {
@@ -911,7 +1016,9 @@ describe('App orchestration', () => {
         staticLoader.dataset.ambitFatal = 'true';
         document.body.appendChild(staticLoader);
         render(<App />);
-        await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(20_000);
+        });
         expect(document.getElementById('static-loading')).toBe(staticLoader);
         expect(staticLoader.dataset.ambitDismissed).toBeUndefined();
         expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(mocks.addToast, false);
@@ -926,7 +1033,9 @@ describe('App orchestration', () => {
         document.body.appendChild(staticLoader);
         render(<App />);
         staticLoader.dataset.ambitFatal = 'true';
-        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
         expect(document.getElementById('static-loading')).toBe(staticLoader);
     });
 
@@ -1317,7 +1426,7 @@ describe('App orchestration', () => {
             imageIds: ['one'],
             count: 1,
             createdAt: 1,
-            source: 'ambit'
+            source: 'ambit',
         };
         const smart: SmartCollection = {
             id: 'smart-a',
@@ -1326,7 +1435,7 @@ describe('App orchestration', () => {
             count: 2,
             createdAt: 2,
             source: 'ambit',
-            filters: createDefaultFilters({ searchQuery: 'portrait' })
+            filters: createDefaultFilters({ searchQuery: 'portrait' }),
         };
         mocks.collections = [active, smart];
         mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
@@ -1378,14 +1487,16 @@ describe('App orchestration', () => {
     });
 
     it('keeps the selection when bulk collection removal does not persist', async () => {
-        mocks.collections = [{
-            id: 'collection-a',
-            name: 'Collection A',
-            imageIds: ['one'],
-            count: 1,
-            createdAt: 1,
-            source: 'ambit'
-        }];
+        mocks.collections = [
+            {
+                id: 'collection-a',
+                name: 'Collection A',
+                imageIds: ['one'],
+                count: 1,
+                createdAt: 1,
+                source: 'ambit',
+            },
+        ];
         mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
         mocks.selectedIds = new Set(['one']);
         mocks.removeImagesFromCollection.mockResolvedValueOnce(false);
@@ -1492,12 +1603,14 @@ describe('App orchestration', () => {
         const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
         await act(async () => onboarding.onComplete({ promptMaskingEnabled: false }));
 
-        expect(mocks.settings).toEqual(expect.objectContaining({
-            hasCompletedOnboarding: true,
-            promptMaskingEnabled: false,
-            maskedKeywords: ['custom-private'],
-            maskingMode: 'hide',
-        }));
+        expect(mocks.settings).toEqual(
+            expect.objectContaining({
+                hasCompletedOnboarding: true,
+                promptMaskingEnabled: false,
+                maskedKeywords: ['custom-private'],
+                maskingMode: 'hide',
+            })
+        );
         expect(mocks.flushSettings).toHaveBeenCalledWith();
         expect(mocks.modals.closeModal).toHaveBeenCalledWith('onboarding');
         expect(mocks.addToast).toHaveBeenCalledWith('Setup guide settings updated', 'success');
@@ -1517,15 +1630,19 @@ describe('App orchestration', () => {
             maskingMode: 'hide',
             maskedKeywords: ['saved-while-guide-open'],
         };
-        await act(async () => requireProbe(captured.onboarding, 'OnboardingWizard').onComplete({
-            promptMaskingEnabled: false,
-        }));
+        await act(async () =>
+            requireProbe(captured.onboarding, 'OnboardingWizard').onComplete({
+                promptMaskingEnabled: false,
+            })
+        );
 
-        expect(mocks.settings).toEqual(expect.objectContaining({
-            promptMaskingEnabled: false,
-            maskingMode: 'hide',
-            maskedKeywords: ['saved-while-guide-open'],
-        }));
+        expect(mocks.settings).toEqual(
+            expect.objectContaining({
+                promptMaskingEnabled: false,
+                maskingMode: 'hide',
+                maskedKeywords: ['saved-while-guide-open'],
+            })
+        );
         expect(mocks.flushSettings).toHaveBeenCalledWith();
     });
 
@@ -1596,29 +1713,35 @@ describe('App orchestration', () => {
         rollbackFlush.resolve();
         await act(async () => expect(completion).rejects.toThrow('disk full'));
         await expect(drain).rejects.toBeInstanceOf(AggregateError);
-        expect(mocks.settings).toEqual(expect.objectContaining({
-            hasCompletedOnboarding: false,
-            enableAI: false,
-            promptMaskingEnabled: true,
-            maskedKeywords: ['existing-private'],
-            maskingMode: 'hide',
-            thumbnailSize: 320,
-        }));
+        expect(mocks.settings).toEqual(
+            expect.objectContaining({
+                hasCompletedOnboarding: false,
+                enableAI: false,
+                promptMaskingEnabled: true,
+                maskedKeywords: ['existing-private'],
+                maskingMode: 'hide',
+                thumbnailSize: 320,
+            })
+        );
         expect(mocks.flushSettings).toHaveBeenCalledTimes(2);
-        expect(mocks.flushSettings).toHaveBeenLastCalledWith(expect.objectContaining({
-            hasCompletedOnboarding: false,
-            enableAI: false,
-            promptMaskingEnabled: true,
-            maskedKeywords: ['existing-private'],
-            maskingMode: 'hide',
-            thumbnailSize: 320,
-        }));
-        expect(durableSettings).toEqual(expect.objectContaining({
-            hasCompletedOnboarding: false,
-            promptMaskingEnabled: true,
-            maskedKeywords: ['existing-private'],
-            thumbnailSize: 320,
-        }));
+        expect(mocks.flushSettings).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                hasCompletedOnboarding: false,
+                enableAI: false,
+                promptMaskingEnabled: true,
+                maskedKeywords: ['existing-private'],
+                maskingMode: 'hide',
+                thumbnailSize: 320,
+            })
+        );
+        expect(durableSettings).toEqual(
+            expect.objectContaining({
+                hasCompletedOnboarding: false,
+                promptMaskingEnabled: true,
+                maskedKeywords: ['existing-private'],
+                thumbnailSize: 320,
+            })
+        );
         expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(false);
         expect(document.activeElement).not.toBe(view.container.querySelector('[data-testid="app-layout"]'));
         expect(mocks.addToast).not.toHaveBeenCalledWith('Setup complete!', 'success');
@@ -1664,11 +1787,13 @@ describe('App orchestration', () => {
         mocks.updater.isDialogOpen = true;
         render(<App />);
         await waitFor(() => {
-            expect(captured.updateDialog).toEqual(expect.objectContaining({
-                isOpen: true,
-                currentVersion: '1.0.0',
-                availableVersion: '2.0.0'
-            }));
+            expect(captured.updateDialog).toEqual(
+                expect.objectContaining({
+                    isOpen: true,
+                    currentVersion: '1.0.0',
+                    availableVersion: '2.0.0',
+                })
+            );
         });
 
         act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
@@ -1717,12 +1842,9 @@ describe('App orchestration', () => {
             { ...image('one'), userMasked: true },
             { ...image('two'), userMasked: true },
         ];
-        mocks.handleImageClick.mockImplementationOnce((
-            _event: React.MouseEvent,
-            _id: string,
-            index: number,
-            callback: (nextIndex: number) => void,
-        ) => callback(index));
+        mocks.handleImageClick.mockImplementationOnce(
+            (_event: React.MouseEvent, _id: string, index: number, callback: (nextIndex: number) => void) => callback(index)
+        );
         render(<App />);
 
         const layout = requireProbe(captured.appLayout, 'AppLayout');
@@ -1762,11 +1884,13 @@ describe('App orchestration', () => {
         });
 
         await waitFor(() => expect(captured.viewer?.image.id).toBe(hiddenAsset.id));
-        expect(requireProbe(captured.viewer, 'ImageViewer')).toEqual(expect.objectContaining({
-            canNavigateNext: false,
-            canNavigatePrevious: false,
-        }));
-        expect(mocks.images.map(candidate => candidate.id)).toEqual(['one', 'two']);
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toEqual(
+            expect.objectContaining({
+                canNavigateNext: false,
+                canNavigatePrevious: false,
+            })
+        );
+        expect(mocks.images.map((candidate) => candidate.id)).toEqual(['one', 'two']);
         expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith(hiddenAsset.id);
     });
 
@@ -1933,7 +2057,7 @@ describe('App orchestration', () => {
 
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
         expect(view.container.querySelector('[data-testid="invoke-owner-offline-banner"]')).not.toBeNull();
-        expect(requireProbe(captured.appLayout, 'AppLayout').images.map(candidate => candidate.id)).toEqual([
+        expect(requireProbe(captured.appLayout, 'AppLayout').images.map((candidate) => candidate.id)).toEqual([
             'local-image',
             'invoke-image',
         ]);
@@ -2065,10 +2189,7 @@ describe('App orchestration', () => {
         });
 
         await waitFor(() => expect(captured.viewer?.image.id).toBe('off-query-reference'));
-        expect(mocks.addToast).not.toHaveBeenCalledWith(
-            'The referenced image is hidden by Privacy Mode.',
-            'warning'
-        );
+        expect(mocks.addToast).not.toHaveBeenCalledWith('The referenced image is hidden by Privacy Mode.', 'warning');
     });
 
     it('does not reopen the viewer when a reference lookup finishes after close', async () => {
@@ -2106,10 +2227,12 @@ describe('App orchestration', () => {
             navigation = requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('private-reference');
         });
         mocks.privacyEnabled = true;
-        await act(async () => deferred.resolve({
-            ...image('private-reference'),
-            userMasked: true,
-        }));
+        await act(async () =>
+            deferred.resolve({
+                ...image('private-reference'),
+                userMasked: true,
+            })
+        );
 
         await expect(navigation).resolves.toBe(false);
         expect(captured.viewer?.image.id).toBe('one');
@@ -2218,7 +2341,7 @@ describe('App orchestration', () => {
             .mockImplementationOnce((ids, _collectionId, onPersisted?: () => void) => {
                 persistenceCallbacks.push(() => {
                     onPersisted?.();
-                    mocks.images = mocks.images.filter(candidate => !ids.includes(candidate.id));
+                    mocks.images = mocks.images.filter((candidate) => !ids.includes(candidate.id));
                     rerenderApp();
                 });
                 return firstRemoval.promise;
@@ -2226,7 +2349,7 @@ describe('App orchestration', () => {
             .mockImplementationOnce((ids, _collectionId, onPersisted?: () => void) => {
                 persistenceCallbacks.push(() => {
                     onPersisted?.();
-                    mocks.images = mocks.images.filter(candidate => !ids.includes(candidate.id));
+                    mocks.images = mocks.images.filter((candidate) => !ids.includes(candidate.id));
                     rerenderApp();
                 });
                 return secondRemoval.promise;
@@ -2325,7 +2448,10 @@ describe('App orchestration', () => {
             },
             {
                 ...image('three'),
-                metadata: { ...image('three').metadata, positivePrompt: 'a, this prompt token is deliberately much longer than forty characters' },
+                metadata: {
+                    ...image('three').metadata,
+                    positivePrompt: 'a, this prompt token is deliberately much longer than forty characters',
+                },
             },
         ];
         render(<App />);
@@ -2365,17 +2491,25 @@ describe('App orchestration', () => {
     it('derives fallback collection totals, onboarding visibility, and guarded prompt tags', async () => {
         vi.useFakeTimers();
         mocks.settings.hasCompletedOnboarding = false;
-        mocks.collections = [{
-            id: 'collection-a',
-            name: 'Collection A',
-            imageIds: ['one', 'two'],
-            createdAt: 1,
-            source: 'ambit',
-        }];
+        mocks.collections = [
+            {
+                id: 'collection-a',
+                name: 'Collection A',
+                imageIds: ['one', 'two'],
+                createdAt: 1,
+                source: 'ambit',
+            },
+        ];
         mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
         mocks.images = [
             { ...image('one'), metadata: { ...image('one').metadata, positivePrompt: 42 as unknown as string } },
-            { ...image('two'), metadata: { ...image('two').metadata, positivePrompt: 'a, this prompt token is deliberately much longer than forty characters' } },
+            {
+                ...image('two'),
+                metadata: {
+                    ...image('two').metadata,
+                    positivePrompt: 'a, this prompt token is deliberately much longer than forty characters',
+                },
+            },
         ];
 
         render(<App />);
@@ -2395,7 +2529,7 @@ describe('App orchestration', () => {
         const files = {
             0: file,
             length: 1,
-            item: (index: number) => index === 0 ? file : null
+            item: (index: number) => (index === 0 ? file : null),
         } as unknown as FileList;
         dragOptions.onImportFiles(files);
         expect(mocks.handleImportFiles).toHaveBeenCalledWith([file]);
@@ -2451,10 +2585,7 @@ describe('App orchestration', () => {
 
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
 
-        expect(errorSpy).toHaveBeenCalledWith(
-            '[App] Native file picker import failed, falling back to file input.',
-            expect.any(Error)
-        );
+        expect(errorSpy).toHaveBeenCalledWith('[App] Native file picker import failed, falling back to file input.', expect.any(Error));
         expect(clickSpy).toHaveBeenCalled();
     });
 
@@ -2466,7 +2597,7 @@ describe('App orchestration', () => {
             count: 12,
             createdAt: 1,
             source: 'ambit',
-            filters: createDefaultFilters({ searchQuery: 'portrait' })
+            filters: createDefaultFilters({ searchQuery: 'portrait' }),
         };
         mocks.collections = [smart];
         mocks.filters = createDefaultFilters({ collectionId: 'smart-a' });

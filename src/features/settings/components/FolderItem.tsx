@@ -39,11 +39,13 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
         <div className="grid grid-cols-1 items-center gap-3 rounded-lg p-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/5 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div className="flex min-w-0 items-center gap-3 overflow-hidden">
                 <div className="flex-shrink-0 w-16 flex justify-center">
-                    {(!folder.variant || folder.variant === GeneratorTool.UNKNOWN) ? (
+                    {!folder.variant || folder.variant === GeneratorTool.UNKNOWN ? (
                         <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-500 dark:text-gray-400">
                             <Folder className="w-4 h-4" />
                         </div>
-                    ) : getVariantIcon(folder.variant)}
+                    ) : (
+                        getVariantIcon(folder.variant)
+                    )}
                 </div>
 
                 <div className="flex flex-col min-w-0 flex-1">
@@ -52,11 +54,17 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     </span>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
                         {folder.initialScanCancelled ? (
-                            <><Info className="w-3 h-3 text-ember-600 dark:text-ember-300" /> Import cancelled. Rescan to continue.</>
+                            <>
+                                <Info className="w-3 h-3 text-ember-600 dark:text-ember-300" /> Import cancelled. Rescan to continue.
+                            </>
                         ) : folder.isManaged ? (
-                            <><Monitor className="w-3 h-3" /> Managed Integration</>
+                            <>
+                                <Monitor className="w-3 h-3" /> Managed Integration
+                            </>
                         ) : (
-                            <><Folder className="w-3 h-3" /> Monitored Folder</>
+                            <>
+                                <Folder className="w-3 h-3" /> Monitored Folder
+                            </>
                         )}
                     </span>
                 </div>
@@ -64,12 +72,16 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
 
             <div className="flex shrink-0 items-center justify-end gap-4 sm:col-start-2">
                 {!folder.isManaged && (
-                    <span className="min-w-[4.5rem] whitespace-nowrap text-right text-xs font-medium tabular-nums text-gray-400 dark:text-gray-500">{folder.imageCount} images</span>
+                    <span className="min-w-[4.5rem] whitespace-nowrap text-right text-xs font-medium tabular-nums text-gray-400 dark:text-gray-500">
+                        {folder.imageCount} images
+                    </span>
                 )}
 
                 <TooltipButton
-                    label={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
-                    content={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
+                    label={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? 'Sync with InvokeAI Database' : 'Rescan Folder'}
+                    content={
+                        folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? 'Sync with InvokeAI Database' : 'Rescan Folder'
+                    }
                     onClick={() => onRescan(folder.id, path, folder.variant, folder.isManaged)}
                     disabled={isScanning}
                     className={`rounded-lg p-1.5 text-gray-400 transition-all hover:bg-sage-50 hover:text-sage-600 dark:hover:bg-sage-500/10 dark:hover:text-sage-300 ${isScanning ? 'opacity-50 cursor-wait' : ''}`}

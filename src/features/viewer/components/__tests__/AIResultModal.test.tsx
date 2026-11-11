@@ -98,7 +98,9 @@ describe('AIResultModal', () => {
 
     it('resets active tabs for new content and routes backdrop and close controls', () => {
         const onClose = vi.fn();
-        const { container, rerender } = render(<AIResultModal isOpen onClose={onClose} type="variations" content={['one', 'two']} onCopy={vi.fn()} />);
+        const { container, rerender } = render(
+            <AIResultModal isOpen onClose={onClose} type="variations" content={['one', 'two']} onCopy={vi.fn()} />
+        );
         fireEvent.click(screen.getByText('Variation 2'));
         expect(screen.getByText('Viewing 2 of 2')).toBeTruthy();
         rerender(<AIResultModal isOpen onClose={onClose} type="variations" content={['new one', 'new two']} onCopy={vi.fn()} />);

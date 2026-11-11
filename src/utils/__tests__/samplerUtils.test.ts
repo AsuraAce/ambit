@@ -11,9 +11,10 @@ describe('samplerUtils', () => {
 
     it('expands canonical selections back to all matching raw database values', () => {
         expect(expandSamplerVariants([], ['euler_a'])).toEqual([]);
-        expect(expandSamplerVariants(
-            ['Euler a', 'DPM++ 2M'],
-            ['euler_a', 'Euler A', 'dpm++ 2m', 'heun']
-        )).toEqual(['euler_a', 'Euler A', 'dpm++ 2m']);
+        expect(expandSamplerVariants(['Euler a', 'DPM++ 2M'], ['euler_a', 'Euler A', 'dpm++ 2m', 'heun'])).toEqual([
+            'euler_a',
+            'Euler A',
+            'dpm++ 2m',
+        ]);
     });
 });

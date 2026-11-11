@@ -1,4 +1,3 @@
-
 import { useState, useMemo } from 'react';
 import { AIImage, FilterState, Collection, SortOption, AppSettings } from '../types';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -42,9 +41,9 @@ export const useFiltering = (
     const availableTags = useMemo(() => {
         const tags = new Set<string>();
         // Only scan a subset to avoid lag
-        images.slice(0, 500).forEach(img => {
+        images.slice(0, 500).forEach((img) => {
             if (typeof img.metadata.positivePrompt === 'string') {
-                img.metadata.positivePrompt.split(',').forEach(t => {
+                img.metadata.positivePrompt.split(',').forEach((t) => {
                     const clean = t.trim().toLowerCase();
                     if (clean.length > 2 && clean.length < 40) tags.add(clean);
                 });
@@ -54,7 +53,7 @@ export const useFiltering = (
     }, [images]);
 
     const clearAllFilters = () => {
-        setFilters(prev => ({
+        setFilters((prev) => ({
             ...prev,
             searchQuery: '',
             dateRange: 'all',
@@ -73,7 +72,7 @@ export const useFiltering = (
             minCfg: undefined,
             maxCfg: undefined,
             collectionId: null, // Clear collection too
-            assetFilterAliases: undefined
+            assetFilterAliases: undefined,
         }));
     };
 
@@ -85,6 +84,6 @@ export const useFiltering = (
         activeSqlWhere: whereClause,
         activeSqlParams: sqlParams,
         availableTags,
-        clearAllFilters
+        clearAllFilters,
     };
 };

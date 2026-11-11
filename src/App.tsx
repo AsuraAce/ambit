@@ -21,7 +21,16 @@ import { useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
 import { invokeSyncTrace } from './utils/invokeSyncTrace';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
-import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, isVideoAsset, type InvokeOwnerSelection } from './types';
+import {
+    ViewMode,
+    LayoutMode,
+    AIImage,
+    ContextMenuState,
+    Collection,
+    SmartCollection,
+    isVideoAsset,
+    type InvokeOwnerSelection,
+} from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -54,9 +63,13 @@ import { startupDiagnostics } from './utils/startupDiagnostics';
 import { commands } from './bindings';
 import { isTauriRuntime } from './services/runtime';
 
-const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
-const VideoViewer = React.lazy(() => import('./features/viewer/components/VideoViewer').then(module => ({ default: module.VideoViewer })));
-const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
+const ImageViewer = React.lazy(() =>
+    import('./features/viewer/components/ImageViewer').then((module) => ({ default: module.ImageViewer }))
+);
+const VideoViewer = React.lazy(() =>
+    import('./features/viewer/components/VideoViewer').then((module) => ({ default: module.VideoViewer }))
+);
+const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then((module) => ({ default: module.UpdateDialog })));
 const STARTUP_PREPARATION_REVEAL_DELAY_MS = 700;
 const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
 
@@ -116,40 +129,47 @@ export default function App() {
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [exportIds, setExportIds] = useState<Set<string>>(new Set());
-    const [_gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
+    const [_gridLayout, setGridLayout] = useState<{ columns: number; rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
     const openImportModal = useCallback(() => setIsImportModalOpen(true), []);
 
     // --- Store Subscriptions ---
-    const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
-    const settings = useSettingsStore(s => s.settings);
-    const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
-    const isStartupCatchupPending = useLibraryStore(s => s.isStartupCatchupPending);
-    const _geminiApiKey = useSettingsStore(s => s.geminiApiKey);
-    const setSettings = useSettingsStore(s => s.setSettings);
-    const flushSettings = useSettingsStore(s => s.flushSettings);
+    const isSettingsLoaded = useSettingsStore((s) => s.isLoaded);
+    const settings = useSettingsStore((s) => s.settings);
+    const privacyMaskIndexStatus = useSettingsStore((s) => s.privacyMaskIndexStatus);
+    const isStartupCatchupPending = useLibraryStore((s) => s.isStartupCatchupPending);
+    const _geminiApiKey = useSettingsStore((s) => s.geminiApiKey);
+    const setSettings = useSettingsStore((s) => s.setSettings);
+    const flushSettings = useSettingsStore((s) => s.flushSettings);
 
-    const isCollectionsLoaded = useCollectionStore(s => s.isLoaded);
-    const setOrdinaryCountsReady = useCollectionStore(s => s.setOrdinaryCountsReady);
-    const allCollections = useCollectionStore(s => s.collections);
-    const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
-    const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters) as SmartCollection[], [allCollections]);
-    const refreshCollections = useCollectionStore(s => s.refreshCollections);
+    const isCollectionsLoaded = useCollectionStore((s) => s.isLoaded);
+    const setOrdinaryCountsReady = useCollectionStore((s) => s.setOrdinaryCountsReady);
+    const allCollections = useCollectionStore((s) => s.collections);
+    const collections = React.useMemo(() => allCollections.filter((c) => !c.filters), [allCollections]);
+    const smartCollections = React.useMemo(() => allCollections.filter((c) => !!c.filters) as SmartCollection[], [allCollections]);
+    const refreshCollections = useCollectionStore((s) => s.refreshCollections);
 
     const {
-        images, setImages,
+        images,
+        setImages,
         imagesQueryKey,
-        filters, setFilters,
-        sortOption, setSortOption,
-        totalImages, globalTotal,
-        isFiltering, privacyExposureBlocked, isLibraryReady,
+        filters,
+        setFilters,
+        sortOption,
+        setSortOption,
+        totalImages,
+        globalTotal,
+        isFiltering,
+        privacyExposureBlocked,
+        isLibraryReady,
         toggleFavorite,
         clearAllFilters,
-        recentSearches: _recentSearches, setRecentSearches,
+        recentSearches: _recentSearches,
+        setRecentSearches,
         refreshMetadata,
-        refreshHiddenAvailability
+        refreshHiddenAvailability,
     } = useSearch();
     const activeCollectionIdRef = useRef(filters.collectionId);
     const imagesRef = useRef(images);
@@ -162,9 +182,7 @@ export default function App() {
     viewingImageIdRef.current = viewingImageId;
     viewerSessionImagesRef.current = viewerSessionImages;
     const setSelectedImageIndex = useCallback<React.Dispatch<React.SetStateAction<number | null>>>((value) => {
-        const nextIndex = typeof value === 'function'
-            ? value(selectedImageIndexRef.current)
-            : value;
+        const nextIndex = typeof value === 'function' ? value(selectedImageIndexRef.current) : value;
         selectedImageIndexRef.current = nextIndex;
         setSelectedImageIndexState(nextIndex);
 
@@ -176,7 +194,7 @@ export default function App() {
             return;
         }
 
-        setViewerSessionImages(current => {
+        setViewerSessionImages((current) => {
             if (current) return current;
             const snapshot = imagesRef.current;
             viewerSessionImagesRef.current = snapshot;
@@ -184,9 +202,7 @@ export default function App() {
         });
     }, []);
     const setViewingImageId = useCallback<React.Dispatch<React.SetStateAction<string | null>>>((value) => {
-        const nextId = typeof value === 'function'
-            ? value(viewingImageIdRef.current)
-            : value;
+        const nextId = typeof value === 'function' ? value(viewingImageIdRef.current) : value;
         viewingImageIdRef.current = nextId;
         setViewingImageIdState(nextId);
 
@@ -198,54 +214,54 @@ export default function App() {
             return;
         }
 
-        setViewerSessionImages(current => {
+        setViewerSessionImages((current) => {
             if (current) return current;
             const snapshot = imagesRef.current;
             viewerSessionImagesRef.current = snapshot;
             return snapshot;
         });
     }, []);
-    const activeImageState = React.useMemo<ActiveImageStateAdapter>(() => ({
-        getImage: (imageId) => (
-            images.find(image => image.id === imageId)
-            ?? viewerSessionImages?.find(image => image.id === imageId)
-            ?? (directViewerImage?.id === imageId ? directViewerImage : undefined)
-        ),
-        updateImage: (imageId, updater) => {
-            setImages(previous => {
-                let changed = false;
-                const next = previous.map(image => {
-                    if (image.id !== imageId) return image;
-                    changed = true;
-                    return updater(image);
+    const activeImageState = React.useMemo<ActiveImageStateAdapter>(
+        () => ({
+            getImage: (imageId) =>
+                images.find((image) => image.id === imageId) ??
+                viewerSessionImages?.find((image) => image.id === imageId) ??
+                (directViewerImage?.id === imageId ? directViewerImage : undefined),
+            updateImage: (imageId, updater) => {
+                setImages((previous) => {
+                    let changed = false;
+                    const next = previous.map((image) => {
+                        if (image.id !== imageId) return image;
+                        changed = true;
+                        return updater(image);
+                    });
+                    return changed ? next : previous;
                 });
-                return changed ? next : previous;
-            });
-            setViewerSessionImages(previous => {
-                if (!previous) return previous;
-                let changed = false;
-                const next = previous.map(image => {
-                    if (image.id !== imageId) return image;
-                    changed = true;
-                    return updater(image);
+                setViewerSessionImages((previous) => {
+                    if (!previous) return previous;
+                    let changed = false;
+                    const next = previous.map((image) => {
+                        if (image.id !== imageId) return image;
+                        changed = true;
+                        return updater(image);
+                    });
+                    if (changed) viewerSessionImagesRef.current = next;
+                    return changed ? next : previous;
                 });
-                if (changed) viewerSessionImagesRef.current = next;
-                return changed ? next : previous;
-            });
-            setDirectViewerImage(previous => (
-                previous?.id === imageId ? updater(previous) : previous
-            ));
-        },
-        removeImage: (imageId) => {
-            setDirectViewerImage(previous => previous?.id === imageId ? null : previous);
-            if (viewingImageIdRef.current === imageId) {
-                viewingImageIdRef.current = null;
-                selectedImageIndexRef.current = null;
-                setViewingImageId(null);
-                setSelectedImageIndex(null);
-            }
-        },
-    }), [directViewerImage, images, setImages, viewerSessionImages, setSelectedImageIndex, setViewingImageId]);
+                setDirectViewerImage((previous) => (previous?.id === imageId ? updater(previous) : previous));
+            },
+            removeImage: (imageId) => {
+                setDirectViewerImage((previous) => (previous?.id === imageId ? null : previous));
+                if (viewingImageIdRef.current === imageId) {
+                    viewingImageIdRef.current = null;
+                    selectedImageIndexRef.current = null;
+                    setViewingImageId(null);
+                    setSelectedImageIndex(null);
+                }
+            },
+        }),
+        [directViewerImage, images, setImages, viewerSessionImages, setSelectedImageIndex, setViewingImageId]
+    );
     // const images = useSearchStore(s => s.images);
     // const setImages = useSearchStore(s => s.setImages);
     // const filters = useSearchStore(s => s.filters);
@@ -271,24 +287,27 @@ export default function App() {
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
     const {
-        selectedIds, setSelectedIds, lastSelectedId, setLastSelectedId,
-        handleImageClick, handleSelectionToggle, handleRangeSelection, clearSelection
+        selectedIds,
+        setSelectedIds,
+        lastSelectedId,
+        setLastSelectedId,
+        handleImageClick,
+        handleSelectionToggle,
+        handleRangeSelection,
+        clearSelection,
     } = useSelection(images);
-    const handleViewerImageClick = useCallback((
-        event: React.MouseEvent,
-        id: string,
-        index: number,
-        setViewerIndex: (nextIndex: number) => void,
-        revealGranted = false,
-    ) => {
-        handleImageClick(event, id, index, nextIndex => {
-            setViewerRevealGrantId(revealGranted ? id : null);
-            setViewerIndex(nextIndex);
-        });
-    }, [handleImageClick]);
+    const handleViewerImageClick = useCallback(
+        (event: React.MouseEvent, id: string, index: number, setViewerIndex: (nextIndex: number) => void, revealGranted = false) => {
+            handleImageClick(event, id, index, (nextIndex) => {
+                setViewerRevealGrantId(revealGranted ? id : null);
+                setViewerIndex(nextIndex);
+            });
+        },
+        [handleImageClick]
+    );
 
-    const setAllCollections = useCollectionStore(s => s.setCollections);
-    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
+    const setAllCollections = useCollectionStore((s) => s.setCollections);
+    const refreshCollectionThumbnails = useCollectionStore((s) => s.refreshCollectionThumbnails);
     const { refreshMaintenanceCounts } = useWatchers();
 
     const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability, activeImageState });
@@ -300,7 +319,10 @@ export default function App() {
         settings,
         setRecentSearches,
         availableTags: availableTags,
-        onOpenSettings: useCallback(() => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }, [modals])
+        onOpenSettings: useCallback(() => {
+            modals.setInitialSettingsTab('experiments');
+            modals.openModal('settings');
+        }, [modals]),
     });
 
     const fileOps = useFileOperations({
@@ -309,7 +331,7 @@ export default function App() {
         refreshCollections,
         refreshCollectionThumbnails,
         settings,
-        activeImageState
+        activeImageState,
     });
 
     const colOps = useCollectionOperations({
@@ -319,7 +341,7 @@ export default function App() {
         refreshCollections,
         setFilters,
         setImages,
-        activeCollectionId: filters.collectionId
+        activeCollectionId: filters.collectionId,
     });
 
     const actions = useAppActions({
@@ -334,33 +356,34 @@ export default function App() {
         lastSelectedId,
         imagesQueryKey,
         modalManager: modals,
-        activeImageState
+        activeImageState,
     });
 
-    const handleImportFiles = useCallback((files: FileList) => {
-        fileOps.handleImportFiles(Array.from(files)).catch(error => console.error('[Import] Dropped-file import failed', error));
-    }, [fileOps]);
+    const handleImportFiles = useCallback(
+        (files: FileList) => {
+            fileOps.handleImportFiles(Array.from(files)).catch((error) => console.error('[Import] Dropped-file import failed', error));
+        },
+        [fileOps]
+    );
 
-    const handleImportDroppedPaths = useCallback((paths: string[]) => {
-        fileOps.handleImportPaths(paths).catch(error => console.error('[Import] Dropped-path import failed', error));
-    }, [fileOps]);
+    const handleImportDroppedPaths = useCallback(
+        (paths: string[]) => {
+            fileOps.handleImportPaths(paths).catch((error) => console.error('[Import] Dropped-path import failed', error));
+        },
+        [fileOps]
+    );
 
     const { isDraggingExternal } = useDragDrop({
         onImportPaths: handleImportDroppedPaths,
-        onImportFiles: handleImportFiles
+        onImportFiles: handleImportFiles,
     });
 
-    const {
-        startInvokeSync,
-        isInvokeSyncActive,
-        isLiveSyncing,
-        invokeOwnerScopeState,
-        selectInvokeOwnerScope,
-        retryInvokeOwnerScope,
-    } = useSync();
-    const isInvokeCollectionCatchupPending = Boolean(settings.invokeAiPath?.trim())
-        && settings.invokeSyncBoards !== false
-        && (isStartupCatchupPending || (isInvokeSyncActive && !isLiveSyncing));
+    const { startInvokeSync, isInvokeSyncActive, isLiveSyncing, invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope } =
+        useSync();
+    const isInvokeCollectionCatchupPending =
+        Boolean(settings.invokeAiPath?.trim()) &&
+        settings.invokeSyncBoards !== false &&
+        (isStartupCatchupPending || (isInvokeSyncActive && !isLiveSyncing));
     const clearOwnerScopedView = useCallback(() => {
         referenceNavigationRequestRef.current += 1;
         selectedImageIndexRef.current = null;
@@ -374,9 +397,12 @@ export default function App() {
         clearAllFilters();
         clearSelection();
     }, [clearAllFilters, clearSelection, setSelectedImageIndex, setViewingImageId]);
-    const hasExplicitInvokePreparation = useInvokeOwnerScopeStore(state => state.operation?.origin === 'user'
-        && !state.operation.viewCommitted
-        && ['preparing', 'cancelling', 'settling'].includes(state.operation.phase));
+    const hasExplicitInvokePreparation = useInvokeOwnerScopeStore(
+        (state) =>
+            state.operation?.origin === 'user' &&
+            !state.operation.viewCommitted &&
+            ['preparing', 'cancelling', 'settling'].includes(state.operation.phase)
+    );
     const {
         isOwnerScopeAdmitted: isInvokeOwnerScopeAdmittedForRoot,
         isOwnerScopeBlocking: isInvokeOwnerScopeBlocking,
@@ -391,15 +417,13 @@ export default function App() {
         isExplicitPreparation: hasExplicitInvokePreparation && invokeOwnerScopeState.status === 'applying',
         onClearStaleView: clearOwnerScopedView,
     });
-    const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot
-        && invokeOwnerScopeState.status === 'offline_ready';
-    const isInvokeOwnerScopeBusy = isInvokeOwnerScopeBlocking
-        && (invokeOwnerScopeState.status === 'idle'
-            || invokeOwnerScopeState.status === 'discovering'
-            || invokeOwnerScopeState.status === 'applying');
-    const isInitialPrivacyProtectionBusy = !isInvokeOwnerScopeBlocking
-        && privacyExposureBlocked
-        && privacyMaskIndexStatus !== 'failed';
+    const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot && invokeOwnerScopeState.status === 'offline_ready';
+    const isInvokeOwnerScopeBusy =
+        isInvokeOwnerScopeBlocking &&
+        (invokeOwnerScopeState.status === 'idle' ||
+            invokeOwnerScopeState.status === 'discovering' ||
+            invokeOwnerScopeState.status === 'applying');
+    const isInitialPrivacyProtectionBusy = !isInvokeOwnerScopeBlocking && privacyExposureBlocked && privacyMaskIndexStatus !== 'failed';
     const isInitialPrivacyPreparationVisible = useDelayedBusyPresentation(
         isLoaded && isInitialStartupPresentation && isInitialPrivacyProtectionBusy,
         {
@@ -408,16 +432,20 @@ export default function App() {
             resetKey: `${settings.invokeAiPath?.trim() || 'unconfigured'}:privacy`,
         }
     );
-    const shouldForceInitialPrivacyProtection = isInitialStartupPresentation
-        && isInitialPrivacyPreparationVisible
-        && !isInvokeOwnerScopeBlocking;
-    const shouldRenderInvokeOwnerScopeGate = isInvokeOwnerScopeBlocking
-        && (!isInvokeOwnerScopeBusy || !isInitialStartupPresentation)
-        && (!isRuntimeOwnerScopeTransition || isRuntimeOwnerScopeGateVisible);
+    const shouldForceInitialPrivacyProtection =
+        isInitialStartupPresentation && isInitialPrivacyPreparationVisible && !isInvokeOwnerScopeBlocking;
+    const shouldRenderInvokeOwnerScopeGate =
+        isInvokeOwnerScopeBlocking &&
+        (!isInvokeOwnerScopeBusy || !isInitialStartupPresentation) &&
+        (!isRuntimeOwnerScopeTransition || isRuntimeOwnerScopeGateVisible);
     // Optional maintenance must never race owner/privacy preparation or its first safe page.
-    const backgroundStartupReady = isLoaded && isLibraryReady
-        && !isInitialStartupPresentation && !isInvokeOwnerScopeBlocking
-        && !isRuntimeOwnerScopeTransition && !privacyExposureBlocked;
+    const backgroundStartupReady =
+        isLoaded &&
+        isLibraryReady &&
+        !isInitialStartupPresentation &&
+        !isInvokeOwnerScopeBlocking &&
+        !isRuntimeOwnerScopeTransition &&
+        !privacyExposureBlocked;
     useThumbnailQueue(addToast, backgroundStartupReady);
     useMetadataRefresh(backgroundStartupReady);
     useEffect(() => {
@@ -434,16 +462,19 @@ export default function App() {
         setOrdinaryCountsReady(backgroundStartupReady && document.getElementById('static-loading')?.dataset.ambitFatal !== 'true');
         return () => setOrdinaryCountsReady(false);
     }, [backgroundStartupReady, setOrdinaryCountsReady]);
-    const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
-        await selectInvokeOwnerScope(selection);
-    }, [selectInvokeOwnerScope]);
+    const handleInvokeOwnerSelection = useCallback(
+        async (selection: InvokeOwnerSelection) => {
+            await selectInvokeOwnerScope(selection);
+        },
+        [selectInvokeOwnerScope]
+    );
     const handleInvokeOwnerRetry = useCallback(async () => {
         await retryInvokeOwnerScope();
     }, [retryInvokeOwnerScope]);
     const openInvokeSettings = useCallback(() => {
         modals.setInitialSettingsTab('invokeai');
         modals.openModal('settings');
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the two modal actions it calls; the modals object is new every render
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the two modal actions it calls; the modals object is new every render
     }, [modals.openModal, modals.setInitialSettingsTab]);
 
     const handleSelectFilesImport = useCallback(async () => {
@@ -458,14 +489,16 @@ export default function App() {
                     filters: [
                         {
                             name: 'Images',
-                            extensions: ['png', 'jpg', 'jpeg', 'webp']
-                        }
-                    ]
+                            extensions: ['png', 'jpg', 'jpeg', 'webp'],
+                        },
+                    ],
                 });
 
                 const paths = Array.isArray(selected)
                     ? selected.filter((item): item is string => typeof item === 'string')
-                    : (typeof selected === 'string' ? [selected] : []);
+                    : typeof selected === 'string'
+                      ? [selected]
+                      : [];
 
                 if (paths.length > 0) {
                     await fileOps.handleImportPaths(paths);
@@ -497,28 +530,34 @@ export default function App() {
         addToast,
         refreshMetadata,
         invokeAiPath: settings.invokeAiPath,
-        startInvokeSync
+        startInvokeSync,
     });
 
     // --- Callbacks ---
     const loadMoreImages = React.useCallback(() => {
-        // useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]); 
+        // useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]);
         // Logic handled by active query refetch if needed
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- kept so consumers get a new callback identity when collections change, as before
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- kept so consumers get a new callback identity when collections change, as before
     }, [collections, smartCollections]);
 
-    const changeViewMode = useCallback((newMode: ViewMode) => {
-        if (newMode === viewMode) return;
-        setViewMode(newMode);
-        clearSelection();
-    }, [viewMode, clearSelection]);
+    const changeViewMode = useCallback(
+        (newMode: ViewMode) => {
+            if (newMode === viewMode) return;
+            setViewMode(newMode);
+            clearSelection();
+        },
+        [viewMode, clearSelection]
+    );
 
-    const setLayoutMode = useCallback((mode: LayoutMode) => {
-        setSettings(prev => ({ ...prev, libraryLayoutMode: mode }));
-    }, [setSettings]);
+    const setLayoutMode = useCallback(
+        (mode: LayoutMode) => {
+            setSettings((prev) => ({ ...prev, libraryLayoutMode: mode }));
+        },
+        [setSettings]
+    );
 
     const handleLayoutChange = useCallback((c: number, h: number) => {
-        setGridLayout(prev => {
+        setGridLayout((prev) => {
             if (prev.columns === c && prev.rowHeight === h) return prev;
             return { columns: c, rowHeight: h };
         });
@@ -541,81 +580,93 @@ export default function App() {
         }
     }, [filters.collectionId, selectedIds, colOps, clearSelection]);
 
-    const handleOpenCollectionModal = useCallback((mode: 'add' | 'move' = 'add') => {
-        modals.setAddToCollectionMode(mode);
-        if (mode === 'add') modals.setSourceCollectionId(null);
-        modals.openModal('addToCollection');
-    }, [modals]);
+    const handleOpenCollectionModal = useCallback(
+        (mode: 'add' | 'move' = 'add') => {
+            modals.setAddToCollectionMode(mode);
+            if (mode === 'add') modals.setSourceCollectionId(null);
+            modals.openModal('addToCollection');
+        },
+        [modals]
+    );
 
-    const handleSetCollectionMembership = useCallback((
-        imageId: string,
-        collectionId: string,
-        shouldBelong: boolean
-    ): Promise<boolean> => shouldBelong
-            ? colOps.addImagesToCollection([imageId], collectionId)
-            : colOps.removeImagesFromCollection([imageId], collectionId), [colOps]);
+    const handleSetCollectionMembership = useCallback(
+        (imageId: string, collectionId: string, shouldBelong: boolean): Promise<boolean> =>
+            shouldBelong
+                ? colOps.addImagesToCollection([imageId], collectionId)
+                : colOps.removeImagesFromCollection([imageId], collectionId),
+        [colOps]
+    );
 
-    const reconcileGlobalViewerAfterRemoval = useCallback((imageId: string, collectionId: string) => {
-        if (activeCollectionIdRef.current !== collectionId) return;
+    const reconcileGlobalViewerAfterRemoval = useCallback(
+        (imageId: string, collectionId: string) => {
+            if (activeCollectionIdRef.current !== collectionId) return;
 
-        const selectedIndex = selectedImageIndexRef.current;
-        const viewingId = viewingImageIdRef.current;
-        if (selectedIndex === null && viewingId === null) return;
+            const selectedIndex = selectedImageIndexRef.current;
+            const viewingId = viewingImageIdRef.current;
+            if (selectedIndex === null && viewingId === null) return;
 
-        const previousImages = viewerSessionImagesRef.current ?? imagesRef.current;
-        const removedIndex = previousImages.findIndex(candidate => candidate.id === imageId);
-        if (removedIndex === -1) return;
+            const previousImages = viewerSessionImagesRef.current ?? imagesRef.current;
+            const removedIndex = previousImages.findIndex((candidate) => candidate.id === imageId);
+            if (removedIndex === -1) return;
 
-        const displayedImageId = viewingId
-            ?? (selectedIndex !== null ? previousImages[selectedIndex]?.id : undefined);
-        const nextImages = previousImages.filter(candidate => candidate.id !== imageId);
-        imagesRef.current = nextImages;
-        viewerSessionImagesRef.current = nextImages;
-        setViewerSessionImages(nextImages);
+            const displayedImageId = viewingId ?? (selectedIndex !== null ? previousImages[selectedIndex]?.id : undefined);
+            const nextImages = previousImages.filter((candidate) => candidate.id !== imageId);
+            imagesRef.current = nextImages;
+            viewerSessionImagesRef.current = nextImages;
+            setViewerSessionImages(nextImages);
 
-        if (!displayedImageId) return;
+            if (!displayedImageId) return;
 
-        if (viewingId && viewingId !== imageId) return;
+            if (viewingId && viewingId !== imageId) return;
 
-        const nextIndex = displayedImageId === imageId
-            ? (nextImages.length === 0 ? null : Math.min(removedIndex, nextImages.length - 1))
-            : nextImages.findIndex(candidate => candidate.id === displayedImageId);
-        if (nextIndex === -1) return;
+            const nextIndex =
+                displayedImageId === imageId
+                    ? nextImages.length === 0
+                        ? null
+                        : Math.min(removedIndex, nextImages.length - 1)
+                    : nextImages.findIndex((candidate) => candidate.id === displayedImageId);
+            if (nextIndex === -1) return;
 
-        selectedImageIndexRef.current = nextIndex;
-        viewingImageIdRef.current = null;
-        setSelectedImageIndex(nextIndex);
-        setViewingImageId(null);
-    }, [setSelectedImageIndex, setViewingImageId]);
+            selectedImageIndexRef.current = nextIndex;
+            viewingImageIdRef.current = null;
+            setSelectedImageIndex(nextIndex);
+            setViewingImageId(null);
+        },
+        [setSelectedImageIndex, setViewingImageId]
+    );
 
-    const handleSetViewerCollectionMembership = useCallback((
-        imageId: string,
-        collectionId: string,
-        shouldBelong: boolean
-    ): Promise<boolean> => shouldBelong
-            ? colOps.addImagesToCollection([imageId], collectionId)
-            : colOps.removeImagesFromCollection(
-                [imageId],
-                collectionId,
-                () => reconcileGlobalViewerAfterRemoval(imageId, collectionId)
-            ), [colOps, reconcileGlobalViewerAfterRemoval]);
-    const handleViewerSearch = useCallback((term: string) => {
-        void import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
-            parseAndApplyFilter(term, setFilters);
-        });
-        setRecentSearches(prev => [term, ...prev.filter(search => search !== term)].slice(0, 8));
-    }, [setFilters, setRecentSearches]);
-    const submitNavbarSearch = useCallback((query: string) => {
-        if (!query.trim()) {
+    const handleSetViewerCollectionMembership = useCallback(
+        (imageId: string, collectionId: string, shouldBelong: boolean): Promise<boolean> =>
+            shouldBelong
+                ? colOps.addImagesToCollection([imageId], collectionId)
+                : colOps.removeImagesFromCollection([imageId], collectionId, () =>
+                      reconcileGlobalViewerAfterRemoval(imageId, collectionId)
+                  ),
+        [colOps, reconcileGlobalViewerAfterRemoval]
+    );
+    const handleViewerSearch = useCallback(
+        (term: string) => {
+            void import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
+                parseAndApplyFilter(term, setFilters);
+            });
+            setRecentSearches((prev) => [term, ...prev.filter((search) => search !== term)].slice(0, 8));
+        },
+        [setFilters, setRecentSearches]
+    );
+    const submitNavbarSearch = useCallback(
+        (query: string) => {
+            if (!query.trim()) {
+                void submitSearch(query);
+                return;
+            }
+
             void submitSearch(query);
-            return;
-        }
-
-        void submitSearch(query);
-        if (viewMode === 'dashboard' || viewMode === 'maintenance') {
-            changeViewMode('grid');
-        }
-    }, [changeViewMode, submitSearch, viewMode]);
+            if (viewMode === 'dashboard' || viewMode === 'maintenance') {
+                changeViewMode('grid');
+            }
+        },
+        [changeViewMode, submitSearch, viewMode]
+    );
 
     const openSearchHelp = useCallback(() => {
         modals.setShortcutsModalTab('search');
@@ -623,31 +674,30 @@ export default function App() {
     }, [modals]);
 
     // --- Derived Memos ---
-    const searchProps = React.useMemo(() => ({
-        isAiSearchEnabled,
-        isSearchingAi,
-        inputRef,
-        toggleAiSearch,
-        submitSearch: submitNavbarSearch,
-        isFocused: isSearchFocused,
-        onFocus: () => setIsSearchFocused(true),
-        onBlur: () => setIsSearchFocused(false),
-        onOpenSearchHelp: openSearchHelp,
-    }), [isAiSearchEnabled, isSearchingAi, inputRef, isSearchFocused, openSearchHelp, submitNavbarSearch, toggleAiSearch]);
-
-    const activeCollection = filters.collectionId
-        ? (collections.find(c => c.id === filters.collectionId) ?? null)
-        : null;
-    const activeSmartCollection = !activeCollection && filters.collectionId
-        ? (smartCollections.find(c => c.id === filters.collectionId) ?? null)
-        : null;
-    const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
-    const activeCollectionCount = activeCollection ? getCollectionCount(activeCollection) : undefined;
-    const scopeTotal = activeCollection && activeCollectionCount === undefined ? null : Math.max(
-        activeCollection ? activeCollectionCount! :
-            (activeSmartCollection ? totalImages : globalTotal),
-        totalImages
+    const searchProps = React.useMemo(
+        () => ({
+            isAiSearchEnabled,
+            isSearchingAi,
+            inputRef,
+            toggleAiSearch,
+            submitSearch: submitNavbarSearch,
+            isFocused: isSearchFocused,
+            onFocus: () => setIsSearchFocused(true),
+            onBlur: () => setIsSearchFocused(false),
+            onOpenSearchHelp: openSearchHelp,
+        }),
+        [isAiSearchEnabled, isSearchingAi, inputRef, isSearchFocused, openSearchHelp, submitNavbarSearch, toggleAiSearch]
     );
+
+    const activeCollection = filters.collectionId ? (collections.find((c) => c.id === filters.collectionId) ?? null) : null;
+    const activeSmartCollection =
+        !activeCollection && filters.collectionId ? (smartCollections.find((c) => c.id === filters.collectionId) ?? null) : null;
+    const scopeName = activeCollection ? activeCollection.name : activeSmartCollection ? activeSmartCollection.name : 'Library';
+    const activeCollectionCount = activeCollection ? getCollectionCount(activeCollection) : undefined;
+    const scopeTotal =
+        activeCollection && activeCollectionCount === undefined
+            ? null
+            : Math.max(activeCollection ? activeCollectionCount! : activeSmartCollection ? totalImages : globalTotal, totalImages);
     const currentLibraryPresentation: RetainedLibraryPresentation = {
         images,
         totalImages,
@@ -661,73 +711,72 @@ export default function App() {
 
     const viewerImages = viewerSessionImages ?? libraryPresentation.images;
     const sessionViewerImage = viewingImageId
-        ? (directViewerImage?.id === viewingImageId
+        ? directViewerImage?.id === viewingImageId
             ? directViewerImage
-            : viewerImages.find(image => image.id === viewingImageId)
-                ?? libraryPresentation.images.find(image => image.id === viewingImageId))
-        : (selectedImageIndex !== null ? viewerImages[selectedImageIndex] : null);
-    const displayedViewerImage = sessionViewerImage
-        && !privacyExposureBlocked
-        && (!isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView)
-        ? (directViewerImage?.id === sessionViewerImage.id
-            ? directViewerImage
-            : libraryPresentation.images.find(image => image.id === sessionViewerImage.id) ?? sessionViewerImage)
-        : null;
-    const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
-        const requestId = referenceNavigationRequestRef.current + 1;
-        referenceNavigationRequestRef.current = requestId;
-        const isCurrentlyPrivacyHidden = (image: AIImage): boolean => {
-            const currentPrivacyState = useSettingsStore.getState();
-            return currentPrivacyState.privacyEnabled
-                && currentPrivacyState.settings.maskingMode === 'hide'
-                && isImageMasked(
-                    image,
-                    true,
-                    getEffectiveMaskedKeywords(currentPrivacyState.settings)
+            : (viewerImages.find((image) => image.id === viewingImageId) ??
+              libraryPresentation.images.find((image) => image.id === viewingImageId))
+        : selectedImageIndex !== null
+          ? viewerImages[selectedImageIndex]
+          : null;
+    const displayedViewerImage =
+        sessionViewerImage && !privacyExposureBlocked && (!isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView)
+            ? directViewerImage?.id === sessionViewerImage.id
+                ? directViewerImage
+                : (libraryPresentation.images.find((image) => image.id === sessionViewerImage.id) ?? sessionViewerImage)
+            : null;
+    const handleOpenReferencedImage = useCallback(
+        async (imageId: string): Promise<boolean> => {
+            const requestId = referenceNavigationRequestRef.current + 1;
+            referenceNavigationRequestRef.current = requestId;
+            const isCurrentlyPrivacyHidden = (image: AIImage): boolean => {
+                const currentPrivacyState = useSettingsStore.getState();
+                return (
+                    currentPrivacyState.privacyEnabled &&
+                    currentPrivacyState.settings.maskingMode === 'hide' &&
+                    isImageMasked(image, true, getEffectiveMaskedKeywords(currentPrivacyState.settings))
                 );
-        };
-        const visibleIndex = images.findIndex(image => image.id === imageId);
-        if (visibleIndex !== -1) {
-            if (isCurrentlyPrivacyHidden(images[visibleIndex])) {
-                addToast('The referenced image is hidden by Privacy Mode.', 'warning');
-                return false;
+            };
+            const visibleIndex = images.findIndex((image) => image.id === imageId);
+            if (visibleIndex !== -1) {
+                if (isCurrentlyPrivacyHidden(images[visibleIndex])) {
+                    addToast('The referenced image is hidden by Privacy Mode.', 'warning');
+                    return false;
+                }
+                setDirectViewerImage(null);
+                setViewingImageId(null);
+                setSelectedImageIndex(visibleIndex);
+                viewerSessionImagesRef.current = images;
+                setViewerSessionImages(images);
+                return true;
             }
-            setDirectViewerImage(null);
-            setViewingImageId(null);
-            setSelectedImageIndex(visibleIndex);
-            viewerSessionImagesRef.current = images;
-            setViewerSessionImages(images);
-            return true;
-        }
 
-        try {
-            const image = await getImageWithFullMetadata(imageId);
-            if (referenceNavigationRequestRef.current !== requestId) return false;
-            if (!image) {
-                addToast('The referenced image is no longer available in Ambit.', 'error');
+            try {
+                const image = await getImageWithFullMetadata(imageId);
+                if (referenceNavigationRequestRef.current !== requestId) return false;
+                if (!image) {
+                    addToast('The referenced image is no longer available in Ambit.', 'error');
+                    await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
+                    return false;
+                }
+                if (isCurrentlyPrivacyHidden(image)) {
+                    addToast('The referenced image is hidden by Privacy Mode.', 'warning');
+                    return false;
+                }
+
+                setDirectViewerImage(image);
+                setSelectedImageIndex(null);
+                setViewingImageId(image.id);
+                return true;
+            } catch (error) {
+                console.error('[Viewer] Failed to open referenced image', error);
+                addToast('Failed to open the referenced image.', 'error');
                 await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
                 return false;
             }
-            if (isCurrentlyPrivacyHidden(image)) {
-                addToast('The referenced image is hidden by Privacy Mode.', 'warning');
-                return false;
-            }
-
-            setDirectViewerImage(image);
-            setSelectedImageIndex(null);
-            setViewingImageId(image.id);
-            return true;
-        } catch (error) {
-            console.error('[Viewer] Failed to open referenced image', error);
-            addToast('Failed to open the referenced image.', 'error');
-            await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
-            return false;
-        }
-    }, [addToast, images, queryClient, setSelectedImageIndex, setViewingImageId]);
-    const searchHighlights = React.useMemo(
-        () => derivePromptHighlightSpec(filters.searchQuery),
-        [filters.searchQuery]
+        },
+        [addToast, images, queryClient, setSelectedImageIndex, setViewingImageId]
     );
+    const searchHighlights = React.useMemo(() => derivePromptHighlightSpec(filters.searchQuery), [filters.searchQuery]);
 
     // --- Effects ---
     useEffect(() => {
@@ -744,9 +793,9 @@ export default function App() {
         }
         const timer = setTimeout(() => {
             const tags = new Set<string>();
-            images.slice(0, 500).forEach(img => {
+            images.slice(0, 500).forEach((img) => {
                 if (typeof img.metadata.positivePrompt === 'string') {
-                    img.metadata.positivePrompt.split(',').forEach(t => {
+                    img.metadata.positivePrompt.split(',').forEach((t) => {
                         const clean = t.trim().toLowerCase();
                         if (clean.length > 2 && clean.length < 40) tags.add(clean);
                     });
@@ -760,33 +809,49 @@ export default function App() {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const workspaceRef = useRef<HTMLElement>(null);
     const gridRef = useRef<VirtualGridHandle>(null);
-    const invokeOperationId = useInvokeOwnerScopeStore(state => state.operation?.id);
-    const invokeViewCommitted = useInvokeOwnerScopeStore(state => state.operation?.viewCommitted);
+    const invokeOperationId = useInvokeOwnerScopeStore((state) => state.operation?.id);
+    const invokeViewCommitted = useInvokeOwnerScopeStore((state) => state.operation?.viewCommitted);
     const focusedInvokeOperationRef = useRef<symbol | undefined>(undefined);
     const pendingInvokeFocusRef = useRef(false);
 
     useEffect(() => {
         if (!invokeSyncTrace.enabled) return;
-        const frame = window.requestAnimationFrame(() => invokeSyncTrace.presentationCommitted(
-            invokeOperationId,
-            privacyExposureBlocked,
-            isLoaded && isLibraryReady && !isInvokeOwnerScopeBlocking
-                && !privacyExposureBlocked && !modals.isAnyModalOpen,
-        ));
+        const frame = window.requestAnimationFrame(() =>
+            invokeSyncTrace.presentationCommitted(
+                invokeOperationId,
+                privacyExposureBlocked,
+                isLoaded && isLibraryReady && !isInvokeOwnerScopeBlocking && !privacyExposureBlocked && !modals.isAnyModalOpen
+            )
+        );
         return () => window.cancelAnimationFrame(frame);
     }, [invokeOperationId, privacyExposureBlocked, isLoaded, isLibraryReady, isInvokeOwnerScopeBlocking, modals.isAnyModalOpen]);
 
     useEffect(() => {
         if (shouldRenderInvokeOwnerScopeGate) pendingInvokeFocusRef.current = true;
-        if (!invokeOperationId || focusedInvokeOperationRef.current === invokeOperationId
-            || isInvokeOwnerScopeBlocking || modals.isAnyModalOpen || !isLoaded || privacyExposureBlocked
-            || (!invokeViewCommitted && !pendingInvokeFocusRef.current)) return;
+        if (
+            !invokeOperationId ||
+            focusedInvokeOperationRef.current === invokeOperationId ||
+            isInvokeOwnerScopeBlocking ||
+            modals.isAnyModalOpen ||
+            !isLoaded ||
+            privacyExposureBlocked ||
+            (!invokeViewCommitted && !pendingInvokeFocusRef.current)
+        )
+            return;
         if (workspaceRef.current) {
             workspaceRef.current.focus({ preventScroll: true });
             focusedInvokeOperationRef.current = invokeOperationId;
             pendingInvokeFocusRef.current = false;
         }
-    }, [invokeOperationId, invokeViewCommitted, isInvokeOwnerScopeBlocking, shouldRenderInvokeOwnerScopeGate, modals.isAnyModalOpen, isLoaded, privacyExposureBlocked]);
+    }, [
+        invokeOperationId,
+        invokeViewCommitted,
+        isInvokeOwnerScopeBlocking,
+        shouldRenderInvokeOwnerScopeGate,
+        modals.isAnyModalOpen,
+        isLoaded,
+        privacyExposureBlocked,
+    ]);
 
     useEffect(() => {
         const timer = setTimeout(() => setShowSupportPulse(false), 5000);
@@ -798,14 +863,13 @@ export default function App() {
     }, [filters.collectionId, clearSelection]);
 
     const isOnboardingReplay = modals.modals.onboarding;
-    const shouldRenderOnboarding = !settings.hasCompletedOnboarding
-        || isOnboardingReplay
-        || isCompletingOnboarding;
-    const isViewerShortcutBlocked = modals.isAnyModalOpen
-        || isImportModalOpen
-        || Boolean(updater.update && updater.isDialogOpen)
-        || !settings.hasCompletedOnboarding
-        || isCompletingOnboarding;
+    const shouldRenderOnboarding = !settings.hasCompletedOnboarding || isOnboardingReplay || isCompletingOnboarding;
+    const isViewerShortcutBlocked =
+        modals.isAnyModalOpen ||
+        isImportModalOpen ||
+        Boolean(updater.update && updater.isDialogOpen) ||
+        !settings.hasCompletedOnboarding ||
+        isCompletingOnboarding;
 
     // --- Global Shortcuts Hook ---
     useGlobalShortcuts({
@@ -829,33 +893,40 @@ export default function App() {
                 modals.openModal('deleteConfirm');
                 return;
             }
-            actions.executeDelete().catch(error => console.error('[Delete] Shortcut delete failed', error));
+            actions.executeDelete().catch((error) => console.error('[Delete] Shortcut delete failed', error));
         },
         togglePrivacyMode: actions.handleTogglePrivacy,
         toggleMasking: () => {
-            actions.handleBulkMask().catch(error => console.error('[Mask] Shortcut mask toggle failed', error));
+            actions.handleBulkMask().catch((error) => console.error('[Mask] Shortcut mask toggle failed', error));
         },
         toggleFavorite: actions.handleShortcutFavorite,
         togglePin: actions.handleShortcutPin,
         openCollection: () => handleOpenCollectionModal('add'),
-        openSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
+        openSettings: () => {
+            modals.setInitialSettingsTab('general');
+            modals.openModal('settings');
+        },
         openImport: openImportModal,
         isModalOpen: modals.isAnyModalOpen,
         closeAllModals: modals.closeAllModals,
-        toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
+        toggleShortcuts: () => {
+            modals.setShortcutsModalTab('shortcuts');
+            modals.openModal('shortcuts');
+        },
         toggleCommandPalette: () => modals.openModal('commandPalette'),
     });
 
-    const handleOnboardingComplete = (onboardingSettings: OnboardingSettingsUpdate) => (
+    const handleOnboardingComplete = (onboardingSettings: OnboardingSettingsUpdate) =>
         settingsPersistenceCoordinator.run(async (permit) => {
             const currentSettings = useSettingsStore.getState().settings;
             const changedSettings: OnboardingSettingsUpdate = {};
-            if (typeof onboardingSettings.enableAI === 'boolean'
-                && onboardingSettings.enableAI !== currentSettings.enableAI) {
+            if (typeof onboardingSettings.enableAI === 'boolean' && onboardingSettings.enableAI !== currentSettings.enableAI) {
                 changedSettings.enableAI = onboardingSettings.enableAI;
             }
-            if (typeof onboardingSettings.promptMaskingEnabled === 'boolean'
-                && onboardingSettings.promptMaskingEnabled !== currentSettings.promptMaskingEnabled) {
+            if (
+                typeof onboardingSettings.promptMaskingEnabled === 'boolean' &&
+                onboardingSettings.promptMaskingEnabled !== currentSettings.promptMaskingEnabled
+            ) {
                 changedSettings.promptMaskingEnabled = onboardingSettings.promptMaskingEnabled;
             }
 
@@ -889,20 +960,21 @@ export default function App() {
                     addToast('Setup complete!', 'success');
                 }
             } catch (error) {
-                const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => ({
+                const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, (current) => ({
                     ...current,
-                    enableAI: changedSettings.enableAI !== undefined
-                        && current.enableAI === nextSettings.enableAI
-                        ? previousOnboardingSettings.enableAI
-                        : current.enableAI,
-                    promptMaskingEnabled: changedSettings.promptMaskingEnabled !== undefined
-                        && current.promptMaskingEnabled === nextSettings.promptMaskingEnabled
-                        ? previousOnboardingSettings.promptMaskingEnabled
-                        : current.promptMaskingEnabled,
-                    hasCompletedOnboarding: completesFirstRun
-                        && current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
-                        ? previousOnboardingSettings.hasCompletedOnboarding
-                        : current.hasCompletedOnboarding,
+                    enableAI:
+                        changedSettings.enableAI !== undefined && current.enableAI === nextSettings.enableAI
+                            ? previousOnboardingSettings.enableAI
+                            : current.enableAI,
+                    promptMaskingEnabled:
+                        changedSettings.promptMaskingEnabled !== undefined &&
+                        current.promptMaskingEnabled === nextSettings.promptMaskingEnabled
+                            ? previousOnboardingSettings.promptMaskingEnabled
+                            : current.promptMaskingEnabled,
+                    hasCompletedOnboarding:
+                        completesFirstRun && current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
+                            ? previousOnboardingSettings.hasCompletedOnboarding
+                            : current.hasCompletedOnboarding,
                 }));
                 if (restoredSettings) {
                     try {
@@ -915,11 +987,10 @@ export default function App() {
                 addToast('Setup could not be saved. Please try again.', 'error');
                 throw error;
             }
-        })
-    );
+        });
 
     const handleOpenSetupGuide = () => {
-        modals.setModals(previous => ({
+        modals.setModals((previous) => ({
             ...previous,
             shortcuts: false,
             onboarding: true,
@@ -927,16 +998,14 @@ export default function App() {
     };
 
     const handleResetFirstRunOnboarding = () => {
-        setSettings(previous => ({ ...previous, hasCompletedOnboarding: false }));
-        modals.setModals(previous => ({
+        setSettings((previous) => ({ ...previous, hasCompletedOnboarding: false }));
+        modals.setModals((previous) => ({
             ...previous,
             settings: false,
             onboarding: false,
         }));
         addToast('First-run onboarding reset', 'info');
     };
-
-
 
     // Saved-owner verification remains behind the neutral startup splash. Only
     // an actionable owner state, explicit runtime switch, or sustained privacy
@@ -948,14 +1017,13 @@ export default function App() {
         if (isInvokeOwnerScopeBusy) return;
         if (isInitialPrivacyProtectionBusy && !isInitialPrivacyPreparationVisible) return;
 
-        const replacesSplash = isInitialPrivacyPreparationVisible
-            || isInvokeOwnerScopeBlocking
-            || (privacyExposureBlocked && privacyMaskIndexStatus === 'failed');
+        const replacesSplash =
+            isInitialPrivacyPreparationVisible ||
+            isInvokeOwnerScopeBlocking ||
+            (privacyExposureBlocked && privacyMaskIndexStatus === 'failed');
         dismissStaticLoader(replacesSplash);
 
-        if (!isInvokeOwnerScopeBusy
-            && !isInitialPrivacyProtectionBusy
-            && !isInitialPrivacyPreparationVisible) {
+        if (!isInvokeOwnerScopeBusy && !isInitialPrivacyProtectionBusy && !isInitialPrivacyPreparationVisible) {
             setIsInitialStartupPresentation(false);
         }
     }, [
@@ -973,7 +1041,6 @@ export default function App() {
     ]);
 
     if (!isLoaded && !(isSettingsLoaded && shouldRenderInvokeOwnerScopeGate)) return null;
-
 
     return (
         <div
@@ -1000,66 +1067,69 @@ export default function App() {
                     onOpenSettings={openInvokeSettings}
                     autoFocus={!modals.isAnyModalOpen}
                 />
-            ) : (!isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView) ? (
+            ) : !isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView ? (
                 <div className="flex min-h-0 flex-1">
                     <AppLayout
-                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
-                forcePrivacyProtectionGate={shouldForceInitialPrivacyProtection}
-                filters={filters}
-                setFilters={setFilters}
-                isFilterPanelOpen={isFilterPanelOpen}
-                setIsFilterPanelOpen={setIsFilterPanelOpen}
-                colOps={colOps}
-                setExportIds={setExportIds}
-                modals={modals}
-                addToast={addToast}
-                viewMode={viewMode}
-                changeViewMode={changeViewMode}
-                searchProps={searchProps}
-                layoutMode={layoutMode}
-                setLayoutMode={setLayoutMode}
-                sortOption={sortOption}
-                setSortOption={setSortOption}
-                displayedCount={libraryPresentation.totalImages}
-                scopeTotal={libraryPresentation.scopeTotal}
-                scopeName={libraryPresentation.scopeName}
-                isFiltering={isFiltering}
-                fileOps={fileOps}
-                onOpenImportModal={openImportModal}
-                clearAllFilters={clearAllFilters}
-                workspaceRef={workspaceRef}
-                scrollContainerRef={scrollContainerRef}
-                images={libraryPresentation.images}
-                modelOptions={modelOptions}
-                handlers={{ ...handlers, setImages, setContextMenu }}
-                setViewingImageId={setViewingImageId}
-                onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
-                onOpenReferencedImage={handleOpenReferencedImage}
-                onViewerSearch={handleViewerSearch}
-                isViewerShortcutBlocked={isViewerShortcutBlocked}
-                onSetImageKind={(id, sourceKindOverride) => actions.handleSetImageSourceKind([id], sourceKindOverride)}
+                        isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
+                        forcePrivacyProtectionGate={shouldForceInitialPrivacyProtection}
+                        filters={filters}
+                        setFilters={setFilters}
+                        isFilterPanelOpen={isFilterPanelOpen}
+                        setIsFilterPanelOpen={setIsFilterPanelOpen}
+                        colOps={colOps}
+                        setExportIds={setExportIds}
+                        modals={modals}
+                        addToast={addToast}
+                        viewMode={viewMode}
+                        changeViewMode={changeViewMode}
+                        searchProps={searchProps}
+                        layoutMode={layoutMode}
+                        setLayoutMode={setLayoutMode}
+                        sortOption={sortOption}
+                        setSortOption={setSortOption}
+                        displayedCount={libraryPresentation.totalImages}
+                        scopeTotal={libraryPresentation.scopeTotal}
+                        scopeName={libraryPresentation.scopeName}
+                        isFiltering={isFiltering}
+                        fileOps={fileOps}
+                        onOpenImportModal={openImportModal}
+                        clearAllFilters={clearAllFilters}
+                        workspaceRef={workspaceRef}
+                        scrollContainerRef={scrollContainerRef}
+                        images={libraryPresentation.images}
+                        modelOptions={modelOptions}
+                        handlers={{ ...handlers, setImages, setContextMenu }}
+                        setViewingImageId={setViewingImageId}
+                        onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
+                        onOpenReferencedImage={handleOpenReferencedImage}
+                        onViewerSearch={handleViewerSearch}
+                        isViewerShortcutBlocked={isViewerShortcutBlocked}
+                        onSetImageKind={(id, sourceKindOverride) => actions.handleSetImageSourceKind([id], sourceKindOverride)}
 
-                toggleFavorite={toggleFavorite}
-                actions={actions}
-                availableTags={libraryPresentation.availableTags}
-                selectedIds={selectedIds}
-                handleImageClick={handleViewerImageClick}
-                setSelectedImageIndex={setSelectedImageIndex}
-                handleSelectionToggle={handleSelectionToggle}
-                activeCollection={libraryPresentation.activeCollection}
-                activeSmartCollection={libraryPresentation.activeSmartCollection}
-                handleRangeSelection={handleRangeSelection}
-                clearSelection={clearSelection}
-                gridRef={gridRef}
-                loadMoreImages={loadMoreImages}
-                handleLayoutChange={handleLayoutChange}
-                isSearchFocused={isSearchFocused}
-                setIsSearchFocused={setIsSearchFocused}
-                lastSelectedId={lastSelectedId}
-                handleRemoveFromCollection={handleRemoveFromCollection}
-                handleOpenCollectionModal={handleOpenCollectionModal}
-                onSetCollectionMembership={handleSetCollectionMembership}
-                onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
+                        toggleFavorite={toggleFavorite}
+                        actions={actions}
+                        availableTags={libraryPresentation.availableTags}
+                        selectedIds={selectedIds}
+                        handleImageClick={handleViewerImageClick}
+                        setSelectedImageIndex={setSelectedImageIndex}
+                        handleSelectionToggle={handleSelectionToggle}
+                        activeCollection={libraryPresentation.activeCollection}
+                        activeSmartCollection={libraryPresentation.activeSmartCollection}
+                        handleRangeSelection={handleRangeSelection}
+                        clearSelection={clearSelection}
+                        gridRef={gridRef}
+                        loadMoreImages={loadMoreImages}
+                        handleLayoutChange={handleLayoutChange}
+                        isSearchFocused={isSearchFocused}
+                        setIsSearchFocused={setIsSearchFocused}
+                        lastSelectedId={lastSelectedId}
+                        handleRemoveFromCollection={handleRemoveFromCollection}
+                        handleOpenCollectionModal={handleOpenCollectionModal}
+                        onSetCollectionMembership={handleSetCollectionMembership}
+                        onEditCollection={(id) => {
+                            modals.setCollectionToEditId(id);
+                            modals.openModal('collectionEditor');
+                        }}
                     />
                 </div>
             ) : null}
@@ -1071,15 +1141,25 @@ export default function App() {
                     mode={isOnboardingReplay ? 'replay' : 'firstRun'}
                     onClose={isOnboardingReplay ? () => modals.closeModal('onboarding') : undefined}
                     onComplete={handleOnboardingComplete}
-                    onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
+                    onOpenSettings={(tab) => {
+                        modals.setInitialSettingsTab(tab);
+                        modals.openModal('settings');
+                    }}
                 />
             ) : null}
             <ImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}
-                onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
-                onImportFiles={() => { void handleSelectFilesImport(); }}
-                onImportVideos={() => { void handleSelectVideosImport(); }}
+                onOpenSettings={(tab) => {
+                    modals.setInitialSettingsTab(tab);
+                    modals.openModal('settings');
+                }}
+                onImportFiles={() => {
+                    void handleSelectFilesImport();
+                }}
+                onImportVideos={() => {
+                    void handleSelectVideosImport();
+                }}
             />
             <input
                 type="file"
@@ -1099,8 +1179,9 @@ export default function App() {
                 canCheckForUpdates={updater.canCheckForUpdates}
                 onSettingsSave={setSettings}
                 onExportConfirm={(name, folder) => {
-                    actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined)
-                        .catch(error => console.error('[Export] Export failed', error));
+                    actions
+                        .handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined)
+                        .catch((error) => console.error('[Export] Export failed', error));
                     setExportIds(new Set());
                 }}
                 onDeleteConfirm={actions.executeDelete}
@@ -1137,11 +1218,17 @@ export default function App() {
                 commandPaletteProps={{
                     onNavigate: changeViewMode,
                     onToggleTheme: toggleTheme,
-                    onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
+                    onOpenSettings: () => {
+                        modals.setInitialSettingsTab('general');
+                        modals.openModal('settings');
+                    },
                     onImport: openImportModal,
-                    onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
+                    onCreateCollection: () => {
+                        setIsFilterPanelOpen(true);
+                        setTimeout(() => document.getElementById('create-col-btn')?.click(), 100);
+                    },
                     onToggleAI: toggleAiSearch,
-                    settings: settings
+                    settings: settings,
                 }}
                 collections={collections}
                 smartCollections={smartCollections}
@@ -1154,7 +1241,9 @@ export default function App() {
                 onUpdateCollectionScope={colOps.updateCollectionScope}
                 onResetInvokeCollection={colOps.resetInvokeCollection}
                 onScanFolder={fileOps.handleImportFolders}
-                onInvokeSync={async () => { await startInvokeSync({ mode: 'manual', afterTimestamp: 0 }); }}
+                onInvokeSync={async () => {
+                    await startInvokeSync({ mode: 'manual', afterTimestamp: 0 });
+                }}
                 hasPendingUpdate={Boolean(updater.update)}
                 pendingUpdateVersion={updater.update?.version ?? null}
                 updateErrorMessage={updater.errorMessage}
@@ -1188,7 +1277,11 @@ export default function App() {
                         <VideoViewer
                             key="video-viewer"
                             video={displayedViewerImage}
-                            isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, getEffectiveMaskedKeywords(settings))}
+                            isMasked={isImageMasked(
+                                displayedViewerImage,
+                                useSettingsStore.getState().privacyEnabled,
+                                getEffectiveMaskedKeywords(settings)
+                            )}
                             initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
                             onClose={() => {
                                 referenceNavigationRequestRef.current += 1;
@@ -1231,7 +1324,11 @@ export default function App() {
                             key="image-viewer"
                             image={displayedViewerImage}
                             isOpen={true}
-                            isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, getEffectiveMaskedKeywords(settings))}
+                            isMasked={isImageMasked(
+                                displayedViewerImage,
+                                useSettingsStore.getState().privacyEnabled,
+                                getEffectiveMaskedKeywords(settings)
+                            )}
                             initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
                             isShortcutBlocked={isViewerShortcutBlocked}
                             onClose={() => {
@@ -1263,7 +1360,10 @@ export default function App() {
                             onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
                             onTogglePin={(id, p) => actions.handlePinImage(id, p, { showToast: false })}
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
-                            onOpenSettings={() => { modals.setInitialSettingsTab('intelligence'); modals.openModal('settings'); }}
+                            onOpenSettings={() => {
+                                modals.setInitialSettingsTab('intelligence');
+                                modals.openModal('settings');
+                            }}
                             onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
                             onSearch={handleViewerSearch}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
@@ -1272,7 +1372,7 @@ export default function App() {
                             availableTags={libraryPresentation.availableTags}
                             modelOptions={modelOptions}
                             isSidebarOpen={!settings.defaultTheaterMode}
-                            onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
+                            onToggleSidebar={() => setSettings((p) => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
                             searchHighlights={searchHighlights}
                             onOpenReferencedImage={handleOpenReferencedImage}
                         />

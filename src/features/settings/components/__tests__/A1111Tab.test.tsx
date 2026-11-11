@@ -15,32 +15,32 @@ const mocks = vi.hoisted(() => ({
     open: vi.fn(),
     normalizePath: vi.fn((path: string) => path.replace(/\\/g, '/')),
     setImportProgress: vi.fn(),
-    setIsImporting: vi.fn()
+    setIsImporting: vi.fn(),
 }));
 
 vi.mock('../../../../hooks/useLibraryContext', () => ({
     useLibraryContext: () => ({
         setIsImporting: mocks.setIsImporting,
         setImportProgress: mocks.setImportProgress,
-        refreshCollections: mocks.refreshCollections
-    })
+        refreshCollections: mocks.refreshCollections,
+    }),
 }));
 
 vi.mock('../../../../contexts/SearchContext', () => ({
     useSearch: () => ({
-        refreshMetadata: mocks.refreshMetadata
-    })
+        refreshMetadata: mocks.refreshMetadata,
+    }),
 }));
 
 vi.mock('../../../../hooks/useToast', () => ({
     useToast: () => ({
-        addToast: mocks.addToast
-    })
+        addToast: mocks.addToast,
+    }),
 }));
 
 vi.mock('../../../../services/a1111/config', () => ({
     discoverA1111Candidates: mocks.discoverA1111Candidates,
-    getUnlinkedPriorityCandidatePaths: mocks.getUnlinkedPriorityCandidatePaths
+    getUnlinkedPriorityCandidatePaths: mocks.getUnlinkedPriorityCandidatePaths,
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
@@ -58,12 +58,12 @@ const createSettings = (): AppSettings => ({
     maskingMode: 'blur',
     enableAI: false,
     a1111Path: 'D:/SD/outputs',
-    devMode: true
+    devMode: true,
 });
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>(res => {
+    const promise = new Promise<T>((res) => {
         resolve = res;
     });
     return { promise, resolve };
@@ -77,7 +77,7 @@ const candidate = (overrides: Partial<DiscoveryCandidate> = {}): DiscoveryCandid
     isPriority: true,
     isAlreadyLinked: false,
     variant: WebUIVariant.A1111,
-    ...overrides
+    ...overrides,
 });
 
 const importResult = (overrides: Partial<ImportResult> = {}): ImportResult => ({
@@ -87,13 +87,18 @@ const importResult = (overrides: Partial<ImportResult> = {}): ImportResult => ({
     failedPaths: [],
     touchedFacetTypes: [],
     touchedFacetResources: {
-        checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
-        controlNets: [], ipAdapters: [], tools: []
+        checkpoints: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        tools: [],
     },
     wasCancelled: false,
     completedSourcePaths: [],
     cancelledSourcePaths: [],
-    ...overrides
+    ...overrides,
 });
 
 describe('A1111Tab discovery warnings', () => {
@@ -116,23 +121,21 @@ describe('A1111Tab discovery warnings', () => {
             detectedVariant: WebUIVariant.A1111,
             candidates: [],
             logs: ['[9:31:52 AM]   ! Warning: Could not read D:/SD/outputs/txt2img-images'],
-            warnings: ['Could not read D:/SD/outputs/txt2img-images']
+            warnings: ['Could not read D:/SD/outputs/txt2img-images'],
         });
 
         render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} />);
 
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
 
-        expect(await screen.findByText('Discovery completed with 1 warning and no importable folders. Review scan debug log.')).toBeTruthy();
+        expect(
+            await screen.findByText('Discovery completed with 1 warning and no importable folders. Review scan debug log.')
+        ).toBeTruthy();
         expect(screen.getByText('View Scan Debug Log (1 entries)')).toBeTruthy();
         expect(screen.queryByText('No potential folders containing images found.')).toBeNull();
 
         await waitFor(() => {
-            expect(mocks.discoverA1111Candidates).toHaveBeenCalledWith(
-                'D:/SD/outputs',
-                expect.any(Set),
-                'Auto'
-            );
+            expect(mocks.discoverA1111Candidates).toHaveBeenCalledWith('D:/SD/outputs', expect.any(Set), 'Auto');
         });
     });
 
@@ -147,7 +150,7 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'txt2img',
                     isPriority: true,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
+                    variant: WebUIVariant.A1111,
                 },
                 {
                     path: 'D:/SD/outputs/custom',
@@ -156,11 +159,11 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'unknown',
                     isPriority: false,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
-                }
+                    variant: WebUIVariant.A1111,
+                },
             ],
             logs: [],
-            warnings: []
+            warnings: [],
         });
 
         render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} />);
@@ -202,11 +205,11 @@ describe('A1111Tab discovery warnings', () => {
                 hypernetworks: [],
                 controlNets: [],
                 ipAdapters: [],
-                tools: []
+                tools: [],
             },
             wasCancelled: false,
             completedSourcePaths: ['D:/SD/outputs/txt2img-images'],
-            cancelledSourcePaths: []
+            cancelledSourcePaths: [],
         });
         mocks.discoverA1111Candidates.mockResolvedValue({
             detectedVariant: WebUIVariant.A1111,
@@ -218,11 +221,11 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'txt2img',
                     isPriority: true,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
-                }
+                    variant: WebUIVariant.A1111,
+                },
             ],
             logs: [],
-            warnings: []
+            warnings: [],
         });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images']);
 
@@ -235,8 +238,8 @@ describe('A1111Tab discovery warnings', () => {
             expect(onScanFolder).toHaveBeenCalledWith([
                 {
                     path: 'D:/SD/outputs/txt2img-images',
-                    variant: GeneratorTool.AUTOMATIC1111
-                }
+                    variant: GeneratorTool.AUTOMATIC1111,
+                },
             ]);
         });
         expect(await screen.findByText('Processed 1 folders (1 new, 0 rescanned)')).toBeTruthy();
@@ -259,11 +262,11 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'txt2img',
                     isPriority: true,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
-                }
+                    variant: WebUIVariant.A1111,
+                },
             ],
             logs: [],
-            warnings: []
+            warnings: [],
         });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images']);
 
@@ -290,11 +293,11 @@ describe('A1111Tab discovery warnings', () => {
                 hypernetworks: [],
                 controlNets: [],
                 ipAdapters: [],
-                tools: []
+                tools: [],
             },
             wasCancelled: false,
             completedSourcePaths: ['D:/SD/outputs/txt2img-images'],
-            cancelledSourcePaths: []
+            cancelledSourcePaths: [],
         });
 
         await waitFor(() => {
@@ -311,7 +314,7 @@ describe('A1111Tab discovery warnings', () => {
             path: 'D:/SD/outputs/txt2img-images',
             initialScanPending: false,
             initialScanCancelled: false,
-            lastScanned: expect.any(Number)
+            lastScanned: expect.any(Number),
         });
     });
 
@@ -329,11 +332,11 @@ describe('A1111Tab discovery warnings', () => {
                 hypernetworks: [],
                 controlNets: [],
                 ipAdapters: [],
-                tools: []
+                tools: [],
             },
             wasCancelled: false,
             completedSourcePaths: [],
-            cancelledSourcePaths: []
+            cancelledSourcePaths: [],
         });
         mocks.discoverA1111Candidates.mockResolvedValue({
             detectedVariant: WebUIVariant.A1111,
@@ -345,11 +348,11 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'txt2img',
                     isPriority: true,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
-                }
+                    variant: WebUIVariant.A1111,
+                },
             ],
             logs: [],
-            warnings: []
+            warnings: [],
         });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images']);
 
@@ -358,7 +361,11 @@ describe('A1111Tab discovery warnings', () => {
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link & import 1 folders/i }));
 
-        expect(await screen.findByText('Processed 1 folders with 1 failed file(s). Completed folders were marked scanned; folders with failures were left retryable.')).toBeTruthy();
+        expect(
+            await screen.findByText(
+                'Processed 1 folders with 1 failed file(s). Completed folders were marked scanned; folders with failures were left retryable.'
+            )
+        ).toBeTruthy();
         expect(mocks.addToast).not.toHaveBeenCalled();
     });
 
@@ -371,8 +378,8 @@ describe('A1111Tab discovery warnings', () => {
                 isActive: true,
                 imageCount: 4,
                 lastScanned: 123,
-                initialScanCancelled: false
-            }
+                initialScanCancelled: false,
+            },
         ];
         const setSettings = vi.fn();
         const onScanFolder = vi.fn().mockResolvedValue({
@@ -388,11 +395,11 @@ describe('A1111Tab discovery warnings', () => {
                 hypernetworks: [],
                 controlNets: [],
                 ipAdapters: [],
-                tools: []
+                tools: [],
             },
             wasCancelled: true,
             completedSourcePaths: ['D:/SD/outputs/txt2img-images'],
-            cancelledSourcePaths: ['D:/SD/outputs/img2img-images']
+            cancelledSourcePaths: ['D:/SD/outputs/img2img-images'],
         });
         mocks.discoverA1111Candidates.mockResolvedValue({
             detectedVariant: WebUIVariant.A1111,
@@ -404,7 +411,7 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'txt2img',
                     isPriority: true,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
+                    variant: WebUIVariant.A1111,
                 },
                 {
                     path: 'D:/SD/outputs/img2img-images',
@@ -413,32 +420,33 @@ describe('A1111Tab discovery warnings', () => {
                     inferredType: 'img2img',
                     isPriority: true,
                     isAlreadyLinked: false,
-                    variant: WebUIVariant.A1111
-                }
+                    variant: WebUIVariant.A1111,
+                },
             ],
             logs: [],
-            warnings: []
+            warnings: [],
         });
-        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([
-            'D:/SD/outputs/txt2img-images',
-            'D:/SD/outputs/img2img-images'
-        ]);
+        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images', 'D:/SD/outputs/img2img-images']);
 
         render(<A1111Tab settings={settings} setSettings={setSettings} onScanFolder={onScanFolder} />);
 
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link & import 2 folders/i }));
 
-        expect(await screen.findByText('Import cancelled. 1 folder(s) completed; 1 unfinished folder(s) were paused. Imported images were kept; rescan unfinished folders to continue.')).toBeTruthy();
+        expect(
+            await screen.findByText(
+                'Import cancelled. 1 folder(s) completed; 1 unfinished folder(s) were paused. Imported images were kept; rescan unfinished folders to continue.'
+            )
+        ).toBeTruthy();
         expect(onScanFolder).toHaveBeenCalledWith([
             {
                 path: 'D:/SD/outputs/txt2img-images',
-                variant: GeneratorTool.AUTOMATIC1111
+                variant: GeneratorTool.AUTOMATIC1111,
             },
             {
                 path: 'D:/SD/outputs/img2img-images',
-                variant: GeneratorTool.AUTOMATIC1111
-            }
+                variant: GeneratorTool.AUTOMATIC1111,
+            },
         ]);
 
         const addUpdate = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
@@ -446,23 +454,25 @@ describe('A1111Tab discovery warnings', () => {
         const cancelUpdate = setSettings.mock.calls[1][0] as (previous: AppSettings) => AppSettings;
         const settingsAfterCancel = cancelUpdate(settingsAfterAdd);
 
-        expect(settingsAfterCancel.monitoredFolders.find(folder => folder.id === 'existing-folder')).toMatchObject({
+        expect(settingsAfterCancel.monitoredFolders.find((folder) => folder.id === 'existing-folder')).toMatchObject({
             id: 'existing-folder',
             lastScanned: 123,
-            initialScanCancelled: false
+            initialScanCancelled: false,
         });
-        expect(settingsAfterCancel.monitoredFolders.find(folder => folder.path === 'D:/SD/outputs/txt2img-images')).toMatchObject({
+        expect(settingsAfterCancel.monitoredFolders.find((folder) => folder.path === 'D:/SD/outputs/txt2img-images')).toMatchObject({
             path: 'D:/SD/outputs/txt2img-images',
             initialScanPending: false,
             initialScanCancelled: false,
-            lastScanned: expect.any(Number)
+            lastScanned: expect.any(Number),
         });
-        expect(settingsAfterCancel.monitoredFolders.find(folder => folder.path === 'D:/SD/outputs/img2img-images')).toMatchObject({
+        expect(settingsAfterCancel.monitoredFolders.find((folder) => folder.path === 'D:/SD/outputs/img2img-images')).toMatchObject({
             path: 'D:/SD/outputs/img2img-images',
             initialScanPending: false,
-            initialScanCancelled: true
+            initialScanCancelled: true,
         });
-        expect(settingsAfterCancel.monitoredFolders.find(folder => folder.path === 'D:/SD/outputs/img2img-images')?.lastScanned).toBeUndefined();
+        expect(
+            settingsAfterCancel.monitoredFolders.find((folder) => folder.path === 'D:/SD/outputs/img2img-images')?.lastScanned
+        ).toBeUndefined();
         expect(mocks.addToast).not.toHaveBeenCalled();
     });
 
@@ -475,8 +485,8 @@ describe('A1111Tab discovery warnings', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Browse for Stable Diffusion Folder' }));
         await waitFor(() => expect(setSettings).toHaveBeenCalledTimes(2));
 
-        const paths = setSettings.mock.calls.map(([updater]) =>
-            (updater as (previous: AppSettings) => AppSettings)(createSettings()).a1111Path
+        const paths = setSettings.mock.calls.map(
+            ([updater]) => (updater as (previous: AppSettings) => AppSettings)(createSettings()).a1111Path
         );
         expect(paths).toEqual(expect.arrayContaining(['E:/Archive', 'D:/Browsed/SD']));
     });
@@ -511,13 +521,13 @@ describe('A1111Tab discovery warnings', () => {
             name: 'archive',
             inferredType: A1111FolderType.UNKNOWN,
             isPriority: false,
-            variant: WebUIVariant.FORGE
+            variant: WebUIVariant.FORGE,
         });
         mocks.discoverA1111Candidates.mockResolvedValue({
             detectedVariant: WebUIVariant.FORGE,
             candidates: [priority, secondary],
             logs: ['scan'],
-            warnings: ['warning one', 'warning two']
+            warnings: ['warning one', 'warning two'],
         });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([priority.path]);
         render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={vi.fn()} />);
@@ -576,7 +586,13 @@ describe('A1111Tab discovery warnings', () => {
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([candidate().path]);
         mocks.refreshCollections.mockRejectedValueOnce(new Error('refresh failed'));
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={vi.fn().mockResolvedValue(importResult({ completedSourcePaths: [candidate().path] }))} />);
+        render(
+            <A1111Tab
+                settings={createSettings()}
+                setSettings={vi.fn()}
+                onScanFolder={vi.fn().mockResolvedValue(importResult({ completedSourcePaths: [candidate().path] }))}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link & import 1 folders/i }));
         expect(await screen.findByText('Processed 1 folders (1 new, 0 rescanned), but refresh failed.')).toBeTruthy();
@@ -588,14 +604,16 @@ describe('A1111Tab discovery warnings', () => {
             name: 'archive',
             isPriority: false,
             isAlreadyLinked: true,
-            variant: WebUIVariant.UNKNOWN
+            variant: WebUIVariant.UNKNOWN,
         });
         mocks.discoverA1111Candidates.mockResolvedValue({ candidates: [linked], logs: [], warnings: [] });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([linked.path]);
         const view = render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
 
-        expect(await screen.findByText('Generic WebUI detected. Select specific Installation Type above for correct image tagging.')).toBeTruthy();
+        expect(
+            await screen.findByText('Generic WebUI detected. Select specific Installation Type above for correct image tagging.')
+        ).toBeTruthy();
         expect(screen.getByText('Linked')).toBeTruthy();
         expect(screen.getByRole('button', { name: /link\/sync 1 folders/i })).toBeTruthy();
 
@@ -610,7 +628,7 @@ describe('A1111Tab discovery warnings', () => {
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([]);
         render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
-        expect((await screen.findByRole('button', { name: /link & import 0 folders/i }) as HTMLButtonElement).disabled).toBe(true);
+        expect(((await screen.findByRole('button', { name: /link & import 0 folders/i })) as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('maps every supported variant and unknown linked folders into import tasks', async () => {
@@ -618,23 +636,27 @@ describe('A1111Tab discovery warnings', () => {
             candidate({ path: 'D:/forge', variant: WebUIVariant.FORGE }),
             candidate({ path: 'D:/sdnext', variant: WebUIVariant.SDNEXT }),
             candidate({ path: 'D:/anapnoe', variant: WebUIVariant.ANAPNOE }),
-            candidate({ path: 'D:/unknown', variant: WebUIVariant.UNKNOWN, isAlreadyLinked: true })
+            candidate({ path: 'D:/unknown', variant: WebUIVariant.UNKNOWN, isAlreadyLinked: true }),
         ];
         mocks.discoverA1111Candidates.mockResolvedValue({ candidates, logs: [], warnings: [] });
-        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(candidates.map(item => item.path));
-        const onScanFolder = vi.fn().mockResolvedValue(importResult({
-            completedSourcePaths: candidates.map(item => item.path)
-        }));
+        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(candidates.map((item) => item.path));
+        const onScanFolder = vi.fn().mockResolvedValue(
+            importResult({
+                completedSourcePaths: candidates.map((item) => item.path),
+            })
+        );
         render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={onScanFolder} />);
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link\/sync 4 folders/i }));
 
-        await waitFor(() => expect(onScanFolder).toHaveBeenCalledWith([
-            { path: 'D:/unknown', variant: GeneratorTool.UNKNOWN },
-            { path: 'D:/forge', variant: GeneratorTool.FORGE },
-            { path: 'D:/sdnext', variant: GeneratorTool.SDNEXT },
-            { path: 'D:/anapnoe', variant: GeneratorTool.ANAPNOE }
-        ]));
+        await waitFor(() =>
+            expect(onScanFolder).toHaveBeenCalledWith([
+                { path: 'D:/unknown', variant: GeneratorTool.UNKNOWN },
+                { path: 'D:/forge', variant: GeneratorTool.FORGE },
+                { path: 'D:/sdnext', variant: GeneratorTool.SDNEXT },
+                { path: 'D:/anapnoe', variant: GeneratorTool.ANAPNOE },
+            ])
+        );
     });
 
     it('rescans linked folders without adding monitored-folder records', async () => {
@@ -655,13 +677,23 @@ describe('A1111Tab discovery warnings', () => {
     it('reports cancellation when no new folder completed', async () => {
         mocks.discoverA1111Candidates.mockResolvedValue({ candidates: [candidate()], logs: [], warnings: [] });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([candidate().path]);
-        render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={vi.fn().mockResolvedValue(importResult({
-            wasCancelled: true,
-            cancelledSourcePaths: [candidate().path]
-        }))} />);
+        render(
+            <A1111Tab
+                settings={createSettings()}
+                setSettings={vi.fn()}
+                onScanFolder={vi.fn().mockResolvedValue(
+                    importResult({
+                        wasCancelled: true,
+                        cancelledSourcePaths: [candidate().path],
+                    })
+                )}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link & import 1 folders/i }));
-        expect(await screen.findByText('Import cancelled. Imported images were kept; unfinished folders were paused. Rescan to continue.')).toBeTruthy();
+        expect(
+            await screen.findByText('Import cancelled. Imported images were kept; unfinished folders were paused. Rescan to continue.')
+        ).toBeTruthy();
     });
 
     it('rolls newly linked folders back to retryable state when import throws', async () => {
@@ -671,7 +703,9 @@ describe('A1111Tab discovery warnings', () => {
         mocks.discoverA1111Candidates.mockResolvedValue({ candidates: [candidate()], logs: [], warnings: [] });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([candidate().path]);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        render(<A1111Tab settings={settings} setSettings={setSettings} onScanFolder={vi.fn().mockRejectedValue(new Error('import failed'))} />);
+        render(
+            <A1111Tab settings={settings} setSettings={setSettings} onScanFolder={vi.fn().mockRejectedValue(new Error('import failed'))} />
+        );
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link & import 1 folders/i }));
 
@@ -680,11 +714,11 @@ describe('A1111Tab discovery warnings', () => {
         const add = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         const rollback = setSettings.mock.calls[1][0] as (previous: AppSettings) => AppSettings;
         const rolledBack = rollback(add(settings));
-        expect(rolledBack.monitoredFolders.find(folder => folder.id === 'existing')).toMatchObject({ path: 'D:/existing' });
-        expect(rolledBack.monitoredFolders.find(folder => folder.path === candidate().path)).toMatchObject({
+        expect(rolledBack.monitoredFolders.find((folder) => folder.id === 'existing')).toMatchObject({ path: 'D:/existing' });
+        expect(rolledBack.monitoredFolders.find((folder) => folder.path === candidate().path)).toMatchObject({
             initialScanPending: false,
             initialScanCancelled: false,
-            lastScanned: undefined
+            lastScanned: undefined,
         });
     });
 
@@ -694,7 +728,9 @@ describe('A1111Tab discovery warnings', () => {
         mocks.discoverA1111Candidates.mockResolvedValue({ candidates: [linked], logs: [], warnings: [] });
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([linked.path]);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        render(<A1111Tab settings={createSettings()} setSettings={setSettings} onScanFolder={vi.fn().mockRejectedValue(new Error('failed'))} />);
+        render(
+            <A1111Tab settings={createSettings()} setSettings={setSettings} onScanFolder={vi.fn().mockRejectedValue(new Error('failed'))} />
+        );
         fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
         fireEvent.click(await screen.findByRole('button', { name: /link\/sync 1 folders/i }));
         expect(await screen.findByText('Use Check Console for details')).toBeTruthy();

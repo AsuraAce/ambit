@@ -1,10 +1,6 @@
 import type { AppSettings } from '../../types';
 import { getDb } from '../db/connection';
-import {
-    isInvokeDbSnapshotScopeCurrent,
-    isInvokeImportSchemaCurrent,
-    isInvokePathRepairSnapshotCurrent,
-} from './dbSnapshot';
+import { isInvokeDbSnapshotScopeCurrent, isInvokeImportSchemaCurrent, isInvokePathRepairSnapshotCurrent } from './dbSnapshot';
 import { resolveInvokePaths } from './connection';
 import type { InvokeSyncScope } from './syncScope';
 import { isSameInvokePath } from './pathIdentity';
@@ -22,10 +18,13 @@ const scopeFromSavedState = (
 ): InvokeSyncScope | null => {
     const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
     const snapshot = settings.invokeDbSnapshot;
-    if (!snapshot
-        || !isInvokeImportSchemaCurrent(snapshot)
-        || !isInvokePathRepairSnapshotCurrent(snapshot)
-        || !isSameInvokePath(snapshot.dbPath, dbPath)) return null;
+    if (
+        !snapshot ||
+        !isInvokeImportSchemaCurrent(snapshot) ||
+        !isInvokePathRepairSnapshotCurrent(snapshot) ||
+        !isSameInvokePath(snapshot.dbPath, dbPath)
+    )
+        return null;
 
     const selection = settings.invokeOwnerSelection;
     let scope: InvokeSyncScope | null;
@@ -37,11 +36,14 @@ const scopeFromSavedState = (
         scope = { dbPath, imagesRoot, mode: 'all' };
     } else {
         const ownerId = snapshot.scopeOwnerId?.trim();
-        if (!ownerId
-            || !selection
-            || !isSameInvokePath(selection.dbPath, dbPath)
-            || selection.mode !== 'owner'
-            || selection.ownerId.trim() !== ownerId) return null;
+        if (
+            !ownerId ||
+            !selection ||
+            !isSameInvokePath(selection.dbPath, dbPath) ||
+            selection.mode !== 'owner' ||
+            selection.ownerId.trim() !== ownerId
+        )
+            return null;
         scope = { dbPath, imagesRoot, mode: 'owner', ownerId };
     }
 
@@ -50,10 +52,12 @@ const scopeFromSavedState = (
 
 const rowMatchesScope = (row: InvokeOwnerScopeStateRow, scope: InvokeSyncScope): boolean => {
     const expectedOwnerId = scope.mode === 'owner' ? scope.ownerId : null;
-    return isSameInvokePath(row.db_path, scope.dbPath)
-        && isSameInvokePath(row.images_root, scope.imagesRoot)
-        && row.scope_mode === scope.mode
-        && (row.owner_id ?? null) === expectedOwnerId;
+    return (
+        isSameInvokePath(row.db_path, scope.dbPath) &&
+        isSameInvokePath(row.images_root, scope.imagesRoot) &&
+        row.scope_mode === scope.mode &&
+        (row.owner_id ?? null) === expectedOwnerId
+    );
 };
 
 export const readTrustedInvokeOwnerScope = async (
@@ -78,12 +82,8 @@ export const readTrustedInvokeOwnerScope = async (
     return rows.length === 1 && rowMatchesScope(rows[0], scope) ? scope : null;
 };
 
-export const isSameInvokeSyncScope = (
-    left: InvokeSyncScope | undefined,
-    right: InvokeSyncScope | null
-): boolean => {
+export const isSameInvokeSyncScope = (left: InvokeSyncScope | undefined, right: InvokeSyncScope | null): boolean => {
     if (!left || !right || left.mode !== right.mode) return false;
-    if (!isSameInvokePath(left.dbPath, right.dbPath)
-        || !isSameInvokePath(left.imagesRoot, right.imagesRoot)) return false;
+    if (!isSameInvokePath(left.dbPath, right.dbPath) || !isSameInvokePath(left.imagesRoot, right.imagesRoot)) return false;
     return left.mode !== 'owner' || (right.mode === 'owner' && left.ownerId === right.ownerId);
 };

@@ -27,14 +27,13 @@ export const INVOKE_PATH_REPAIR_SNAPSHOT_VERSION = 1;
 export const INVOKE_IMPORT_SCHEMA_VERSION = 5;
 export const INVOKE_BOARD_OWNER_SCHEMA_VERSION = 1;
 
-const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] =>
-    [...files].sort((a, b) => a.path.localeCompare(b.path));
+const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] => [...files].sort((a, b) => a.path.localeCompare(b.path));
 
 const sameFileSnapshot = (left: InvokeDbSnapshotFile, right: InvokeDbSnapshotFile): boolean =>
-    isSameInvokePath(left.path, right.path)
-    && left.exists === right.exists
-    && left.size === right.size
-    && (left.modifiedMs ?? null) === (right.modifiedMs ?? null);
+    isSameInvokePath(left.path, right.path) &&
+    left.exists === right.exists &&
+    left.size === right.size &&
+    (left.modifiedMs ?? null) === (right.modifiedMs ?? null);
 
 export const buildInvokeDbSnapshotState = (
     snapshot: InvokeDbSnapshotCommandResult,
@@ -51,18 +50,15 @@ export const buildInvokeDbSnapshotState = (
     importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
     boardOwnerSchemaVersion: config.boardOwnerSchemaVersion ?? 0,
     ...(config.sourceFingerprint ? { sourceFingerprint: config.sourceFingerprint } : {}),
-    files: sortedFiles(snapshot.files).map(file => ({
+    files: sortedFiles(snapshot.files).map((file) => ({
         path: file.path,
         exists: file.exists,
         size: file.size,
-        modifiedMs: file.modifiedMs ?? null
-    }))
+        modifiedMs: file.modifiedMs ?? null,
+    })),
 });
 
-export const isInvokeDbSnapshotCurrent = (
-    saved: InvokeDbSnapshotState | undefined,
-    current: InvokeDbSnapshotState
-): boolean => {
+export const isInvokeDbSnapshotCurrent = (saved: InvokeDbSnapshotState | undefined, current: InvokeDbSnapshotState): boolean => {
     if (!saved) return false;
     if (!isSameInvokePath(saved.dbPath, current.dbPath)) return false;
     if ((saved.lastSyncedAt ?? null) !== (current.lastSyncedAt ?? null)) return false;
@@ -82,17 +78,15 @@ export const isInvokeDbSnapshotCurrent = (
     return savedFiles.every((file, index) => sameFileSnapshot(file, currentFiles[index]));
 };
 
-export const isInvokeSourceFingerprintCurrent = (
-    saved: InvokeSourceFingerprint | undefined,
-    current: InvokeSourceFingerprint
-): boolean => !!saved
-    && saved.schemaVersion === current.schemaVersion
-    && saved.imageCount === current.imageCount
-    && saved.imageUpdatedAt === current.imageUpdatedAt
-    && saved.boardCount === current.boardCount
-    && saved.boardUpdatedAt === current.boardUpdatedAt
-    && saved.membershipCount === current.membershipCount
-    && saved.membershipMaxRowId === current.membershipMaxRowId;
+export const isInvokeSourceFingerprintCurrent = (saved: InvokeSourceFingerprint | undefined, current: InvokeSourceFingerprint): boolean =>
+    !!saved &&
+    saved.schemaVersion === current.schemaVersion &&
+    saved.imageCount === current.imageCount &&
+    saved.imageUpdatedAt === current.imageUpdatedAt &&
+    saved.boardCount === current.boardCount &&
+    saved.boardUpdatedAt === current.boardUpdatedAt &&
+    saved.membershipCount === current.membershipCount &&
+    saved.membershipMaxRowId === current.membershipMaxRowId;
 
 export const isInvokeImportSchemaCurrent = (saved: InvokeDbSnapshotState | undefined): boolean =>
     (saved?.importSchemaVersion ?? 0) === INVOKE_IMPORT_SCHEMA_VERSION;
@@ -103,44 +97,39 @@ export const isInvokePathRepairSnapshotCurrent = (saved: InvokeDbSnapshotState |
 export const isInvokeBoardOwnerSnapshotCurrent = (saved: InvokeDbSnapshotState | undefined): boolean =>
     (saved?.boardOwnerSchemaVersion ?? 0) === INVOKE_BOARD_OWNER_SCHEMA_VERSION;
 
-const isSameSnapshotScope = (
-    snapshot: InvokeDbSnapshotState,
-    scope: InvokeSyncScope
-): boolean => isSameInvokePath(snapshot.dbPath, scope.dbPath)
-    && snapshot.scopeMode === scope.mode
-    && (snapshot.scopeOwnerId ?? null) === (scope.mode === 'owner' ? scope.ownerId : null);
+const isSameSnapshotScope = (snapshot: InvokeDbSnapshotState, scope: InvokeSyncScope): boolean =>
+    isSameInvokePath(snapshot.dbPath, scope.dbPath) &&
+    snapshot.scopeMode === scope.mode &&
+    (snapshot.scopeOwnerId ?? null) === (scope.mode === 'owner' ? scope.ownerId : null);
 
 export const getInvokeDbSnapshotForScope = (
     settings: Pick<AppSettings, 'invokeDbSnapshot' | 'invokeDbSnapshots'>,
     scope: InvokeSyncScope | null
 ): InvokeDbSnapshotState | undefined => {
     if (!scope) return undefined;
-    return settings.invokeDbSnapshots?.find(snapshot => isSameSnapshotScope(snapshot, scope))
-        ?? (settings.invokeDbSnapshot && isSameSnapshotScope(settings.invokeDbSnapshot, scope)
-            ? settings.invokeDbSnapshot
-            : undefined);
+    return (
+        settings.invokeDbSnapshots?.find((snapshot) => isSameSnapshotScope(snapshot, scope)) ??
+        (settings.invokeDbSnapshot && isSameSnapshotScope(settings.invokeDbSnapshot, scope) ? settings.invokeDbSnapshot : undefined)
+    );
 };
 
 export const upsertInvokeDbSnapshot = (
     snapshots: InvokeDbSnapshotState[] | undefined,
     snapshot: InvokeDbSnapshotState
 ): InvokeDbSnapshotState[] => [
-    ...(snapshots ?? []).filter(existing => !(
-        isSameInvokePath(existing.dbPath, snapshot.dbPath)
-        && existing.scopeMode === snapshot.scopeMode
-        && (existing.scopeOwnerId ?? null) === (snapshot.scopeOwnerId ?? null)
-    )),
+    ...(snapshots ?? []).filter(
+        (existing) =>
+            !(
+                isSameInvokePath(existing.dbPath, snapshot.dbPath) &&
+                existing.scopeMode === snapshot.scopeMode &&
+                (existing.scopeOwnerId ?? null) === (snapshot.scopeOwnerId ?? null)
+            )
+    ),
     snapshot,
 ];
 
-export const isInvokeDbSnapshotScopeCurrent = (
-    saved: InvokeDbSnapshotState | undefined,
-    scope: InvokeSyncScope | null
-): boolean => {
-    if (!saved
-        || !scope
-        || !isInvokeImportSchemaCurrent(saved)
-        || !isInvokePathRepairSnapshotCurrent(saved)) return false;
+export const isInvokeDbSnapshotScopeCurrent = (saved: InvokeDbSnapshotState | undefined, scope: InvokeSyncScope | null): boolean => {
+    if (!saved || !scope || !isInvokeImportSchemaCurrent(saved) || !isInvokePathRepairSnapshotCurrent(saved)) return false;
     if (!isSameInvokePath(saved.dbPath, scope.dbPath) || saved.scopeMode !== scope.mode) return false;
 
     const ownerId = scope.mode === 'owner' ? scope.ownerId : null;
@@ -152,20 +141,20 @@ const missingDatabaseSnapshot = (rootPath: string): InvokeDbSnapshotCommandResul
     const { dbPath } = resolveInvokePaths(rootPath);
     return {
         dbPath,
-        files: [dbPath, `${dbPath}-wal`, `${dbPath}-shm`].map(path => ({
-            path, exists: false, size: 0, modifiedMs: null,
+        files: [dbPath, `${dbPath}-wal`, `${dbPath}-shm`].map((path) => ({
+            path,
+            exists: false,
+            size: 0,
+            modifiedMs: null,
         })),
     };
 };
 
-export const readInvokeDbSnapshotState = async (
-    rootPath: string,
-    config: InvokeDbSnapshotConfig
-): Promise<InvokeDbSnapshotState> => {
+export const readInvokeDbSnapshotState = async (rootPath: string, config: InvokeDbSnapshotConfig): Promise<InvokeDbSnapshotState> => {
     // The snapshot refuses a database outside the scope; register the root first.
     // A configured root that cannot be registered does not exist, so report its
     // database missing rather than asking the backend about an unscoped path.
-    const snapshot = await ensureFolderAccessible(normalizeInvokeRoot(rootPath))
+    const snapshot = (await ensureFolderAccessible(normalizeInvokeRoot(rootPath)))
         ? await unwrap(commands.getInvokeDbSnapshot(rootPath))
         : missingDatabaseSnapshot(rootPath);
     return buildInvokeDbSnapshotState(snapshot, config);

@@ -8,19 +8,17 @@ import { normalizeInvokeRoot } from '../utils/pathUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { createDefaultAppSettings } from '../constants/defaultSettings';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
-import {
-    settingsPersistenceCoordinator,
-    type SettingsPersistencePermit,
-} from '../utils/settingsPersistenceCoordinator';
+import { settingsPersistenceCoordinator, type SettingsPersistencePermit } from '../utils/settingsPersistenceCoordinator';
 
 type SettingsInitializationStatus = 'loading' | 'ready' | 'failed';
 export type PrivacyMaskIndexStatus = 'pending' | 'ready' | 'failed';
 
-const normalizePrivacyKeywords = (keywords: string[]): string => keywords
-    .map(keyword => keyword.trim().toLowerCase())
-    .filter(Boolean)
-    .sort()
-    .join('\u001f');
+const normalizePrivacyKeywords = (keywords: string[]): string =>
+    keywords
+        .map((keyword) => keyword.trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join('\u001f');
 
 interface SettingsState {
     settings: AppSettings;
@@ -34,10 +32,7 @@ interface SettingsState {
 
     // Actions
     setSettings: (settings: AppSettingsUpdate) => void;
-    rollbackSettings: (
-        permit: SettingsPersistencePermit,
-        settings: AppSettingsUpdate
-    ) => AppSettings | null;
+    rollbackSettings: (permit: SettingsPersistencePermit, settings: AppSettingsUpdate) => AppSettings | null;
     setGeminiApiKey: (key: string | null) => Promise<void>;
     setPrivacyEnabled: (enabled: boolean) => void;
     setPrivacyMaskIndexState: (status: PrivacyMaskIndexStatus, error?: string | null) => void;
@@ -61,7 +56,7 @@ const persistSettings = async (settings: AppSettings): Promise<void> => {
             ...settings,
             invokeSyncBoards: settings.invokeSyncBoards !== false,
             syncBoardsToCollections: settings.invokeSyncBoards !== false,
-        }
+        },
     }));
 };
 
@@ -106,9 +101,8 @@ export const useSettingsStore = create<SettingsState>()(
                 let nextSettings = previousSettings;
 
                 set((state) => {
-                    const newSettings = typeof update === 'function'
-                        ? { ...state.settings, ...update(state.settings) }
-                        : { ...state.settings, ...update };
+                    const newSettings =
+                        typeof update === 'function' ? { ...state.settings, ...update(state.settings) } : { ...state.settings, ...update };
                     newSettings.invokeSyncBoards = newSettings.invokeSyncBoards !== false;
                     newSettings.syncBoardsToCollections = newSettings.invokeSyncBoards;
                     nextSettings = newSettings;
@@ -118,25 +112,32 @@ export const useSettingsStore = create<SettingsState>()(
                     if (state.initializationStatus === 'ready') {
                         if (saveTimeout) clearTimeout(saveTimeout);
                         // The async body catches and logs its own failures.
-                        saveTimeout = setTimeout(() => void (async () => {
-                            saveTimeout = null;
-                            if (get().initializationStatus !== 'ready') return;
-                            try {
-                                await settingsPersistenceCoordinator.run(() => persistSettings(get().settings));
-                            } catch (e) {
-                                console.error('[SettingsStore] Failed to auto-save settings', e);
-                            }
-                        })(), 1000);
+                        saveTimeout = setTimeout(
+                            () =>
+                                void (async () => {
+                                    saveTimeout = null;
+                                    if (get().initializationStatus !== 'ready') return;
+                                    try {
+                                        await settingsPersistenceCoordinator.run(() => persistSettings(get().settings));
+                                    } catch (e) {
+                                        console.error('[SettingsStore] Failed to auto-save settings', e);
+                                    }
+                                })(),
+                            1000
+                        );
                     }
 
-                    const privacyKeywordsChanged = normalizePrivacyKeywords(getEffectiveMaskedKeywords(state.settings))
-                        !== normalizePrivacyKeywords(getEffectiveMaskedKeywords(newSettings));
+                    const privacyKeywordsChanged =
+                        normalizePrivacyKeywords(getEffectiveMaskedKeywords(state.settings)) !==
+                        normalizePrivacyKeywords(getEffectiveMaskedKeywords(newSettings));
                     return {
                         settings: newSettings,
-                        ...(state.privacyEnabled && privacyKeywordsChanged ? {
-                            privacyMaskIndexStatus: 'pending' as const,
-                            privacyMaskIndexError: null,
-                        } : {})
+                        ...(state.privacyEnabled && privacyKeywordsChanged
+                            ? {
+                                  privacyMaskIndexStatus: 'pending' as const,
+                                  privacyMaskIndexError: null,
+                              }
+                            : {}),
                     };
                 });
 
@@ -173,9 +174,8 @@ export const useSettingsStore = create<SettingsState>()(
 
                 let restoredSettings: AppSettings | null = null;
                 set((state) => {
-                    restoredSettings = typeof update === 'function'
-                        ? { ...state.settings, ...update(state.settings) }
-                        : { ...state.settings, ...update };
+                    restoredSettings =
+                        typeof update === 'function' ? { ...state.settings, ...update(state.settings) } : { ...state.settings, ...update };
                     restoredSettings.invokeSyncBoards = restoredSettings.invokeSyncBoards !== false;
                     restoredSettings.syncBoardsToCollections = restoredSettings.invokeSyncBoards;
                     return { settings: restoredSettings };
@@ -183,26 +183,28 @@ export const useSettingsStore = create<SettingsState>()(
                 return restoredSettings;
             },
 
-            setPrivacyEnabled: (enabled) => set({
-                privacyEnabled: enabled,
-                privacyMaskIndexStatus: enabled ? 'pending' : 'ready',
-                privacyMaskIndexError: null,
-            }),
-
-            setPrivacyMaskIndexState: (status, error = null) => set({
-                privacyMaskIndexStatus: status,
-                privacyMaskIndexError: error,
-            }),
-
-            retryPrivacyMaskIndex: () => set((state) => {
-                if (!state.privacyEnabled) return state;
-                return {
-                    privacyMaskIndexStatus: 'pending',
+            setPrivacyEnabled: (enabled) =>
+                set({
+                    privacyEnabled: enabled,
+                    privacyMaskIndexStatus: enabled ? 'pending' : 'ready',
                     privacyMaskIndexError: null,
-                    privacyMaskIndexRetryToken: state.privacyMaskIndexRetryToken + 1,
-                };
-            }),
+                }),
 
+            setPrivacyMaskIndexState: (status, error = null) =>
+                set({
+                    privacyMaskIndexStatus: status,
+                    privacyMaskIndexError: error,
+                }),
+
+            retryPrivacyMaskIndex: () =>
+                set((state) => {
+                    if (!state.privacyEnabled) return state;
+                    return {
+                        privacyMaskIndexStatus: 'pending',
+                        privacyMaskIndexError: null,
+                        privacyMaskIndexRetryToken: state.privacyMaskIndexRetryToken + 1,
+                    };
+                }),
 
             flushSettings: async (settingsOverride) => {
                 if (saveTimeout) {
@@ -221,11 +223,9 @@ export const useSettingsStore = create<SettingsState>()(
 
             updateFolderLastScanned: (id: string, timestamp: number) => {
                 get().setSettings((prev) => ({
-                    monitoredFolders: prev.monitoredFolders.map(f =>
-                        f.id === id
-                            ? { ...f, lastScanned: timestamp, initialScanPending: false, initialScanCancelled: false }
-                            : f
-                    )
+                    monitoredFolders: prev.monitoredFolders.map((f) =>
+                        f.id === id ? { ...f, lastScanned: timestamp, initialScanPending: false, initialScanCancelled: false } : f
+                    ),
                 }));
             },
 
@@ -273,10 +273,12 @@ export const useSettingsStore = create<SettingsState>()(
                                 delete mergedSettings.googleGeminiApiKey;
                                 // Trigger a save to cleanup library.json
                                 try {
-                                    await settingsPersistenceCoordinator.run(() => appRepository.update((currentState) => ({
-                                        ...currentState,
-                                        settings: mergedSettings
-                                    })));
+                                    await settingsPersistenceCoordinator.run(() =>
+                                        appRepository.update((currentState) => ({
+                                            ...currentState,
+                                            settings: mergedSettings,
+                                        }))
+                                    );
                                 } catch (e) {
                                     console.error('[SettingsStore] Failed to remove legacy API key from persisted settings:', e);
                                 }
@@ -299,13 +301,13 @@ export const useSettingsStore = create<SettingsState>()(
                                 settings: mergedSettings,
                                 geminiApiKey: apiKey ?? null,
                                 initializationStatus: 'ready',
-                                isLoaded: true
+                                isLoaded: true,
                             });
                         } else {
                             set({
                                 geminiApiKey: apiKey ?? null,
                                 initializationStatus: 'ready',
-                                isLoaded: true
+                                isLoaded: true,
                             });
                         }
                     } catch (e) {
@@ -317,7 +319,7 @@ export const useSettingsStore = create<SettingsState>()(
                 });
 
                 return initializePromise;
-            }
+            },
         }),
         { name: 'SettingsStore' }
     )

@@ -251,18 +251,11 @@ const mergeFacetItem = (group: FacetMergeGroup, candidate: FacetItem): void => {
     );
 };
 
-const sortFacetItems = (items: FacetItem[]): FacetItem[] => (
-    items.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-);
+const sortFacetItems = (items: FacetItem[]): FacetItem[] => items.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-const normalizeFacetCountKey = (value: string | null | undefined): string => (
-    getAssetMatchKey(value) || (value || 'Unknown').toLowerCase()
-);
+const normalizeFacetCountKey = (value: string | null | undefined): string => getAssetMatchKey(value) || (value || 'Unknown').toLowerCase();
 
-const getScopedCountForGroup = (
-    group: FacetMergeGroup,
-    scopedCountMap: Map<string, number>
-): number => {
+const getScopedCountForGroup = (group: FacetMergeGroup, scopedCountMap: Map<string, number>): number => {
     const keys = new Set<string>();
     keys.add(group.item.assetMatchKey as string);
     keys.add(normalizeFacetCountKey(group.item.name));
@@ -352,7 +345,7 @@ const buildDiskModelLookups = (rows: DiskModelRow[]) => {
         matchKeysByCacheType,
         modifiedByNameByCacheType,
         modifiedByHashByCacheType,
-        modifiedByMatchKeyByCacheType
+        modifiedByMatchKeyByCacheType,
     };
 };
 
@@ -364,9 +357,11 @@ const isDiskBackedFacetRow = (
     const cacheType = row.facet_type;
     const name = row.resource_name || '';
 
-    return Boolean(row.resource_hash && diskLookups.hashesByCacheType.get(cacheType)?.has(row.resource_hash))
-        || Boolean(name && diskLookups.namesByCacheType.get(cacheType)?.has(name.toLowerCase()))
-        || Boolean(assetMatchKey && diskLookups.matchKeysByCacheType.get(cacheType)?.has(assetMatchKey));
+    return (
+        Boolean(row.resource_hash && diskLookups.hashesByCacheType.get(cacheType)?.has(row.resource_hash)) ||
+        Boolean(name && diskLookups.namesByCacheType.get(cacheType)?.has(name.toLowerCase())) ||
+        Boolean(assetMatchKey && diskLookups.matchKeysByCacheType.get(cacheType)?.has(assetMatchKey))
+    );
 };
 
 const getDiskModifiedAtForFacetRow = (
@@ -385,23 +380,18 @@ const getDiskModifiedAtForFacetRow = (
     );
 };
 
-const BASE_VISIBLE_WHERE = "WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const BASE_VISIBLE_WHERE =
+    'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
 const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
 const KEYWORD_BATCH_SIZE = 500;
 
-const isDefaultGlobalScope = (
-    whereClause: string,
-    params: unknown[],
-    collectionId?: string,
-    loraName?: string
-): boolean => {
+const isDefaultGlobalScope = (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): boolean => {
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     return !collectionId && !loraName && finalWhere === DEFAULT_VISIBLE_WHERE && params.length === 0;
 };
 
-const appendTrailingPredicate = (whereClause: string, predicate?: string): string => (
-    predicate ? `${whereClause} AND ${predicate}` : whereClause
-);
+const appendTrailingPredicate = (whereClause: string, predicate?: string): string =>
+    predicate ? `${whereClause} AND ${predicate}` : whereClause;
 
 const loraReferencePredicate = resourceReferenceEqualsSql('il.lora_name');
 
@@ -506,9 +496,7 @@ export const countLibraryScopes = async (
         queryParams = [loraName, ...params];
     }
 
-    const rows = await timeDbCall('countLibraryScopes', 'media-scope', () => (
-        db.select<LibraryScopeCountRow[]>(query, queryParams)
-    ));
+    const rows = await timeDbCall('countLibraryScopes', 'media-scope', () => db.select<LibraryScopeCountRow[]>(query, queryParams));
     return mapLibraryScopeCounts(rows);
 };
 
@@ -518,9 +506,9 @@ export const countLibraryScopes = async (
  */
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
-    const result = await timeDbCall('countGlobalImages', 'default', () => db.select<CountRow[]>(
-        `SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`
-    ));
+    const result = await timeDbCall('countGlobalImages', 'default', () =>
+        db.select<CountRow[]>(`SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`)
+    );
     return result[0]?.count || 0;
 };
 
@@ -532,7 +520,7 @@ export const searchImageIds = async (whereClause: string, params: unknown[]): Pr
     const query = `SELECT id FROM scoped_images AS images ${finalWhere}`;
 
     const rows = await db.select<{ id: string }[]>(query, params);
-    return rows.map(r => r.id);
+    return rows.map((r) => r.id);
 };
 
 export const searchImages = async (
@@ -561,13 +549,13 @@ export const searchImages = async (
         const op = sortOrder === 'DESC' ? '<' : '>';
 
         if (prioritizePinned) {
-            // Complex case: Pinned (1) -> Unpinned (0). 
+            // Complex case: Pinned (1) -> Unpinned (0).
             // Sort: is_pinned DESC, sortField [dir], id [dir]
 
             // If we are currently paging through pinned items (isPinned=1)
             // AND the next item could be pinned OR unpinned.
 
-            // Tuple comparison only works if all directions match. 
+            // Tuple comparison only works if all directions match.
             // Here is_pinned is DESC. If sortOrder is ASC, we can't use simple tuple.
             // We'll use a verbose logical expansion for safety.
 
@@ -588,14 +576,14 @@ export const searchImages = async (
                     OR (images.is_pinned = ? AND images.${sortField} ${op} ?)
                     OR (images.is_pinned = ? AND images.${sortField} = ? AND images.id ${op} ?)
                 )`,
-                params: [pinnedVal, pinnedVal, cursor.val, pinnedVal, cursor.val, cursor.id]
+                params: [pinnedVal, pinnedVal, cursor.val, pinnedVal, cursor.val, cursor.id],
             };
         }
 
         // Simple case: (sortField, id) < (val, id)
         return {
             sql: `AND (images.${sortField}, images.id) ${op} (?, ?)`,
-            params: [cursor.val, cursor.id]
+            params: [cursor.val, cursor.id],
         };
     };
 
@@ -613,7 +601,9 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, loraName, ...params, ...cursorWhere.params]));
+        const rows = await timeDbCall('searchImages', reason, () =>
+            db.select<ImageRow[]>(query, [collectionId, loraName, ...params, ...cursorWhere.params])
+        );
         return rows.map(mapRowToImage);
     }
 
@@ -628,7 +618,9 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, ...params, ...cursorWhere.params]));
+        const rows = await timeDbCall('searchImages', reason, () =>
+            db.select<ImageRow[]>(query, [collectionId, ...params, ...cursorWhere.params])
+        );
         return rows.map(mapRowToImage);
     }
 
@@ -644,12 +636,14 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [loraName, ...params, ...cursorWhere.params]));
+        const rows = await timeDbCall('searchImages', reason, () =>
+            db.select<ImageRow[]>(query, [loraName, ...params, ...cursorWhere.params])
+        );
         return rows.map(mapRowToImage);
     }
 
     // Use denormalized resolved_model_name column
-    // The replace of images. prefix in orderBy is tricky if we added images.id. 
+    // The replace of images. prefix in orderBy is tricky if we added images.id.
     // If not joining, we don't need prefixes, but consistent use is better.
     // If table alias is implied, we might need to strip prefixes if query fails.
     // But 'images' table name is valid in simple select.
@@ -667,7 +661,7 @@ export const searchImages = async (
     `;
 
     const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [...params, ...cursorWhere.params]));
-    
+
     return rows.map(mapRowToImage);
 };
 
@@ -686,11 +680,7 @@ const buildScopedImageSourceParts = (
 ): ScopedImageSourceParts => {
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
-    const {
-        defaultFromClause = 'FROM scoped_images AS images',
-        trailingPredicate,
-        trailingParams = []
-    } = options;
+    const { defaultFromClause = 'FROM scoped_images AS images', trailingPredicate, trailingParams = [] } = options;
 
     if (collectionId && loraName) {
         return {
@@ -704,7 +694,7 @@ const buildScopedImageSourceParts = (
                 trailingPredicate
             ),
             queryParams: [collectionId, loraName, ...params, ...trailingParams],
-            reason
+            reason,
         };
     }
 
@@ -714,12 +704,9 @@ const buildScopedImageSourceParts = (
                 FROM collection_images ci
                 CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             `,
-            scopedWhere: appendTrailingPredicate(
-                finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND'),
-                trailingPredicate
-            ),
+            scopedWhere: appendTrailingPredicate(finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND'), trailingPredicate),
             queryParams: [collectionId, ...params, ...trailingParams],
-            reason
+            reason,
         };
     }
 
@@ -729,12 +716,9 @@ const buildScopedImageSourceParts = (
                 FROM image_loras il
                 CROSS JOIN scoped_images AS images ON images.id = il.image_id
             `,
-            scopedWhere: appendTrailingPredicate(
-                finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`),
-                trailingPredicate
-            ),
+            scopedWhere: appendTrailingPredicate(finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`), trailingPredicate),
             queryParams: [loraName, ...params, ...trailingParams],
-            reason
+            reason,
         };
     }
 
@@ -742,7 +726,7 @@ const buildScopedImageSourceParts = (
         fromClause: defaultFromClause,
         scopedWhere: appendTrailingPredicate(finalWhere, trailingPredicate),
         queryParams: [...params, ...trailingParams],
-        reason
+        reason,
     };
 };
 
@@ -765,7 +749,7 @@ const buildScopedImageQueryParts = (
             )
         `,
         queryParams: sourceParts.queryParams,
-        reason: sourceParts.reason
+        reason: sourceParts.reason,
     };
 };
 
@@ -848,33 +832,32 @@ const getScopedFacetCountMaps = async (
     loraName?: string
 ): Promise<Map<string, Map<string, number>>> => {
     const db = await getDb();
-    const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
-        'images.id AS id',
-        'images.resolved_model_name AS resolved_model_name',
-        'images.model_name AS model_name',
-        'images.tool AS tool'
-    ], {});
+    const scopedParts = buildScopedImageQueryParts(
+        whereClause,
+        params,
+        collectionId,
+        loraName,
+        ['images.id AS id', 'images.resolved_model_name AS resolved_model_name', 'images.model_name AS model_name', 'images.tool AS tool'],
+        {}
+    );
 
-    const queries = cacheTypes
-        .map(async (cacheType) => {
-            const sql = buildScopedFacetCountSql(cacheType, scopedParts.cteSql);
-            if (!sql) return [cacheType, new Map<string, number>()] as const;
+    const queries = cacheTypes.map(async (cacheType) => {
+        const sql = buildScopedFacetCountSql(cacheType, scopedParts.cteSql);
+        if (!sql) return [cacheType, new Map<string, number>()] as const;
 
-            const rows = await timeDbCall(
-                `facets.scoped.${cacheType}`,
-                scopedParts.reason,
-                () => db.select<ModelStatsRow[]>(sql, scopedParts.queryParams)
-            );
+        const rows = await timeDbCall(`facets.scoped.${cacheType}`, scopedParts.reason, () =>
+            db.select<ModelStatsRow[]>(sql, scopedParts.queryParams)
+        );
 
-            return [
-                cacheType,
-                rows.reduce((counts, row) => {
-                    const key = normalizeFacetCountKey(row.name);
-                    counts.set(key, (counts.get(key) ?? 0) + row.count);
-                    return counts;
-                }, new Map<string, number>())
-            ] as const;
-        });
+        return [
+            cacheType,
+            rows.reduce((counts, row) => {
+                const key = normalizeFacetCountKey(row.name);
+                counts.set(key, (counts.get(key) ?? 0) + row.count);
+                return counts;
+            }, new Map<string, number>()),
+        ] as const;
+    });
 
     return new Map(await Promise.all(queries));
 };
@@ -894,11 +877,11 @@ const buildLibraryStatsSummary = (
         totalGenerations: totalItems,
         avgSteps: Math.round(averageSteps ?? 0),
         estSizeMB: (totalBytes / (1024 * 1024)).toFixed(1),
-        modelStats: modelRows.map(r => ({
+        modelStats: modelRows.map((r) => ({
             name: r.name || 'Unknown',
             fullName: r.name || 'Unknown',
-            count: r.count
-        }))
+            count: r.count,
+        })),
     };
 };
 
@@ -908,18 +891,19 @@ export const getLibraryStatsSummary = async (
     collectionId?: string,
     loraName?: string
 ): Promise<LibraryStatsSummary> => {
-
     if (!whereClause && !collectionId && !loraName && globalStatsSummaryCache) {
         return globalStatsSummaryCache;
     }
 
     const db = await getDb();
-    const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
-        'images.rowid AS rowid',
-        'images.media_type AS media_type',
-        'images.file_size AS file_size',
-        'images.steps AS steps'
-    ], {});
+    const scopedParts = buildScopedImageQueryParts(
+        whereClause,
+        params,
+        collectionId,
+        loraName,
+        ['images.rowid AS rowid', 'images.media_type AS media_type', 'images.file_size AS file_size', 'images.steps AS steps'],
+        {}
+    );
     const modelScopedParts = buildScopedImageQueryParts(
         whereClause,
         params,
@@ -929,7 +913,7 @@ export const getLibraryStatsSummary = async (
             'images.id AS id',
             'images.rowid AS rowid',
             'images.resolved_model_name AS resolved_model_name',
-            'images.model_name AS model_name'
+            'images.model_name AS model_name',
         ],
         {}
     );
@@ -964,9 +948,15 @@ export const getLibraryStatsSummary = async (
         `;
 
         const [mediaStatsRows, averageRows, modelRows] = await Promise.all([
-            timeDbCall('libraryStats.mediaStats', scopedParts.reason, () => db.select<MediaStatsRow[]>(mediaStatsQuery, scopedParts.queryParams)),
-            timeDbCall('libraryStats.avgSteps', scopedParts.reason, () => db.select<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)),
-            timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () => db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams))
+            timeDbCall('libraryStats.mediaStats', scopedParts.reason, () =>
+                db.select<MediaStatsRow[]>(mediaStatsQuery, scopedParts.queryParams)
+            ),
+            timeDbCall('libraryStats.avgSteps', scopedParts.reason, () =>
+                db.select<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)
+            ),
+            timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () =>
+                db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams)
+            ),
         ]);
         const summary = buildLibraryStatsSummary(mediaStatsRows[0], averageRows[0]?.avg_steps, modelRows);
 
@@ -985,21 +975,26 @@ export const getLibraryStatsSummary = async (
             totalGenerations: 0,
             avgSteps: 0,
             estSizeMB: '0',
-            modelStats: []
+            modelStats: [],
         };
     }
 };
 
-export const getLibraryStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
+export const getLibraryStats = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string
+): Promise<LibraryStats> => {
     try {
         const [summary, keywordStats] = await Promise.all([
             getLibraryStatsSummary(whereClause, params, collectionId, loraName),
-            getKeywordStats(whereClause, params, collectionId, loraName)
+            getKeywordStats(whereClause, params, collectionId, loraName),
         ]);
 
         return {
             ...summary,
-            keywordStats
+            keywordStats,
         };
     } catch (e) {
         console.error('[DB] Failed to get library stats', e);
@@ -1012,7 +1007,7 @@ export const getLibraryStats = async (whereClause: string = '', params: unknown[
             avgSteps: 0,
             estSizeMB: '0',
             modelStats: [],
-            keywordStats: []
+            keywordStats: [],
         };
     }
 };
@@ -1039,13 +1034,10 @@ export const getKeywordStats = async (
                 params,
                 collectionId,
                 loraName,
-                [
-                    'images.id AS id',
-                    'images.rowid AS rowid'
-                ],
+                ['images.id AS id', 'images.rowid AS rowid'],
                 {
                     trailingPredicate: 'images.rowid > ?',
-                    trailingParams: [lastRowId]
+                    trailingParams: [lastRowId],
                 }
             );
             const promptQuery = `
@@ -1057,14 +1049,12 @@ export const getKeywordStats = async (
                 LIMIT ${KEYWORD_BATCH_SIZE}
             `;
 
-            const rows = await timeDbCall(
-                'keywordStats.promptBatch',
-                scopedParts.reason,
-                () => db.select<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
+            const rows = await timeDbCall('keywordStats.promptBatch', scopedParts.reason, () =>
+                db.select<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
             );
             signal?.throwIfAborted();
 
-            rows.forEach(r => {
+            rows.forEach((r) => {
                 const tokens = (r.positive_prompt || '')
                     .toLowerCase()
                     .replace(/[^a-z0-9\s]/g, ' ')
@@ -1088,15 +1078,12 @@ export const getKeywordStats = async (
             .map(([text, value]) => ({ text, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 40);
-
     } catch (e) {
         if (signal?.aborted) throw e;
         console.error('[DB] Failed to get keyword stats', e);
         return [];
     }
 };
-
-
 
 /**
  * Fetches facets from the pre-built cache, overlaying filter-scoped usage counts for used/all scopes.
@@ -1120,23 +1107,21 @@ export const getFacets = async (
             hypernetworks: 'hypernetworks',
             controlNets: 'control_nets',
             ipAdapters: 'ip_adapters',
-            tools: 'tools'
+            tools: 'tools',
         };
-        const cacheTypes = Array.from(new Set(types.map(type => cacheTypeMap[type])));
+        const cacheTypes = Array.from(new Set(types.map((type) => cacheTypeMap[type])));
         if (cacheTypes.length === 0) return result;
 
         const placeholders = cacheTypes.map(() => '?').join(',');
-        const diskResourceTypes = Array.from(new Set(
-            cacheTypes
-                .map(cacheTypeToDiskResourceType)
-                .filter((type): type is string => type !== null)
-        ));
+        const diskResourceTypes = Array.from(
+            new Set(cacheTypes.map(cacheTypeToDiskResourceType).filter((type): type is string => type !== null))
+        );
         const diskPlaceholders = diskResourceTypes.map(() => '?').join(',');
         const defaultScopedCountInput: ScopedFacetCountInput = {
             whereClause,
             params,
             collectionId: options.collectionId,
-            loraName: options.loraName
+            loraName: options.loraName,
         };
         const scopedCountInputsByCacheType = new Map<string, ScopedFacetCountInput>();
         const shouldUseScopedFacetOverlayByCacheType = new Map<string, boolean>();
@@ -1147,32 +1132,30 @@ export const getFacets = async (
             scopedCountInputsByCacheType.set(cacheType, scopedInput);
             shouldUseScopedFacetOverlayByCacheType.set(
                 cacheType,
-                (cacheType === 'tools' || assetScope !== 'local')
-                    && !isDefaultGlobalScope(
-                        scopedInput.whereClause,
-                        scopedInput.params,
-                        scopedInput.collectionId,
-                        scopedInput.loraName
-                    )
+                (cacheType === 'tools' || assetScope !== 'local') &&
+                    !isDefaultGlobalScope(scopedInput.whereClause, scopedInput.params, scopedInput.collectionId, scopedInput.loraName)
             );
         }
 
         const scopedCountMaps = new Map<string, Map<string, number>>();
-        await Promise.all(Array.from(scopedCountInputsByCacheType.entries()).map(async ([cacheType, scopedInput]) => {
-            if (!shouldUseScopedFacetOverlayByCacheType.get(cacheType)) return;
+        await Promise.all(
+            Array.from(scopedCountInputsByCacheType.entries()).map(async ([cacheType, scopedInput]) => {
+                if (!shouldUseScopedFacetOverlayByCacheType.get(cacheType)) return;
 
-            const countMaps = await getScopedFacetCountMaps(
-                scopedInput.whereClause,
-                scopedInput.params,
-                [cacheType],
-                scopedInput.collectionId,
-                scopedInput.loraName
-            );
-            scopedCountMaps.set(cacheType, countMaps.get(cacheType) as Map<string, number>);
-        }));
+                const countMaps = await getScopedFacetCountMaps(
+                    scopedInput.whereClause,
+                    scopedInput.params,
+                    [cacheType],
+                    scopedInput.collectionId,
+                    scopedInput.loraName
+                );
+                scopedCountMaps.set(cacheType, countMaps.get(cacheType) as Map<string, number>);
+            })
+        );
 
         const [cacheRows, diskRows] = await Promise.all([
-            db.select<FacetCacheRow[]>(`
+            db.select<FacetCacheRow[]>(
+                `
             SELECT
                 fc.facet_type, fc.resource_name, fc.resource_hash, fc.count, fc.thumbnail_path, fc.preview_url,
                 fc.last_used_at, fc.created_at, fc.is_manual, fc.has_sidecar, fc.is_user_override,
@@ -1180,9 +1163,12 @@ export const getFacets = async (
             FROM facet_cache fc
             WHERE fc.facet_type IN(${placeholders})
             ORDER BY fc.count DESC, fc.resource_name ASC
-            `, cacheTypes),
+            `,
+                cacheTypes
+            ),
             diskResourceTypes.length > 0
-                ? db.select<DiskModelRow[]>(`
+                ? db.select<DiskModelRow[]>(
+                      `
                     SELECT
                         m.resource_type,
                         m.name,
@@ -1193,8 +1179,10 @@ export const getFacets = async (
                     LEFT JOIN scanned_files sf ON sf.hash = m.hash
                     WHERE m.lookup_source = 'disk_scan'
                       AND m.resource_type IN(${diskPlaceholders})
-                `, diskResourceTypes)
-                : Promise.resolve([] as DiskModelRow[])
+                `,
+                      diskResourceTypes
+                  )
+                : Promise.resolve([] as DiskModelRow[]),
         ]);
         const diskLookups = buildDiskModelLookups(diskRows);
 
@@ -1204,7 +1192,7 @@ export const getFacets = async (
             embeddings: new Map(),
             hypernetworks: new Map(),
             control_nets: new Map(),
-            ip_adapters: new Map()
+            ip_adapters: new Map(),
         };
 
         for (const row of cacheRows) {
@@ -1212,20 +1200,17 @@ export const getFacets = async (
                 const name = row.resource_name || 'Unknown';
                 const shouldUseScopedFacetOverlay = shouldUseScopedFacetOverlayByCacheType.get('tools') ?? false;
                 const count = shouldUseScopedFacetOverlay
-                    ? scopedCountMaps.get('tools')?.get(normalizeFacetCountKey(name)) ?? 0
-                    : row.count ?? 0;
+                    ? (scopedCountMaps.get('tools')?.get(normalizeFacetCountKey(name)) ?? 0)
+                    : (row.count ?? 0);
                 if (count > 0) result.tools.push(name);
                 continue;
             }
 
-            const assetMatchKey = resolveAssetMatchKey(
-                row.resource_name,
-                diskLookups.matchKeysByCacheType.get(row.facet_type)
-            ) || (row.resource_name || 'Unknown').toLowerCase();
+            const assetMatchKey =
+                resolveAssetMatchKey(row.resource_name, diskLookups.matchKeysByCacheType.get(row.facet_type)) ||
+                (row.resource_name || 'Unknown').toLowerCase();
             const isLocalDisk = isDiskBackedFacetRow(row, assetMatchKey, diskLookups);
-            const localModifiedAt = isLocalDisk
-                ? getDiskModifiedAtForFacetRow(row, assetMatchKey, diskLookups)
-                : undefined;
+            const localModifiedAt = isLocalDisk ? getDiskModifiedAtForFacetRow(row, assetMatchKey, diskLookups) : undefined;
             const item: FacetItem = {
                 name: row.resource_name || 'Unknown',
                 hash: row.resource_hash ?? undefined,
@@ -1244,7 +1229,7 @@ export const getFacets = async (
                 thumbnailSensitivityOverride: row.thumbnail_sensitivity_override,
                 thumbnailSource: getThumbnailSource(row),
                 isLocalDisk,
-                assetMatchKey
+                assetMatchKey,
             };
 
             const groupMap = mergedResources[row.facet_type];
@@ -1257,7 +1242,7 @@ export const getFacets = async (
                 groupMap.set(assetMatchKey, {
                     item,
                     usedAliases: new Set([item.name]),
-                    displayCount: item.count
+                    displayCount: item.count,
                 });
             }
         }
@@ -1273,13 +1258,16 @@ export const getFacets = async (
             const shouldUseScopedFacetOverlay = shouldUseScopedFacetOverlayByCacheType.get(facetType) ?? false;
 
             return sortFacetItems(
-                Array.from(mergedResources[facetType].values()).map(group => ({
-                    ...group.item,
-                    count: assetScope === 'local' || !shouldUseScopedFacetOverlay
-                        ? group.item.count
-                        : getScopedCountForGroup(group, scopedCountMap as Map<string, number>),
-                    filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
-                })).filter(shouldIncludeFacetItem)
+                Array.from(mergedResources[facetType].values())
+                    .map((group) => ({
+                        ...group.item,
+                        count:
+                            assetScope === 'local' || !shouldUseScopedFacetOverlay
+                                ? group.item.count
+                                : getScopedCountForGroup(group, scopedCountMap as Map<string, number>),
+                        filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
+                    }))
+                    .filter(shouldIncludeFacetItem)
             );
         };
 
@@ -1291,7 +1279,6 @@ export const getFacets = async (
         result.ipAdapters = finalizeGroups('ip_adapters');
 
         return result;
-
     } catch (e) {
         console.error('[DB] Failed to get facets from cache', e);
         return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
@@ -1311,15 +1298,8 @@ export const getValidFacetNames = async (
 ): Promise<ValidFacetNames | null> => {
     try {
         const reason = describeDbQueryReason(whereClause, collectionId, loraName);
-        const result = await timeDbCall(
-            'validFacets',
-            reason,
-            () => commands.getValidFacetNames(
-                whereClause,
-                JSON.stringify(params),
-                collectionId ?? null,
-                loraName ?? null
-            )
+        const result = await timeDbCall('validFacets', reason, () =>
+            commands.getValidFacetNames(whereClause, JSON.stringify(params), collectionId ?? null, loraName ?? null)
         );
 
         if (result.status === 'ok') {

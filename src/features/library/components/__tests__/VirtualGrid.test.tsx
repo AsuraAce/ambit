@@ -9,19 +9,21 @@ interface TestItem {
 }
 
 const createMatchMedia = () =>
-    vi.fn((query: string): MediaQueryList => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn()
-    } as unknown as MediaQueryList));
+    vi.fn(
+        (query: string): MediaQueryList =>
+            ({
+                matches: false,
+                media: query,
+                onchange: null,
+                addEventListener: vi.fn(),
+                removeEventListener: vi.fn(),
+                addListener: vi.fn(),
+                removeListener: vi.fn(),
+                dispatchEvent: vi.fn(),
+            }) as unknown as MediaQueryList
+    );
 
-const createItems = (count: number): TestItem[] =>
-    Array.from({ length: count }, (_, index) => ({ id: `item-${index}` }));
+const createItems = (count: number): TestItem[] => Array.from({ length: count }, (_, index) => ({ id: `item-${index}` }));
 
 const createScrollContainer = (clientHeight = 600, scrollHeight = 10000) => {
     const container = document.createElement('div');
@@ -38,9 +40,9 @@ const createScrollContainer = (clientHeight = 600, scrollHeight = 10000) => {
             set: (value: number) => {
                 scrollTop = value;
             },
-            configurable: true
+            configurable: true,
         },
-        scrollTo: { value: scrollTo, configurable: true }
+        scrollTo: { value: scrollTo, configurable: true },
     });
 
     return { container, scrollTo };
@@ -55,20 +57,25 @@ const emitResize = (target: Element, width: number) => {
         throw new Error('ResizeObserver mock has not been initialized');
     }
 
-    resizeObserverCallback([{
-        target,
-        contentRect: {
-            x: 0,
-            y: 0,
-            width,
-            height: 600,
-            top: 0,
-            right: width,
-            bottom: 600,
-            left: 0,
-            toJSON: () => ({})
-        }
-    } as ResizeObserverEntry], resizeObserverInstance);
+    resizeObserverCallback(
+        [
+            {
+                target,
+                contentRect: {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height: 600,
+                    top: 0,
+                    right: width,
+                    bottom: 600,
+                    left: 0,
+                    toJSON: () => ({}),
+                },
+            } as ResizeObserverEntry,
+        ],
+        resizeObserverInstance
+    );
 };
 
 const renderItem = (item: TestItem, style: React.CSSProperties) => (
@@ -101,32 +108,33 @@ describe('VirtualGrid gallery motion', () => {
         resizeObserverCallback = null;
         resizeObserverInstance = null;
         vi.stubGlobal('matchMedia', createMatchMedia());
-        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
-            window.setTimeout(() => callback(performance.now()), 0)
-        );
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0));
         vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id));
-        vi.stubGlobal('ResizeObserver', class ResizeObserver {
-            private readonly callback: ResizeObserverCallback;
+        vi.stubGlobal(
+            'ResizeObserver',
+            class ResizeObserver {
+                private readonly callback: ResizeObserverCallback;
 
-            constructor(callback: ResizeObserverCallback) {
-                this.callback = callback;
-                resizeObserverCallback = callback;
-                resizeObserverInstance = this as unknown as ResizeObserver;
-            }
+                constructor(callback: ResizeObserverCallback) {
+                    this.callback = callback;
+                    resizeObserverCallback = callback;
+                    resizeObserverInstance = this as unknown as ResizeObserver;
+                }
 
-            observe(target: Element) {
-                observedResizeTarget = target;
-                emitResize(target, 400);
-            }
+                observe(target: Element) {
+                    observedResizeTarget = target;
+                    emitResize(target, 400);
+                }
 
-            unobserve() {
-                return undefined;
-            }
+                unobserve() {
+                    return undefined;
+                }
 
-            disconnect() {
-                return undefined;
+                disconnect() {
+                    return undefined;
+                }
             }
-        });
+        );
     });
 
     afterEach(() => {
@@ -421,7 +429,7 @@ describe('VirtualGrid gallery motion', () => {
         await waitFor(() => expect(firstEndReached).toHaveBeenCalledOnce());
 
         act(() => container.dispatchEvent(new Event('scroll')));
-        await new Promise(resolve => window.setTimeout(resolve, 10));
+        await new Promise((resolve) => window.setTimeout(resolve, 10));
         expect(firstEndReached).toHaveBeenCalledOnce();
 
         rerender(
@@ -488,12 +496,12 @@ describe('VirtualGrid gallery motion', () => {
         await waitFor(() => expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('0px, 110px'));
         expect(screen.getByTestId('grid-item-item-5').style.transition).toContain('transform');
 
-        await new Promise(resolve => window.setTimeout(resolve, 40));
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
         act(() => emitResize(observedResizeTarget as Element, Number.NaN));
-        await new Promise(resolve => window.setTimeout(resolve, 10));
-        await new Promise(resolve => window.setTimeout(resolve, 40));
+        await new Promise((resolve) => window.setTimeout(resolve, 10));
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
         act(() => emitResize(observedResizeTarget as Element, 550));
-        await new Promise(resolve => window.setTimeout(resolve, 10));
+        await new Promise((resolve) => window.setTimeout(resolve, 10));
         expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('0px, 110px');
     });
 
@@ -516,7 +524,7 @@ describe('VirtualGrid gallery motion', () => {
         act(() => resizeObserverCallback?.([], resizeObserverInstance as ResizeObserver));
         act(() => container.dispatchEvent(new Event('scroll')));
         act(() => container.dispatchEvent(new Event('scroll')));
-        await new Promise(resolve => window.setTimeout(resolve, 150));
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
 
         expect(screen.getByTestId('grid-item-item-0')).toBeTruthy();
     });
@@ -525,11 +533,14 @@ describe('VirtualGrid gallery motion', () => {
         let nextFrameId = 1;
         const frameCallbacks = new Map<number, FrameRequestCallback>();
         const cancelFrame = vi.fn((id: number) => frameCallbacks.delete(id));
-        vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
-            const id = nextFrameId++;
-            frameCallbacks.set(id, callback);
-            return id;
-        }));
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn((callback: FrameRequestCallback) => {
+                const id = nextFrameId++;
+                frameCallbacks.set(id, callback);
+                return id;
+            })
+        );
         vi.stubGlobal('cancelAnimationFrame', cancelFrame);
         const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
         const { container } = createScrollContainer();
@@ -632,7 +643,9 @@ describe('VirtualGrid gallery motion', () => {
             <div data-testid={`interactive-${index}`} style={style}>
                 <button>Button</button>
                 <input aria-label="input" />
-                <span role="button" tabIndex={0}>Role</span>
+                <span role="button" tabIndex={0}>
+                    Role
+                </span>
                 <span data-drag-source="true">Drag</span>
                 <img alt="item" />
             </div>

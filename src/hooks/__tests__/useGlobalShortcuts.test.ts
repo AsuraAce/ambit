@@ -1,4 +1,3 @@
-
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useGlobalShortcuts } from '../useGlobalShortcuts';
@@ -48,7 +47,7 @@ describe('useGlobalShortcuts', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
 
-        Object.values(mockActions).forEach(action => expect(action).not.toHaveBeenCalled());
+        Object.values(mockActions).forEach((action) => expect(action).not.toHaveBeenCalled());
     });
 
     it('should trigger toggleShortcuts on "?" key', () => {
@@ -253,7 +252,9 @@ describe('useGlobalShortcuts', () => {
 
     it('focuses search for Ctrl+F and safely handles a missing search input', () => {
         const focus = vi.fn();
-        const first = renderHook(() => useGlobalShortcuts({ ...defaultProps, searchInputRef: { current: { focus } as unknown as HTMLInputElement } }));
+        const first = renderHook(() =>
+            useGlobalShortcuts({ ...defaultProps, searchInputRef: { current: { focus } as unknown as HTMLInputElement } })
+        );
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
         expect(focus).toHaveBeenCalled();
         first.unmount();
@@ -278,7 +279,9 @@ describe('useGlobalShortcuts', () => {
     it('selects the first grid image and navigates valid arrow results', () => {
         const images = [{ id: '1' }, { id: '2' }] as unknown as AIImage[];
         const grid = { navigate: vi.fn().mockReturnValue(1), scrollToItem: vi.fn() };
-        const first = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, gridRef: { current: grid as VirtualGridHandle } }));
+        const first = renderHook(() =>
+            useGlobalShortcuts({ ...defaultProps, filteredImages: images, gridRef: { current: grid as VirtualGridHandle } })
+        );
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
         expect(mockActions.setSelectedIds).toHaveBeenCalledWith(new Set(['1']));
         expect(grid.scrollToItem).toHaveBeenCalledWith(0);
@@ -286,7 +289,14 @@ describe('useGlobalShortcuts', () => {
 
         mockActions.setSelectedIds.mockClear();
         grid.scrollToItem.mockClear();
-        renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, lastSelectedId: '1', gridRef: { current: grid as VirtualGridHandle } }));
+        renderHook(() =>
+            useGlobalShortcuts({
+                ...defaultProps,
+                filteredImages: images,
+                lastSelectedId: '1',
+                gridRef: { current: grid as VirtualGridHandle },
+            })
+        );
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
         expect(grid.navigate).toHaveBeenCalledWith(0, 'ArrowRight');
         expect(mockActions.setSelectedIds).toHaveBeenCalledWith(new Set(['2']));
@@ -296,14 +306,28 @@ describe('useGlobalShortcuts', () => {
     it('handles grid Enter and ignores invalid navigation outcomes', () => {
         const images = [{ id: '1' }, { id: '2' }] as unknown as AIImage[];
         const grid = { navigate: vi.fn(), scrollToItem: vi.fn() };
-        const enter = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, selectedIds: new Set(['2']), gridRef: { current: grid as VirtualGridHandle } }));
+        const enter = renderHook(() =>
+            useGlobalShortcuts({
+                ...defaultProps,
+                filteredImages: images,
+                selectedIds: new Set(['2']),
+                gridRef: { current: grid as VirtualGridHandle },
+            })
+        );
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
         expect(mockActions.setSelectedImageIndex).toHaveBeenCalledWith(1);
         enter.unmount();
 
         for (const next of [undefined, -1, 0]) {
             grid.navigate.mockReturnValueOnce(next);
-            const view = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, lastSelectedId: '1', gridRef: { current: grid as VirtualGridHandle } }));
+            const view = renderHook(() =>
+                useGlobalShortcuts({
+                    ...defaultProps,
+                    filteredImages: images,
+                    lastSelectedId: '1',
+                    gridRef: { current: grid as VirtualGridHandle },
+                })
+            );
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
             view.unmount();
         }
@@ -315,7 +339,9 @@ describe('useGlobalShortcuts', () => {
 
     it('does not run grid navigation outside grid mode or without a grid handle', () => {
         const grid = { navigate: vi.fn(), scrollToItem: vi.fn() };
-        const list = renderHook(() => useGlobalShortcuts({ ...defaultProps, viewMode: 'timeline', gridRef: { current: grid as VirtualGridHandle } }));
+        const list = renderHook(() =>
+            useGlobalShortcuts({ ...defaultProps, viewMode: 'timeline', gridRef: { current: grid as VirtualGridHandle } })
+        );
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
         expect(grid.navigate).not.toHaveBeenCalled();
         list.unmount();

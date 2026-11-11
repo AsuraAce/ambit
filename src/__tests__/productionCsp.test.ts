@@ -6,12 +6,13 @@ interface TauriConfig {
     app: { security: { csp: string } };
 }
 
-const productionConfig = JSON.parse(
-    readFileSync(resolve(__dirname, '../../src-tauri/tauri.conf.json'), 'utf8')
-) as TauriConfig;
+const productionConfig = JSON.parse(readFileSync(resolve(__dirname, '../../src-tauri/tauri.conf.json'), 'utf8')) as TauriConfig;
 
 const directive = (csp: string, name: string): string[] => {
-    const entry = csp.split(';').map(part => part.trim()).find(part => part.startsWith(`${name} `));
+    const entry = csp
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(`${name} `));
     return entry ? entry.split(/\s+/).slice(1) : [];
 };
 

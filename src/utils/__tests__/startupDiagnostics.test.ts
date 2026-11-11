@@ -31,9 +31,15 @@ describe('startup diagnostics', () => {
         now = 25;
         finish('failed', new Error('database is locked: secret-owner at D:/private/images.db'));
         expect(send.mock.calls[1][0]).toEqual({
-            launchId: 'a0', phase: 'owner-visibility', status: 'failed',
-            elapsedMs: 25, durationMs: 25, cacheAction: null,
-            databaseRole: 'ambit', attempt: 1, failureKind: 'database-busy',
+            launchId: 'a0',
+            phase: 'owner-visibility',
+            status: 'failed',
+            elapsedMs: 25,
+            durationMs: 25,
+            cacheAction: null,
+            databaseRole: 'ambit',
+            attempt: 1,
+            failureKind: 'database-busy',
         });
         expect(JSON.stringify(send.mock.calls)).not.toMatch(/secret-owner|private/);
     });
@@ -55,14 +61,24 @@ describe('startup diagnostics', () => {
         const send = vi.fn();
         const trace = createStartupDiagnostics(send, () => 0, 'a0');
         trace.start('owner-board-read', null, 2)('failed', error);
-        expect(send.mock.calls[1][0]).toEqual(expect.objectContaining({
-            databaseRole: 'invoke-source', attempt: 2, failureKind,
-        }));
+        expect(send.mock.calls[1][0]).toEqual(
+            expect.objectContaining({
+                databaseRole: 'invoke-source',
+                attempt: 2,
+                failureKind,
+            })
+        );
         expect(JSON.stringify(send.mock.calls)).not.toContain(error);
     });
 
     it('does not let a diagnostic transport failure break startup', () => {
-        const trace = createStartupDiagnostics(() => { throw new Error('transport unavailable'); }, () => 0, 'a0');
+        const trace = createStartupDiagnostics(
+            () => {
+                throw new Error('transport unavailable');
+            },
+            () => 0,
+            'a0'
+        );
         expect(() => trace.start('database')('failed')).not.toThrow();
     });
     it('records attributable bounded phase timings without user data', () => {
@@ -74,8 +90,26 @@ describe('startup diagnostics', () => {
         finish();
         finish();
         expect(send.mock.calls.map(([event]) => event)).toEqual([
-            { launchId: 'a0-b1', phase: 'owner-cache', status: 'started', elapsedMs: 0, durationMs: null, cacheAction: 'selective', databaseRole: 'ambit', attempt: 1 },
-            { launchId: 'a0-b1', phase: 'owner-cache', status: 'completed', elapsedMs: 50, durationMs: 50, cacheAction: 'selective', databaseRole: 'ambit', attempt: 1 },
+            {
+                launchId: 'a0-b1',
+                phase: 'owner-cache',
+                status: 'started',
+                elapsedMs: 0,
+                durationMs: null,
+                cacheAction: 'selective',
+                databaseRole: 'ambit',
+                attempt: 1,
+            },
+            {
+                launchId: 'a0-b1',
+                phase: 'owner-cache',
+                status: 'completed',
+                elapsedMs: 50,
+                durationMs: 50,
+                cacheAction: 'selective',
+                databaseRole: 'ambit',
+                attempt: 1,
+            },
         ]);
     });
 });

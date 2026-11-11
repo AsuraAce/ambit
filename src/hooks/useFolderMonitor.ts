@@ -5,11 +5,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
 import { startupDiagnostics } from '../utils/startupDiagnostics';
-import {
-    createEmptyTouchedFacetResources,
-    mergeTouchedFacetResources,
-    orderFacetTypes
-} from '../utils/touchedFacetTypes';
+import { createEmptyTouchedFacetResources, mergeTouchedFacetResources, orderFacetTypes } from '../utils/touchedFacetTypes';
 import { formatStableImportProgress } from '../utils/importProgress';
 import { formatUnscannableRootsWarning, isImportSourceCancelled, isImportSourceCompleted } from '../utils/importSourceStatus';
 import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
@@ -40,7 +36,7 @@ type InvokeSyncOutcomeStatus = InvokeSyncOutcome['status'] | 'rejected' | 'not-r
 interface UseFolderMonitorProps {
     isLoaded: boolean;
     monitoredFolders: MonitoredFolder[];
-    onScan: (folders: { path: string, variant?: string }[], options?: FolderScanOptions) => Promise<ImportResult | void>;
+    onScan: (folders: { path: string; variant?: string }[], options?: FolderScanOptions) => Promise<ImportResult | void>;
     handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<ImportResult | void>;
     addToast: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
     refreshMetadata: () => Promise<void>;
@@ -48,29 +44,37 @@ interface UseFolderMonitorProps {
     startInvokeSync?: (options?: { mode?: 'startup' }) => Promise<InvokeSyncOutcome | void>;
 }
 
-const isCompleteImport = (result: ImportResult | void): boolean =>
-    !!result && !result.wasCancelled && result.failedPaths.length === 0;
+const isCompleteImport = (result: ImportResult | void): boolean => !!result && !result.wasCancelled && result.failedPaths.length === 0;
 
 const markInitialScanCancelled = (folderIds: string[]) => {
     const idSet = new Set(folderIds);
     useSettingsStore.getState().setSettings((prev) => ({
-        monitoredFolders: prev.monitoredFolders.map(folder =>
-            idSet.has(folder.id)
-                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
-                : folder
-        )
+        monitoredFolders: prev.monitoredFolders.map((folder) =>
+            idSet.has(folder.id) ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true } : folder
+        ),
     }));
 };
 
-export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImportPaths, addToast, refreshMetadata, invokeAiPath, startInvokeSync }: UseFolderMonitorProps) {
+export function useFolderMonitor({
+    isLoaded,
+    monitoredFolders,
+    onScan,
+    handleImportPaths,
+    addToast,
+    refreshMetadata,
+    invokeAiPath,
+    startInvokeSync,
+}: UseFolderMonitorProps) {
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
-    const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
+    const updateFolderLastScanned = useSettingsStore((s) => s.updateFolderLastScanned);
     const browserMockMode = isBrowserMockMode();
 
     const warnCursorHeld = (source: string, folderId: string, result: ImportResult | void) => {
         const failedCount = result ? result.failedPaths.length : null;
-        console.warn(`[FolderMonitor] ${source}: Keeping folder cursor unchanged for ${folderId}; ${failedCount ?? 'unknown'} path(s) were not fully handled.`);
+        console.warn(
+            `[FolderMonitor] ${source}: Keeping folder cursor unchanged for ${folderId}; ${failedCount ?? 'unknown'} path(s) were not fully handled.`
+        );
     };
 
     // A filesystem root cannot be registered, so its incremental scan would be refused and only
@@ -101,19 +105,19 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                 prevFoldersRef.current = monitoredFolders;
                 return;
             }
-            const activeFolders = monitoredFolders.filter(f => f.isActive && !f.initialScanCancelled);
+            const activeFolders = monitoredFolders.filter((f) => f.isActive && !f.initialScanCancelled);
 
             console.log('[FolderMonitor] Startup Check:', {
                 allFolders: monitoredFolders.length,
                 active: activeFolders.length,
-                hasInvokeIntegration: !!invokeAiPath
+                hasInvokeIntegration: !!invokeAiPath,
             });
 
             const performStartupScan = async () => {
                 useLibraryStore.getState().setStartupCatchupPending(true);
                 const startupStartedAt = Date.now();
                 const folderScanStartedAt = Date.now();
-                const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
+                const tasks: { paths: string[]; variant: GeneratorTool | undefined; folderId: string }[] = [];
                 let totalFilesFound = 0;
                 let startupScanWasCancelled = false;
                 const scanTime = Date.now();
@@ -130,7 +134,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                                 if (newFiles && newFiles.length > 0) {
                                     console.log(`[FolderMonitor] Found ${newFiles.length} new files in ${folder.path}`);
-                                    const paths = newFiles.map(f => f.path);
+                                    const paths = newFiles.map((f) => f.path);
                                     tasks.push({ paths, variant: folder.variant, folderId: folder.id });
                                     totalFilesFound += paths.length;
                                 } else {
@@ -158,159 +162,169 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     console.info('[Startup Catch-up] Folder scan phase complete.', {
                         activeFolders: activeFolders.length,
                         filesFound: totalFilesFound,
-                        durationMs: Date.now() - folderScanStartedAt
+                        durationMs: Date.now() - folderScanStartedAt,
                     });
 
-                // Phase 2: Execution - Run single unified batch for smart updates
-                if (!startupScanWasCancelled && totalFilesFound > 0) {
-                    const importStartedAt = Date.now();
-                    const abortCtrl = new AbortController();
-                    console.log(`[FolderMonitor] Starting aggregated import for ${totalFilesFound} files`);
-                    const importRunId = useLibraryStore.getState().beginImportRun({
-                        owner: 'startup-folder-catchup',
-                        abortController: abortCtrl,
-                        progress: formatStableImportProgress({
-                            current: 0,
-                            total: totalFilesFound,
-                            sourceCount: tasks.length,
-                            phase: 'importing',
-                            prefix: 'Startup'
-                        })
-                    });
-                    if (!importRunId) {
-                        console.info('[FolderMonitor] Startup import skipped because another import is active.');
-                        return;
-                    }
-                    const setProgressForRun = useLibraryStore.getState().setImportProgressForRun;
-                    const finishRun = useLibraryStore.getState().finishImportRun;
-                    setProgressForRun(importRunId, formatStableImportProgress({
-                        current: 0,
-                        total: totalFilesFound,
-                        sourceCount: tasks.length,
-                        phase: 'importing',
-                        prefix: 'Startup'
-                    }));
-
-                    let globalCurrent = 0;
-                    let totalImported = 0;
-                    let touchedFacetTypes: FacetType[] = [];
-                    let touchedFacetResources = createEmptyTouchedFacetResources();
-                    let wasCancelled = false;
-
-                    try {
-                        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-                            const task = tasks[taskIndex];
-                            if (abortCtrl.signal.aborted) {
-                                wasCancelled = true;
-                                break;
-                            }
-                            // We use skipStateManagement: true to prevent handleImportPaths from resetting our global progress
-                            const result = await handleImportPaths(task.paths, task.variant, {
-                                mode: 'startup',
-                                skipStateManagement: true,
-                                forceRescan: true,
-                                waitForStableFiles: true,
-                                deferFacetCacheRefresh: true,
-                                abortSignal: abortCtrl.signal,
-                                onProgress: (current) => {
-                                    // Add accumulated count from previous batches
-                                    const actualCurrent = globalCurrent + current;
-                                    setProgressForRun(importRunId, formatStableImportProgress({
-                                        current: actualCurrent,
-                                        total: totalFilesFound,
-                                        sourceCount: tasks.length,
-                                        phase: 'importing',
-                                        prefix: 'Startup',
-                                        sourceIndex: taskIndex + 1
-                                    }));
-                                }
-                            });
-                            if ((result && result.wasCancelled) || abortCtrl.signal.aborted) {
-                                wasCancelled = true;
-                            }
-                            globalCurrent += task.paths.length;
-
-                            if (result) {
-                                totalImported += result.stats.imported;
-                                touchedFacetTypes = orderFacetTypes([
-                                    ...touchedFacetTypes,
-                                    ...result.touchedFacetTypes
-                                ]);
-                                touchedFacetResources = mergeTouchedFacetResources(
-                                    touchedFacetResources,
-                                    result.touchedFacetResources
-                                );
-                            }
-
-                            // ONLY update once successfully imported
-                            if (isCompleteImport(result)) {
-                                updateFolderLastScanned(task.folderId, scanTime);
-                            } else if (!result || !result.wasCancelled) {
-                                warnCursorHeld('Startup incremental scan', task.folderId, result);
-                            }
-                            if (wasCancelled) break;
-                        }
-
-                        if (!wasCancelled) {
-                            setProgressForRun(importRunId, { current: totalFilesFound, total: totalFilesFound, message: 'Updating startup filters...' });
-                            await refreshStartupFacetCache({
-                                source: 'folder',
-                                totalProcessed: totalImported,
-                                touchedFacetTypes,
-                                touchedFacetResources,
-                                onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
-                            });
-                        }
-                    } catch (error) {
-                        console.error('[Startup Catch-up] Folder incremental facet refresh failed.', error);
-                    } finally {
-                        finishRun(importRunId);
-                    }
-
-                    // Force UI Refresh
-                    if (!wasCancelled) {
-                        await refreshMetadata();
-                        console.info('[Startup Catch-up] Folder import phase complete.', {
-                            filesImported: totalFilesFound,
-                            durationMs: Date.now() - importStartedAt
+                    // Phase 2: Execution - Run single unified batch for smart updates
+                    if (!startupScanWasCancelled && totalFilesFound > 0) {
+                        const importStartedAt = Date.now();
+                        const abortCtrl = new AbortController();
+                        console.log(`[FolderMonitor] Starting aggregated import for ${totalFilesFound} files`);
+                        const importRunId = useLibraryStore.getState().beginImportRun({
+                            owner: 'startup-folder-catchup',
+                            abortController: abortCtrl,
+                            progress: formatStableImportProgress({
+                                current: 0,
+                                total: totalFilesFound,
+                                sourceCount: tasks.length,
+                                phase: 'importing',
+                                prefix: 'Startup',
+                            }),
                         });
-                    }
-                }
-
-                // Unconditionally catch up InvokeAI DB if configured
-                // Fires synchronously at the end as part of startup catchup sequence
-                  if (invokeAiPath && startInvokeSync) {
-                      const invokeStartedAt = Date.now();
-                      const finishInvokeCatchUp = startupDiagnostics.start('invoke-catch-up');
-                    let invokeStatus: InvokeSyncOutcomeStatus = 'not-reported';
-                    let invokeSuccessful = false;
-                    console.log('[FolderMonitor] Triggering startup catch-up sync for InvokeAI DB...');
-                    try {
-                        const outcome = await startInvokeSync({ mode: 'startup' });
-                        if (outcome) {
-                            invokeStatus = outcome.status;
-                            invokeSuccessful = outcome.status === 'completed';
+                        if (!importRunId) {
+                            console.info('[FolderMonitor] Startup import skipped because another import is active.');
+                            return;
                         }
-                    } catch {
-                        invokeStatus = 'rejected';
-                        invokeSuccessful = false;
-                        console.error('[Startup Catch-up] Invoke sync rejected.', 'status=rejected');
+                        const setProgressForRun = useLibraryStore.getState().setImportProgressForRun;
+                        const finishRun = useLibraryStore.getState().finishImportRun;
+                        setProgressForRun(
+                            importRunId,
+                            formatStableImportProgress({
+                                current: 0,
+                                total: totalFilesFound,
+                                sourceCount: tasks.length,
+                                phase: 'importing',
+                                prefix: 'Startup',
+                            })
+                        );
+
+                        let globalCurrent = 0;
+                        let totalImported = 0;
+                        let touchedFacetTypes: FacetType[] = [];
+                        let touchedFacetResources = createEmptyTouchedFacetResources();
+                        let wasCancelled = false;
+
+                        try {
+                            for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+                                const task = tasks[taskIndex];
+                                if (abortCtrl.signal.aborted) {
+                                    wasCancelled = true;
+                                    break;
+                                }
+                                // We use skipStateManagement: true to prevent handleImportPaths from resetting our global progress
+                                const result = await handleImportPaths(task.paths, task.variant, {
+                                    mode: 'startup',
+                                    skipStateManagement: true,
+                                    forceRescan: true,
+                                    waitForStableFiles: true,
+                                    deferFacetCacheRefresh: true,
+                                    abortSignal: abortCtrl.signal,
+                                    onProgress: (current) => {
+                                        // Add accumulated count from previous batches
+                                        const actualCurrent = globalCurrent + current;
+                                        setProgressForRun(
+                                            importRunId,
+                                            formatStableImportProgress({
+                                                current: actualCurrent,
+                                                total: totalFilesFound,
+                                                sourceCount: tasks.length,
+                                                phase: 'importing',
+                                                prefix: 'Startup',
+                                                sourceIndex: taskIndex + 1,
+                                            })
+                                        );
+                                    },
+                                });
+                                if ((result && result.wasCancelled) || abortCtrl.signal.aborted) {
+                                    wasCancelled = true;
+                                }
+                                globalCurrent += task.paths.length;
+
+                                if (result) {
+                                    totalImported += result.stats.imported;
+                                    touchedFacetTypes = orderFacetTypes([...touchedFacetTypes, ...result.touchedFacetTypes]);
+                                    touchedFacetResources = mergeTouchedFacetResources(touchedFacetResources, result.touchedFacetResources);
+                                }
+
+                                // ONLY update once successfully imported
+                                if (isCompleteImport(result)) {
+                                    updateFolderLastScanned(task.folderId, scanTime);
+                                } else if (!result || !result.wasCancelled) {
+                                    warnCursorHeld('Startup incremental scan', task.folderId, result);
+                                }
+                                if (wasCancelled) break;
+                            }
+
+                            if (!wasCancelled) {
+                                setProgressForRun(importRunId, {
+                                    current: totalFilesFound,
+                                    total: totalFilesFound,
+                                    message: 'Updating startup filters...',
+                                });
+                                await refreshStartupFacetCache({
+                                    source: 'folder',
+                                    totalProcessed: totalImported,
+                                    touchedFacetTypes,
+                                    touchedFacetResources,
+                                    onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion(),
+                                });
+                            }
+                        } catch (error) {
+                            console.error('[Startup Catch-up] Folder incremental facet refresh failed.', error);
+                        } finally {
+                            finishRun(importRunId);
+                        }
+
+                        // Force UI Refresh
+                        if (!wasCancelled) {
+                            await refreshMetadata();
+                            console.info('[Startup Catch-up] Folder import phase complete.', {
+                                filesImported: totalFilesFound,
+                                durationMs: Date.now() - importStartedAt,
+                            });
+                        }
                     }
-                      console.info(
-                          '[Startup Catch-up] Invoke phase ended.',
-                        `status=${invokeStatus} successful=${invokeSuccessful} durationMs=${Date.now() - invokeStartedAt}`
-                      );
-                      finishInvokeCatchUp(invokeSuccessful ? 'completed' : invokeStatus === 'rejected' || invokeStatus === 'failed' || invokeStatus === 'source_unavailable' ? 'failed' : 'cancelled');
-                    console.info(
-                        '[Startup Catch-up] Workflow ended.',
-                        `status=${invokeStatus} successful=${invokeSuccessful} durationMs=${Date.now() - startupStartedAt}`
-                    );
-                } else {
-                    console.info(
-                        '[Startup Catch-up] Workflow ended.',
-                        `invokeStatus=not-configured durationMs=${Date.now() - startupStartedAt}`
-                    );
-                }
+
+                    // Unconditionally catch up InvokeAI DB if configured
+                    // Fires synchronously at the end as part of startup catchup sequence
+                    if (invokeAiPath && startInvokeSync) {
+                        const invokeStartedAt = Date.now();
+                        const finishInvokeCatchUp = startupDiagnostics.start('invoke-catch-up');
+                        let invokeStatus: InvokeSyncOutcomeStatus = 'not-reported';
+                        let invokeSuccessful = false;
+                        console.log('[FolderMonitor] Triggering startup catch-up sync for InvokeAI DB...');
+                        try {
+                            const outcome = await startInvokeSync({ mode: 'startup' });
+                            if (outcome) {
+                                invokeStatus = outcome.status;
+                                invokeSuccessful = outcome.status === 'completed';
+                            }
+                        } catch {
+                            invokeStatus = 'rejected';
+                            invokeSuccessful = false;
+                            console.error('[Startup Catch-up] Invoke sync rejected.', 'status=rejected');
+                        }
+                        console.info(
+                            '[Startup Catch-up] Invoke phase ended.',
+                            `status=${invokeStatus} successful=${invokeSuccessful} durationMs=${Date.now() - invokeStartedAt}`
+                        );
+                        finishInvokeCatchUp(
+                            invokeSuccessful
+                                ? 'completed'
+                                : invokeStatus === 'rejected' || invokeStatus === 'failed' || invokeStatus === 'source_unavailable'
+                                  ? 'failed'
+                                  : 'cancelled'
+                        );
+                        console.info(
+                            '[Startup Catch-up] Workflow ended.',
+                            `status=${invokeStatus} successful=${invokeSuccessful} durationMs=${Date.now() - startupStartedAt}`
+                        );
+                    } else {
+                        console.info(
+                            '[Startup Catch-up] Workflow ended.',
+                            `invokeStatus=not-configured durationMs=${Date.now() - startupStartedAt}`
+                        );
+                    }
                 } finally {
                     useLibraryStore.getState().setStartupCatchupPending(false);
                 }
@@ -326,10 +340,10 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const prevFolders = prevFoldersRef.current;
 
         // Find folders that exist in current but NOT in previous (New Folders)
-        const newFolders = currentFolders.filter(f => !prevFolders.find(pf => pf.id === f.id));
+        const newFolders = currentFolders.filter((f) => !prevFolders.find((pf) => pf.id === f.id));
 
         if (newFolders.length > 0) {
-            const activeNew = newFolders.filter(f => f.isActive && !f.lastScanned && !f.initialScanPending && !f.initialScanCancelled);
+            const activeNew = newFolders.filter((f) => f.isActive && !f.lastScanned && !f.initialScanPending && !f.initialScanCancelled);
 
             if (activeNew.length > 0) {
                 void (async () => {
@@ -339,12 +353,12 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         addToast(`Scanning ${activeNew.length} new folders`, 'info');
                     }
 
-                    const scanData = activeNew.map(f => ({ path: f.path, variant: f.variant }));
+                    const scanData = activeNew.map((f) => ({ path: f.path, variant: f.variant }));
                     const result = await onScan(scanData);
                     const completedAt = Date.now();
                     const cancelledFolderIds: string[] = [];
 
-                    activeNew.forEach(folder => {
+                    activeNew.forEach((folder) => {
                         if (isImportSourceCompleted(result, folder.path)) {
                             updateFolderLastScanned(folder.id, completedAt);
                         } else if (isImportSourceCancelled(result, folder.path)) {
@@ -362,18 +376,18 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         }
 
         prevFoldersRef.current = currentFolders;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the folder list changes; adding these would re-run the folder diff when they change
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the folder list changes; adding these would re-run the folder diff when they change
     }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths, browserMockMode]);
 
     // Live Watch Catch-up
-    const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
+    const isLiveWatching = useLibraryStore((s) => s.isLiveWatching);
     const hasLiveWatchStartedRef = useRef(isLiveWatching);
 
     // Unified Watcher Effect (Handles "Turn On")
     useEffect(() => {
         if (browserMockMode) return;
 
-        const activeFolders = monitoredFolders.filter(f => f.isActive && !f.initialScanCancelled);
+        const activeFolders = monitoredFolders.filter((f) => f.isActive && !f.initialScanCancelled);
         if (activeFolders.length === 0) {
             hasLiveWatchStartedRef.current = isLiveWatching;
             return;
@@ -391,18 +405,18 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
         if (isTurningOn) {
             console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
-            performUnifiedScan(activeFolders, 'Catch-up').catch(error => console.error('[FolderMonitor] Catch-up scan failed', error));
-        } 
+            performUnifiedScan(activeFolders, 'Catch-up').catch((error) => console.error('[FolderMonitor] Catch-up scan failed', error));
+        }
 
         hasLiveWatchStartedRef.current = isLiveWatching;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle; performUnifiedScan is declared after this effect (#407) and recreated often
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle; performUnifiedScan is declared after this effect (#407) and recreated often
     }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata, browserMockMode]);
 
     // Reusable Scan Logic (Extracted from previous effect)
     const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
         let totalFilesFound = 0;
         let scanWasCancelled = false;
-        const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
+        const tasks: { paths: string[]; variant: GeneratorTool | undefined; folderId: string }[] = [];
         const scanTime = Date.now();
 
         for (const folder of folders) {
@@ -412,7 +426,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     await ensureFolderAccessible(folder.path);
                     const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
                     if (newFiles.length > 0) {
-                        tasks.push({ paths: newFiles.map(f => f.path), variant: folder.variant, folderId: folder.id });
+                        tasks.push({ paths: newFiles.map((f) => f.path), variant: folder.variant, folderId: folder.id });
                         totalFilesFound += newFiles.length;
                     } else {
                         updateFolderLastScanned(folder.id, scanTime);
@@ -447,8 +461,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     total: totalFilesFound,
                     sourceCount: tasks.length,
                     phase: 'importing',
-                    prefix: source
-                })
+                    prefix: source,
+                }),
             });
             if (!importRunId) {
                 console.info(`[FolderMonitor] ${source}: import skipped because another import is active.`);
@@ -471,14 +485,18 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         forceRescan: true,
                         waitForStableFiles: true,
                         abortSignal: abortCtrl.signal,
-                        onProgress: (c) => setProgressForRun(importRunId, formatStableImportProgress({
-                            current: currentCount + c,
-                            total: totalFilesFound,
-                            sourceCount: tasks.length,
-                            phase: 'importing',
-                            prefix: source,
-                            sourceIndex: taskIndex + 1
-                        }))
+                        onProgress: (c) =>
+                            setProgressForRun(
+                                importRunId,
+                                formatStableImportProgress({
+                                    current: currentCount + c,
+                                    total: totalFilesFound,
+                                    sourceCount: tasks.length,
+                                    phase: 'importing',
+                                    prefix: source,
+                                    sourceIndex: taskIndex + 1,
+                                })
+                            ),
                     });
                     if ((result && result.wasCancelled) || abortCtrl.signal.aborted) {
                         wasCancelled = true;

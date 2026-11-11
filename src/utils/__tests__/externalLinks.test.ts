@@ -23,11 +23,7 @@ describe('externalLinks', () => {
         await openExternalUrl(releasesUrl);
 
         expect(open).toHaveBeenCalledWith(releasesUrl);
-        expect(window.open).toHaveBeenCalledWith(
-            releasesUrl,
-            '_blank',
-            'noopener,noreferrer'
-        );
+        expect(window.open).toHaveBeenCalledWith(releasesUrl, '_blank', 'noopener,noreferrer');
     });
 
     it('opens the exact Google AI Studio API key page', async () => {

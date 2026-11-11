@@ -49,6 +49,6 @@ describe('useProgressListeners', () => {
         expect(actions.setIsScanningDuplicates).toHaveBeenCalledWith(true);
         expect(actions.setDuplicateScanProgress).toHaveBeenCalledWith(progress);
         unmount();
-        expect([...cleanups.values()].every(cleanup => cleanup.mock.calls.length === 1)).toBe(true);
+        expect([...cleanups.values()].every((cleanup) => cleanup.mock.calls.length === 1)).toBe(true);
     });
 });

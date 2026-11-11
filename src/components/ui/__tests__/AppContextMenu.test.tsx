@@ -5,15 +5,7 @@ import { createDefaultAppSettings } from '../../../constants/defaultSettings';
 import type { useAppActions } from '../../../hooks/useAppActions';
 import type { useCollectionOperations } from '../../../hooks/useCollectionOperations';
 import type { useModalManager } from '../../../hooks/useModalManager';
-import {
-    AIImage,
-    AppSettings,
-    Collection,
-    ContextMenuState,
-    FilterState,
-    GeneratorTool,
-    ImageMetadata,
-} from '../../../types';
+import { AIImage, AppSettings, Collection, ContextMenuState, FilterState, GeneratorTool, ImageMetadata } from '../../../types';
 import { AppContextMenu } from '../AppContextMenu';
 
 interface ModelThumbnail {
@@ -93,7 +85,7 @@ vi.mock('../../../stores/collectionStore', () => ({
 }));
 
 vi.mock('../../../utils/maskingUtils', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../../../utils/maskingUtils')>(),
+    ...(await importOriginal<typeof import('../../../utils/maskingUtils')>()),
     isImageMasked: maskingMocks.isImageMasked,
 }));
 
@@ -132,10 +124,7 @@ const baseMetadata = (): ImageMetadata => ({
     isIntermediate: false,
 });
 
-const createImage = (
-    imageOverrides: Partial<Omit<AIImage, 'metadata'>> = {},
-    metadataOverrides: Partial<ImageMetadata> = {},
-): AIImage => ({
+const createImage = (imageOverrides: Partial<Omit<AIImage, 'metadata'>> = {}, metadataOverrides: Partial<ImageMetadata> = {}): AIImage => ({
     id: 'C:/library/image.png',
     url: 'asset://image.png',
     thumbnailUrl: 'asset://thumb.png',
@@ -211,19 +200,20 @@ const renderMenu = ({
     contextMenu?: ContextMenuState | null;
     images?: AIImage[];
     filters?: FilterState;
-} = {}) => render(
-    <AppContextMenu
-        contextMenu={contextMenu}
-        onClose={onClose}
-        images={images}
-        actions={actionMocks as unknown as ReturnType<typeof useAppActions>}
-        fileOps={{}}
-        colOps={collectionOperationMocks as unknown as ReturnType<typeof useCollectionOperations>}
-        onMoveToCollection={onMoveToCollection}
-        modals={modalMocks as unknown as ReturnType<typeof useModalManager>}
-        filters={filters}
-    />,
-);
+} = {}) =>
+    render(
+        <AppContextMenu
+            contextMenu={contextMenu}
+            onClose={onClose}
+            images={images}
+            actions={actionMocks as unknown as ReturnType<typeof useAppActions>}
+            fileOps={{}}
+            colOps={collectionOperationMocks as unknown as ReturnType<typeof useCollectionOperations>}
+            onMoveToCollection={onMoveToCollection}
+            modals={modalMocks as unknown as ReturnType<typeof useModalManager>}
+            filters={filters}
+        />
+    );
 
 describe('AppContextMenu', () => {
     beforeEach(() => {
@@ -251,9 +241,12 @@ describe('AppContextMenu', () => {
             configurable: true,
             value: { writeText: clipboardWriteText, write: clipboardWrite },
         });
-        vi.stubGlobal('ClipboardItem', class ClipboardItem {
-            constructor(public readonly items: Record<string, Blob>) { }
-        });
+        vi.stubGlobal(
+            'ClipboardItem',
+            class ClipboardItem {
+                constructor(public readonly items: Record<string, Blob>) {}
+            }
+        );
     });
 
     afterEach(() => {
@@ -290,11 +283,7 @@ describe('AppContextMenu', () => {
             enableAI: true,
             activeCollectionName: 'Favorites',
         });
-        expect(maskingMocks.isImageMasked).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'C:/library/image.png' }),
-            true,
-            ['secret'],
-        );
+        expect(maskingMocks.isImageMasked).toHaveBeenCalledWith(expect.objectContaining({ id: 'C:/library/image.png' }), true, ['secret']);
         expect(menu.modelsForThumbnail).toEqual([
             { name: 'dream-model.safetensors', hash: 'model-hash', type: 'checkpoint' },
             { name: 'Detail', hash: 'lora_Detail', type: 'loras' },
@@ -314,31 +303,28 @@ describe('AppContextMenu', () => {
 
         renderMenu();
 
-        expect(maskingMocks.isImageMasked).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'C:/library/image.png' }),
-            true,
-            [],
-        );
+        expect(maskingMocks.isImageMasked).toHaveBeenCalledWith(expect.objectContaining({ id: 'C:/library/image.png' }), true, []);
         expect(settingsMock.state.settings.maskedKeywords).toEqual(['retained']);
     });
 
     it('supports object model names and smart collection labels', () => {
-        const image = createImage({}, {
-            model: { name: 'Object Model' } as unknown as string,
-            modelHash: undefined,
-            loras: undefined,
-            embeddings: undefined,
-            hypernetworks: undefined,
-            controlNets: undefined,
-            ipAdapters: undefined,
-        });
+        const image = createImage(
+            {},
+            {
+                model: { name: 'Object Model' } as unknown as string,
+                modelHash: undefined,
+                loras: undefined,
+                embeddings: undefined,
+                hypernetworks: undefined,
+                controlNets: undefined,
+                ipAdapters: undefined,
+            }
+        );
 
         renderMenu({ images: [image], filters: createFilters('smart-1') });
 
         expect(requireMenu().activeCollectionName).toBe('Smart');
-        expect(requireMenu().modelsForThumbnail).toEqual([
-            { name: 'Object Model', hash: 'name:Object Model', type: 'checkpoint' },
-        ]);
+        expect(requireMenu().modelsForThumbnail).toEqual([{ name: 'Object Model', hash: 'name:Object Model', type: 'checkpoint' }]);
     });
 
     it('copies prompts, seeds, generation details, file paths, and image blobs', async () => {
@@ -391,10 +377,7 @@ describe('AppContextMenu', () => {
         expect(modalMocks.setSourceCollectionId).toHaveBeenCalledWith(null);
         expect(modalMocks.openModal).toHaveBeenCalledWith('addToCollection');
         expect(onMoveToCollection).toHaveBeenCalledOnce();
-        expect(collectionOperationMocks.removeImagesFromCollection).toHaveBeenCalledWith(
-            ['C:/library/image.png'],
-            'collection-1',
-        );
+        expect(collectionOperationMocks.removeImagesFromCollection).toHaveBeenCalledWith(['C:/library/image.png'], 'collection-1');
         expect(actionMocks.toggleFavorite).toHaveBeenCalledWith('C:/library/image.png');
         expect(actionMocks.handlePinImage).toHaveBeenCalledWith('C:/library/image.png', false);
         expect(actionMocks.handleBulkMask).toHaveBeenCalledWith('C:/library/image.png', false);
@@ -441,7 +424,7 @@ describe('AppContextMenu', () => {
 
         expect(collectionOperationMocks.setCollectionThumbnail).toHaveBeenCalledWith(
             'collection-1',
-            expect.objectContaining({ id: 'C:/library/image.png' }),
+            expect.objectContaining({ id: 'C:/library/image.png' })
         );
         expect(collectionOperationMocks.resetCollectionThumbnail).toHaveBeenCalledWith('collection-1');
         expect(toastMocks.addToast).toHaveBeenCalledWith('Failed to update thumbnail', 'error');
@@ -471,7 +454,7 @@ describe('AppContextMenu', () => {
                 onMoveToCollection={onMoveToCollection}
                 modals={modalMocks as unknown as ReturnType<typeof useModalManager>}
                 filters={createFilters()}
-            />,
+            />
         );
         await act(async () => requireMenu().onSetModelThumbnail(model));
 
@@ -511,33 +494,34 @@ describe('AppContextMenu', () => {
     });
 
     it('formats sparse generation metadata with placeholders and unmarks intermediates', async () => {
-        const image = createImage({}, {
-            tool: '' as GeneratorTool,
-            model: '',
-            modelHash: undefined,
-            seed: undefined,
-            steps: 0,
-            cfg: 0,
-            sampler: '',
-            positivePrompt: '',
-            negativePrompt: '',
-            rawParameters: undefined,
-            isIntermediate: true,
-            loras: undefined,
-            embeddings: undefined,
-            hypernetworks: undefined,
-            controlNets: undefined,
-            ipAdapters: undefined,
-        });
+        const image = createImage(
+            {},
+            {
+                tool: '' as GeneratorTool,
+                model: '',
+                modelHash: undefined,
+                seed: undefined,
+                steps: 0,
+                cfg: 0,
+                sampler: '',
+                positivePrompt: '',
+                negativePrompt: '',
+                rawParameters: undefined,
+                isIntermediate: true,
+                loras: undefined,
+                embeddings: undefined,
+                hypernetworks: undefined,
+                controlNets: undefined,
+                ipAdapters: undefined,
+            }
+        );
         renderMenu({ images: [image] });
         const menu = requireMenu();
 
         menu.onCopyGenerationInfo();
         await menu.onToggleIntermediate?.();
 
-        expect(clipboardWriteText).toHaveBeenCalledWith(
-            'Steps: ?, Sampler: ?, CFG scale: ?, Seed: ?, Size: 1024x768, Model: ?',
-        );
+        expect(clipboardWriteText).toHaveBeenCalledWith('Steps: ?, Sampler: ?, CFG scale: ?, Seed: ?, Size: 1024x768, Model: ?');
         expect(imageRepoMocks.toggleImageIntermediate).toHaveBeenCalledWith('C:/library/image.png', false);
         expect(toastMocks.addToast).toHaveBeenCalledWith('Unmarked as intermediate', 'info');
         expect(menu.modelsForThumbnail).toEqual([]);
@@ -569,31 +553,35 @@ describe('AppContextMenu', () => {
     });
 
     it('uses checkpoint fallback names only when a model hash is available', () => {
-        const namelessObject = createImage({}, {
-            model: { name: undefined } as unknown as string,
-            modelHash: undefined,
-            loras: undefined,
-            embeddings: undefined,
-            hypernetworks: undefined,
-            controlNets: undefined,
-            ipAdapters: undefined,
-        });
+        const namelessObject = createImage(
+            {},
+            {
+                model: { name: undefined } as unknown as string,
+                modelHash: undefined,
+                loras: undefined,
+                embeddings: undefined,
+                hypernetworks: undefined,
+                controlNets: undefined,
+                ipAdapters: undefined,
+            }
+        );
         renderMenu({ images: [namelessObject] });
         expect(requireMenu().modelsForThumbnail).toEqual([]);
 
-        const hashOnly = createImage({}, {
-            model: null as unknown as string,
-            modelHash: 'hash-only',
-            loras: undefined,
-            embeddings: undefined,
-            hypernetworks: undefined,
-            controlNets: undefined,
-            ipAdapters: undefined,
-        });
+        const hashOnly = createImage(
+            {},
+            {
+                model: null as unknown as string,
+                modelHash: 'hash-only',
+                loras: undefined,
+                embeddings: undefined,
+                hypernetworks: undefined,
+                controlNets: undefined,
+                ipAdapters: undefined,
+            }
+        );
         renderMenu({ images: [hashOnly] });
 
-        expect(requireMenu().modelsForThumbnail).toEqual([
-            { name: 'Checkpoint', hash: 'hash-only', type: 'checkpoint' },
-        ]);
+        expect(requireMenu().modelsForThumbnail).toEqual([{ name: 'Checkpoint', hash: 'hash-only', type: 'checkpoint' }]);
     });
 });

@@ -1,5 +1,4 @@
-﻿
-import { act, renderHook, waitFor } from '../../test/testUtils';
+﻿import { act, renderHook, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFolderMonitor } from '../useFolderMonitor';
 import type { AppSettings, MonitoredFolder } from '../../types';
@@ -11,26 +10,26 @@ const mocks = vi.hoisted(() => ({
     refreshStartupFacetCache: vi.fn(),
     startDiagnostic: vi.fn(),
     finishDiagnostic: vi.fn(),
-    browserMockMode: false
+    browserMockMode: false,
 }));
 
 vi.mock('../../services/runtime', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../../services/runtime')>(),
-    isBrowserMockMode: () => mocks.browserMockMode
+    ...(await importOriginal<typeof import('../../services/runtime')>()),
+    isBrowserMockMode: () => mocks.browserMockMode,
 }));
 
 vi.mock('../../bindings', () => ({
     commands: {
-        scanDirectorySince: mocks.scanDirectorySince
-    }
+        scanDirectorySince: mocks.scanDirectorySince,
+    },
 }));
 
 vi.mock('../../utils/startupFacetRefresh', () => ({
-    refreshStartupFacetCache: mocks.refreshStartupFacetCache
+    refreshStartupFacetCache: mocks.refreshStartupFacetCache,
 }));
 
 vi.mock('../../utils/startupDiagnostics', () => ({
-    startupDiagnostics: { start: mocks.startDiagnostic }
+    startupDiagnostics: { start: mocks.startDiagnostic },
 }));
 
 vi.mock('../../contexts/WatcherContext', () => ({
@@ -38,8 +37,8 @@ vi.mock('../../contexts/WatcherContext', () => ({
         watchedFolders: [],
         scanFolder: vi.fn(),
         isScanning: false,
-        lastWatcherEvent: 0
-    })
+        lastWatcherEvent: 0,
+    }),
 }));
 
 describe('useFolderMonitor', () => {
@@ -55,7 +54,7 @@ describe('useFolderMonitor', () => {
         promptMaskingEnabled: true,
         maskedKeywords: [],
         maskingMode: 'blur',
-        enableAI: false
+        enableAI: false,
     };
     const cancelledImportResult = {
         images: [],
@@ -70,16 +69,16 @@ describe('useFolderMonitor', () => {
             hypernetworks: [],
             controlNets: [],
             ipAdapters: [],
-            tools: []
+            tools: [],
         },
         wasCancelled: true,
         completedSourcePaths: [],
-        cancelledSourcePaths: []
+        cancelledSourcePaths: [],
     };
     const completedImportResult = {
         ...cancelledImportResult,
         stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
-        wasCancelled: false
+        wasCancelled: false,
     };
 
     beforeEach(() => {
@@ -94,7 +93,7 @@ describe('useFolderMonitor', () => {
             importProgress: null,
             importAbortController: null,
             importRunId: null,
-            importRunOwner: null
+            importRunOwner: null,
         });
         mocks.scanDirectorySince.mockResolvedValue({ status: 'ok', data: [] });
         mocks.refreshStartupFacetCache.mockResolvedValue({
@@ -102,21 +101,25 @@ describe('useFolderMonitor', () => {
             reason: 'small-known-delta',
             entryCount: 1,
             touchedFacetTypes: ['loras'],
-            touchedResourceCount: 1
+            touchedResourceCount: 1,
         });
         useSettingsStore.setState({ settings: baseSettings });
     });
 
     it('bypasses startup and live scans in browser mock mode while tracking folder changes', () => {
         mocks.browserMockMode = true;
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), { initialProps: { folders: [] as MonitoredFolder[] } });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            { initialProps: { folders: [] as MonitoredFolder[] } }
+        );
 
         rerender({ folders: [{ id: 'browser', path: '/browser', isActive: true, imageCount: 0 }] });
         act(() => useLibraryStore.setState({ isLiveWatching: true }));
@@ -127,36 +130,39 @@ describe('useFolderMonitor', () => {
 
     it('should NOT scan if not loaded', () => {
         const folders: MonitoredFolder[] = [{ id: '1', path: '/test', isActive: true, imageCount: 0 }];
-        renderHook(() => useFolderMonitor({
-            isLoaded: false,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: false,
+                monitoredFolders: folders,
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn(),
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         expect(mockOnScan).not.toHaveBeenCalled();
     });
 
     it('should scan new active folders', () => {
         const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), {
-            initialProps: { folders: initialFolders }
-        });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            {
+                initialProps: { folders: initialFolders },
+            }
+        );
 
         // Add new folder
-        const updatedFolders = [
-            ...initialFolders,
-            { id: '2', path: '/test2', isActive: true, imageCount: 0 }
-        ];
+        const updatedFolders = [...initialFolders, { id: '2', path: '/test2', isActive: true, imageCount: 0 }];
 
         rerender({ folders: updatedFolders });
 
@@ -166,24 +172,25 @@ describe('useFolderMonitor', () => {
 
     it('should not auto-scan newly added folders that already have a scan timestamp', () => {
         const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), {
-            initialProps: { folders: initialFolders }
-        });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            {
+                initialProps: { folders: initialFolders },
+            }
+        );
 
         vi.clearAllMocks();
 
         rerender({
-            folders: [
-                ...initialFolders,
-                { id: '2', path: '/test2', isActive: true, imageCount: 0, lastScanned: Date.now() }
-            ]
+            folders: [...initialFolders, { id: '2', path: '/test2', isActive: true, imageCount: 0, lastScanned: Date.now() }],
         });
 
         expect(mockOnScan).not.toHaveBeenCalled();
@@ -192,24 +199,25 @@ describe('useFolderMonitor', () => {
 
     it('should not auto-scan newly added folders whose first scan is already queued', () => {
         const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), {
-            initialProps: { folders: initialFolders }
-        });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            {
+                initialProps: { folders: initialFolders },
+            }
+        );
 
         vi.clearAllMocks();
 
         rerender({
-            folders: [
-                ...initialFolders,
-                { id: '2', path: '/test2', isActive: true, imageCount: 0, initialScanPending: true }
-            ]
+            folders: [...initialFolders, { id: '2', path: '/test2', isActive: true, imageCount: 0, initialScanPending: true }],
         });
 
         expect(mockOnScan).not.toHaveBeenCalled();
@@ -217,21 +225,23 @@ describe('useFolderMonitor', () => {
     });
 
     it('does not restart startup scanning for the first queued folder added after an empty startup', () => {
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), {
-            initialProps: { folders: [] as MonitoredFolder[] }
-        });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            {
+                initialProps: { folders: [] as MonitoredFolder[] },
+            }
+        );
 
         rerender({
-            folders: [
-                { id: 'queued', path: '/queued', isActive: true, imageCount: 0, initialScanPending: true }
-            ]
+            folders: [{ id: 'queued', path: '/queued', isActive: true, imageCount: 0, initialScanPending: true }],
         });
 
         expect(mockOnScan).not.toHaveBeenCalled();
@@ -240,24 +250,25 @@ describe('useFolderMonitor', () => {
 
     it('should not auto-scan newly added folders whose initial import was cancelled', () => {
         const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), {
-            initialProps: { folders: initialFolders }
-        });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            {
+                initialProps: { folders: initialFolders },
+            }
+        );
 
         vi.clearAllMocks();
 
         rerender({
-            folders: [
-                ...initialFolders,
-                { id: '2', path: '/test2', isActive: true, imageCount: 0, initialScanCancelled: true }
-            ]
+            folders: [...initialFolders, { id: '2', path: '/test2', isActive: true, imageCount: 0, initialScanCancelled: true }],
         });
 
         expect(mockOnScan).not.toHaveBeenCalled();
@@ -265,16 +276,20 @@ describe('useFolderMonitor', () => {
     });
 
     it('should detect startup scan (prevFolders empty)', () => {
-        const { rerender } = renderHook(({ folders, isLoaded }) => useFolderMonitor({
-            isLoaded,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }), {
-            initialProps: { folders: [] as MonitoredFolder[], isLoaded: false }
-        });
+        const { rerender } = renderHook(
+            ({ folders, isLoaded }) =>
+                useFolderMonitor({
+                    isLoaded,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                }),
+            {
+                initialProps: { folders: [] as MonitoredFolder[], isLoaded: false },
+            }
+        );
 
         // Set loaded and add folder
         rerender({ folders: [{ id: '1', path: '/test', isActive: true, imageCount: 0 }], isLoaded: true });
@@ -287,17 +302,19 @@ describe('useFolderMonitor', () => {
     it('skips cancelled initial imports during startup scans', async () => {
         const handleImportPaths = vi.fn();
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [
-                { id: 'watch-1', path: 'C:/cancelled', isActive: true, imageCount: 0, initialScanCancelled: true },
-                { id: 'watch-2', path: 'C:/ready', isActive: true, imageCount: 0 }
-            ],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    { id: 'watch-1', path: 'C:/cancelled', isActive: true, imageCount: 0, initialScanCancelled: true },
+                    { id: 'watch-2', path: 'C:/ready', isActive: true, imageCount: 0 },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         await waitFor(() => {
             expect(mockOnScan).toHaveBeenCalledTimes(1);
@@ -309,24 +326,26 @@ describe('useFolderMonitor', () => {
     it('marks startup full-scan cancellation as an initial import cancellation', async () => {
         const folders: MonitoredFolder[] = [
             { id: 'watch-1', path: 'C:/watch-a', isActive: true, imageCount: 0 },
-            { id: 'watch-2', path: 'C:/watch-b', isActive: true, imageCount: 0 }
+            { id: 'watch-2', path: 'C:/watch-b', isActive: true, imageCount: 0 },
         ];
         useSettingsStore.setState({
             settings: {
                 ...baseSettings,
-                monitoredFolders: folders
-            }
+                monitoredFolders: folders,
+            },
         });
         mockOnScan.mockResolvedValue(cancelledImportResult);
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: folders,
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn(),
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         await waitFor(() => {
             expect(useSettingsStore.getState().settings.monitoredFolders[0].initialScanCancelled).toBe(true);
@@ -348,32 +367,36 @@ describe('useFolderMonitor', () => {
                 hypernetworks: [],
                 controlNets: [],
                 ipAdapters: [],
-                tools: []
+                tools: [],
             },
             wasCancelled: false,
             completedSourcePaths: [],
-            cancelledSourcePaths: []
+            cancelledSourcePaths: [],
         });
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
         mocks.scanDirectorySince.mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'C:/watch/new.png', modified: 100, size: 10 }],
         });
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [{
-                id: 'watch-1',
-                path: 'C:/watch',
-                isActive: true,
-                imageCount: 0,
-                lastScanned: 10
-            }],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    {
+                        id: 'watch-1',
+                        path: 'C:/watch',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 10,
+                    },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata,
+            })
+        );
 
         await waitFor(() => {
             expect(handleImportPaths).toHaveBeenCalledWith(
@@ -384,20 +407,22 @@ describe('useFolderMonitor', () => {
                     skipStateManagement: true,
                     forceRescan: true,
                     waitForStableFiles: true,
-                    deferFacetCacheRefresh: true
+                    deferFacetCacheRefresh: true,
                 })
             );
         });
 
         await waitFor(() => {
-            expect(mocks.refreshStartupFacetCache).toHaveBeenCalledWith(expect.objectContaining({
-                source: 'folder',
-                totalProcessed: 1,
-                touchedFacetTypes: ['loras'],
-                touchedFacetResources: expect.objectContaining({
-                    loras: ['CinematicDetail']
+            expect(mocks.refreshStartupFacetCache).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    source: 'folder',
+                    totalProcessed: 1,
+                    touchedFacetTypes: ['loras'],
+                    touchedFacetResources: expect.objectContaining({
+                        loras: ['CinematicDetail'],
+                    }),
                 })
-            }));
+            );
         });
         expect(refreshMetadata).toHaveBeenCalled();
         expect(mockOnScan).not.toHaveBeenCalled();
@@ -420,47 +445,49 @@ describe('useFolderMonitor', () => {
                     hypernetworks: [],
                     controlNets: [],
                     ipAdapters: [],
-                    tools: []
+                    tools: [],
                 },
                 wasCancelled: true,
                 completedSourcePaths: [],
-                cancelledSourcePaths: []
+                cancelledSourcePaths: [],
             };
         });
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
         mocks.scanDirectorySince
             .mockResolvedValueOnce({
                 status: 'ok',
-                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }],
             })
             .mockResolvedValueOnce({
                 status: 'ok',
-                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }]
+                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }],
             });
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [
-                {
-                    id: 'watch-1',
-                    path: 'C:/watch-a',
-                    isActive: true,
-                    imageCount: 0,
-                    lastScanned: 10
-                },
-                {
-                    id: 'watch-2',
-                    path: 'C:/watch-b',
-                    isActive: true,
-                    imageCount: 0,
-                    lastScanned: 10
-                }
-            ],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    {
+                        id: 'watch-1',
+                        path: 'C:/watch-a',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 10,
+                    },
+                    {
+                        id: 'watch-2',
+                        path: 'C:/watch-b',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 10,
+                    },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata,
+            })
+        );
 
         await waitFor(() => {
             expect(handleImportPaths).toHaveBeenCalledTimes(1);
@@ -474,7 +501,7 @@ describe('useFolderMonitor', () => {
                 mode: 'startup',
                 abortSignal: firstAbortSignal,
                 skipStateManagement: true,
-                forceRescan: true
+                forceRescan: true,
             })
         );
         expect(mocks.refreshStartupFacetCache).not.toHaveBeenCalled();
@@ -483,11 +510,11 @@ describe('useFolderMonitor', () => {
 
     it('uses stable startup progress for aggregated imports', async () => {
         const progressMessages: Array<{ message?: string; detail?: string }> = [];
-        const unsubscribe = useLibraryStore.subscribe(state => {
+        const unsubscribe = useLibraryStore.subscribe((state) => {
             if (state.importProgress) {
                 progressMessages.push({
                     message: state.importProgress.message,
-                    detail: state.importProgress.detail
+                    detail: state.importProgress.detail,
                 });
             }
         });
@@ -506,58 +533,62 @@ describe('useFolderMonitor', () => {
                     hypernetworks: [],
                     controlNets: [],
                     ipAdapters: [],
-                    tools: []
+                    tools: [],
                 },
                 wasCancelled: false,
                 completedSourcePaths: [],
-                cancelledSourcePaths: []
+                cancelledSourcePaths: [],
             };
         });
         mocks.scanDirectorySince
             .mockResolvedValueOnce({
                 status: 'ok',
-                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }],
             })
             .mockResolvedValueOnce({
                 status: 'ok',
-                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }]
+                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }],
             });
 
         try {
-            renderHook(() => useFolderMonitor({
-                isLoaded: true,
-                monitoredFolders: [
-                    {
-                        id: 'watch-1',
-                        path: 'C:/watch-a',
-                        isActive: true,
-                        imageCount: 0,
-                        lastScanned: 10
-                    },
-                    {
-                        id: 'watch-2',
-                        path: 'C:/watch-b',
-                        isActive: true,
-                        imageCount: 0,
-                        lastScanned: 20
-                    }
-                ],
-                onScan: mockOnScan,
-                addToast: mockAddToast,
-                handleImportPaths,
-                refreshMetadata: vi.fn()
-            }));
+            renderHook(() =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: [
+                        {
+                            id: 'watch-1',
+                            path: 'C:/watch-a',
+                            isActive: true,
+                            imageCount: 0,
+                            lastScanned: 10,
+                        },
+                        {
+                            id: 'watch-2',
+                            path: 'C:/watch-b',
+                            isActive: true,
+                            imageCount: 0,
+                            lastScanned: 20,
+                        },
+                    ],
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata: vi.fn(),
+                })
+            );
 
             await waitFor(() => {
                 expect(handleImportPaths).toHaveBeenCalledTimes(2);
             });
 
-            expect(progressMessages).toEqual(expect.arrayContaining([
-                { message: 'Startup: Importing images from 2 folders...', detail: undefined },
-                { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
-                { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 2 of 2' }
-            ]));
-            expect(progressMessages.some(progress => progress.message === 'Extracting Metadata')).toBe(false);
+            expect(progressMessages).toEqual(
+                expect.arrayContaining([
+                    { message: 'Startup: Importing images from 2 folders...', detail: undefined },
+                    { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
+                    { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 2 of 2' },
+                ])
+            );
+            expect(progressMessages.some((progress) => progress.message === 'Extracting Metadata')).toBe(false);
         } finally {
             unsubscribe();
         }
@@ -567,22 +598,24 @@ describe('useFolderMonitor', () => {
         mockOnScan.mockResolvedValue(cancelledImportResult);
         const handleImportPaths = vi.fn();
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [
-                { id: 'watch-1', path: 'C:/watch-a', isActive: true, imageCount: 0 },
-                { id: 'watch-2', path: 'C:/watch-b', isActive: true, imageCount: 0 }
-            ],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    { id: 'watch-1', path: 'C:/watch-a', isActive: true, imageCount: 0 },
+                    { id: 'watch-2', path: 'C:/watch-b', isActive: true, imageCount: 0 },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         await waitFor(() => {
             expect(mockOnScan).toHaveBeenCalledTimes(1);
         });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(mockOnScan).toHaveBeenCalledWith([{ path: 'C:/watch-a', variant: undefined }], { mode: 'startup' });
         expect(handleImportPaths).not.toHaveBeenCalled();
@@ -592,38 +625,40 @@ describe('useFolderMonitor', () => {
         mockOnScan.mockResolvedValue(cancelledImportResult);
         mocks.scanDirectorySince.mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }],
         });
         const handleImportPaths = vi.fn();
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [
-                {
-                    id: 'watch-1',
-                    path: 'C:/watch-a',
-                    isActive: true,
-                    imageCount: 0,
-                    lastScanned: 10
-                },
-                {
-                    id: 'watch-2',
-                    path: 'C:/watch-b',
-                    isActive: true,
-                    imageCount: 0
-                }
-            ],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    {
+                        id: 'watch-1',
+                        path: 'C:/watch-a',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 10,
+                    },
+                    {
+                        id: 'watch-2',
+                        path: 'C:/watch-b',
+                        isActive: true,
+                        imageCount: 0,
+                    },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata,
+            })
+        );
 
         await waitFor(() => {
             expect(mockOnScan).toHaveBeenCalledWith([{ path: 'C:/watch-b', variant: undefined }], { mode: 'startup' });
         });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(handleImportPaths).not.toHaveBeenCalled();
         expect(mocks.refreshStartupFacetCache).not.toHaveBeenCalled();
@@ -636,24 +671,28 @@ describe('useFolderMonitor', () => {
         mockOnScan.mockResolvedValue(cancelledImportResult);
         const initialProps = {
             folders: [] as MonitoredFolder[],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         };
 
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata,
-            invokeAiPath
-        }), { initialProps });
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata,
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
 
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         vi.clearAllMocks();
         mocks.scanDirectorySince.mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }],
         });
 
         rerender({
@@ -663,17 +702,17 @@ describe('useFolderMonitor', () => {
                     path: 'C:/watch-a',
                     isActive: true,
                     imageCount: 0,
-                    lastScanned: 10
+                    lastScanned: 10,
                 },
                 {
                     id: 'watch-2',
                     path: 'C:/watch-b',
                     isActive: true,
                     imageCount: 0,
-                    initialScanPending: true
-                }
+                    initialScanPending: true,
+                },
             ],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
 
         useLibraryStore.setState({ isLiveWatching: true });
@@ -681,7 +720,7 @@ describe('useFolderMonitor', () => {
         await waitFor(() => {
             expect(mockOnScan).toHaveBeenCalledWith([{ path: 'C:/watch-b', variant: undefined }], { mode: 'background' });
         });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(handleImportPaths).not.toHaveBeenCalled();
         expect(refreshMetadata).not.toHaveBeenCalled();
@@ -689,11 +728,11 @@ describe('useFolderMonitor', () => {
 
     it('uses stable catch-up progress for aggregated imports', async () => {
         const progressMessages: Array<{ message?: string; detail?: string }> = [];
-        const unsubscribe = useLibraryStore.subscribe(state => {
+        const unsubscribe = useLibraryStore.subscribe((state) => {
             if (state.importProgress) {
                 progressMessages.push({
                     message: state.importProgress.message,
-                    detail: state.importProgress.detail
+                    detail: state.importProgress.detail,
                 });
             }
         });
@@ -712,39 +751,43 @@ describe('useFolderMonitor', () => {
                     hypernetworks: [],
                     controlNets: [],
                     ipAdapters: [],
-                    tools: []
+                    tools: [],
                 },
                 wasCancelled: false,
                 completedSourcePaths: [],
-                cancelledSourcePaths: []
+                cancelledSourcePaths: [],
             };
         });
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
         const initialProps = {
             folders: [] as MonitoredFolder[],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         };
 
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata,
-            invokeAiPath
-        }), { initialProps });
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata,
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
 
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         vi.clearAllMocks();
         mocks.scanDirectorySince
             .mockResolvedValueOnce({
                 status: 'ok',
-                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }],
             })
             .mockResolvedValueOnce({
                 status: 'ok',
-                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }]
+                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }],
             });
 
         try {
@@ -755,17 +798,17 @@ describe('useFolderMonitor', () => {
                         path: 'C:/watch-a',
                         isActive: true,
                         imageCount: 0,
-                        lastScanned: 10
+                        lastScanned: 10,
                     },
                     {
                         id: 'watch-2',
                         path: 'C:/watch-b',
                         isActive: true,
                         imageCount: 0,
-                        lastScanned: 20
-                    }
+                        lastScanned: 20,
+                    },
                 ],
-                invokeAiPath: 'C:/invokeai'
+                invokeAiPath: 'C:/invokeai',
             });
 
             useLibraryStore.setState({ isLiveWatching: true });
@@ -774,12 +817,14 @@ describe('useFolderMonitor', () => {
                 expect(handleImportPaths).toHaveBeenCalledTimes(2);
             });
 
-            expect(progressMessages).toEqual(expect.arrayContaining([
-                { message: 'Catch-up: Importing images from 2 folders...', detail: undefined },
-                { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
-                { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 2 of 2' }
-            ]));
-            expect(progressMessages.some(progress => progress.message === 'Extracting Metadata')).toBe(false);
+            expect(progressMessages).toEqual(
+                expect.arrayContaining([
+                    { message: 'Catch-up: Importing images from 2 folders...', detail: undefined },
+                    { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
+                    { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 2 of 2' },
+                ])
+            );
+            expect(progressMessages.some((progress) => progress.message === 'Extracting Metadata')).toBe(false);
         } finally {
             unsubscribe();
         }
@@ -790,24 +835,28 @@ describe('useFolderMonitor', () => {
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
         const initialProps = {
             folders: [] as MonitoredFolder[],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         };
 
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata,
-            invokeAiPath
-        }), { initialProps });
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata,
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
 
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         vi.clearAllMocks();
         mocks.scanDirectorySince.mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }],
         });
 
         rerender({
@@ -817,10 +866,10 @@ describe('useFolderMonitor', () => {
                     path: 'C:/watch-a',
                     isActive: true,
                     imageCount: 0,
-                    lastScanned: 10
-                }
+                    lastScanned: 10,
+                },
             ],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
 
         useLibraryStore.setState({ isLiveWatching: true });
@@ -833,7 +882,7 @@ describe('useFolderMonitor', () => {
                     mode: 'background',
                     skipStateManagement: true,
                     forceRescan: true,
-                    waitForStableFiles: true
+                    waitForStableFiles: true,
                 })
             );
         });
@@ -846,20 +895,24 @@ describe('useFolderMonitor', () => {
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
         const initialProps = {
             folders: [] as MonitoredFolder[],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         };
 
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata,
-            invokeAiPath
-        }), { initialProps });
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata,
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
 
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         vi.clearAllMocks();
 
         rerender({
@@ -869,14 +922,14 @@ describe('useFolderMonitor', () => {
                     path: 'C:/watch-a',
                     isActive: true,
                     imageCount: 0,
-                    initialScanCancelled: true
-                }
+                    initialScanCancelled: true,
+                },
             ],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
 
         useLibraryStore.setState({ isLiveWatching: true });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(mockOnScan).not.toHaveBeenCalled();
         expect(handleImportPaths).not.toHaveBeenCalled();
@@ -887,28 +940,28 @@ describe('useFolderMonitor', () => {
         const folders: MonitoredFolder[] = [
             { id: 'empty', path: 'C:/empty', isActive: true, imageCount: 0, lastScanned: 1 },
             { id: 'broken', path: 'C:/broken', isActive: true, imageCount: 0, lastScanned: 2 },
-            { id: 'full', path: 'C:/full', isActive: true, imageCount: 0 }
+            { id: 'full', path: 'C:/full', isActive: true, imageCount: 0 },
         ];
-        mocks.scanDirectorySince
-            .mockResolvedValueOnce({ status: 'ok', data: [] })
-            .mockRejectedValueOnce(new Error('scan failed'));
+        mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [] }).mockRejectedValueOnce(new Error('scan failed'));
         mockOnScan.mockResolvedValue({
             ...completedImportResult,
-            completedSourcePaths: ['C:/full']
+            completedSourcePaths: ['C:/full'],
         });
         const startInvokeSync = vi.fn().mockRejectedValue(new Error('sync failed'));
         const updateFolderLastScanned = vi.spyOn(useSettingsStore.getState(), 'updateFolderLastScanned');
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn(),
-            invokeAiPath: 'C:/invokeai',
-            startInvokeSync
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: folders,
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn(),
+                refreshMetadata: vi.fn(),
+                invokeAiPath: 'C:/invokeai',
+                startInvokeSync,
+            })
+        );
 
         await waitFor(() => expect(startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
         expect(updateFolderLastScanned).toHaveBeenCalledWith('empty', expect.any(Number));
@@ -924,19 +977,21 @@ describe('useFolderMonitor', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const startInvokeSync = vi.fn().mockResolvedValue({ status: 'completed' });
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [
-                { id: 'root', path: 'D:\\', isActive: true, imageCount: 0, lastScanned: 1 },
-                { id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }
-            ],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn(),
-            invokeAiPath: 'C:/invokeai',
-            startInvokeSync
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    { id: 'root', path: 'D:\\', isActive: true, imageCount: 0, lastScanned: 1 },
+                    { id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn(),
+                refreshMetadata: vi.fn(),
+                invokeAiPath: 'C:/invokeai',
+                startInvokeSync,
+            })
+        );
 
         await waitFor(() => expect(startInvokeSync).toHaveBeenCalled());
         expect(mockAddToast).toHaveBeenCalledWith(rootWarning, 'warning');
@@ -946,17 +1001,21 @@ describe('useFolderMonitor', () => {
 
     it('warns instead of incrementally scanning a monitored drive root during Live Watch catch-up', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn(),
-            invokeAiPath: 'C:/invokeai'
-        }), { initialProps: { folders: [] as MonitoredFolder[] } });
+        const { rerender } = renderHook(
+            ({ folders }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath: 'C:/invokeai',
+                }),
+            { initialProps: { folders: [] as MonitoredFolder[] } }
+        );
 
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         vi.clearAllMocks();
         rerender({ folders: [{ id: 'root', path: 'D:/', isActive: true, imageCount: 0, lastScanned: 10 }] });
         useLibraryStore.setState({ isLiveWatching: true });
@@ -977,16 +1036,18 @@ describe('useFolderMonitor', () => {
         const startInvokeSync = vi.fn().mockResolvedValue(outcome);
 
         try {
-            renderHook(() => useFolderMonitor({
-                isLoaded: true,
-                monitoredFolders: [],
-                onScan: mockOnScan,
-                addToast: mockAddToast,
-                handleImportPaths: vi.fn(),
-                refreshMetadata: vi.fn(),
-                invokeAiPath: 'C:/invokeai',
-                startInvokeSync
-            }));
+            renderHook(() =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: [],
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath: 'C:/invokeai',
+                    startInvokeSync,
+                })
+            );
 
             await waitFor(() => expect(startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
             await waitFor(() => expect(useLibraryStore.getState().isStartupCatchupPending).toBe(false));
@@ -995,15 +1056,17 @@ describe('useFolderMonitor', () => {
             const completeCall = consoleInfo.mock.calls.find(([message]) => message === '[Startup Catch-up] Workflow ended.');
             expect(invokeEndedCall).toBeDefined();
             expect(completeCall).toBeDefined();
-            expect(invokeEndedCall?.slice(1).every(value => typeof value === 'string')).toBe(true);
-            expect(completeCall?.slice(1).every(value => typeof value === 'string')).toBe(true);
+            expect(invokeEndedCall?.slice(1).every((value) => typeof value === 'string')).toBe(true);
+            expect(completeCall?.slice(1).every((value) => typeof value === 'string')).toBe(true);
             expect(invokeEndedCall?.join(' ')).toContain(`status=${status}`);
             expect(invokeEndedCall?.join(' ')).toContain(`successful=${status === 'completed'}`);
             expect(completeCall?.join(' ')).toContain(`status=${status}`);
             expect(completeCall?.join(' ')).toContain(`successful=${status === 'completed'}`);
             expect(JSON.stringify(consoleInfo.mock.calls)).not.toContain('private');
             expect(mocks.startDiagnostic).toHaveBeenCalledWith('invoke-catch-up');
-            expect(mocks.finishDiagnostic).toHaveBeenCalledWith(status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'cancelled');
+            expect(mocks.finishDiagnostic).toHaveBeenCalledWith(
+                status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'cancelled'
+            );
         } finally {
             consoleInfo.mockRestore();
         }
@@ -1015,16 +1078,18 @@ describe('useFolderMonitor', () => {
         const startInvokeSync = vi.fn().mockRejectedValue(new Error('private rejection detail'));
 
         try {
-            renderHook(() => useFolderMonitor({
-                isLoaded: true,
-                monitoredFolders: [],
-                onScan: mockOnScan,
-                addToast: mockAddToast,
-                handleImportPaths: vi.fn(),
-                refreshMetadata: vi.fn(),
-                invokeAiPath: 'C:/invokeai',
-                startInvokeSync
-            }));
+            renderHook(() =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: [],
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath: 'C:/invokeai',
+                    startInvokeSync,
+                })
+            );
 
             await waitFor(() => expect(startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
             await waitFor(() => expect(useLibraryStore.getState().isStartupCatchupPending).toBe(false));
@@ -1036,7 +1101,7 @@ describe('useFolderMonitor', () => {
             expect(completeCall?.join(' ')).toContain('status=rejected');
             expect(mocks.finishDiagnostic).toHaveBeenCalledWith('failed');
             expect(completeCall?.join(' ')).toContain('successful=false');
-            expect(consoleError.mock.calls.every(call => call.every(value => typeof value === 'string'))).toBe(true);
+            expect(consoleError.mock.calls.every((call) => call.every((value) => typeof value === 'string'))).toBe(true);
             expect(JSON.stringify([...consoleInfo.mock.calls, ...consoleError.mock.calls])).not.toContain('private rejection detail');
         } finally {
             consoleInfo.mockRestore();
@@ -1047,22 +1112,24 @@ describe('useFolderMonitor', () => {
     it('skips a startup incremental import when another owner holds the import run', async () => {
         mocks.scanDirectorySince.mockResolvedValue({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }]
+            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }],
         });
         useLibraryStore.setState({ isImporting: true, importRunId: 'existing', importRunOwner: 'manual' });
         const handleImportPaths = vi.fn();
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         await waitFor(() => expect(mocks.scanDirectorySince).toHaveBeenCalled());
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(handleImportPaths).not.toHaveBeenCalled();
     });
 
@@ -1075,17 +1142,19 @@ describe('useFolderMonitor', () => {
             return completedImportResult;
         });
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [
-                { id: 'a', path: 'C:/a', isActive: true, imageCount: 0, lastScanned: 1 },
-                { id: 'b', path: 'C:/b', isActive: true, imageCount: 0, lastScanned: 1 }
-            ],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    { id: 'a', path: 'C:/a', isActive: true, imageCount: 0, lastScanned: 1 },
+                    { id: 'b', path: 'C:/b', isActive: true, imageCount: 0, lastScanned: 1 },
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         await waitFor(() => expect(handleImportPaths).toHaveBeenCalledTimes(1));
     });
@@ -1093,7 +1162,7 @@ describe('useFolderMonitor', () => {
     it('applies the startup facet refresh callback and contains refresh failures', async () => {
         mocks.scanDirectorySince.mockResolvedValue({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }]
+            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }],
         });
         mocks.refreshStartupFacetCache.mockImplementationOnce(async ({ onRefreshApplied }) => {
             onRefreshApplied();
@@ -1102,14 +1171,16 @@ describe('useFolderMonitor', () => {
         const versionBefore = useLibraryStore.getState().facetCacheVersion;
         const refreshMetadata = vi.fn();
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn().mockResolvedValue(completedImportResult),
-            refreshMetadata
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn().mockResolvedValue(completedImportResult),
+                refreshMetadata,
+            })
+        );
 
         await waitFor(() => expect(useLibraryStore.getState().facetCacheVersion).toBe(versionBefore + 1));
         await waitFor(() => expect(refreshMetadata).toHaveBeenCalled());
@@ -1122,7 +1193,7 @@ describe('useFolderMonitor', () => {
             failedPaths: ['C:/unknown'],
             wasCancelled: true,
             completedSourcePaths: ['C:/done'],
-            cancelledSourcePaths: ['C:/cancelled']
+            cancelledSourcePaths: ['C:/cancelled'],
         });
         useSettingsStore.setState({
             settings: {
@@ -1130,24 +1201,28 @@ describe('useFolderMonitor', () => {
                 monitoredFolders: [
                     { id: 'done', path: 'C:/done', isActive: true, imageCount: 0 },
                     { id: 'cancelled', path: 'C:/cancelled', isActive: true, imageCount: 0 },
-                    { id: 'unknown', path: 'C:/unknown', isActive: true, imageCount: 0 }
-                ]
-            }
+                    { id: 'unknown', path: 'C:/unknown', isActive: true, imageCount: 0 },
+                ],
+            },
         });
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn(),
-            invokeAiPath
-        }), { initialProps });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         rerender({
             folders: useSettingsStore.getState().settings.monitoredFolders,
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
 
         await waitFor(() => expect(mockOnScan).toHaveBeenCalledWith(expect.any(Array)));
@@ -1160,18 +1235,20 @@ describe('useFolderMonitor', () => {
     it('holds the startup cursor when an incremental import returns no result', async () => {
         mocks.scanDirectorySince.mockResolvedValue({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }]
+            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }],
         });
         const refreshMetadata = vi.fn();
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn().mockResolvedValue(undefined),
-            refreshMetadata
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn().mockResolvedValue(undefined),
+                refreshMetadata,
+            })
+        );
 
         await waitFor(() => expect(refreshMetadata).toHaveBeenCalled());
     });
@@ -1179,7 +1256,7 @@ describe('useFolderMonitor', () => {
     it('honors an abort raised before the first startup import task begins', async () => {
         mocks.scanDirectorySince.mockResolvedValue({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }]
+            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }],
         });
         const store = useLibraryStore.getState();
         const beginImportRun = vi.spyOn(store, 'beginImportRun').mockImplementation((options) => {
@@ -1188,37 +1265,41 @@ describe('useFolderMonitor', () => {
         });
         const handleImportPaths = vi.fn();
 
-        renderHook(() => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn()
-        }));
+        renderHook(() =>
+            useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata: vi.fn(),
+            })
+        );
 
         await waitFor(() => expect(beginImportRun).toHaveBeenCalled());
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(handleImportPaths).not.toHaveBeenCalled();
         beginImportRun.mockRestore();
     });
 
     it('handles every no-import live catch-up folder outcome', async () => {
         const initialProps = { folders: [] as MonitoredFolder[], invokeAiPath: 'C:/invokeai' };
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths: vi.fn(),
-            refreshMetadata: vi.fn(),
-            invokeAiPath
-        }), { initialProps });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths: vi.fn(),
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
         vi.clearAllMocks();
-        mocks.scanDirectorySince
-            .mockResolvedValueOnce({ status: 'ok', data: [] })
-            .mockRejectedValueOnce(new Error('catch-up scan failed'));
+        mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [] }).mockRejectedValueOnce(new Error('catch-up scan failed'));
         mockOnScan
             .mockResolvedValueOnce({ ...completedImportResult, completedSourcePaths: ['C:/complete'] })
             .mockResolvedValueOnce(undefined);
@@ -1228,9 +1309,9 @@ describe('useFolderMonitor', () => {
                 { id: 'empty', path: 'C:/empty', isActive: true, imageCount: 0, lastScanned: 1 },
                 { id: 'complete', path: 'C:/complete', isActive: true, imageCount: 0, initialScanPending: true },
                 { id: 'unknown', path: 'C:/unknown', isActive: true, imageCount: 0, initialScanPending: true },
-                { id: 'broken', path: 'C:/broken', isActive: true, imageCount: 0, lastScanned: 1 }
+                { id: 'broken', path: 'C:/broken', isActive: true, imageCount: 0, lastScanned: 1 },
             ],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
         act(() => useLibraryStore.setState({ isLiveWatching: true }));
 
@@ -1242,16 +1323,20 @@ describe('useFolderMonitor', () => {
     it('skips a live catch-up import when ownership changes during directory scanning', async () => {
         const initialProps = { folders: [] as MonitoredFolder[], invokeAiPath: 'C:/invokeai' };
         const handleImportPaths = vi.fn();
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn(),
-            invokeAiPath
-        }), { initialProps });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
         mocks.scanDirectorySince.mockImplementationOnce(async () => {
             useLibraryStore.setState({ isImporting: true, importRunId: 'manual', importRunOwner: 'manual' });
             return { status: 'ok', data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }] };
@@ -1259,31 +1344,35 @@ describe('useFolderMonitor', () => {
 
         rerender({
             folders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
         act(() => useLibraryStore.setState({ isLiveWatching: true }));
 
         await waitFor(() => expect(mocks.scanDirectorySince).toHaveBeenCalled());
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(handleImportPaths).not.toHaveBeenCalled();
     });
 
     it('honors a pre-task live abort and holds cursors for incomplete live imports', async () => {
         const initialProps = { folders: [] as MonitoredFolder[], invokeAiPath: 'C:/invokeai' };
         const handleImportPaths = vi.fn();
-        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
-            isLoaded: true,
-            monitoredFolders: folders,
-            onScan: mockOnScan,
-            addToast: mockAddToast,
-            handleImportPaths,
-            refreshMetadata: vi.fn(),
-            invokeAiPath
-        }), { initialProps });
-        await new Promise(resolve => setTimeout(resolve, 0));
+        const { rerender } = renderHook(
+            ({ folders, invokeAiPath }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: folders,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata: vi.fn(),
+                    invokeAiPath,
+                }),
+            { initialProps }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
         mocks.scanDirectorySince.mockResolvedValue({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }]
+            data: [{ path: 'C:/watch/new.png', modified: 1, size: 1 }],
         });
         const beginImportRun = vi.spyOn(useLibraryStore.getState(), 'beginImportRun').mockImplementation((options) => {
             options?.abortController?.abort();
@@ -1292,7 +1381,7 @@ describe('useFolderMonitor', () => {
 
         rerender({
             folders: [{ id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }],
-            invokeAiPath: 'C:/invokeai'
+            invokeAiPath: 'C:/invokeai',
         });
         act(() => useLibraryStore.setState({ isLiveWatching: true }));
 

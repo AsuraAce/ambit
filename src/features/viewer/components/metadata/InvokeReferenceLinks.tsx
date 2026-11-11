@@ -22,13 +22,7 @@ interface ReferenceListProps {
     onOpen: (group: InvokeReferenceGroup) => void;
 }
 
-const ReferenceList = ({
-    currentImageId,
-    groups,
-    pendingImageId,
-    title,
-    onOpen,
-}: ReferenceListProps) => {
+const ReferenceList = ({ currentImageId, groups, pendingImageId, title, onOpen }: ReferenceListProps) => {
     if (groups.length === 0) return null;
     const headingId = `invoke-${title === 'Source Images' ? 'source-images' : 'used-by'}-heading`;
 
@@ -38,17 +32,17 @@ const ReferenceList = ({
                 {title}
             </h3>
             <ul className="space-y-2">
-                {groups.map(group => {
+                {groups.map((group) => {
                     const isCurrent = group.imageId === currentImageId;
                     const isAvailable = group.availability === 'available' && Boolean(group.imageId) && !isCurrent;
                     const isPending = isAvailable && pendingImageId === group.imageId;
                     const status = isCurrent
                         ? 'Current image'
                         : group.availability === 'removed'
-                            ? 'Removed from library'
-                            : group.availability === 'unresolved'
-                                ? 'Unavailable in Ambit'
-                                : null;
+                          ? 'Removed from library'
+                          : group.availability === 'unresolved'
+                            ? 'Unavailable in Ambit'
+                            : null;
 
                     return (
                         <li key={`${group.availability}\u0000${group.imageId ?? ''}\u0000${group.invokeImageName}`}>
@@ -71,7 +65,7 @@ const ReferenceList = ({
                                     ) : null}
                                 </span>
                                 <span className="mt-2 flex flex-wrap items-center gap-1.5">
-                                    {group.roles.map(role => (
+                                    {group.roles.map((role) => (
                                         <span
                                             key={role}
                                             className="rounded-full border border-sage-200 bg-sage-50 px-2 py-0.5 text-[10px] font-medium text-sage-600 dark:border-sage-500/20 dark:bg-sage-500/10 dark:text-sage-300"
@@ -79,9 +73,7 @@ const ReferenceList = ({
                                             {INVOKE_REFERENCE_ROLE_LABELS[role]}
                                         </span>
                                     ))}
-                                    {status ? (
-                                        <span className="text-[10px] italic text-gray-400">{status}</span>
-                                    ) : null}
+                                    {status ? <span className="text-[10px] italic text-gray-400">{status}</span> : null}
                                 </span>
                             </button>
                         </li>
@@ -114,7 +106,10 @@ export const InvokeReferenceLinks = ({ imageId, onOpenImage }: InvokeReferenceLi
 
     if (query.isLoading) {
         return (
-            <section aria-label="InvokeAI references" className="rounded-xl border border-gray-200 bg-white/50 p-4 dark:border-white/5 dark:bg-zinc-800/30">
+            <section
+                aria-label="InvokeAI references"
+                className="rounded-xl border border-gray-200 bg-white/50 p-4 dark:border-white/5 dark:bg-zinc-800/30"
+            >
                 <div className="flex items-center gap-2 text-xs text-gray-400">
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                     Loading references...
@@ -128,7 +123,11 @@ export const InvokeReferenceLinks = ({ imageId, onOpenImage }: InvokeReferenceLi
             <section role="alert" className="rounded-xl border border-red-200 bg-red-50/70 p-4 dark:border-red-500/20 dark:bg-red-500/5">
                 <div className="flex items-center justify-between gap-3">
                     <span className="text-xs text-red-700 dark:text-red-300">Reference links are unavailable.</span>
-                    <button type="button" onClick={() => void query.refetch()} className="flex items-center gap-1 text-xs font-medium text-red-700 hover:underline dark:text-red-300">
+                    <button
+                        type="button"
+                        onClick={() => void query.refetch()}
+                        className="flex items-center gap-1 text-xs font-medium text-red-700 hover:underline dark:text-red-300"
+                    >
                         <RefreshCw className="h-3 w-3" /> Retry
                     </button>
                 </div>
@@ -147,14 +146,14 @@ export const InvokeReferenceLinks = ({ imageId, onOpenImage }: InvokeReferenceLi
                 groups={graph.sourceImages}
                 pendingImageId={pendingImageId}
                 title="Source Images"
-                onOpen={group => void handleOpen(group)}
+                onOpen={(group) => void handleOpen(group)}
             />
             <ReferenceList
                 currentImageId={imageId}
                 groups={graph.usedBy}
                 pendingImageId={pendingImageId}
                 title="Used By"
-                onOpen={group => void handleOpen(group)}
+                onOpen={(group) => void handleOpen(group)}
             />
         </div>
     );

@@ -1,4 +1,3 @@
-
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useLibraryStats } from '../useLibraryStats';
@@ -18,8 +17,8 @@ describe('useLibraryStats', () => {
             metadata: {
                 positivePrompt: 'A cat holding a taco, masterpiece, highly detailed',
                 steps: 20,
-                model: ModelType.SDXL
-            } as any
+                model: ModelType.SDXL,
+            } as any,
         },
         {
             id: '2',
@@ -33,9 +32,9 @@ describe('useLibraryStats', () => {
             metadata: {
                 positivePrompt: 'A dog eating a pizza, masterpiece',
                 steps: 30,
-                model: ModelType.SD15
-            } as any
-        }
+                model: ModelType.SD15,
+            } as any,
+        },
     ];
 
     it('should calculate basic totals correctly', () => {
@@ -49,8 +48,8 @@ describe('useLibraryStats', () => {
     it('should calculate model distribution', () => {
         const { result } = renderHook(() => useLibraryStats(mockImages));
 
-        const sdxl = result.current.modelStats.find(m => m.fullName === ModelType.SDXL);
-        const sd15 = result.current.modelStats.find(m => m.fullName === ModelType.SD15);
+        const sdxl = result.current.modelStats.find((m) => m.fullName === ModelType.SDXL);
+        const sd15 = result.current.modelStats.find((m) => m.fullName === ModelType.SD15);
 
         expect(sdxl?.count).toBe(1);
         expect(sd15?.count).toBe(1);
@@ -60,16 +59,16 @@ describe('useLibraryStats', () => {
         const { result } = renderHook(() => useLibraryStats(mockImages));
 
         // 'cat' appears in image 1
-        const cat = result.current.wordCloud.find(w => w.text === 'cat');
+        const cat = result.current.wordCloud.find((w) => w.text === 'cat');
         expect(cat?.value).toBe(1);
 
         // 'masterpiece' is a stop-word and should NOT be present
-        const masterpiece = result.current.wordCloud.find(w => w.text === 'masterpiece');
+        const masterpiece = result.current.wordCloud.find((w) => w.text === 'masterpiece');
         expect(masterpiece).toBeUndefined();
 
         // 'taco' and 'pizza' should be present
-        expect(result.current.wordCloud.some(w => w.text === 'taco')).toBe(true);
-        expect(result.current.wordCloud.some(w => w.text === 'pizza')).toBe(true);
+        expect(result.current.wordCloud.some((w) => w.text === 'taco')).toBe(true);
+        expect(result.current.wordCloud.some((w) => w.text === 'pizza')).toBe(true);
     });
 
     it('should handle empty image list gracefully', () => {

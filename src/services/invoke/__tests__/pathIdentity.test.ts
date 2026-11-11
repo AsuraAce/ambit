@@ -3,10 +3,7 @@ import { isSameInvokePath } from '../pathIdentity';
 
 describe('Invoke path identity', () => {
     it('treats Windows drive paths as case-insensitive identities', () => {
-        expect(isSameInvokePath(
-            'c:\\invoke\\databases\\invokeai.db',
-            'C:/Invoke/databases/invokeai.db/'
-        )).toBe(true);
+        expect(isSameInvokePath('c:\\invoke\\databases\\invokeai.db', 'C:/Invoke/databases/invokeai.db/')).toBe(true);
         expect(isSameInvokePath('\\\\SERVER\\Invoke', '//server/invoke/')).toBe(true);
     });
 

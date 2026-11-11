@@ -61,12 +61,10 @@ const createWrapper = () => {
         },
     });
 
-    return ({ children }: PropsWithChildren) => (
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    );
+    return ({ children }: PropsWithChildren) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 };
 
-const waitForMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const waitForMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('useParameterRangesQuery', () => {
     beforeEach(() => {
@@ -99,7 +97,7 @@ describe('useParameterRangesQuery', () => {
         });
 
         expect(result.current.data).toEqual(emptyParameterRanges);
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(commandMocks.getParameterRanges).not.toHaveBeenCalled();
     });
 
@@ -124,13 +122,10 @@ describe('useParameterRangesQuery', () => {
 
     it('refetches parameter ranges when advanced date search syntax changes', async () => {
         const wrapper = createWrapper();
-        const { rerender } = renderHook(
-            ({ searchQuery }) => useParameterRangesQuery(createDefaultFilters({ searchQuery })),
-            {
-                wrapper,
-                initialProps: { searchQuery: '' },
-            }
-        );
+        const { rerender } = renderHook(({ searchQuery }) => useParameterRangesQuery(createDefaultFilters({ searchQuery })), {
+            wrapper,
+            initialProps: { searchQuery: '' },
+        });
 
         await waitFor(() => expect(commandMocks.getParameterRanges).toHaveBeenCalledTimes(1));
 
@@ -157,13 +152,10 @@ describe('useParameterRangesQuery', () => {
 
     it('refetches parameter ranges for one-sided advanced date syntax', async () => {
         const wrapper = createWrapper();
-        const { rerender } = renderHook(
-            ({ searchQuery }) => useParameterRangesQuery(createDefaultFilters({ searchQuery })),
-            {
-                wrapper,
-                initialProps: { searchQuery: '' },
-            }
-        );
+        const { rerender } = renderHook(({ searchQuery }) => useParameterRangesQuery(createDefaultFilters({ searchQuery })), {
+            wrapper,
+            initialProps: { searchQuery: '' },
+        });
 
         await waitFor(() => expect(commandMocks.getParameterRanges).toHaveBeenCalledTimes(1));
 
@@ -180,21 +172,15 @@ describe('useParameterRangesQuery', () => {
 
         expect(where).toContain('timestamp >= ?');
         expect(where).not.toContain('timestamp < ?');
-        expect(JSON.parse(paramsJson)).toEqual([
-            Date.UTC(2026, 3, 1),
-            new Date(2026, 3, 1).getTime(),
-        ]);
+        expect(JSON.parse(paramsJson)).toEqual([Date.UTC(2026, 3, 1), new Date(2026, 3, 1).getTime()]);
     });
 
     it('collapses rapid search-only corrections into one parameter range request', async () => {
         const wrapper = createWrapper();
-        const { rerender } = renderHook(
-            ({ searchQuery }) => useParameterRangesQuery(createDefaultFilters({ searchQuery })),
-            {
-                wrapper,
-                initialProps: { searchQuery: '' },
-            }
-        );
+        const { rerender } = renderHook(({ searchQuery }) => useParameterRangesQuery(createDefaultFilters({ searchQuery })), {
+            wrapper,
+            initialProps: { searchQuery: '' },
+        });
 
         await waitFor(() => expect(commandMocks.getParameterRanges).toHaveBeenCalledTimes(1));
 
@@ -225,13 +211,10 @@ describe('useParameterRangesQuery', () => {
 
     it('updates parameter ranges immediately for non-search filter changes', async () => {
         const wrapper = createWrapper();
-        const { rerender } = renderHook(
-            ({ models }) => useParameterRangesQuery(createDefaultFilters({ models })),
-            {
-                wrapper,
-                initialProps: { models: [] as string[] },
-            }
-        );
+        const { rerender } = renderHook(({ models }) => useParameterRangesQuery(createDefaultFilters({ models })), {
+            wrapper,
+            initialProps: { models: [] as string[] },
+        });
 
         await waitFor(() => expect(commandMocks.getParameterRanges).toHaveBeenCalledTimes(1));
 

@@ -5,20 +5,38 @@ import { CollectionsSection } from '../CollectionsSection';
 
 const probe = vi.hoisted(() => ({ props: null as null | Record<string, unknown>, retryCounts: vi.fn() }));
 vi.mock('../../../../stores/collectionStore', () => ({
-    useCollectionStore: <T,>(selector: (state: { retryOrdinaryCounts: () => void }) => T) => selector({ retryOrdinaryCounts: probe.retryCounts }),
+    useCollectionStore: <T,>(selector: (state: { retryOrdinaryCounts: () => void }) => T) =>
+        selector({ retryOrdinaryCounts: probe.retryCounts }),
 }));
 vi.mock('../CollectionList', () => ({
     CollectionList: (props: Record<string, unknown>) => {
         probe.props = props;
         const toolbar = props.renderToolbarExtras as () => React.ReactNode;
         const form = props.renderCreationForm as () => React.ReactNode;
-        return <div>{toolbar()}{form()}{props.emptyMessage as React.ReactNode}</div>;
+        return (
+            <div>
+                {toolbar()}
+                {form()}
+                {props.emptyMessage as React.ReactNode}
+            </div>
+        );
     },
 }));
 
 const filters: FilterState = {
-    searchQuery: 'portrait', models: [], tools: [GeneratorTool.COMFYUI], loras: [], embeddings: [], hypernetworks: [],
-    samplers: [], generationTypes: [], controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null,
+    searchQuery: 'portrait',
+    models: [],
+    tools: [GeneratorTool.COMFYUI],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    dateRange: 'all',
+    favoritesOnly: false,
+    collectionId: null,
 };
 const collection: Collection = { id: 'c1', name: 'One', imageIds: [], createdAt: 1, source: 'ambit' };
 
@@ -26,17 +44,29 @@ const setup = (overrides: Partial<React.ComponentProps<typeof CollectionsSection
     const onCreateCollection = vi.fn();
     const onToggle = vi.fn();
     const props: React.ComponentProps<typeof CollectionsSection> = {
-        collections: [collection], filters, setFilters: vi.fn(), isOpen: true, onToggle, onCreateCollection,
+        collections: [collection],
+        filters,
+        setFilters: vi.fn(),
+        isOpen: true,
+        onToggle,
+        onCreateCollection,
         ...overrides,
     };
     return { ...render(<CollectionsSection {...props} />), onCreateCollection, onToggle };
 };
 
 describe('CollectionsSection', () => {
-    beforeEach(() => { probe.props = null; });
+    beforeEach(() => {
+        probe.props = null;
+    });
     it('offers one accessible retry action for unavailable counts', () => {
         probe.retryCounts.mockClear();
-        setup({ collections: [{ ...collection, countState: 'failed' }, { ...collection, id: 'second', countState: 'failed' }] });
+        setup({
+            collections: [
+                { ...collection, countState: 'failed' },
+                { ...collection, id: 'second', countState: 'failed' },
+            ],
+        });
         const retries = screen.getAllByRole('button', { name: 'Retry counts' });
         expect(retries).toHaveLength(1);
         fireEvent.click(retries[0]);
@@ -87,9 +117,15 @@ describe('CollectionsSection', () => {
 
     it('forwards collection callbacks and supplies a safe delete fallback', () => {
         const callbacks = {
-            onRenameCollection: vi.fn(), onDropOnCollection: vi.fn(), onToggleArchiveCollection: vi.fn(),
-            onTogglePinCollection: vi.fn(), onSetCollectionColor: vi.fn(), onPlayCollection: vi.fn(),
-            onExportCollection: vi.fn(), onResetCollectionThumbnail: vi.fn(), onEditCollection: vi.fn(),
+            onRenameCollection: vi.fn(),
+            onDropOnCollection: vi.fn(),
+            onToggleArchiveCollection: vi.fn(),
+            onTogglePinCollection: vi.fn(),
+            onSetCollectionColor: vi.fn(),
+            onPlayCollection: vi.fn(),
+            onExportCollection: vi.fn(),
+            onResetCollectionThumbnail: vi.fn(),
+            onEditCollection: vi.fn(),
         };
         setup(callbacks);
         expect(probe.props).toMatchObject(callbacks);

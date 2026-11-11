@@ -8,7 +8,12 @@ import { UntaggedTab } from './UntaggedTab';
 import { IntermediatesTab } from './IntermediatesTab';
 
 vi.mock('../../library/components/VirtualGrid', () => ({
-    VirtualGrid: ({ items, renderItem, onRangeSelection, onBackgroundClick }: {
+    VirtualGrid: ({
+        items,
+        renderItem,
+        onRangeSelection,
+        onBackgroundClick,
+    }: {
         items: AIImage[];
         renderItem: (item: AIImage, style: React.CSSProperties, index: number) => React.ReactNode;
         onRangeSelection?: (indexes: number[], additive: boolean) => void;
@@ -23,7 +28,16 @@ vi.mock('../../library/components/VirtualGrid', () => ({
 }));
 
 vi.mock('./MaintenanceItem', () => ({
-    MaintenanceItem: ({ img, isSelected, onClick, overlayActions, children, isMissing, imageClassName, maskedKeywords }: {
+    MaintenanceItem: ({
+        img,
+        isSelected,
+        onClick,
+        overlayActions,
+        children,
+        isMissing,
+        imageClassName,
+        maskedKeywords,
+    }: {
         img: AIImage;
         isSelected?: boolean;
         onClick: (event: React.MouseEvent, revealGranted?: boolean) => void;
@@ -33,7 +47,13 @@ vi.mock('./MaintenanceItem', () => ({
         imageClassName?: string;
         maskedKeywords: string[];
     }) => (
-        <div data-testid="maintenance-item" data-selected={isSelected} data-missing={isMissing} data-image-class={imageClassName} data-masked-keywords={maskedKeywords.join(',')}>
+        <div
+            data-testid="maintenance-item"
+            data-selected={isSelected}
+            data-missing={isMissing}
+            data-image-class={imageClassName}
+            data-masked-keywords={maskedKeywords.join(',')}
+        >
             <button onClick={(event) => onClick(event, false)}>{img.filename}</button>
             {overlayActions?.(false)}
             {children}
@@ -42,7 +62,13 @@ vi.mock('./MaintenanceItem', () => ({
 }));
 
 vi.mock('./MaintenanceHeader', () => ({
-    MaintenanceHeader: ({ title, actions, extraControls, onSelectAll, onClearSelection }: {
+    MaintenanceHeader: ({
+        title,
+        actions,
+        extraControls,
+        onSelectAll,
+        onClearSelection,
+    }: {
         title: string;
         actions?: React.ReactNode;
         extraControls?: React.ReactNode;
@@ -109,13 +135,31 @@ describe('maintenance content tabs', () => {
         const onScopeChange = vi.fn();
         const callbacks = common();
         const { rerender } = render(
-            <UntaggedTab {...callbacks} images={[]} onRemoveFromLibrary={vi.fn()} onViewImage={vi.fn()} maskedKeywords={[]} untaggedScope="global" onScopeChange={onScopeChange} />
+            <UntaggedTab
+                {...callbacks}
+                images={[]}
+                onRemoveFromLibrary={vi.fn()}
+                onViewImage={vi.fn()}
+                maskedKeywords={[]}
+                untaggedScope="global"
+                onScopeChange={onScopeChange}
+            />
         );
         expect(screen.getByText('No Untagged Images')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Switch to Filtered scope' }));
         expect(onScopeChange).toHaveBeenCalledWith('filtered');
 
-        rerender(<UntaggedTab {...callbacks} images={[]} onRemoveFromLibrary={vi.fn()} onViewImage={vi.fn()} maskedKeywords={[]} untaggedScope="filtered" onScopeChange={onScopeChange} />);
+        rerender(
+            <UntaggedTab
+                {...callbacks}
+                images={[]}
+                onRemoveFromLibrary={vi.fn()}
+                onViewImage={vi.fn()}
+                maskedKeywords={[]}
+                untaggedScope="filtered"
+                onScopeChange={onScopeChange}
+            />
+        );
         expect(screen.getByText('in this filter', { exact: false })).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Switch to Global scope' }));
         expect(onScopeChange).toHaveBeenCalledWith('global');
@@ -127,7 +171,15 @@ describe('maintenance content tabs', () => {
         const onView = vi.fn();
         const onScopeChange = vi.fn();
         const { rerender } = render(
-            <UntaggedTab {...callbacks} images={[image()]} onRemoveFromLibrary={onRemove} onViewImage={onView} maskedKeywords={[]} untaggedScope="global" onScopeChange={onScopeChange} />
+            <UntaggedTab
+                {...callbacks}
+                images={[image()]}
+                onRemoveFromLibrary={onRemove}
+                onViewImage={onView}
+                maskedKeywords={[]}
+                untaggedScope="global"
+                onScopeChange={onScopeChange}
+            />
         );
         exerciseGrid(callbacks);
         fireEvent.click(screen.getByRole('button', { name: 'View Image' }));
@@ -137,7 +189,18 @@ describe('maintenance content tabs', () => {
         expect(onScopeChange.mock.calls).toEqual([['filtered'], ['global']]);
         expect(screen.getByText('Recover')).toBeTruthy();
 
-        rerender(<UntaggedTab {...callbacks} selectedIds={new Set(['image-1'])} images={[image()]} onRemoveFromLibrary={onRemove} onViewImage={onView} maskedKeywords={[]} untaggedScope="filtered" onScopeChange={onScopeChange} />);
+        rerender(
+            <UntaggedTab
+                {...callbacks}
+                selectedIds={new Set(['image-1'])}
+                images={[image()]}
+                onRemoveFromLibrary={onRemove}
+                onViewImage={onView}
+                maskedKeywords={[]}
+                untaggedScope="filtered"
+                onScopeChange={onScopeChange}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: /^Remove from Library/ }));
         expect(onRemove).toHaveBeenCalledOnce();
         expect(screen.queryByText('Recover')).toBeNull();
@@ -148,10 +211,28 @@ describe('maintenance content tabs', () => {
         const onDelete = vi.fn();
         const onPurge = vi.fn();
         const onView = vi.fn();
-        const { rerender } = render(<MissingTab {...callbacks} images={[]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} maskedKeywords={['private']} />);
+        const { rerender } = render(
+            <MissingTab
+                {...callbacks}
+                images={[]}
+                onDeleteSelected={onDelete}
+                onPurgeMissing={onPurge}
+                onViewImage={onView}
+                maskedKeywords={['private']}
+            />
+        );
         expect(screen.getByText('No Missing Files')).toBeTruthy();
 
-        rerender(<MissingTab {...callbacks} images={[image()]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} maskedKeywords={['private']} />);
+        rerender(
+            <MissingTab
+                {...callbacks}
+                images={[image()]}
+                onDeleteSelected={onDelete}
+                onPurgeMissing={onPurge}
+                onViewImage={onView}
+                maskedKeywords={['private']}
+            />
+        );
         exerciseGrid(callbacks);
         fireEvent.click(screen.getByRole('button', { name: 'Remove all 1 from Library' }));
         fireEvent.click(screen.getByRole('button', { name: 'View Image' }));
@@ -160,7 +241,17 @@ describe('maintenance content tabs', () => {
         expect(screen.getByTestId('maintenance-item').dataset.missing).toBe('true');
         expect(screen.getByTestId('maintenance-item').dataset.maskedKeywords).toBe('private');
 
-        rerender(<MissingTab {...callbacks} selectedIds={new Set(['image-1'])} images={[image()]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} maskedKeywords={['private']} />);
+        rerender(
+            <MissingTab
+                {...callbacks}
+                selectedIds={new Set(['image-1'])}
+                images={[image()]}
+                onDeleteSelected={onDelete}
+                onPurgeMissing={onPurge}
+                onViewImage={onView}
+                maskedKeywords={['private']}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: /^Remove from Library/ }));
         expect(onDelete).toHaveBeenCalledOnce();
     });
@@ -196,7 +287,16 @@ describe('maintenance content tabs', () => {
         const onUnmark = vi.fn();
         const onView = vi.fn();
         const onScopeChange = vi.fn();
-        const baseProps = { ...callbacks, images: [image()], onDeleteSelected: onDelete, onUnmarkSelected: onUnmark, onViewImage: onView, maskedKeywords: [], scope: 'global' as const, onScopeChange };
+        const baseProps = {
+            ...callbacks,
+            images: [image()],
+            onDeleteSelected: onDelete,
+            onUnmarkSelected: onUnmark,
+            onViewImage: onView,
+            maskedKeywords: [],
+            scope: 'global' as const,
+            onScopeChange,
+        };
         const { rerender } = render(<IntermediatesTab {...baseProps} images={[]} />);
         expect(screen.getByText('Your library is clean!', { exact: false })).toBeTruthy();
 

@@ -33,7 +33,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
     onBrowse,
     onAdd,
     onRemove,
-    onScanNow
+    onScanNow,
 }) => {
     const showBroadPathWarning = isBroadModelsPath(newResourcePath);
     const hasConfiguredBroadPath = resourceFolders.some(isBroadModelsPath);
@@ -46,7 +46,8 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                     <FolderSearch className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Resource Discovery</strong>
-                        Add your model and resource folders here. {APP_NAME} will scan local assets and sidecar previews (<span className="font-mono text-xs">.jpg, .png, .webp</span>).
+                        Add your model and resource folders here. {APP_NAME} will scan local assets and sidecar previews (
+                        <span className="font-mono text-xs">.jpg, .png, .webp</span>).
                     </div>
                 </div>
                 <div className="flex gap-2">
@@ -78,7 +79,10 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                         const isBroadPath = isBroadModelsPath(path);
 
                         return (
-                            <div key={idx} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 group transition-colors">
+                            <div
+                                key={idx}
+                                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 group transition-colors"
+                            >
                                 <div className="flex items-center gap-3 overflow-hidden">
                                     <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-500 dark:text-gray-400">
                                         <Folder className="w-4 h-4" />
@@ -102,9 +106,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                     aria-label={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
                                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                                 >
-                                    {isRemoving
-                                        ? <RefreshCw className="h-4 w-4 animate-spin" />
-                                        : <Trash2 className="w-4 h-4" />}
+                                    {isRemoving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                 </button>
                             </div>
                         );
@@ -116,7 +118,8 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                         <div className="mx-2 mb-2 flex items-start gap-2 rounded-lg border border-ember-200 bg-ember-50 px-3 py-2 text-xs text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/10 dark:text-ember-300">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                             <span>
-                                A configured models root may include false positives. Remove it and add specific folders such as <span className="font-mono">models/Lora</span> or <span className="font-mono">models/checkpoints</span>.
+                                A configured models root may include false positives. Remove it and add specific folders such as{' '}
+                                <span className="font-mono">models/Lora</span> or <span className="font-mono">models/checkpoints</span>.
                             </span>
                         </div>
                     )}
@@ -153,7 +156,9 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                         <div className="mt-3 flex items-start gap-2 rounded-lg border border-ember-200 bg-ember-50 px-3 py-2 text-xs text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/10 dark:text-ember-300">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                             <span>
-                                This looks like a broad models root. Prefer specific folders such as <span className="font-mono">models/Lora</span> or <span className="font-mono">models/checkpoints</span> to avoid false positives.
+                                This looks like a broad models root. Prefer specific folders such as{' '}
+                                <span className="font-mono">models/Lora</span> or <span className="font-mono">models/checkpoints</span> to
+                                avoid false positives.
                             </span>
                         </div>
                     )}

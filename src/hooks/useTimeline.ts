@@ -1,11 +1,10 @@
-
 import { useMemo } from 'react';
 import { AIImage, SortOption } from '../types';
 import { getEffectiveDisplayTimestamp, getImageCalendarParts, getImageDayStart } from '../utils/imageDates';
 
 export interface TimelineGroup {
     date: string; // Display label (e.g., "Today", "August 2023")
-    id: string;   // Unique key for React
+    id: string; // Unique key for React
     timestamp: number;
     images: AIImage[];
 }
@@ -22,7 +21,7 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
         const thirtyDaysAgo = new Date(todayStart - 30 * 86400000).getTime();
 
         // 1. Bucketize Images
-        images.forEach(img => {
+        images.forEach((img) => {
             let label: string;
             let id: string;
             let groupTimestamp: number; // Used for sorting the groups themselves
@@ -59,7 +58,7 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
                     date: label,
                     id: id,
                     timestamp: groupTimestamp,
-                    images: []
+                    images: [],
                 });
             }
 
@@ -74,19 +73,25 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
         groupList.sort((a, b) => b.timestamp - a.timestamp);
 
         // 3. Sort Images WITHIN Groups based on user selection
-        groupList.forEach(group => {
+        groupList.forEach((group) => {
             group.images.sort((a, b) => {
                 // ALWAYS Prioritize Pinned items at the top of their date group
                 if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
 
                 switch (sortOption) {
-                    case 'name_asc': return a.filename.localeCompare(b.filename);
-                    case 'name_desc': return b.filename.localeCompare(a.filename);
-                    case 'size_desc': return (b.fileSize || 0) - (a.fileSize || 0);
-                    case 'size_asc': return (a.fileSize || 0) - (b.fileSize || 0);
-                    case 'date_asc': return getEffectiveDisplayTimestamp(a) - getEffectiveDisplayTimestamp(b); // Oldest first within the group
+                    case 'name_asc':
+                        return a.filename.localeCompare(b.filename);
+                    case 'name_desc':
+                        return b.filename.localeCompare(a.filename);
+                    case 'size_desc':
+                        return (b.fileSize || 0) - (a.fileSize || 0);
+                    case 'size_asc':
+                        return (a.fileSize || 0) - (b.fileSize || 0);
+                    case 'date_asc':
+                        return getEffectiveDisplayTimestamp(a) - getEffectiveDisplayTimestamp(b); // Oldest first within the group
                     case 'date_desc':
-                    default: return getEffectiveDisplayTimestamp(b) - getEffectiveDisplayTimestamp(a); // Newest first within the group
+                    default:
+                        return getEffectiveDisplayTimestamp(b) - getEffectiveDisplayTimestamp(a); // Newest first within the group
                 }
             });
         });

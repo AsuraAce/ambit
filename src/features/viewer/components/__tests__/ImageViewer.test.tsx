@@ -32,14 +32,12 @@ const aiState = vi.hoisted(() => ({
         openModal: vi.fn(),
         analyzePrompt: vi.fn(),
         generateVariations: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('framer-motion', () => ({
     motion: {
-        div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-            <div {...props}>{children}</div>
-        ),
+        div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
     },
 }));
 
@@ -107,7 +105,15 @@ vi.mock('../../../../hooks/useImageAI', () => ({
 }));
 
 vi.mock('../../../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: { settings: Record<string, unknown>; isLoaded: boolean; setSettings: typeof mockSetViewerTab; privacyEnabled: boolean; privacyMaskIndexStatus: string }) => unknown) => (
+    useSettingsStore: (
+        selector: (state: {
+            settings: Record<string, unknown>;
+            isLoaded: boolean;
+            setSettings: typeof mockSetViewerTab;
+            privacyEnabled: boolean;
+            privacyMaskIndexStatus: string;
+        }) => unknown
+    ) =>
         selector({
             settings: {
                 enableAI: true,
@@ -119,14 +125,11 @@ vi.mock('../../../../stores/settingsStore', () => ({
             setSettings: mockSetViewerTab,
             privacyEnabled: false,
             privacyMaskIndexStatus: 'ready',
-        })
-    ),
+        }),
 }));
 
 vi.mock('../../../../stores/collectionStore', () => ({
-    useCollectionStore: (selector: (state: { collections: never[] }) => unknown) => (
-        selector({ collections: [] })
-    ),
+    useCollectionStore: (selector: (state: { collections: never[] }) => unknown) => selector({ collections: [] }),
 }));
 
 vi.mock('../../../../services/assetScope', () => ({
@@ -186,8 +189,18 @@ describe('ImageViewer full metadata loading', () => {
         let resolveFirst!: (value: AIImage) => void;
         let resolveNext!: (value: AIImage | null) => void;
         mockGetImageWithFullMetadata
-            .mockImplementationOnce(() => new Promise<AIImage>(resolve => { resolveFirst = resolve; }))
-            .mockImplementationOnce(() => new Promise<AIImage | null>(resolve => { resolveNext = resolve; }));
+            .mockImplementationOnce(
+                () =>
+                    new Promise<AIImage>((resolve) => {
+                        resolveFirst = resolve;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<AIImage | null>((resolve) => {
+                        resolveNext = resolve;
+                    })
+            );
         const view = renderViewer();
         expect(captures.sidebar?.isLoading).toBe(true);
         const next = { ...lightImage, id: 'next-photo' };
@@ -206,7 +219,7 @@ describe('ImageViewer full metadata loading', () => {
         mockSetViewerTab.mockImplementation((update: { viewerPreferredTab: typeof viewerSettings.viewerPreferredTab }) => {
             viewerSettings.viewerPreferredTab = update.viewerPreferredTab;
         });
-        Object.keys(captures).forEach(key => {
+        Object.keys(captures).forEach((key) => {
             captures[key as keyof typeof captures] = null;
         });
         aiState.value.modalOpen = false;
@@ -283,17 +296,19 @@ describe('ImageViewer full metadata loading', () => {
             originalState,
         });
 
-        render(<ImageViewer
-            image={lightImage}
-            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
-            onClose={vi.fn()}
-            onNext={vi.fn()}
-            onPrev={vi.fn()}
-            onSearch={vi.fn()}
-            onToggleFavorite={vi.fn()}
-            onOpenSettings={vi.fn()}
-            isOpen
-        />);
+        render(
+            <ImageViewer
+                image={lightImage}
+                onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+                onClose={vi.fn()}
+                onNext={vi.fn()}
+                onPrev={vi.fn()}
+                onSearch={vi.fn()}
+                onToggleFavorite={vi.fn()}
+                onOpenSettings={vi.fn()}
+                isOpen
+            />
+        );
 
         await waitFor(() => {
             const latestProps = mockMetadataSidebar.mock.calls.at(-1)?.[0] as { image: AIImage };
@@ -320,17 +335,19 @@ describe('ImageViewer full metadata loading', () => {
         };
         mockGetImageWithFullMetadata.mockResolvedValue(staleFullImage);
 
-        const { rerender } = render(<ImageViewer
-            image={staleFullImage}
-            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
-            onClose={vi.fn()}
-            onNext={vi.fn()}
-            onPrev={vi.fn()}
-            onSearch={vi.fn()}
-            onToggleFavorite={vi.fn()}
-            onOpenSettings={vi.fn()}
-            isOpen
-        />);
+        const { rerender } = render(
+            <ImageViewer
+                image={staleFullImage}
+                onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+                onClose={vi.fn()}
+                onNext={vi.fn()}
+                onPrev={vi.fn()}
+                onSearch={vi.fn()}
+                onToggleFavorite={vi.fn()}
+                onOpenSettings={vi.fn()}
+                isOpen
+            />
+        );
 
         await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalled());
 
@@ -340,17 +357,19 @@ describe('ImageViewer full metadata loading', () => {
             sourceKind: 'photograph',
             displayTimestamp: 456_789,
         };
-        rerender(<ImageViewer
-            image={automaticImage}
-            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
-            onClose={vi.fn()}
-            onNext={vi.fn()}
-            onPrev={vi.fn()}
-            onSearch={vi.fn()}
-            onToggleFavorite={vi.fn()}
-            onOpenSettings={vi.fn()}
-            isOpen
-        />);
+        rerender(
+            <ImageViewer
+                image={automaticImage}
+                onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+                onClose={vi.fn()}
+                onNext={vi.fn()}
+                onPrev={vi.fn()}
+                onSearch={vi.fn()}
+                onToggleFavorite={vi.fn()}
+                onOpenSettings={vi.fn()}
+                isOpen
+            />
+        );
 
         await waitFor(() => {
             const latestProps = mockMetadataSidebar.mock.calls.at(-1)?.[0] as { image: AIImage };
@@ -391,7 +410,13 @@ describe('ImageViewer full metadata loading', () => {
         const onToggleSidebar = vi.fn();
         const onDelete = vi.fn();
         const { container } = renderViewer({
-            onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onToggleSidebar, onDelete
+            onNext,
+            onPrev,
+            onClose,
+            onToggleFavorite,
+            onTogglePin,
+            onToggleSidebar,
+            onDelete,
         });
         await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
 
@@ -481,15 +506,23 @@ describe('ImageViewer full metadata loading', () => {
     it('forwards sidebar edits, searches, collections, and AI commands', async () => {
         aiState.value.result = 'analysis result';
         const callbacks = {
-            onUpdateNotes: vi.fn(), onUpdatePrompt: vi.fn(), onUpdateNegativePrompt: vi.fn(),
-            onUpdateModel: vi.fn(), onUpdateTool: vi.fn(), onSetCollectionMembership: vi.fn().mockResolvedValue(true),
-            onSearch: vi.fn(), onRecoverMetadata: vi.fn(), onRevertMetadata: vi.fn(), onOpenSettings: vi.fn()
+            onUpdateNotes: vi.fn(),
+            onUpdatePrompt: vi.fn(),
+            onUpdateNegativePrompt: vi.fn(),
+            onUpdateModel: vi.fn(),
+            onUpdateTool: vi.fn(),
+            onSetCollectionMembership: vi.fn().mockResolvedValue(true),
+            onSearch: vi.fn(),
+            onRecoverMetadata: vi.fn(),
+            onRevertMetadata: vi.fn(),
+            onOpenSettings: vi.fn(),
         };
         renderViewer(callbacks);
         await waitFor(() => expect(captures.sidebar).toBeTruthy());
         const sidebar = captures.sidebar as {
             setActiveTab: (tab: 'edit') => void;
-            setNotes: (value: string) => void; setPromptValue: (value: string) => void;
+            setNotes: (value: string) => void;
+            setPromptValue: (value: string) => void;
             setNegativePromptValue: (value: string) => void;
             onUpdateNotes: (id: string, value: string) => void;
             onUpdatePrompt: (id: string, value: string) => void;
@@ -498,8 +531,11 @@ describe('ImageViewer full metadata loading', () => {
             onUpdateTool: (id: string, value: GeneratorTool) => void;
             onSetCollectionMembership: (id: string, collection: string, shouldBelong: boolean) => Promise<boolean>;
             onSearch: (term: string) => void;
-            onRecoverMetadata: () => void; onRevertMetadata: (id: string) => void;
-            onAIAnalysis: () => void; onGenerateVariations: () => void; onOpenAIResult: () => void;
+            onRecoverMetadata: () => void;
+            onRevertMetadata: (id: string) => void;
+            onAIAnalysis: () => void;
+            onGenerateVariations: () => void;
+            onOpenAIResult: () => void;
         };
         act(() => {
             sidebar.setActiveTab('edit');
@@ -559,14 +595,16 @@ describe('ImageViewer full metadata loading', () => {
         const stacked = { ...lightImage, stack: [large, small] };
         mockGetImageWithFullMetadata.mockImplementation(async (id: string) => ({
             ...(id === 'large' ? large : lightImage),
-            metadata: metadata(id)
+            metadata: metadata(id),
         }));
         renderViewer({ image: stacked });
         await waitFor(() => expect(captures.versions).toBeTruthy());
         const versions = captures.versions as {
-            versions: AIImage[]; onVersionSelect: (id: string) => void; activeVersionId: string;
+            versions: AIImage[];
+            onVersionSelect: (id: string) => void;
+            activeVersionId: string;
         };
-        expect(versions.versions.map(image => image.id)).toEqual(['small', 'large']);
+        expect(versions.versions.map((image) => image.id)).toEqual(['small', 'large']);
 
         act(() => versions.onVersionSelect('large'));
         await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith('large'));
@@ -581,12 +619,16 @@ describe('ImageViewer full metadata loading', () => {
         const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
         const share = vi.fn().mockResolvedValue(undefined);
         Object.defineProperty(navigator, 'clipboard', {
-            configurable: true, value: { write: clipboardWrite, writeText: clipboardWriteText }
+            configurable: true,
+            value: { write: clipboardWrite, writeText: clipboardWriteText },
         });
         Object.defineProperty(navigator, 'share', { configurable: true, value: share });
-        vi.stubGlobal('ClipboardItem', class ClipboardItem {
-            constructor(public value: Record<string, Blob>) {}
-        });
+        vi.stubGlobal(
+            'ClipboardItem',
+            class ClipboardItem {
+                constructor(public value: Record<string, Blob>) {}
+            }
+        );
         const blob = new Blob(['image'], { type: 'image/png' });
         const fetchMock = vi.fn().mockResolvedValue({ blob: vi.fn().mockResolvedValue(blob) });
         vi.stubGlobal('fetch', fetchMock);
@@ -600,8 +642,12 @@ describe('ImageViewer full metadata loading', () => {
         const { container } = renderViewer({ onToggleFavorite, onTogglePin, onDelete });
         await waitFor(() => expect(captures.toolbar).toBeTruthy());
         const toolbar = captures.toolbar as {
-            onCopy: () => Promise<void>; onOpenExternal: () => Promise<void>; onShare: () => void;
-            onToggleTheater: () => void; onToggleFavorite: () => void; onTogglePin: () => void;
+            onCopy: () => Promise<void>;
+            onOpenExternal: () => Promise<void>;
+            onShare: () => void;
+            onToggleTheater: () => void;
+            onToggleFavorite: () => void;
+            onTogglePin: () => void;
             onDelete: () => void;
         };
 
@@ -644,7 +690,9 @@ describe('ImageViewer full metadata loading', () => {
         Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
         renderViewer();
         const toolbar = captures.toolbar as {
-            onShare: () => void; onTogglePin?: () => void; onDelete?: () => void;
+            onShare: () => void;
+            onTogglePin?: () => void;
+            onDelete?: () => void;
         };
         toolbar.onShare();
         expect(toolbar.onTogglePin).toBeUndefined();
@@ -681,9 +729,9 @@ describe('ImageViewer full metadata loading', () => {
 
         await waitFor(() => expect(assetAccessMock).toHaveBeenCalled());
         await waitFor(() => expect(captures.sidebar?.isLoading).toBe(false));
-        await waitFor(() => expect(warnSpy).toHaveBeenCalledWith(
-            '[ImageViewer] Failed to register image path for viewer', expect.any(Error)
-        ));
+        await waitFor(() =>
+            expect(warnSpy).toHaveBeenCalledWith('[ImageViewer] Failed to register image path for viewer', expect.any(Error))
+        );
         const config = captures.aiConfig as { onError: (message: string) => void };
         config.onError('AI failed');
         expect(toastMock).toHaveBeenCalledWith('AI failed', 'error');
@@ -699,14 +747,17 @@ describe('ImageViewer full metadata loading', () => {
             isPinned: true,
             notes: undefined,
             metadata: { ...metadata(''), negativePrompt: '', overrideModel: 'Override Model' },
-            stack: [version]
+            stack: [version],
         };
         mockGetImageWithFullMetadata.mockResolvedValue(null);
         const { container } = renderViewer({ image });
         await act(async () => Promise.resolve());
         expect(container.querySelector('[role="status"]')?.getAttribute('aria-label')).toBe('not liked, pinned');
         const sidebar = captures.sidebar as {
-            notes: string; promptValue: string; negativePromptValue: string; image: AIImage;
+            notes: string;
+            promptValue: string;
+            negativePromptValue: string;
+            image: AIImage;
         };
         expect(sidebar).toMatchObject({ notes: '', promptValue: '', negativePromptValue: '' });
         expect(sidebar.image.metadata.overrideModel).toBe('Override Model');
@@ -734,11 +785,11 @@ describe('ImageViewer full metadata loading', () => {
     it('preserves a reactive override model while merging matching full metadata', async () => {
         const image: AIImage = {
             ...lightImage,
-            metadata: { ...lightImage.metadata, overrideModel: 'Reactive Override' }
+            metadata: { ...lightImage.metadata, overrideModel: 'Reactive Override' },
         };
         mockGetImageWithFullMetadata.mockResolvedValue({
             ...lightImage,
-            metadata: { ...lightImage.metadata, model: 'Persisted Model' }
+            metadata: { ...lightImage.metadata, model: 'Persisted Model' },
         });
         renderViewer({ image });
 
@@ -746,14 +797,14 @@ describe('ImageViewer full metadata loading', () => {
             const sidebar = captures.sidebar as { image: AIImage };
             expect(sidebar.image.metadata).toMatchObject({
                 model: 'Persisted Model',
-                overrideModel: 'Reactive Override'
+                overrideModel: 'Reactive Override',
             });
         });
     });
 
     it('announces and styles a favorite-only image', () => {
         const { container } = renderViewer({
-            image: { ...lightImage, isFavorite: true, isPinned: false }
+            image: { ...lightImage, isFavorite: true, isPinned: false },
         });
         const status = container.querySelector('[role="status"]');
         expect(status?.getAttribute('aria-label')).toBe('liked, not pinned');

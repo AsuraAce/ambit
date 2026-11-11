@@ -57,14 +57,16 @@ const baseSettings: AppSettings = {
 
 const renderFoldersHook = (
     settings: AppSettings = baseSettings,
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>
+    onScanFolder?: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>
 ) => {
     const setSettings = vi.fn();
-    const rendered = renderHook(() => useFoldersTabLogic({
-        settings,
-        setSettings,
-        onScanFolder,
-    }));
+    const rendered = renderHook(() =>
+        useFoldersTabLogic({
+            settings,
+            setSettings,
+            onScanFolder,
+        })
+    );
 
     return { ...rendered, setSettings };
 };
@@ -76,7 +78,7 @@ const emptyResources = {
     hypernetworks: [],
     controlNets: [],
     ipAdapters: [],
-    tools: []
+    tools: [],
 };
 
 const emptyImportResult = (overrides: Partial<ImportResult> = {}): ImportResult => {
@@ -89,7 +91,7 @@ const emptyImportResult = (overrides: Partial<ImportResult> = {}): ImportResult 
         touchedFacetResources: emptyResources,
         wasCancelled: false,
         completedSourcePaths: [],
-        cancelledSourcePaths: []
+        cancelledSourcePaths: [],
     };
 
     return {
@@ -97,8 +99,8 @@ const emptyImportResult = (overrides: Partial<ImportResult> = {}): ImportResult 
         ...overrides,
         stats: {
             ...base.stats,
-            ...overrides.stats
-        }
+            ...overrides.stats,
+        },
     };
 };
 
@@ -113,7 +115,7 @@ describe('useFoldersTabLogic', () => {
         getThumbnailDirMock.mockResolvedValue('C:/thumbs');
         vi.mocked(commands.getImageCountForPathPrefix).mockResolvedValue({
             status: 'ok',
-            data: 0
+            data: 0,
         });
         useSettingsStore.setState({ settings: baseSettings });
         useLibraryStore.setState({
@@ -124,7 +126,7 @@ describe('useFoldersTabLogic', () => {
             importProgress: null,
             importAbortController: null,
             importRunId: null,
-            importRunOwner: null
+            importRunOwner: null,
         });
     });
 
@@ -136,7 +138,7 @@ describe('useFoldersTabLogic', () => {
             .mockImplementation(updateLastScannedMock);
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10, mediaType: 'image' }]
+            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10, mediaType: 'image' }],
         });
         vi.mocked(processNativePaths).mockResolvedValueOnce({
             images: [],
@@ -147,7 +149,7 @@ describe('useFoldersTabLogic', () => {
             touchedFacetResources: emptyResources,
             wasCancelled: true,
             completedSourcePaths: [],
-            cancelledSourcePaths: []
+            cancelledSourcePaths: [],
         });
         const settings = {
             ...baseSettings,
@@ -158,15 +160,17 @@ describe('useFoldersTabLogic', () => {
                     isActive: true,
                     imageCount: 0,
                     variant: GeneratorTool.COMFYUI,
-                    lastScanned: 10
-                }
-            ]
+                    lastScanned: 10,
+                },
+            ],
         };
-        const { result } = renderHook(() => useFoldersTabLogic({
-            settings,
-            setSettings: vi.fn(),
-            onScanFolder: vi.fn()
-        }));
+        const { result } = renderHook(() =>
+            useFoldersTabLogic({
+                settings,
+                setSettings: vi.fn(),
+                onScanFolder: vi.fn(),
+            })
+        );
 
         await act(async () => {
             await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Comfy/output', GeneratorTool.COMFYUI, false);
@@ -193,11 +197,11 @@ describe('useFoldersTabLogic', () => {
         const activeRunId = useLibraryStore.getState().beginImportRun({
             owner: 'active-import',
             abortController: new AbortController(),
-            progress: { current: 4, total: 10, message: 'Active import' }
+            progress: { current: 4, total: 10, message: 'Active import' },
         });
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10, mediaType: 'image' }]
+            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10, mediaType: 'image' }],
         });
         const settings = {
             ...baseSettings,
@@ -208,15 +212,17 @@ describe('useFoldersTabLogic', () => {
                     isActive: true,
                     imageCount: 0,
                     variant: GeneratorTool.COMFYUI,
-                    lastScanned: 10
-                }
-            ]
+                    lastScanned: 10,
+                },
+            ],
         };
-        const { result } = renderHook(() => useFoldersTabLogic({
-            settings,
-            setSettings: vi.fn(),
-            onScanFolder: vi.fn()
-        }));
+        const { result } = renderHook(() =>
+            useFoldersTabLogic({
+                settings,
+                setSettings: vi.fn(),
+                onScanFolder: vi.fn(),
+            })
+        );
 
         await act(async () => {
             await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Comfy/output', GeneratorTool.COMFYUI, false);
@@ -258,7 +264,7 @@ describe('useFoldersTabLogic', () => {
             expect(finalSettings.monitoredFolders[0]).toMatchObject({
                 path: 'D:/AmbitFixtures/Cancelled',
                 initialScanPending: false,
-                initialScanCancelled: true
+                initialScanCancelled: true,
             });
             expect(finalSettings.monitoredFolders[0].lastScanned).toBeUndefined();
         } finally {
@@ -269,11 +275,13 @@ describe('useFoldersTabLogic', () => {
     it('uses source-level status for batched added-folder initial imports', async () => {
         vi.useFakeTimers();
         try {
-            const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
-                wasCancelled: true,
-                completedSourcePaths: ['D:/AmbitFixtures/Done'],
-                cancelledSourcePaths: ['D:/AmbitFixtures/Cancel']
-            }));
+            const onScanFolder = vi.fn().mockResolvedValue(
+                emptyImportResult({
+                    wasCancelled: true,
+                    completedSourcePaths: ['D:/AmbitFixtures/Done'],
+                    cancelledSourcePaths: ['D:/AmbitFixtures/Cancel'],
+                })
+            );
             const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
 
             act(() => {
@@ -299,7 +307,7 @@ describe('useFoldersTabLogic', () => {
 
             expect(onScanFolder).toHaveBeenCalledWith([
                 { path: 'D:/AmbitFixtures/Done', variant: GeneratorTool.UNKNOWN },
-                { path: 'D:/AmbitFixtures/Cancel', variant: GeneratorTool.UNKNOWN }
+                { path: 'D:/AmbitFixtures/Cancel', variant: GeneratorTool.UNKNOWN },
             ]);
 
             const addDone = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
@@ -307,18 +315,18 @@ describe('useFoldersTabLogic', () => {
             const finalizeUpdate = setSettings.mock.calls[2][0] as (previous: AppSettings) => AppSettings;
             const finalSettings = finalizeUpdate(addCancel(addDone(baseSettings)));
 
-            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AmbitFixtures/Done')).toMatchObject({
+            expect(finalSettings.monitoredFolders.find((folder) => folder.path === 'D:/AmbitFixtures/Done')).toMatchObject({
                 path: 'D:/AmbitFixtures/Done',
                 initialScanPending: false,
                 initialScanCancelled: false,
-                lastScanned: expect.any(Number)
+                lastScanned: expect.any(Number),
             });
-            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AmbitFixtures/Cancel')).toMatchObject({
+            expect(finalSettings.monitoredFolders.find((folder) => folder.path === 'D:/AmbitFixtures/Cancel')).toMatchObject({
                 path: 'D:/AmbitFixtures/Cancel',
                 initialScanPending: false,
-                initialScanCancelled: true
+                initialScanCancelled: true,
             });
-            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AmbitFixtures/Cancel')?.lastScanned).toBeUndefined();
+            expect(finalSettings.monitoredFolders.find((folder) => folder.path === 'D:/AmbitFixtures/Cancel')?.lastScanned).toBeUndefined();
         } finally {
             vi.useRealTimers();
         }
@@ -327,10 +335,12 @@ describe('useFoldersTabLogic', () => {
     it('keeps added-folder partial failures retryable without marking cancellation', async () => {
         vi.useFakeTimers();
         try {
-            const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
-                stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
-                failedPaths: ['D:/AmbitFixtures/Partial/bad.png']
-            }));
+            const onScanFolder = vi.fn().mockResolvedValue(
+                emptyImportResult({
+                    stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
+                    failedPaths: ['D:/AmbitFixtures/Partial/bad.png'],
+                })
+            );
             const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
 
             act(() => {
@@ -355,7 +365,7 @@ describe('useFoldersTabLogic', () => {
             expect(finalSettings.monitoredFolders[0]).toMatchObject({
                 path: 'D:/AmbitFixtures/Partial',
                 initialScanPending: false,
-                initialScanCancelled: false
+                initialScanCancelled: false,
             });
             expect(finalSettings.monitoredFolders[0].lastScanned).toBeUndefined();
             expect(addToastMock).toHaveBeenCalledWith('Folder scan completed with import errors', 'warning');
@@ -371,33 +381,37 @@ describe('useFoldersTabLogic', () => {
             isActive: true,
             imageCount: 0,
             variant: GeneratorTool.COMFYUI,
-            initialScanCancelled: true
+            initialScanCancelled: true,
         };
         const settings = {
             ...baseSettings,
-            monitoredFolders: [folder]
+            monitoredFolders: [folder],
         };
         useSettingsStore.setState({ settings });
         vi.mocked(commands.getImageCountForPathPrefix).mockResolvedValue({
             status: 'ok',
-            data: 5600
+            data: 5600,
         });
-        const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
-            images: [],
-            stats: { processed: 5600, imported: 0, skipped: 5600, errors: 0 }
-        }));
-        const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = update => {
+        const onScanFolder = vi.fn().mockResolvedValue(
+            emptyImportResult({
+                images: [],
+                stats: { processed: 5600, imported: 0, skipped: 5600, errors: 0 },
+            })
+        );
+        const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = (update) => {
             if (typeof update === 'function') {
-                useSettingsStore.getState().setSettings(prev => update(prev));
+                useSettingsStore.getState().setSettings((prev) => update(prev));
             } else {
                 useSettingsStore.getState().setSettings(update);
             }
         };
-        const { result } = renderHook(() => useFoldersTabLogic({
-            settings,
-            setSettings,
-            onScanFolder,
-        }));
+        const { result } = renderHook(() =>
+            useFoldersTabLogic({
+                settings,
+                setSettings,
+                onScanFolder,
+            })
+        );
 
         await act(async () => {
             await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Cancelled', GeneratorTool.COMFYUI, false);
@@ -417,29 +431,33 @@ describe('useFoldersTabLogic', () => {
             isActive: true,
             imageCount: 0,
             variant: GeneratorTool.COMFYUI,
-            initialScanCancelled: true
+            initialScanCancelled: true,
         };
         const settings = {
             ...baseSettings,
-            monitoredFolders: [folder]
+            monitoredFolders: [folder],
         };
         useSettingsStore.setState({ settings });
-        const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
-            wasCancelled: true,
-            cancelledSourcePaths: ['D:/AmbitFixtures/Cancelled']
-        }));
-        const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = update => {
+        const onScanFolder = vi.fn().mockResolvedValue(
+            emptyImportResult({
+                wasCancelled: true,
+                cancelledSourcePaths: ['D:/AmbitFixtures/Cancelled'],
+            })
+        );
+        const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = (update) => {
             if (typeof update === 'function') {
-                useSettingsStore.getState().setSettings(prev => update(prev));
+                useSettingsStore.getState().setSettings((prev) => update(prev));
             } else {
                 useSettingsStore.getState().setSettings(update);
             }
         };
-        const { result } = renderHook(() => useFoldersTabLogic({
-            settings,
-            setSettings,
-            onScanFolder,
-        }));
+        const { result } = renderHook(() =>
+            useFoldersTabLogic({
+                settings,
+                setSettings,
+                onScanFolder,
+            })
+        );
 
         await act(async () => {
             await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Cancelled', GeneratorTool.COMFYUI, false);
@@ -458,29 +476,33 @@ describe('useFoldersTabLogic', () => {
             isActive: true,
             imageCount: 0,
             variant: GeneratorTool.COMFYUI,
-            initialScanCancelled: true
+            initialScanCancelled: true,
         };
         const settings = {
             ...baseSettings,
-            monitoredFolders: [folder]
+            monitoredFolders: [folder],
         };
         useSettingsStore.setState({ settings });
-        const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
-            stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
-            failedPaths: ['D:/AmbitFixtures/Cancelled/bad.png']
-        }));
-        const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = update => {
+        const onScanFolder = vi.fn().mockResolvedValue(
+            emptyImportResult({
+                stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
+                failedPaths: ['D:/AmbitFixtures/Cancelled/bad.png'],
+            })
+        );
+        const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = (update) => {
             if (typeof update === 'function') {
-                useSettingsStore.getState().setSettings(prev => update(prev));
+                useSettingsStore.getState().setSettings((prev) => update(prev));
             } else {
                 useSettingsStore.getState().setSettings(update);
             }
         };
-        const { result } = renderHook(() => useFoldersTabLogic({
-            settings,
-            setSettings,
-            onScanFolder,
-        }));
+        const { result } = renderHook(() =>
+            useFoldersTabLogic({
+                settings,
+                setSettings,
+                onScanFolder,
+            })
+        );
 
         await act(async () => {
             await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Cancelled', GeneratorTool.COMFYUI, false);
@@ -530,14 +552,17 @@ describe('useFoldersTabLogic', () => {
     it('adds a managed InvokeAI output only when no overlapping folder exists', () => {
         const managed = renderFoldersHook({ ...baseSettings, invokeAiPath: 'D:/InvokeAI/databases' });
         expect(managed.result.current.combinedFolders[0]).toMatchObject({
-            id: 'managed_invoke', path: 'D:/InvokeAI/outputs/images', variant: GeneratorTool.INVOKEAI, isManaged: true
+            id: 'managed_invoke',
+            path: 'D:/InvokeAI/outputs/images',
+            variant: GeneratorTool.INVOKEAI,
+            isManaged: true,
         });
         managed.unmount();
 
         const overlapping = renderFoldersHook({
             ...baseSettings,
             invokeAiPath: 'D:/InvokeAI/databases/',
-            monitoredFolders: [{ id: 'root', path: 'D:/InvokeAI', isActive: true, imageCount: 1 }]
+            monitoredFolders: [{ id: 'root', path: 'D:/InvokeAI', isActive: true, imageCount: 1 }],
         });
         expect(overlapping.result.current.combinedFolders).toHaveLength(1);
         expect(overlapping.result.current.combinedFolders[0].id).toBe('root');
@@ -546,7 +571,7 @@ describe('useFoldersTabLogic', () => {
     it('detects missing variants and refreshes changed image counts', async () => {
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/ComfyUI/output', isActive: true, imageCount: 1, variant: GeneratorTool.UNKNOWN }]
+            monitoredFolders: [{ id: 'one', path: 'C:/ComfyUI/output', isActive: true, imageCount: 1, variant: GeneratorTool.UNKNOWN }],
         };
         vi.mocked(commands.getImageCountForPathPrefix).mockResolvedValueOnce({ status: 'ok', data: 5 });
         const { setSettings } = renderFoldersHook(settings);
@@ -560,7 +585,7 @@ describe('useFoldersTabLogic', () => {
         runtimeMocks.browserMockMode = true;
         const browserSettings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/Forge/output', isActive: true, imageCount: 1 }]
+            monitoredFolders: [{ id: 'one', path: 'C:/Forge/output', isActive: true, imageCount: 1 }],
         };
         const browser = renderFoldersHook(browserSettings);
         await waitFor(() => expect(browser.setSettings).toHaveBeenCalled());
@@ -572,7 +597,7 @@ describe('useFoldersTabLogic', () => {
         vi.mocked(commands.getImageCountForPathPrefix).mockRejectedValueOnce(new Error('count failed'));
         renderFoldersHook({
             ...baseSettings,
-            monitoredFolders: [{ id: 'two', path: 'C:/Other', isActive: true, imageCount: 1, variant: GeneratorTool.COMFYUI }]
+            monitoredFolders: [{ id: 'two', path: 'C:/Other', isActive: true, imageCount: 1, variant: GeneratorTool.COMFYUI }],
         });
         await waitFor(() => expect(errorSpy).toHaveBeenCalled());
         errorSpy.mockRestore();
@@ -598,9 +623,14 @@ describe('useFoldersTabLogic', () => {
         const updateLastScanned = vi.spyOn(useSettingsStore.getState(), 'updateFolderLastScanned').mockImplementation(vi.fn());
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10, variant: GeneratorTool.COMFYUI }]
+            monitoredFolders: [
+                { id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10, variant: GeneratorTool.COMFYUI },
+            ],
         };
-        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/Watch/new.png', modified: 1, size: 1, mediaType: 'image' }] });
+        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'C:/Watch/new.png', modified: 1, size: 1, mediaType: 'image' }],
+        });
         vi.mocked(processNativePaths).mockImplementationOnce(async (_paths, _thumbs, progress) => {
             progress?.(1, 1, 'done');
             return emptyImportResult({ images: [{ id: 'new' } as never], handledPaths: ['C:/Watch/new.png'] });
@@ -616,11 +646,17 @@ describe('useFoldersTabLogic', () => {
         const updateLastScanned = vi.spyOn(useSettingsStore.getState(), 'updateFolderLastScanned').mockImplementation(vi.fn());
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10, variant: GeneratorTool.COMFYUI }]
+            monitoredFolders: [
+                { id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10, variant: GeneratorTool.COMFYUI },
+            ],
         };
         vi.mocked(commands.scanDirectorySince).mockResolvedValue({ status: 'ok', data: [] });
         vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({
-            status: 'ok', data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }, { path: 'b', modified: 1, size: 1, mediaType: 'image' }]
+            status: 'ok',
+            data: [
+                { path: 'a', modified: 1, size: 1, mediaType: 'image' },
+                { path: 'b', modified: 1, size: 1, mediaType: 'image' },
+            ],
         });
         vi.mocked(processNativePaths).mockResolvedValueOnce(emptyImportResult({ images: [{ id: 'new' } as never] }));
         const repair = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
@@ -628,7 +664,10 @@ describe('useFoldersTabLogic', () => {
         expect(addToastMock).toHaveBeenCalledWith('Repair scan imported 1 missing files', 'success');
         repair.unmount();
 
-        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }] });
+        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }],
+        });
         const noChange = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
         await act(async () => noChange.result.current.handleRescan('one', 'C:/Watch', GeneratorTool.COMFYUI));
         expect(addToastMock).toHaveBeenCalledWith('No changes detected', 'info');
@@ -655,8 +694,8 @@ describe('useFoldersTabLogic', () => {
             ...baseSettings,
             monitoredFolders: [
                 { id: 'changed', path: 'C:/ComfyUI', isActive: true, imageCount: 1, variant: GeneratorTool.UNKNOWN },
-                { id: 'same', path: 'C:/Stable', isActive: true, imageCount: 2, variant: GeneratorTool.COMFYUI }
-            ]
+                { id: 'same', path: 'C:/Stable', isActive: true, imageCount: 2, variant: GeneratorTool.COMFYUI },
+            ],
         };
         vi.mocked(commands.getImageCountForPathPrefix)
             .mockResolvedValueOnce({ status: 'ok', data: 3 })
@@ -666,14 +705,17 @@ describe('useFoldersTabLogic', () => {
         const update = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         const next = update(settings);
         expect(next.monitoredFolders[1]).toBe(settings.monitoredFolders[1]);
-        expect(update({ ...settings, monitoredFolders: settings.monitoredFolders.slice(1) })).toEqual({ ...settings, monitoredFolders: settings.monitoredFolders.slice(1) });
+        expect(update({ ...settings, monitoredFolders: settings.monitoredFolders.slice(1) })).toEqual({
+            ...settings,
+            monitoredFolders: settings.monitoredFolders.slice(1),
+        });
     });
 
     it('recognizes a monitored parent of the InvokeAI root', () => {
         const { result } = renderFoldersHook({
             ...baseSettings,
             invokeAiPath: 'D:/InvokeAI/databases',
-            monitoredFolders: [{ id: 'parent', path: 'D:/', isActive: true, imageCount: 1 }]
+            monitoredFolders: [{ id: 'parent', path: 'D:/', isActive: true, imageCount: 1 }],
         });
         expect(result.current.combinedFolders).toHaveLength(1);
     });
@@ -683,9 +725,12 @@ describe('useFoldersTabLogic', () => {
         const updateLastScanned = vi.spyOn(useSettingsStore.getState(), 'updateFolderLastScanned').mockImplementation(vi.fn());
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10 }]
+            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10 }],
         };
-        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'bad', modified: 1, size: 1, mediaType: 'image' }] });
+        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'bad', modified: 1, size: 1, mediaType: 'image' }],
+        });
         vi.mocked(processNativePaths).mockResolvedValueOnce(emptyImportResult({ failedPaths: ['bad'] }));
         const { result } = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
         await act(async () => result.current.handleRescan('one', 'C:/Watch'));
@@ -698,10 +743,13 @@ describe('useFoldersTabLogic', () => {
     it('handles repair contention, cancellation, empty success, and partial failure', async () => {
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 0, lastScanned: 10 }]
+            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 0, lastScanned: 10 }],
         };
         vi.mocked(commands.scanDirectorySince).mockResolvedValue({ status: 'ok', data: [] });
-        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValue({ status: 'ok', data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }] });
+        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValue({
+            status: 'ok',
+            data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }],
+        });
 
         useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
         const busy = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
@@ -785,7 +833,7 @@ describe('useFoldersTabLogic', () => {
     it('keeps an unknown detected variant while updating its count', async () => {
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'unknown', path: 'C:/Other', isActive: true, imageCount: 1, variant: GeneratorTool.UNKNOWN }]
+            monitoredFolders: [{ id: 'unknown', path: 'C:/Other', isActive: true, imageCount: 1, variant: GeneratorTool.UNKNOWN }],
         };
         vi.mocked(commands.getImageCountForPathPrefix).mockResolvedValueOnce({ status: 'ok', data: 2 });
         const { setSettings } = renderFoldersHook(settings);
@@ -812,7 +860,7 @@ describe('useFoldersTabLogic', () => {
         const updateLastScanned = vi.spyOn(useSettingsStore.getState(), 'updateFolderLastScanned').mockImplementation(vi.fn());
         const settings = {
             ...baseSettings,
-            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 0, lastScanned: 10 }]
+            monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 0, lastScanned: 10 }],
         };
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [] });
         vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({ status: 'ok', data: [] });

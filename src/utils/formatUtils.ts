@@ -15,9 +15,7 @@ export const formatCount = (count: number): string => {
 
     if (count < 1000000) {
         const kValue = count / 1000;
-        return kValue >= 10
-            ? `${kValue.toFixed(1)}k`
-            : `${kValue.toFixed(1)}k`; // Could be more specific if 1.0k vs 1k is desired
+        return kValue >= 10 ? `${kValue.toFixed(1)}k` : `${kValue.toFixed(1)}k`; // Could be more specific if 1.0k vs 1k is desired
     }
 
     const mValue = count / 1000000;

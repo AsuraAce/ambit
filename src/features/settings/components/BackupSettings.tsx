@@ -32,7 +32,7 @@ export const BackupSettings: React.FC = () => {
     }, [addToast, browserMockMode]);
 
     React.useEffect(() => {
-        loadBackups().catch(error => console.error('[Backups] Failed to load backups', error));
+        loadBackups().catch((error) => console.error('[Backups] Failed to load backups', error));
     }, [loadBackups]);
 
     const handleCreateBackup = async () => {
@@ -40,7 +40,7 @@ export const BackupSettings: React.FC = () => {
         const result = await commands.backupDatabase();
         if (result.status === 'ok') {
             addToast('Backup created successfully', 'success');
-            loadBackups().catch(error => console.error('[Backups] Failed to load backups', error));
+            loadBackups().catch((error) => console.error('[Backups] Failed to load backups', error));
         } else {
             console.error(result.error);
             addToast(`Backup failed: ${result.error}`, 'error');
@@ -114,7 +114,10 @@ export const BackupSettings: React.FC = () => {
                     </div>
                 ) : (
                     backups.slice(0, 3).map((backup) => (
-                        <div key={backup.name} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 transition-colors group">
+                        <div
+                            key={backup.name}
+                            className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 transition-colors group"
+                        >
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-white dark:bg-white/5 rounded-md text-sage-600 dark:text-sage-400">
                                     <FileClock className="w-4 h-4" />
@@ -124,24 +127,20 @@ export const BackupSettings: React.FC = () => {
                                     <div className="text-xs text-gray-500">{formatDate(backup.createdAt)}</div>
                                 </div>
                             </div>
-                            <div className="text-sm text-gray-500 font-mono">
-                                {formatSize(backup.sizeBytes)}
-                            </div>
+                            <div className="text-sm text-gray-500 font-mono">{formatSize(backup.sizeBytes)}</div>
                         </div>
                     ))
                 )}
                 {backups.length > 3 && (
-                    <div className="text-center text-xs text-gray-500 pt-2">
-                        + {backups.length - 3} more archived backups
-                    </div>
+                    <div className="text-center text-xs text-gray-500 pt-2">+ {backups.length - 3} more archived backups</div>
                 )}
             </div>
 
             <div className="mt-4 flex items-start gap-2 p-3 bg-harbor-50 dark:bg-harbor-900/10 text-harbor-600 dark:text-harbor-300 rounded-lg text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <p>
-                    Production builds create backups automatically once every 24 hours. The newest 3 backups are kept.
-                    Development builds only create backups when you use Backup Now. To restore, please manually replace the <code>images.db</code> file.
+                    Production builds create backups automatically once every 24 hours. The newest 3 backups are kept. Development builds
+                    only create backups when you use Backup Now. To restore, please manually replace the <code>images.db</code> file.
                 </p>
             </div>
         </section>

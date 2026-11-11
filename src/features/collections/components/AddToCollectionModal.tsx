@@ -25,12 +25,18 @@ type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'd
 
 const getColorClass = (colorName: string) => {
     switch (colorName) {
-        case 'red': return 'bg-red-500';
-        case 'orange': return 'bg-orange-500';
-        case 'green': return 'bg-green-500';
-        case 'blue': return 'bg-blue-500';
-        case 'purple': return 'bg-purple-500';
-        default: return '';
+        case 'red':
+            return 'bg-red-500';
+        case 'orange':
+            return 'bg-orange-500';
+        case 'green':
+            return 'bg-green-500';
+        case 'blue':
+            return 'bg-blue-500';
+        case 'purple':
+            return 'bg-purple-500';
+        default:
+            return '';
     }
 };
 
@@ -42,22 +48,20 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     selectedIds,
     onConfirm,
     mode = 'add',
-    sourceCollectionId
+    sourceCollectionId,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [sort, setSort] = useState<CollectionSort>('date_desc');
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
     const closeButtonRef = React.useRef<HTMLButtonElement>(null);
-    const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
-    const smartSummaryPendingIds = useCollectionStore(s => s.smartSummaryPendingIds);
+    const thumbnailHydrationPendingIds = useCollectionStore((s) => s.thumbnailHydrationPendingIds);
+    const smartSummaryPendingIds = useCollectionStore((s) => s.smartSummaryPendingIds);
 
     React.useEffect(() => {
         if (!isOpen) return;
 
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         closeButtonRef.current?.focus();
 
         return () => {
@@ -68,7 +72,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     const allCollections = [...collections, ...smartCollections];
 
     const filtered = allCollections
-        .filter(c => {
+        .filter((c) => {
             const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesArchive = showArchived ? true : !c.isArchived;
             const isNotSource = c.id !== sourceCollectionId;
@@ -76,12 +80,19 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
         })
         .sort((a, b) => {
             switch (sort) {
-                case 'name_asc': return a.name.localeCompare(b.name);
-                case 'name_desc': return b.name.localeCompare(a.name);
-                case 'count_asc': return compareCollectionsByCount(a, b, 'asc');
-                case 'count_desc': return compareCollectionsByCount(a, b, 'desc');
-                case 'date_asc': return a.createdAt - b.createdAt;
-                case 'date_desc': default: return b.createdAt - a.createdAt;
+                case 'name_asc':
+                    return a.name.localeCompare(b.name);
+                case 'name_desc':
+                    return b.name.localeCompare(a.name);
+                case 'count_asc':
+                    return compareCollectionsByCount(a, b, 'asc');
+                case 'count_desc':
+                    return compareCollectionsByCount(a, b, 'desc');
+                case 'date_asc':
+                    return a.createdAt - b.createdAt;
+                case 'date_desc':
+                default:
+                    return b.createdAt - a.createdAt;
             }
         });
 
@@ -119,21 +130,24 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                             {mode === 'move' ? 'Move to Collection' : 'Add to Collection'}
                         </h3>
-                        <p className="text-xs text-gray-500">{selectedIds.length} {selectedIds.length === 1 ? 'item' : 'items'} selected</p>
+                        <p className="text-xs text-gray-500">
+                            {selectedIds.length} {selectedIds.length === 1 ? 'item' : 'items'} selected
+                        </p>
                     </div>
-                    <button ref={closeButtonRef} type="button" aria-label="Close Add to Collection" onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
+                    <button
+                        ref={closeButtonRef}
+                        type="button"
+                        aria-label="Close Add to Collection"
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
+                    >
                         <X className="w-5 h-5 text-gray-400" />
                     </button>
                 </div>
 
                 {/* Toolbar: Search and Sort */}
                 <div className="px-6 py-3 bg-gray-50/50 dark:bg-white/[0.02] flex items-center gap-2 border-b border-gray-100 dark:border-white/5">
-                    <SearchInput
-                        value={searchQuery}
-                        onChange={setSearchQuery}
-                        placeholder="Search collections..."
-                        className="flex-1"
-                    />
+                    <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search collections..." className="flex-1" />
 
                     <div className="relative">
                         <TooltipButton
@@ -147,8 +161,8 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                         </TooltipButton>
 
                         <TooltipButton
-                            label={showArchived ? "Hide Archived Collections" : "Show Archived Collections"}
-                            content={showArchived ? "Hide Archived Collections" : "Show Archived Collections"}
+                            label={showArchived ? 'Hide Archived Collections' : 'Show Archived Collections'}
+                            content={showArchived ? 'Hide Archived Collections' : 'Show Archived Collections'}
                             aria-pressed={showArchived}
                             onClick={() => setShowArchived(!showArchived)}
                             className={`p-2 rounded-lg border transition-all ${showArchived ? 'bg-sage-600 text-white border-sage-600' : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-white/10 text-gray-500'}`}
@@ -166,7 +180,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                         exit={{ opacity: 0, y: 5, scale: 0.95 }}
                                         className="absolute right-0 mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-20 py-1 overflow-hidden"
                                     >
-                                        {sortOptions.map(opt => (
+                                        {sortOptions.map((opt) => (
                                             <button
                                                 key={opt.id}
                                                 onClick={() => {
@@ -190,8 +204,9 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                 <div className="max-h-[350px] overflow-y-auto custom-scrollbar p-2">
                     {filtered.length > 0 ? (
                         <div className="grid grid-cols-1 gap-1">
-                            {filtered.map(col => {
-                                const showThumbnailSkeleton = (!!thumbnailHydrationPendingIds[col.id] || !!smartSummaryPendingIds[col.id]) && !col.thumbnail;
+                            {filtered.map((col) => {
+                                const showThumbnailSkeleton =
+                                    (!!thumbnailHydrationPendingIds[col.id] || !!smartSummaryPendingIds[col.id]) && !col.thumbnail;
                                 const count = getCollectionCount(col);
 
                                 return (
@@ -210,7 +225,13 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                                         isSensitive={col.thumbnailIsSensitive}
                                                         wrapperClassName="w-full h-full rounded-lg"
                                                         imgClassName="w-full h-full object-cover shadow-sm border border-gray-200 dark:border-white/5"
-                                                        fallback={col.filters ? <Sparkles className="w-5 h-5 text-sage-500 opacity-20" /> : <Folder className="w-5 h-5 opacity-20" />}
+                                                        fallback={
+                                                            col.filters ? (
+                                                                <Sparkles className="w-5 h-5 text-sage-500 opacity-20" />
+                                                            ) : (
+                                                                <Folder className="w-5 h-5 opacity-20" />
+                                                            )
+                                                        }
                                                     />
                                                     {col.color && (
                                                         <div
@@ -232,7 +253,13 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                                     data-testid="collection-thumbnail-fallback"
                                                     className={`w-10 h-10 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}
                                                 >
-                                                    {col.isArchived ? <Archive className="w-5 h-5 text-gray-400" /> : (col.filters ? <Sparkles className="w-5 h-5 text-sage-500" /> : <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />)}
+                                                    {col.isArchived ? (
+                                                        <Archive className="w-5 h-5 text-gray-400" />
+                                                    ) : col.filters ? (
+                                                        <Sparkles className="w-5 h-5 text-sage-500" />
+                                                    ) : (
+                                                        <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />
+                                                    )}
                                                     {col.color && (
                                                         <div
                                                             className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
@@ -246,7 +273,9 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                                         {col.name}
                                                     </div>
                                                     {col.isArchived && (
-                                                        <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1 rounded uppercase tracking-tighter">Archived</span>
+                                                        <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1 rounded uppercase tracking-tighter">
+                                                            Archived
+                                                        </span>
                                                     )}
                                                 </div>
                                                 <div
@@ -275,7 +304,9 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
 
                 {/* Footer Tips */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5">
-                    <p className="text-[10px] text-gray-400 text-center uppercase tracking-widest">Tip: You can also drag and drop images directly onto the sidebar</p>
+                    <p className="text-[10px] text-gray-400 text-center uppercase tracking-widest">
+                        Tip: You can also drag and drop images directly onto the sidebar
+                    </p>
                 </div>
             </motion.div>
         </div>

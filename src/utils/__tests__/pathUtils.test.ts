@@ -1,4 +1,3 @@
-
 import { describe, it, expect } from 'vitest';
 import {
     getDirectoryPath,
@@ -60,14 +59,15 @@ describe('pathUtils', () => {
         });
 
         it('should repair https asset localhost urls used in release builds', () => {
-            expect(repairAssetUrl('https://asset.localhost/C%3A%2FUsers%2FName%2Fimage.webp')).toBe('https://asset.localhost/C:/Users/Name/image.webp');
+            expect(repairAssetUrl('https://asset.localhost/C%3A%2FUsers%2FName%2Fimage.webp')).toBe(
+                'https://asset.localhost/C:/Users/Name/image.webp'
+            );
         });
 
         it('passes through empty and non-asset URLs while repairing encoded backslashes', () => {
             expect(repairAssetUrl('')).toBe('');
             expect(repairAssetUrl('https://example.test/image.png')).toBe('https://example.test/image.png');
-            expect(repairAssetUrl('https://localhost/_up_/C%3A%5Cimage.png'))
-                .toBe('https://localhost/_up_/C:/image.png');
+            expect(repairAssetUrl('https://localhost/_up_/C%3A%5Cimage.png')).toBe('https://localhost/_up_/C:/image.png');
         });
     });
 
@@ -102,8 +102,18 @@ describe('pathUtils', () => {
         });
 
         it('should detect when a path is inside a directory', () => {
-            expect(isPathWithinDirectory('C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/.thumbnails/file.webp', 'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit')).toBe(true);
-            expect(isPathWithinDirectory('D:/AmbitFixtures/art/output/image.png', 'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit')).toBe(false);
+            expect(
+                isPathWithinDirectory(
+                    'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/.thumbnails/file.webp',
+                    'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit'
+                )
+            ).toBe(true);
+            expect(
+                isPathWithinDirectory(
+                    'D:/AmbitFixtures/art/output/image.png',
+                    'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit'
+                )
+            ).toBe(false);
         });
     });
 

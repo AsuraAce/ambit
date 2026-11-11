@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { motion } from 'framer-motion';
 
@@ -27,8 +26,8 @@ export const WordCloud: React.FC<WordCloudProps & { isLoading?: boolean }> = ({ 
     }
 
     // Normalize values for font size
-    const max = Math.max(...keywords.map(k => k.value));
-    const min = Math.min(...keywords.map(k => k.value));
+    const max = Math.max(...keywords.map((k) => k.value));
+    const min = Math.min(...keywords.map((k) => k.value));
 
     const getFontSize = (value: number) => {
         if (max === min) return '1rem';
@@ -51,8 +50,11 @@ export const WordCloud: React.FC<WordCloudProps & { isLoading?: boolean }> = ({ 
                         animate={{ scale: 1, opacity: getOpacity(word.value) }}
                         whileHover={{ scale: 1.1, opacity: 1 }}
                         onClick={() => onWordClick(word.text)}
-                        className={`cursor-pointer transition-colors hover:text-white font-medium whitespace-nowrap focus:outline-none ${['text-indigo-400', 'text-purple-400', 'text-pink-400', 'text-sage-400', 'text-blue-400', 'text-emerald-400'][i % 6]
-                            }`}
+                        className={`cursor-pointer transition-colors hover:text-white font-medium whitespace-nowrap focus:outline-none ${
+                            ['text-indigo-400', 'text-purple-400', 'text-pink-400', 'text-sage-400', 'text-blue-400', 'text-emerald-400'][
+                                i % 6
+                            ]
+                        }`}
                         style={{ fontSize: getFontSize(word.value) }}
                         title={`${word.value} occurrences`}
                     >

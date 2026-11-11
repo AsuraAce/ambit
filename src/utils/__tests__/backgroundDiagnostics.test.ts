@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 interface DiagnosticWindow extends Window {
-    ambitDiagnostics?: { background?: { snapshot: () => { active: Array<{ id: string; detail?: Record<string, unknown> }>; history: Array<{ id: string; status: string; detail?: Record<string, unknown> }> } } };
+    ambitDiagnostics?: {
+        background?: {
+            snapshot: () => {
+                active: Array<{ id: string; detail?: Record<string, unknown> }>;
+                history: Array<{ id: string; status: string; detail?: Record<string, unknown> }>;
+            };
+        };
+    };
 }
 
 describe('backgroundDiagnostics', () => {
@@ -64,6 +71,6 @@ describe('backgroundDiagnostics', () => {
         const history = (window as DiagnosticWindow).ambitDiagnostics?.background?.snapshot().history ?? [];
         expect(history).toHaveLength(100);
         expect(history[0].status).toBe('finished');
-        expect(history.some(entry => entry.id.includes('timer-0'))).toBe(false);
+        expect(history.some((entry) => entry.id.includes('timer-0'))).toBe(false);
     });
 });

@@ -12,14 +12,7 @@ interface MetadataFieldProps {
     className?: string;
 }
 
-export const MetadataField: React.FC<MetadataFieldProps> = ({
-    label,
-    icon,
-    source,
-    modified = false,
-    children,
-    className = '',
-}) => {
+export const MetadataField: React.FC<MetadataFieldProps> = ({ label, icon, source, modified = false, children, className = '' }) => {
     const isModified = modified || source === 'user_override';
 
     return (
@@ -28,9 +21,7 @@ export const MetadataField: React.FC<MetadataFieldProps> = ({
                 title={label}
                 icon={icon}
                 modified={isModified}
-                trailing={isModified || source
-                    ? <MetadataSourceBadge source={isModified ? 'user_override' : source} />
-                    : undefined}
+                trailing={isModified || source ? <MetadataSourceBadge source={isModified ? 'user_override' : source} /> : undefined}
                 className="mb-2"
             />
             {children}

@@ -4,10 +4,18 @@ import { GeneratorTool, type MonitoredFolder } from '../../../../types';
 import { FolderItem } from '../FolderItem';
 
 const folder = (overrides: Partial<MonitoredFolder> = {}): MonitoredFolder => ({
-    id: 'folder-1', path: 'C:/images', isActive: true, imageCount: 12, ...overrides
+    id: 'folder-1',
+    path: 'C:/images',
+    isActive: true,
+    imageCount: 12,
+    ...overrides,
 });
 
-const setup = (target = folder(), scanningIds = new Set<string>(), onRefresh: ((path: string, force: boolean, variant?: GeneratorTool, managed?: boolean) => void) | null = vi.fn()) => {
+const setup = (
+    target = folder(),
+    scanningIds = new Set<string>(),
+    onRefresh: ((path: string, force: boolean, variant?: GeneratorTool, managed?: boolean) => void) | null = vi.fn()
+) => {
     const props = { folder: target, scanningIds, onRescan: vi.fn(), onRemove: vi.fn(), onRefresh: onRefresh ?? undefined };
     const result = render(<FolderItem {...props} />);
     return { ...result, props };
@@ -33,7 +41,13 @@ describe('FolderItem', () => {
     });
 
     it('uses managed raw paths, database sync labels, and cancelled-import status', () => {
-        const target = folder({ isManaged: true, path: 'virtual', pathRaw: 'D:/Invoke/outputs', variant: GeneratorTool.INVOKEAI, initialScanCancelled: true });
+        const target = folder({
+            isManaged: true,
+            path: 'virtual',
+            pathRaw: 'D:/Invoke/outputs',
+            variant: GeneratorTool.INVOKEAI,
+            initialScanCancelled: true,
+        });
         const { props } = setup(target);
         expect(screen.getByText('INVOKE')).toBeTruthy();
         expect(screen.getByText('D:/Invoke/outputs')).toBeTruthy();
@@ -74,7 +88,7 @@ describe('FolderItem', () => {
         [GeneratorTool.AUTOMATIC1111, 'A1111'],
         [GeneratorTool.SDNEXT, 'SD.NEXT'],
         [GeneratorTool.FORGE, 'FORGE'],
-        [GeneratorTool.ANAPNOE, 'ANAPNOE']
+        [GeneratorTool.ANAPNOE, 'ANAPNOE'],
     ])('renders the %s integration badge', (variant, label) => {
         setup(folder({ variant }));
         expect(screen.getByText(label)).toBeTruthy();

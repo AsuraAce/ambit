@@ -5,26 +5,27 @@ import { fireEvent, render, screen } from '../../../../test/testUtils';
 import type { AIImage } from '../../../../types';
 import { MetadataRawInspector } from './MetadataRawInspector';
 
-const imageFixture = (metadata: Record<string, unknown>): AIImage => ({
-    id: 'image',
-    filename: 'image.png',
-    url: '',
-    thumbnailUrl: '',
-    timestamp: 1,
-    width: 100,
-    height: 100,
-    isFavorite: false,
-    metadata: {
-        tool: 'Unknown',
-        model: 'Model',
-        steps: 20,
-        cfg: 7,
-        sampler: 'Euler',
-        positivePrompt: 'portrait',
-        negativePrompt: '',
-        ...metadata
-    }
-} as AIImage);
+const imageFixture = (metadata: Record<string, unknown>): AIImage =>
+    ({
+        id: 'image',
+        filename: 'image.png',
+        url: '',
+        thumbnailUrl: '',
+        timestamp: 1,
+        width: 100,
+        height: 100,
+        isFavorite: false,
+        metadata: {
+            tool: 'Unknown',
+            model: 'Model',
+            steps: 20,
+            cfg: 7,
+            sampler: 'Euler',
+            positivePrompt: 'portrait',
+            negativePrompt: '',
+            ...metadata,
+        },
+    }) as AIImage;
 
 describe('MetadataRawInspector', () => {
     beforeEach(() => {
@@ -49,10 +50,14 @@ describe('MetadataRawInspector', () => {
     });
 
     it('switches between raw source and valid formatted workflow JSON', () => {
-        render(<MetadataRawInspector image={imageFixture({
-            rawParameters: 'steps=20',
-            workflowJson: '{"nodes":[1,2]}'
-        })} />);
+        render(
+            <MetadataRawInspector
+                image={imageFixture({
+                    rawParameters: 'steps=20',
+                    workflowJson: '{"nodes":[1,2]}',
+                })}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: /view internal metadata/i }));
 
         fireEvent.click(screen.getByRole('button', { name: 'Text' }));

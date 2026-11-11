@@ -13,15 +13,13 @@ vi.mock('../../../bindings', () => ({
     },
 }));
 
-const deriveScopedRows = (
-    cacheRows: Record<string, unknown>[],
-    facetType: string
-) => cacheRows
-    .filter((row) => row.facet_type === facetType && typeof row.resource_name === 'string')
-    .map((row) => ({
-        name: row.resource_name as string,
-        count: Number(row.count ?? 0)
-    }));
+const deriveScopedRows = (cacheRows: Record<string, unknown>[], facetType: string) =>
+    cacheRows
+        .filter((row) => row.facet_type === facetType && typeof row.resource_name === 'string')
+        .map((row) => ({
+            name: row.resource_name as string,
+            count: Number(row.count ?? 0),
+        }));
 
 const createFacetDb = (
     cacheRows: Record<string, unknown>[],
@@ -37,19 +35,20 @@ const createFacetDb = (
             if (normalizedSql.includes("COALESCE(tool, 'Unknown')")) return scopedRows.tools ?? deriveScopedRows(cacheRows, 'tools');
             if (normalizedSql.includes('JOIN image_loras')) return scopedRows.loras ?? deriveScopedRows(cacheRows, 'loras');
             if (normalizedSql.includes('JOIN image_embeddings')) return scopedRows.embeddings ?? deriveScopedRows(cacheRows, 'embeddings');
-            if (normalizedSql.includes('JOIN image_hypernetworks')) return scopedRows.hypernetworks ?? deriveScopedRows(cacheRows, 'hypernetworks');
-            if (normalizedSql.includes('JOIN image_controlnets')) return scopedRows.control_nets ?? deriveScopedRows(cacheRows, 'control_nets');
-            if (normalizedSql.includes('JOIN image_ipadapters')) return scopedRows.ip_adapters ?? deriveScopedRows(cacheRows, 'ip_adapters');
+            if (normalizedSql.includes('JOIN image_hypernetworks'))
+                return scopedRows.hypernetworks ?? deriveScopedRows(cacheRows, 'hypernetworks');
+            if (normalizedSql.includes('JOIN image_controlnets'))
+                return scopedRows.control_nets ?? deriveScopedRows(cacheRows, 'control_nets');
+            if (normalizedSql.includes('JOIN image_ipadapters'))
+                return scopedRows.ip_adapters ?? deriveScopedRows(cacheRows, 'ip_adapters');
             return scopedRows.checkpoints ?? deriveScopedRows(cacheRows, 'checkpoints');
         }
         return cacheRows;
     }),
 });
 
-const findSelectCall = (
-    db: { select: ReturnType<typeof vi.fn> },
-    predicate: (sql: string) => boolean
-) => db.select.mock.calls.find(([sql]) => predicate(sql as string)) as [string, unknown[]] | undefined;
+const findSelectCall = (db: { select: ReturnType<typeof vi.fn> }, predicate: (sql: string) => boolean) =>
+    db.select.mock.calls.find(([sql]) => predicate(sql as string)) as [string, unknown[]] | undefined;
 
 describe('searchRepo basic queries', () => {
     beforeEach(() => {
@@ -57,17 +56,29 @@ describe('searchRepo basic queries', () => {
     });
 
     it('counts globally visible images with the fast query and falls back to zero', async () => {
-        const db = { select: vi.fn().mockResolvedValueOnce([{ count: 7 }]).mockResolvedValueOnce([]) };
+        const db = {
+            select: vi
+                .fn()
+                .mockResolvedValueOnce([{ count: 7 }])
+                .mockResolvedValueOnce([]),
+        };
         getDbMock.mockResolvedValue(db);
         const { countGlobalImages } = await import('../searchRepo');
 
         await expect(countGlobalImages()).resolves.toBe(7);
         await expect(countGlobalImages()).resolves.toBe(0);
-        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
+        expect(db.select).toHaveBeenCalledWith(
+            'SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0'
+        );
     });
 
     it('searches image IDs with explicit and default visibility predicates', async () => {
-        const db = { select: vi.fn().mockResolvedValueOnce([{ id: 'a' }, { id: 'b' }]).mockResolvedValueOnce([]) };
+        const db = {
+            select: vi
+                .fn()
+                .mockResolvedValueOnce([{ id: 'a' }, { id: 'b' }])
+                .mockResolvedValueOnce([]),
+        };
         getDbMock.mockResolvedValue(db);
         const { searchImageIds } = await import('../searchRepo');
 
@@ -123,7 +134,9 @@ describe('searchRepo basic queries', () => {
             expect.objectContaining({ values: undefined }),
         ]);
         expect(db.select.mock.calls.slice(0, 4).every(([query]) => query.includes('SELECT count(*) as count'))).toBe(true);
-        expect(db.select.mock.calls[4]?.[0]).toBe('SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
+        expect(db.select.mock.calls[4]?.[0]).toBe(
+            'SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0'
+        );
     });
 
     it('uses default search ordering and supports an ascending pinned cursor without a pin value', async () => {
@@ -133,10 +146,13 @@ describe('searchRepo basic queries', () => {
 
         await searchImages('', [], 10);
         await searchImages('WHERE is_deleted = ?', [0], 10, 'path', 'ASC', true, undefined, undefined, {
-            val: 'image.png', id: 'image-1'
+            val: 'image.png',
+            id: 'image-1',
         });
         await searchImages('WHERE is_deleted = ?', [0], 10, 'timestamp', 'DESC', true, undefined, undefined, {
-            val: 100, id: 'image-2', isPinned: 1
+            val: 100,
+            id: 'image-2',
+            isPinned: 1,
         });
 
         expect(db.select.mock.calls[0]?.[0]).toContain('ORDER BY images.timestamp DESC, images.id DESC');
@@ -175,19 +191,19 @@ describe('searchRepo valid facet names', () => {
 
     it('returns valid facets and serializes command arguments', async () => {
         const data = {
-            checkpoints: ['Flux'], loras: ['Detailer'], embeddings: [], hypernetworks: [],
-            tools: ['ComfyUI'], controlNets: [], ipAdapters: []
+            checkpoints: ['Flux'],
+            loras: ['Detailer'],
+            embeddings: [],
+            hypernetworks: [],
+            tools: ['ComfyUI'],
+            controlNets: [],
+            ipAdapters: [],
         };
         getValidFacetNamesMock.mockResolvedValue({ status: 'ok', data });
         const { getValidFacetNames } = await import('../searchRepo');
 
         await expect(getValidFacetNames('WHERE is_deleted = ?', [0], 'collection-1', 'Detailer')).resolves.toEqual(data);
-        expect(getValidFacetNamesMock).toHaveBeenCalledWith(
-            'WHERE is_deleted = ?',
-            '[0]',
-            'collection-1',
-            'Detailer'
-        );
+        expect(getValidFacetNamesMock).toHaveBeenCalledWith('WHERE is_deleted = ?', '[0]', 'collection-1', 'Detailer');
     });
 
     it('passes null scopes and returns null for command and transport failures', async () => {
@@ -214,7 +230,7 @@ describe('searchRepo fallbacks and caching', () => {
 
     it('reuses the unscoped library summary until the cache is cleared', async () => {
         const db = {
-            select: vi.fn(async (sql: string) => sql.includes('count(*) as count') ? [{ count: 4 }] : [])
+            select: vi.fn(async (sql: string) => (sql.includes('count(*) as count') ? [{ count: 4 }] : [])),
         };
         getDbMock.mockResolvedValue(db);
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
@@ -235,8 +251,14 @@ describe('searchRepo fallbacks and caching', () => {
         const { getLibraryStatsSummary } = await import('../searchRepo');
 
         await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0])).resolves.toEqual({
-            totalItems: 0, totalImages: 0, totalVideos: 0, totalBytes: 0,
-            totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: []
+            totalItems: 0,
+            totalImages: 0,
+            totalVideos: 0,
+            totalBytes: 0,
+            totalGenerations: 0,
+            avgSteps: 0,
+            estSizeMB: '0',
+            modelStats: [],
         });
         expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats summary', expect.any(Error));
         errorSpy.mockRestore();
@@ -249,7 +271,13 @@ describe('searchRepo fallbacks and caching', () => {
 
         await expect(getKeywordStats()).resolves.toEqual([]);
         await expect(getFacets()).resolves.toEqual({
-            checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: []
+            checkpoints: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            tools: [],
+            controlNets: [],
+            ipAdapters: [],
         });
         expect(errorSpy).toHaveBeenCalledTimes(2);
         errorSpy.mockRestore();
@@ -261,8 +289,15 @@ describe('searchRepo fallbacks and caching', () => {
         const { getLibraryStats } = await import('../searchRepo');
 
         await expect(getLibraryStats()).resolves.toEqual({
-            totalItems: 0, totalImages: 0, totalVideos: 0, totalBytes: 0,
-            totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: []
+            totalItems: 0,
+            totalImages: 0,
+            totalVideos: 0,
+            totalBytes: 0,
+            totalGenerations: 0,
+            avgSteps: 0,
+            estSizeMB: '0',
+            modelStats: [],
+            keywordStats: [],
         });
         expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats', expect.any(Error));
         errorSpy.mockRestore();
@@ -276,7 +311,7 @@ describe('searchRepo fallbacks and caching', () => {
                 }
                 if (sql.includes('AVG(steps)')) return [{ avg_steps: 24 }];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
         const { getLibraryStatsSummary } = await import('../searchRepo');
@@ -288,7 +323,7 @@ describe('searchRepo fallbacks and caching', () => {
             totalBytes: 3 * 1024 * 1024,
             totalGenerations: 3,
             avgSteps: 24,
-            estSizeMB: '3.0'
+            estSizeMB: '3.0',
         });
 
         const mediaQuery = db.select.mock.calls.find(([sql]) => (sql as string).includes('AS total_items'))?.[0] as string;
@@ -325,10 +360,12 @@ describe('searchRepo getFacets', () => {
                 { facet_type: 'tools', resource_name: 'AssetOnlyTool', count: 0 },
             ],
             [],
-            { tools: [
-                { name: 'ComfyUI', count: 4 },
-                { name: 'AssetOnlyTool', count: 1 },
-            ] }
+            {
+                tools: [
+                    { name: 'ComfyUI', count: 4 },
+                    { name: 'AssetOnlyTool', count: 1 },
+                ],
+            }
         );
         getDbMock.mockResolvedValue(db);
         const { getFacets } = await import('../searchRepo');
@@ -357,14 +394,16 @@ describe('searchRepo getFacets', () => {
         getDbMock.mockResolvedValue(db);
         const { getFacets } = await import('../searchRepo');
 
-        const facets = await getFacets(
-            'WHERE privacy_hidden = ?',
-            [0],
-            ['unsupported' as FacetType]
-        );
+        const facets = await getFacets('WHERE privacy_hidden = ?', [0], ['unsupported' as FacetType]);
 
         expect(facets).toEqual({
-            checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: []
+            checkpoints: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            tools: [],
+            controlNets: [],
+            ipAdapters: [],
         });
     });
 
@@ -372,16 +411,25 @@ describe('searchRepo getFacets', () => {
         const db = createFacetDb(
             [
                 {
-                    facet_type: 'checkpoints', resource_name: 'Pony Diffusion V6 XL', count: 3,
-                    created_at: 200, last_used_at: 300
+                    facet_type: 'checkpoints',
+                    resource_name: 'Pony Diffusion V6 XL',
+                    count: 3,
+                    created_at: 200,
+                    last_used_at: 300,
                 },
                 {
-                    facet_type: 'checkpoints', resource_name: 'ponyDiffusionV6XL', count: 2,
-                    created_at: null, last_used_at: null
+                    facet_type: 'checkpoints',
+                    resource_name: 'ponyDiffusionV6XL',
+                    count: 2,
+                    created_at: null,
+                    last_used_at: null,
                 },
                 {
-                    facet_type: 'loras', resource_name: 'Remote', count: 1,
-                    thumbnail_path: 'https://example.test/remote.webp', preview_url: 'https://example.test/remote.webp'
+                    facet_type: 'loras',
+                    resource_name: 'Remote',
+                    count: 1,
+                    thumbnail_path: 'https://example.test/remote.webp',
+                    preview_url: 'https://example.test/remote.webp',
                 },
                 { facet_type: 'unknown_type', resource_name: 'Ignored', count: 1 },
             ],
@@ -407,8 +455,11 @@ describe('searchRepo getFacets', () => {
         const db = createFacetDb(
             [
                 {
-                    facet_type: 'loras', resource_name: null, resource_hash: 'local-hash', count: 2,
-                    preview_url: 'https://example.test/preview.webp'
+                    facet_type: 'loras',
+                    resource_name: null,
+                    resource_hash: 'local-hash',
+                    count: 2,
+                    preview_url: 'https://example.test/preview.webp',
                 },
                 { facet_type: 'loras', resource_name: null, resource_hash: null, count: 1 },
                 { facet_type: 'loras', resource_name: 'NameOnly', resource_hash: null, count: 1 },
@@ -425,21 +476,25 @@ describe('searchRepo getFacets', () => {
         const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
 
         expect(facets.loras).toHaveLength(2);
-        expect(facets.loras.find(item => item.name === 'Unknown')).toMatchObject({
-            name: 'Unknown', count: 3, previewUrl: 'https://example.test/preview.webp',
-            thumbnailSource: 'remote', isLocalDisk: true, localModifiedAt: 1_700_000_000_000
+        expect(facets.loras.find((item) => item.name === 'Unknown')).toMatchObject({
+            name: 'Unknown',
+            count: 3,
+            previewUrl: 'https://example.test/preview.webp',
+            thumbnailSource: 'remote',
+            isLocalDisk: true,
+            localModifiedAt: 1_700_000_000_000,
         });
-        expect(facets.loras.find(item => item.name === 'NameOnly')).toMatchObject({
-            count: 1, isLocalDisk: true, localModifiedAt: 1_700_000_100_000
+        expect(facets.loras.find((item) => item.name === 'NameOnly')).toMatchObject({
+            count: 1,
+            isLocalDisk: true,
+            localModifiedAt: 1_700_000_100_000,
         });
     });
 
     it('normalizes missing scoped facet names to the unknown group', async () => {
-        const db = createFacetDb(
-            [{ facet_type: 'checkpoints', resource_name: null, count: 8 }],
-            [],
-            { checkpoints: [{ name: null, count: 2 }] }
-        );
+        const db = createFacetDb([{ facet_type: 'checkpoints', resource_name: null, count: 8 }], [], {
+            checkpoints: [{ name: null, count: 2 }],
+        });
         getDbMock.mockResolvedValue(db);
         const { getFacets } = await import('../searchRepo');
 
@@ -454,7 +509,13 @@ describe('searchRepo getFacets', () => {
         const { getFacets } = await import('../searchRepo');
 
         await expect(getFacets('', [], [])).resolves.toEqual({
-            checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: []
+            checkpoints: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            tools: [],
+            controlNets: [],
+            ipAdapters: [],
         });
         expect(db.select).not.toHaveBeenCalled();
     });
@@ -500,22 +561,22 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'LocalLora',
                     resource_hash: 'file:C:/models/LocalLora.safetensors',
                     count: 0,
-                    is_local_disk: 1
+                    is_local_disk: 1,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'HarvestedLora',
                     resource_hash: 'lora_HarvestedLora',
                     count: 4,
-                    is_local_disk: 0
-                }
+                    is_local_disk: 0,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'LocalLora',
-                    hash: 'file:C:/models/LocalLora.safetensors'
-                }
+                    hash: 'file:C:/models/LocalLora.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -523,15 +584,15 @@ describe('searchRepo getFacets', () => {
         const { getFacets } = await import('../searchRepo');
         const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
 
-        expect(facets.loras.find(item => item.name === 'LocalLora')).toMatchObject({
+        expect(facets.loras.find((item) => item.name === 'LocalLora')).toMatchObject({
             name: 'LocalLora',
             count: 0,
-            isLocalDisk: true
+            isLocalDisk: true,
         });
-        expect(facets.loras.find(item => item.name === 'HarvestedLora')).toMatchObject({
+        expect(facets.loras.find((item) => item.name === 'HarvestedLora')).toMatchObject({
             name: 'HarvestedLora',
             count: 4,
-            isLocalDisk: false
+            isLocalDisk: false,
         });
     });
 
@@ -543,32 +604,32 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'Canny',
                     resource_hash: 'cnet_Canny',
                     count: 2,
-                    is_local_disk: 1
+                    is_local_disk: 1,
                 },
                 {
                     facet_type: 'ip_adapters',
                     resource_name: 'IP Plus',
                     resource_hash: 'ipad_IP Plus',
                     count: 1,
-                    is_local_disk: 0
-                }
+                    is_local_disk: 0,
+                },
             ],
             [
                 {
                     resource_type: 'control_nets',
                     name: 'Canny',
-                    hash: 'cnet_Canny'
+                    hash: 'cnet_Canny',
                 },
                 {
                     resource_type: 'ip_adapters',
                     name: 'IP Plus',
-                    hash: 'ipad_IP Plus'
+                    hash: 'ipad_IP Plus',
                 },
                 {
                     resource_type: 'unsupported',
                     name: 'Ignored',
-                    hash: 'ignored'
-                }
+                    hash: 'ignored',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -598,7 +659,7 @@ describe('searchRepo getFacets', () => {
                     count: 8,
                     thumbnail_path: 'used.webp',
                     created_at: 200,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'checkpoints',
@@ -607,22 +668,22 @@ describe('searchRepo getFacets', () => {
                     count: 0,
                     thumbnail_path: 'local.webp',
                     created_at: 100,
-                    is_local_disk: 1
+                    is_local_disk: 1,
                 },
                 {
                     facet_type: 'checkpoints',
                     resource_name: 'Other Model',
                     resource_hash: 'other-hash',
                     count: 2,
-                    is_local_disk: 0
-                }
+                    is_local_disk: 0,
+                },
             ],
             [
                 {
                     resource_type: 'checkpoint',
                     name: 'ponyDiffusionV6XL',
-                    hash: 'file:C:/models/ponyDiffusionV6XL.safetensors'
-                }
+                    hash: 'file:C:/models/ponyDiffusionV6XL.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -637,7 +698,7 @@ describe('searchRepo getFacets', () => {
             isLocalDisk: true,
             createdAt: 100,
             assetMatchKey: 'ponydiffusionv6xl',
-            filterAliases: ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']
+            filterAliases: ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL'],
         });
     });
 
@@ -650,7 +711,7 @@ describe('searchRepo getFacets', () => {
                     resource_hash: 'lora_Flux Style - watercolor_flux_v1.1_rank_16_bf16 ',
                     count: 2,
                     thumbnail_path: 'used.webp',
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
@@ -660,15 +721,15 @@ describe('searchRepo getFacets', () => {
                     thumbnail_path: 'local.webp',
                     has_sidecar: 1,
                     is_manual: 1,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'watercolor_flux_v1.1_rank_16_bf16 ',
-                    hash: 'file:C:/models/watercolor_flux_v1.1_rank_16_bf16.safetensors'
-                }
+                    hash: 'file:C:/models/watercolor_flux_v1.1_rank_16_bf16.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -684,10 +745,7 @@ describe('searchRepo getFacets', () => {
             assetMatchKey: 'watercolorfluxv11rank16bf16',
             thumbnailPath: 'used.webp',
             hasSidecar: 1,
-            filterAliases: [
-                'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
-                'watercolor_flux_v1.1_rank_16_bf16'
-            ]
+            filterAliases: ['Flux Style - watercolor_flux_v1.1_rank_16_bf16', 'watercolor_flux_v1.1_rank_16_bf16'],
         });
     });
 
@@ -699,25 +757,25 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'Pony Style - Gothic Neon, g0th1cPXL',
                     resource_hash: 'lora_Pony Style - Gothic Neon, g0th1cPXL',
                     count: 38,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'g0th1cPXL',
                     resource_hash: 'file:C:/models/g0th1cPXL.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'g0th1cPXL',
-                    hash: 'file:C:/models/g0th1cPXL.safetensors'
-                }
+                    hash: 'file:C:/models/g0th1cPXL.safetensors',
+                },
             ],
             {
-                loras: [{ name: 'Pony Style - Gothic Neon, g0th1cPXL', count: 5 }]
+                loras: [{ name: 'Pony Style - Gothic Neon, g0th1cPXL', count: 5 }],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -730,7 +788,7 @@ describe('searchRepo getFacets', () => {
             name: 'Pony Style - Gothic Neon, g0th1cPXL',
             count: 5,
             isLocalDisk: true,
-            assetMatchKey: 'g0th1cpxl'
+            assetMatchKey: 'g0th1cpxl',
         });
     });
 
@@ -742,22 +800,22 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'Pony Style - Gothic Neon, g0th1cPXL',
                     resource_hash: 'lora_Pony Style - Gothic Neon, g0th1cPXL',
                     count: 6,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'Gothic_Neon_g0th1cPXL',
                     resource_hash: 'file:C:/models/Gothic_Neon_g0th1cPXL.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'Gothic_Neon_g0th1cPXL',
-                    hash: 'file:C:/models/Gothic_Neon_g0th1cPXL.safetensors'
-                }
+                    hash: 'file:C:/models/Gothic_Neon_g0th1cPXL.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -771,40 +829,40 @@ describe('searchRepo getFacets', () => {
             count: 6,
             isLocalDisk: true,
             assetMatchKey: 'gothicneong0th1cpxl',
-            filterAliases: [
-                'Pony Style - Gothic Neon, g0th1cPXL',
-                'Gothic_Neon_g0th1cPXL'
-            ]
+            filterAliases: ['Pony Style - Gothic Neon, g0th1cPXL', 'Gothic_Neon_g0th1cPXL'],
         });
     });
 
     it('keeps thumbnail provenance paired with the thumbnail selected during alias merging', async () => {
-        const db = createFacetDb([
-            {
-                facet_type: 'loras',
-                resource_name: 'Detailer Style',
-                resource_hash: 'used-hash',
-                count: 4,
-                thumbnail_path: null,
-                preview_url: null
-            },
-            {
-                facet_type: 'loras',
-                resource_name: 'detailer_style',
-                resource_hash: 'file:C:/models/detailer_style.safetensors',
-                count: 0,
-                thumbnail_path: 'manual.webp',
-                has_sidecar: 1,
-                is_manual: 1,
-                is_user_override: 1
-            }
-        ], [
-            {
-                resource_type: 'loras',
-                name: 'detailer_style',
-                hash: 'file:C:/models/detailer_style.safetensors'
-            }
-        ]);
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'Detailer Style',
+                    resource_hash: 'used-hash',
+                    count: 4,
+                    thumbnail_path: null,
+                    preview_url: null,
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'detailer_style',
+                    resource_hash: 'file:C:/models/detailer_style.safetensors',
+                    count: 0,
+                    thumbnail_path: 'manual.webp',
+                    has_sidecar: 1,
+                    is_manual: 1,
+                    is_user_override: 1,
+                },
+            ],
+            [
+                {
+                    resource_type: 'loras',
+                    name: 'detailer_style',
+                    hash: 'file:C:/models/detailer_style.safetensors',
+                },
+            ]
+        );
         getDbMock.mockResolvedValue(db);
 
         const { getFacets } = await import('../searchRepo');
@@ -814,7 +872,7 @@ describe('searchRepo getFacets', () => {
             name: 'Detailer Style',
             thumbnailPath: 'manual.webp',
             thumbnailSource: 'manual',
-            hasSidecar: 1
+            hasSidecar: 1,
         });
     });
 
@@ -829,7 +887,7 @@ describe('searchRepo getFacets', () => {
                     thumbnail_path: 'sidecar.webp',
                     has_sidecar: 1,
                     is_manual: 1,
-                    is_user_override: 0
+                    is_user_override: 0,
                 },
                 {
                     facet_type: 'loras',
@@ -840,15 +898,15 @@ describe('searchRepo getFacets', () => {
                     thumbnail_image_id: 'image-1',
                     has_sidecar: 1,
                     is_manual: 0,
-                    is_user_override: 0
-                }
+                    is_user_override: 0,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'SidecarSelected',
-                    hash: 'file:C:/models/SidecarSelected.safetensors'
-                }
+                    hash: 'file:C:/models/SidecarSelected.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -856,8 +914,8 @@ describe('searchRepo getFacets', () => {
         const { getFacets } = await import('../searchRepo');
         const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
 
-        expect(facets.loras.find(item => item.name === 'SidecarSelected')?.thumbnailSource).toBe('sidecar');
-        expect(facets.loras.find(item => item.name === 'LibrarySelected')?.thumbnailSource).toBe('library');
+        expect(facets.loras.find((item) => item.name === 'SidecarSelected')?.thumbnailSource).toBe('sidecar');
+        expect(facets.loras.find((item) => item.name === 'LibrarySelected')?.thumbnailSource).toBe('library');
     });
 
     it('combines image-used aliases under one local-aware row', async () => {
@@ -868,29 +926,29 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'detailer style',
                     resource_hash: 'lora_detailer style',
                     count: 3,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'Detailer-Style',
                     resource_hash: 'lora_Detailer-Style',
                     count: 4,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'detailer_style',
                     resource_hash: 'file:C:/models/detailer_style.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'detailer_style',
-                    hash: 'file:C:/models/detailer_style.safetensors'
-                }
+                    hash: 'file:C:/models/detailer_style.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -903,7 +961,7 @@ describe('searchRepo getFacets', () => {
             name: 'Detailer-Style',
             count: 7,
             isLocalDisk: true,
-            filterAliases: ['Detailer-Style', 'detailer style', 'detailer_style']
+            filterAliases: ['Detailer-Style', 'detailer style', 'detailer_style'],
         });
     });
 
@@ -915,22 +973,22 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'UsedLora',
                     resource_hash: 'lora_UsedLora',
                     count: 2,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'UnusedLocalLora',
                     resource_hash: 'file:C:/models/UnusedLocalLora.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'UnusedLocalLora',
-                    hash: 'file:C:/models/UnusedLocalLora.safetensors'
-                }
+                    hash: 'file:C:/models/UnusedLocalLora.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -943,7 +1001,7 @@ describe('searchRepo getFacets', () => {
         expect(sql).not.toContain('EXISTS');
         expect(sql).not.toContain('FROM models m');
         expect(sql).not.toContain('LOWER(m.name)');
-        expect(facets.loras.map(item => item.name)).toEqual(['UsedLora']);
+        expect(facets.loras.map((item) => item.name)).toEqual(['UsedLora']);
     });
 
     it('skips scoped facet overlays for the default unfiltered used scope', async () => {
@@ -952,14 +1010,14 @@ describe('searchRepo getFacets', () => {
                 facet_type: 'checkpoints',
                 resource_name: 'Model A',
                 resource_hash: 'hash-a',
-                count: 5
+                count: 5,
             },
             {
                 facet_type: 'checkpoints',
                 resource_name: 'Model B',
                 resource_hash: 'hash-b',
-                count: 2
-            }
+                count: 2,
+            },
         ]);
         getDbMock.mockResolvedValue(db);
 
@@ -968,7 +1026,7 @@ describe('searchRepo getFacets', () => {
 
         expect(facets.checkpoints).toEqual([
             expect.objectContaining({ name: 'Model A', count: 5 }),
-            expect.objectContaining({ name: 'Model B', count: 2 })
+            expect.objectContaining({ name: 'Model B', count: 2 }),
         ]);
         expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(false);
     });
@@ -980,22 +1038,22 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'checkpoints',
                     resource_name: 'Model A',
                     resource_hash: 'hash-a',
-                    count: 5
+                    count: 5,
                 },
                 {
                     facet_type: 'checkpoints',
                     resource_name: 'Unused Local',
                     resource_hash: 'file:C:/models/Unused Local.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'checkpoint',
                     name: 'Unused Local',
-                    hash: 'file:C:/models/Unused Local.safetensors'
-                }
+                    hash: 'file:C:/models/Unused Local.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -1005,7 +1063,7 @@ describe('searchRepo getFacets', () => {
 
         expect(facets.checkpoints).toEqual([
             expect.objectContaining({ name: 'Model A', count: 5 }),
-            expect.objectContaining({ name: 'Unused Local', count: 0, isLocalDisk: true })
+            expect.objectContaining({ name: 'Unused Local', count: 0, isLocalDisk: true }),
         ]);
         expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(false);
     });
@@ -1018,22 +1076,22 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'Pony Diffusion V6 XL',
                     resource_hash: 'metadata-hash',
                     count: 8,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'checkpoints',
                     resource_name: 'ponyDiffusionV6XL',
                     resource_hash: 'file:C:/models/ponyDiffusionV6XL.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
                     resource_type: 'checkpoint',
                     name: 'ponyDiffusionV6XL',
-                    hash: 'file:C:/models/ponyDiffusionV6XL.safetensors'
-                }
+                    hash: 'file:C:/models/ponyDiffusionV6XL.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -1046,7 +1104,7 @@ describe('searchRepo getFacets', () => {
             name: 'Pony Diffusion V6 XL',
             count: 8,
             isLocalDisk: true,
-            filterAliases: ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']
+            filterAliases: ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL'],
         });
     });
 
@@ -1057,18 +1115,18 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'checkpoints',
                     resource_name: 'Model A',
                     resource_hash: 'hash-a',
-                    count: 10
+                    count: 10,
                 },
                 {
                     facet_type: 'checkpoints',
                     resource_name: 'Model B',
                     resource_hash: 'hash-b',
-                    count: 5
-                }
+                    count: 5,
+                },
             ],
             [],
             {
-                checkpoints: [{ name: 'Model B', count: 1 }]
+                checkpoints: [{ name: 'Model B', count: 1 }],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -1079,8 +1137,8 @@ describe('searchRepo getFacets', () => {
         expect(facets.checkpoints).toEqual([
             expect.objectContaining({
                 name: 'Model B',
-                count: 1
-            })
+                count: 1,
+            }),
         ]);
         expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(true);
     });
@@ -1092,18 +1150,18 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'loras',
                     resource_name: 'LoraA',
                     resource_hash: 'hash-a',
-                    count: 10
+                    count: 10,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'LoraB',
                     resource_hash: 'hash-b',
-                    count: 8
-                }
+                    count: 8,
+                },
             ],
             [],
             {
-                loras: [{ name: 'LoraA', count: 1 }]
+                loras: [{ name: 'LoraA', count: 1 }],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -1115,14 +1173,14 @@ describe('searchRepo getFacets', () => {
             scopedCountOverrides: {
                 loras: {
                     whereClause: '',
-                    params: []
-                }
-            }
+                    params: [],
+                },
+            },
         });
 
         expect(facets.loras).toEqual([
             expect.objectContaining({ name: 'LoraA', count: 10 }),
-            expect.objectContaining({ name: 'LoraB', count: 8 })
+            expect.objectContaining({ name: 'LoraB', count: 8 }),
         ]);
         expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(false);
     });
@@ -1134,18 +1192,18 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'loras',
                     resource_name: 'LoraA',
                     resource_hash: 'hash-a',
-                    count: 10
+                    count: 10,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'LoraB',
                     resource_hash: 'hash-b',
-                    count: 8
-                }
+                    count: 8,
+                },
             ],
             [],
             {
-                loras: [{ name: 'LoraA', count: 1 }]
+                loras: [{ name: 'LoraA', count: 1 }],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -1153,12 +1211,10 @@ describe('searchRepo getFacets', () => {
         const { getFacets } = await import('../searchRepo');
         const facets = await getFacets('WHERE is_deleted = 0', [], ['loras'], {
             assetScope: 'used',
-            loraName: 'LoraA'
+            loraName: 'LoraA',
         });
 
-        expect(facets.loras).toEqual([
-            expect.objectContaining({ name: 'LoraA', count: 1 })
-        ]);
+        expect(facets.loras).toEqual([expect.objectContaining({ name: 'LoraA', count: 1 })]);
         expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(true);
     });
 
@@ -1169,27 +1225,27 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'checkpoints',
                     resource_name: 'Foo.safetensors',
                     resource_hash: 'hash-foo-a',
-                    count: 1
+                    count: 1,
                 },
                 {
                     facet_type: 'checkpoints',
                     resource_name: 'Foo',
                     resource_hash: 'hash-foo-b',
-                    count: 1
+                    count: 1,
                 },
                 {
                     facet_type: 'checkpoints',
                     resource_name: 'Bar',
                     resource_hash: 'hash-bar',
-                    count: 100
-                }
+                    count: 100,
+                },
             ],
             [],
             {
                 checkpoints: [
                     { name: 'Foo', count: 4 },
-                    { name: 'Bar', count: 1 }
-                ]
+                    { name: 'Bar', count: 1 },
+                ],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -1201,12 +1257,12 @@ describe('searchRepo getFacets', () => {
             expect.objectContaining({
                 name: 'Foo.safetensors',
                 count: 4,
-                filterAliases: ['Foo.safetensors', 'Foo']
+                filterAliases: ['Foo.safetensors', 'Foo'],
             }),
             expect.objectContaining({
                 name: 'Bar',
-                count: 1
-            })
+                count: 1,
+            }),
         ]);
     });
 
@@ -1217,18 +1273,18 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'checkpoints',
                     resource_name: 'Pony Diffusion V6 XL',
                     resource_hash: 'metadata-hash',
-                    count: 8
-                }
+                    count: 8,
+                },
             ],
             [
                 {
                     resource_type: 'checkpoint',
                     name: 'ponyDiffusionV6XL',
-                    hash: 'file:C:/models/ponyDiffusionV6XL.safetensors'
-                }
+                    hash: 'file:C:/models/ponyDiffusionV6XL.safetensors',
+                },
             ],
             {
-                checkpoints: [{ name: 'Pony Diffusion V6 XL', count: 2 }]
+                checkpoints: [{ name: 'Pony Diffusion V6 XL', count: 2 }],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -1240,8 +1296,8 @@ describe('searchRepo getFacets', () => {
             expect.objectContaining({
                 name: 'Pony Diffusion V6 XL',
                 count: 2,
-                isLocalDisk: true
-            })
+                isLocalDisk: true,
+            }),
         ]);
     });
 
@@ -1252,18 +1308,18 @@ describe('searchRepo getFacets', () => {
                     facet_type: 'checkpoints',
                     resource_name: 'Foo Model.safetensors',
                     resource_hash: 'metadata-hash',
-                    count: 8
-                }
+                    count: 8,
+                },
             ],
             [
                 {
                     resource_type: 'checkpoint',
                     name: 'foo_model',
-                    hash: 'file:C:/models/Foo Model.safetensors'
-                }
+                    hash: 'file:C:/models/Foo Model.safetensors',
+                },
             ],
             {
-                checkpoints: [{ name: 'Foo Model', count: 2 }]
+                checkpoints: [{ name: 'Foo Model', count: 2 }],
             }
         );
         getDbMock.mockResolvedValue(db);
@@ -1275,8 +1331,8 @@ describe('searchRepo getFacets', () => {
             expect.objectContaining({
                 name: 'Foo Model.safetensors',
                 count: 2,
-                isLocalDisk: true
-            })
+                isLocalDisk: true,
+            }),
         ]);
     });
 
@@ -1288,29 +1344,29 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'UnusedLocalLora',
                     resource_hash: 'file:C:/models/UnusedLocalLora.safetensors',
                     count: 0,
-                    is_local_disk: 1
+                    is_local_disk: 1,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'UsedRemoteLora',
                     resource_hash: 'lora_UsedRemoteLora',
                     count: 5,
-                    is_local_disk: 0
+                    is_local_disk: 0,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'UnusedRemoteLora',
                     resource_hash: 'lora_UnusedRemoteLora',
                     count: 0,
-                    is_local_disk: 0
-                }
+                    is_local_disk: 0,
+                },
             ],
             [
                 {
                     resource_type: 'loras',
                     name: 'UnusedLocalLora',
-                    hash: 'file:C:/models/UnusedLocalLora.safetensors'
-                }
+                    hash: 'file:C:/models/UnusedLocalLora.safetensors',
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -1325,7 +1381,7 @@ describe('searchRepo getFacets', () => {
         expect(facets.loras[0]).toMatchObject({
             name: 'UnusedLocalLora',
             count: 0,
-            isLocalDisk: true
+            isLocalDisk: true,
         });
     });
 
@@ -1337,22 +1393,22 @@ describe('searchRepo getFacets', () => {
                     resource_name: 'OlderLocalLora',
                     resource_hash: 'file:C:/models/OlderLocalLora.safetensors',
                     count: 0,
-                    is_local_disk: 1
+                    is_local_disk: 1,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'NewestLocalLora',
                     resource_hash: 'file:C:/models/NewestLocalLora.safetensors',
                     count: 0,
-                    is_local_disk: 1
+                    is_local_disk: 1,
                 },
                 {
                     facet_type: 'loras',
                     resource_name: 'MillisecondLocalLora',
                     resource_hash: 'file:C:/models/MillisecondLocalLora.safetensors',
                     count: 0,
-                    is_local_disk: 1
-                }
+                    is_local_disk: 1,
+                },
             ],
             [
                 {
@@ -1360,22 +1416,22 @@ describe('searchRepo getFacets', () => {
                     name: 'OlderLocalLora',
                     hash: 'file:C:/models/OlderLocalLora.safetensors',
                     local_modified_at: 1_700_000_000,
-                    scanned_at: 1_700_000_300
+                    scanned_at: 1_700_000_300,
                 },
                 {
                     resource_type: 'loras',
                     name: 'NewestLocalLora',
                     hash: 'file:C:/models/NewestLocalLora.safetensors',
                     local_modified_at: null,
-                    scanned_at: 1_700_000_500
+                    scanned_at: 1_700_000_500,
                 },
                 {
                     resource_type: 'loras',
                     name: 'MillisecondLocalLora',
                     hash: 'file:C:/models/MillisecondLocalLora.safetensors',
                     local_modified_at: 1_700_001_000_000,
-                    scanned_at: 1_700_000_600
-                }
+                    scanned_at: 1_700_000_600,
+                },
             ]
         );
         getDbMock.mockResolvedValue(db);
@@ -1383,17 +1439,17 @@ describe('searchRepo getFacets', () => {
         const { getFacets } = await import('../searchRepo');
         const facets = await getFacets('', [], ['loras'], { assetScope: 'local' });
 
-        expect(facets.loras.find(item => item.name === 'NewestLocalLora')).toMatchObject({
+        expect(facets.loras.find((item) => item.name === 'NewestLocalLora')).toMatchObject({
             createdAt: 1_700_000_500_000,
-            localModifiedAt: 1_700_000_500_000
+            localModifiedAt: 1_700_000_500_000,
         });
-        expect(facets.loras.find(item => item.name === 'OlderLocalLora')).toMatchObject({
+        expect(facets.loras.find((item) => item.name === 'OlderLocalLora')).toMatchObject({
             createdAt: 1_700_000_000_000,
-            localModifiedAt: 1_700_000_000_000
+            localModifiedAt: 1_700_000_000_000,
         });
-        expect(facets.loras.find(item => item.name === 'MillisecondLocalLora')).toMatchObject({
+        expect(facets.loras.find((item) => item.name === 'MillisecondLocalLora')).toMatchObject({
             createdAt: 1_700_001_000_000,
-            localModifiedAt: 1_700_001_000_000
+            localModifiedAt: 1_700_001_000_000,
         });
     });
 });
@@ -1413,7 +1469,7 @@ describe('searchRepo scoped stats queries', () => {
                     return [{ total_items: 0, total_images: 0, total_videos: 0, total_bytes: 0 }];
                 }
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1464,7 +1520,7 @@ describe('searchRepo scoped stats queries', () => {
                 if (normalizedSql.includes('AS total_items')) return [{ total_items: 3, total_images: 3, total_videos: 0, total_bytes: 0 }];
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1495,7 +1551,7 @@ describe('searchRepo scoped stats queries', () => {
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 if (normalizedSql.includes('JOIN images_fts')) return [];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1529,26 +1585,26 @@ describe('searchRepo scoped stats queries', () => {
             label: 'default image search',
             args: [undefined, undefined] as const,
             expectedSql: 'FROM scoped_images',
-            expectedParams: [0, "x' OR 1=1 --", "id' OR 1=1 --"]
+            expectedParams: [0, "x' OR 1=1 --", "id' OR 1=1 --"],
         },
         {
             label: 'collection search',
             args: ["collection' OR 1=1 --", undefined] as const,
             expectedSql: 'FROM collection_images ci',
-            expectedParams: ["collection' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"]
+            expectedParams: ["collection' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"],
         },
         {
             label: 'lora search',
             args: [undefined, "lora' OR 1=1 --"] as const,
             expectedSql: 'FROM image_loras il',
-            expectedParams: ["lora' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"]
+            expectedParams: ["lora' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"],
         },
         {
             label: 'collection and lora search',
             args: ["collection' OR 1=1 --", "lora' OR 1=1 --"] as const,
             expectedSql: 'FROM collection_images ci',
-            expectedParams: ["collection' OR 1=1 --", "lora' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"]
-        }
+            expectedParams: ["collection' OR 1=1 --", "lora' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"],
+        },
     ])('binds image pagination cursor values for $label', async ({ args, expectedSql, expectedParams }) => {
         const db = { select: vi.fn(async () => []) };
         getDbMock.mockResolvedValue(db);
@@ -1556,7 +1612,7 @@ describe('searchRepo scoped stats queries', () => {
         const { searchImages } = await import('../searchRepo');
         await searchImages('WHERE is_deleted = ?', [0], 100, 'path', 'ASC', false, args[0], args[1], {
             val: "x' OR 1=1 --",
-            id: "id' OR 1=1 --"
+            id: "id' OR 1=1 --",
         });
 
         const [searchSql, searchParams] = findSelectCall(db, (value) => value.includes(expectedSql)) as [string, unknown[]];
@@ -1576,7 +1632,7 @@ describe('searchRepo scoped stats queries', () => {
         await searchImages('WHERE is_deleted = ?', [0], 100, 'path', 'ASC', true, "collection' OR 1=1 --", undefined, {
             val: "x' OR 1=1 --",
             id: "id' OR 1=1 --",
-            isPinned: 1
+            isPinned: 1,
         });
 
         const [searchSql, searchParams] = findSelectCall(db, (value) => value.includes('FROM collection_images ci')) as [string, unknown[]];
@@ -1587,16 +1643,7 @@ describe('searchRepo scoped stats queries', () => {
         expect(normalizedSql).toContain('images.is_pinned = ? AND images.path = ? AND images.id > ?');
         expect(searchSql).not.toContain("x' OR 1=1 --");
         expect(searchSql).not.toContain("id' OR 1=1 --");
-        expect(searchParams).toEqual([
-            "collection' OR 1=1 --",
-            0,
-            1,
-            1,
-            "x' OR 1=1 --",
-            1,
-            "x' OR 1=1 --",
-            "id' OR 1=1 --"
-        ]);
+        expect(searchParams).toEqual(["collection' OR 1=1 --", 0, 1, 1, "x' OR 1=1 --", 1, "x' OR 1=1 --", "id' OR 1=1 --"]);
     });
 
     it('uses canonical LoRA references for optimized image count and search', async () => {
@@ -1605,7 +1652,7 @@ describe('searchRepo scoped stats queries', () => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 1 }];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1615,7 +1662,10 @@ describe('searchRepo scoped stats queries', () => {
         await searchImages('WHERE is_deleted = ?', [0], 100, 'timestamp', 'DESC', false, undefined, 'detail___add_detail');
 
         const [countSql, countParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
-        const [searchSql, searchParams] = findSelectCall(db, (value) => value.includes('SELECT') && value.includes('FROM image_loras il') && !value.includes('count(*) as count')) as [string, unknown[]];
+        const [searchSql, searchParams] = findSelectCall(
+            db,
+            (value) => value.includes('SELECT') && value.includes('FROM image_loras il') && !value.includes('count(*) as count')
+        ) as [string, unknown[]];
 
         expect(countSql).toContain("instr(il.lora_name, ' (')");
         expect(countSql).toContain('COLLATE NOCASE = ?');
@@ -1631,15 +1681,18 @@ describe('searchRepo scoped stats queries', () => {
                 facet_type: 'loras',
                 resource_name: 'detail___add_detail',
                 resource_hash: 'lora_detail___add_detail',
-                count: 1
-            }
+                count: 1,
+            },
         ]);
         getDbMock.mockResolvedValue(db);
 
         const { getFacets } = await import('../searchRepo');
         await getFacets('WHERE is_deleted = 0', [], ['loras'], { assetScope: 'used' });
 
-        const [scopedSql] = findSelectCall(db, (value) => value.includes('scoped_images AS images') && value.includes('JOIN image_loras')) as [string, unknown[]];
+        const [scopedSql] = findSelectCall(
+            db,
+            (value) => value.includes('scoped_images AS images') && value.includes('JOIN image_loras')
+        ) as [string, unknown[]];
         expect(scopedSql).toContain("instr(il.lora_name, ' (')");
         expect(scopedSql).toContain('GROUP BY CASE');
     });
@@ -1652,12 +1705,12 @@ describe('searchRepo scoped stats queries', () => {
                 if (normalizedSql.includes('GROUP BY name')) {
                     return Array.from({ length: 22 }, (_, index) => ({
                         name: `Flux Variant ${index + 1}`,
-                        count: 22 - index
+                        count: 22 - index,
                     }));
                 }
                 if (normalizedSql.includes('JOIN images_fts')) return [];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1670,7 +1723,7 @@ describe('searchRepo scoped stats queries', () => {
         expect(stats.modelStats[0]).toEqual({
             name: 'Flux Variant 1',
             fullName: 'Flux Variant 1',
-            count: 22
+            count: 22,
         });
 
         const [modelSql, modelParams] = findSelectCall(db, (value) => value.includes('GROUP BY name')) as [string, unknown[]];
@@ -1690,7 +1743,7 @@ describe('searchRepo scoped stats queries', () => {
                 if (normalizedSql.includes('AVG(steps) AS avg_steps')) return [{ avg_steps: 25 }];
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1713,7 +1766,7 @@ describe('searchRepo scoped stats queries', () => {
 
     it.each([
         { databaseAverage: 25.5, expectedAverage: 26, label: 'rounds a fractional average' },
-        { databaseAverage: null, expectedAverage: 0, label: 'maps an empty positive-step scope to zero' }
+        { databaseAverage: null, expectedAverage: 0, label: 'maps an empty positive-step scope to zero' },
     ])('$label', async ({ databaseAverage, expectedAverage }) => {
         const db = {
             select: vi.fn(async (sql: string) => {
@@ -1721,15 +1774,14 @@ describe('searchRepo scoped stats queries', () => {
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 2 }];
                 if (normalizedSql.includes('AVG(steps) AS avg_steps')) return [{ avg_steps: databaseAverage }];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0]))
-            .resolves.toMatchObject({ avgSteps: expectedAverage });
+        await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0])).resolves.toMatchObject({ avgSteps: expectedAverage });
     });
 
     it('keeps every summary scope behind the owner-scoped view', async () => {
@@ -1739,7 +1791,8 @@ describe('searchRepo scoped stats queries', () => {
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        const baseWhere = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const baseWhere =
+            'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
         const defaultWhere = `${baseWhere} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
         const privacyWhere = `${defaultWhere} AND privacy_hidden = 0`;
         await getLibraryStatsSummary(defaultWhere, []);
@@ -1764,15 +1817,21 @@ describe('searchRepo scoped stats queries', () => {
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 1 }];
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
-        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
+        await getLibraryStatsSummary(
+            'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            []
+        );
+        await getLibraryStatsSummary(
+            'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0',
+            []
+        );
 
         const modelCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('GROUP BY name'));
 
@@ -1790,7 +1849,7 @@ describe('searchRepo scoped stats queries', () => {
                 }
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1814,7 +1873,7 @@ describe('searchRepo scoped stats queries', () => {
             Array.from({ length: 500 }, (_, index) => ({ rowid: index + 501, positive_prompt: 'alpha alpha' })),
             Array.from({ length: 500 }, (_, index) => ({ rowid: index + 1001, positive_prompt: 'alpha alpha' })),
             Array.from({ length: 500 }, (_, index) => ({ rowid: index + 1501, positive_prompt: 'alpha alpha' })),
-            [{ rowid: 2001, positive_prompt: 'sentinelword alpha' }]
+            [{ rowid: 2001, positive_prompt: 'sentinelword alpha' }],
         ];
         let promptBatchIndex = 0;
 
@@ -1827,7 +1886,7 @@ describe('searchRepo scoped stats queries', () => {
                     return batch;
                 }
                 return [];
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1845,7 +1904,7 @@ describe('searchRepo scoped stats queries', () => {
             [0, 500],
             [0, 1000],
             [0, 1500],
-            [0, 2000]
+            [0, 2000],
         ]);
         keywordCalls.forEach(([sql]) => {
             expect(sql).toContain('images.rowid > ?');
@@ -1864,14 +1923,13 @@ describe('searchRepo scoped stats queries', () => {
             select: vi.fn(async () => {
                 controller.abort();
                 return promptRows;
-            })
+            }),
         };
         getDbMock.mockResolvedValue(db);
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { getKeywordStats } = await import('../searchRepo');
 
-        await expect(getKeywordStats('', [], undefined, undefined, controller.signal))
-            .rejects.toMatchObject({ name: 'AbortError' });
+        await expect(getKeywordStats('', [], undefined, undefined, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
         expect(db.select).toHaveBeenCalledOnce();
         expect(errorSpy).not.toHaveBeenCalled();
         errorSpy.mockRestore();
@@ -1882,7 +1940,7 @@ describe('searchRepo scoped stats queries', () => {
             select: vi.fn().mockResolvedValue([
                 { rowid: 1, positive_prompt: 'the cat 123 validword validword' },
                 { rowid: 2, positive_prompt: null },
-            ])
+            ]),
         };
         getDbMock.mockResolvedValue(db);
         const { getKeywordStats } = await import('../searchRepo');

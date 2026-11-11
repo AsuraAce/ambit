@@ -12,7 +12,7 @@ const callbacks = () => ({
     onExport: vi.fn(),
     onResetThumbnail: vi.fn(),
     onColorChange: vi.fn(),
-    onEditCollection: vi.fn()
+    onEditCollection: vi.fn(),
 });
 
 describe('CollectionContextMenu', () => {
@@ -23,14 +23,7 @@ describe('CollectionContextMenu', () => {
 
     it('keeps the menu on screen and closes only for outside interactions', () => {
         const handlers = callbacks();
-        const { container, unmount } = render(
-            <CollectionContextMenu
-                x={480}
-                y={390}
-                collectionId="collection-1"
-                {...handlers}
-            />
-        );
+        const { container, unmount } = render(<CollectionContextMenu x={480} y={390} collectionId="collection-1" {...handlers} />);
 
         const menu = container.firstElementChild as HTMLElement;
         expect(menu.style.left).toBe('260px');
@@ -50,29 +43,19 @@ describe('CollectionContextMenu', () => {
 
     it('exposes every collection action and optional management item', () => {
         const handlers = callbacks();
-        render(
-            <CollectionContextMenu
-                x={10}
-                y={20}
-                collectionId="collection-1"
-                isArchived
-                isPinned
-                hasCustomThumbnail
-                {...handlers}
-            />
-        );
+        render(<CollectionContextMenu x={10} y={20} collectionId="collection-1" isArchived isPinned hasCustomThumbnail {...handlers} />);
 
         const iconActions: Array<[string, ReturnType<typeof vi.fn>]> = [
             ['Play Slideshow', handlers.onPlaySlideshow],
             ['Unpin collection', handlers.onTogglePin],
             ['Unarchive', handlers.onToggleArchive],
-            ['Delete Collection', handlers.onDelete]
+            ['Delete Collection', handlers.onDelete],
         ];
         const textActions: Array<[string, ReturnType<typeof vi.fn>]> = [
             ['Rename', handlers.onRename],
             ['Edit Collection', handlers.onEditCollection],
             ['Export to ZIP...', handlers.onExport],
-            ['Reset Thumbnail', handlers.onResetThumbnail]
+            ['Reset Thumbnail', handlers.onResetThumbnail],
         ];
 
         for (const [name, callback] of iconActions) {

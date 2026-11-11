@@ -54,9 +54,8 @@ const INITIAL_FILTERS: FilterState = {
     collectionId: null,
     showIntermediates: false,
     showGrids: false,
-    showInvokeImageAssets: false
+    showInvokeImageAssets: false,
 };
-
 
 export const useSearchStore = create<SearchState>()(
     devtools(
@@ -84,7 +83,8 @@ export const useSearchStore = create<SearchState>()(
 
             setFilters: (update) => {
                 set((state) => ({
-                    filters: typeof update === 'function' ? { ...state.filters, ...update(state.filters) } : { ...state.filters, ...update }
+                    filters:
+                        typeof update === 'function' ? { ...state.filters, ...update(state.filters) } : { ...state.filters, ...update },
                 }));
             },
 
@@ -100,7 +100,7 @@ export const useSearchStore = create<SearchState>()(
                         collectionId: state.filters.collectionId,
                         showGrids: state.filters.showGrids,
                         showInvokeImageAssets: state.filters.showInvokeImageAssets,
-                    }
+                    },
                 }));
             },
 
@@ -110,38 +110,38 @@ export const useSearchStore = create<SearchState>()(
 
             toggleFavorite: async (id) => {
                 const state = get();
-                const img = state.images.find(i => i.id === id);
+                const img = state.images.find((i) => i.id === id);
                 if (!img) return;
                 const newVal = !img.isFavorite;
 
                 // Optimistic update
-                const newImages = state.images.map(i => i.id === id ? { ...i, isFavorite: newVal } : i);
+                const newImages = state.images.map((i) => (i.id === id ? { ...i, isFavorite: newVal } : i));
                 set({ images: newImages });
 
                 try {
                     await updateFavorite(id, newVal);
                 } catch (e) {
-                    console.error("Toggle favorite failed", e);
+                    console.error('Toggle favorite failed', e);
                     set({ images: state.images }); // Revert
                 }
             },
 
             togglePin: async (id: string) => {
                 const state = get();
-                const img = state.images.find(i => i.id === id);
+                const img = state.images.find((i) => i.id === id);
                 if (!img) return;
                 const newVal = !img.isPinned;
 
-                const newImages = state.images.map(i => i.id === id ? { ...i, isPinned: newVal } : i);
+                const newImages = state.images.map((i) => (i.id === id ? { ...i, isPinned: newVal } : i));
                 set({ images: newImages });
 
                 try {
                     await updatePinned(id, newVal);
                 } catch (e) {
-                    console.error("Toggle pin failed", e);
+                    console.error('Toggle pin failed', e);
                     set({ images: state.images });
                 }
-            }
+            },
         }),
         { name: 'SearchStore' }
     )

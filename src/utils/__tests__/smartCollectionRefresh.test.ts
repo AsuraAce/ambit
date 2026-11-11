@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Collection } from '../../types';
-import {
-    hasPromptSearchFilter,
-    shouldAutoRefreshSmartCollectionSummary,
-} from '../smartCollectionRefresh';
+import { hasPromptSearchFilter, shouldAutoRefreshSmartCollectionSummary } from '../smartCollectionRefresh';
 import { createDefaultFilters } from '../filterState';
 
 const collection = (overrides: Partial<Collection>): Collection => ({

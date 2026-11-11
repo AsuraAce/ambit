@@ -1,4 +1,3 @@
-
 import { act, fireEvent, render, screen } from '../../test/testUtils';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { AppLayout } from '../AppLayout';
@@ -16,8 +15,8 @@ const searchState = vi.hoisted(() => ({
         toggleFavorite: vi.fn(),
         hasMoreImages: true,
         isLoadingMore: false,
-        loadMoreImages: vi.fn()
-    }
+        loadMoreImages: vi.fn(),
+    },
 }));
 const capturedProps = vi.hoisted(() => ({
     sidebar: null as Record<string, unknown> | null,
@@ -36,7 +35,7 @@ vi.mock('../../features/collections/components/AppSidebar', () => ({
     AppSidebar: (props: Record<string, unknown>) => {
         capturedProps.sidebar = props;
         return <div data-testid="app-sidebar" />;
-    }
+    },
 }));
 vi.mock('../ui/AppHeader', () => ({
     AppHeader: (props: Record<string, unknown>) => {
@@ -51,48 +50,59 @@ vi.mock('../ui/AppHeader', () => ({
                 </button>
             </div>
         );
-    }
+    },
 }));
 vi.mock('../../features/library/components/SelectionBar', () => ({
     SelectionBar: (props: Record<string, unknown>) => {
         capturedProps.selectionBar = props;
         return <div data-testid="selection-bar" />;
-    }
+    },
 }));
 vi.mock('../../features/filters/components/FilterPanel', () => ({
     FilterPanel: (props: Record<string, unknown>) => {
         capturedProps.filterPanel = props;
         return <div data-testid="filter-panel" />;
-    }
+    },
 }));
 vi.mock('../ui/Charts', () => ({
     StatsDashboard: ({ onFilter }: { onFilter: (type: string, value: string) => void }) => (
         <div>
-            <button data-testid="stats-dashboard" onClick={() => onFilter('model', 'Flux')}>dashboard</button>
-            <button data-testid="stats-dashboard-other" onClick={() => onFilter('tool', 'Invoke')}>other</button>
+            <button data-testid="stats-dashboard" onClick={() => onFilter('model', 'Flux')}>
+                dashboard
+            </button>
+            <button data-testid="stats-dashboard-other" onClick={() => onFilter('tool', 'Invoke')}>
+                other
+            </button>
         </div>
-    )
+    ),
 }));
 vi.mock('../../features/maintenance/components/MaintenanceView', () => ({
     MaintenanceView: (props: Record<string, unknown>) => {
         capturedProps.maintenance = props;
         return <div data-testid="maintenance-view" />;
-    }
+    },
 }));
 vi.mock('../../features/library/components/GridSkeleton', () => ({
-    GridSkeleton: () => <div data-testid="grid-skeleton" />
+    GridSkeleton: () => <div data-testid="grid-skeleton" />,
 }));
 vi.mock('../../features/library/components/PinnedShelf', () => ({
     PinnedShelf: (props: Record<string, unknown>) => {
         capturedProps.pinnedShelf = props;
         return <div data-testid="pinned-shelf" />;
-    }
+    },
 }));
 vi.mock('../../features/library/components/TimelineView', () => ({
     TimelineView: (props: { hasMoreImages?: boolean; isLoadingMore?: boolean; onLoadMore?: () => void }) => (
-        capturedProps.timeline = props as unknown as Record<string, unknown>,
-        <div data-testid="timeline-view" data-has-more-images={String(props.hasMoreImages)} data-is-loading-more={String(props.isLoadingMore)} data-has-load-more={String(typeof props.onLoadMore === 'function')} />
-    )
+        (capturedProps.timeline = props as unknown as Record<string, unknown>),
+        (
+            <div
+                data-testid="timeline-view"
+                data-has-more-images={String(props.hasMoreImages)}
+                data-is-loading-more={String(props.isLoadingMore)}
+                data-has-load-more={String(typeof props.onLoadMore === 'function')}
+            />
+        )
+    ),
 }));
 vi.mock('../../features/library/components/VirtualGrid', () => ({
     VirtualGrid: (props: {
@@ -102,23 +112,29 @@ vi.mock('../../features/library/components/VirtualGrid', () => ({
         renderItem?: (item: { id: string }, style: React.CSSProperties, index: number) => React.ReactNode;
     }) => {
         capturedProps.virtualGrid = props as unknown as Record<string, unknown>;
-        return <>
-            {props.items?.[0] && props.renderItem?.(props.items[0], { width: 10 }, 0)}
-            <div data-testid="virtual-grid" data-transition-key={props.transitionKey ?? ''} data-suspend-resize-layout={String(Boolean(props.suspendResizeLayout))} />
-        </>;
-    }
+        return (
+            <>
+                {props.items?.[0] && props.renderItem?.(props.items[0], { width: 10 }, 0)}
+                <div
+                    data-testid="virtual-grid"
+                    data-transition-key={props.transitionKey ?? ''}
+                    data-suspend-resize-layout={String(Boolean(props.suspendResizeLayout))}
+                />
+            </>
+        );
+    },
 }));
 vi.mock('../../features/library/components/GridItem', () => ({
     GridItem: (props: Record<string, unknown>) => {
         capturedProps.gridItem = props;
         return <div data-testid="grid-item" />;
-    }
+    },
 }));
 vi.mock('../ui/ErrorBoundary', () => ({
-    ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>
+    ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>,
 }));
 vi.mock('../../contexts/SearchContext', () => ({
-    useSearch: () => searchState.value
+    useSearch: () => searchState.value,
 }));
 
 describe('AppLayout', () => {
@@ -143,7 +159,7 @@ describe('AppLayout', () => {
             isActivityDockDismissed: false,
             isActivityDockMinimized: false,
         });
-        Object.keys(capturedProps).forEach(key => {
+        Object.keys(capturedProps).forEach((key) => {
             capturedProps[key as keyof typeof capturedProps] = null;
         });
         searchState.value = {
@@ -155,7 +171,7 @@ describe('AppLayout', () => {
             toggleFavorite: vi.fn(),
             hasMoreImages: true,
             isLoadingMore: false,
-            loadMoreImages: vi.fn()
+            loadMoreImages: vi.fn(),
         };
     });
 
@@ -242,10 +258,12 @@ describe('AppLayout', () => {
 
         render(<AppLayout {...defaultProps} displayedCount={823} scopeTotal={823} />);
 
-        expect(capturedProps.header).toEqual(expect.objectContaining({
-            displayedCount: 823,
-            totalCount: 823,
-        }));
+        expect(capturedProps.header).toEqual(
+            expect.objectContaining({
+                displayedCount: 823,
+                totalCount: 823,
+            })
+        );
     });
 
     it('unmounts library surfaces while privacy protection is stale', () => {
@@ -262,16 +280,12 @@ describe('AppLayout', () => {
     });
 
     it('holds the privacy gate while initial preparation finishes presenting', () => {
-        const view = render(
-            <AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate />
-        );
+        const view = render(<AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate />);
 
         expect(screen.getByTestId('privacy-protection-gate')).toBeTruthy();
         expect(screen.queryByTestId('virtual-grid')).toBeNull();
 
-        view.rerender(
-            <AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate={false} />
-        );
+        view.rerender(<AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate={false} />);
         expect(screen.queryByTestId('privacy-protection-gate')).toBeNull();
         expect(screen.getByTestId('virtual-grid')).toBeTruthy();
     });
@@ -282,7 +296,7 @@ describe('AppLayout', () => {
     });
 
     it('passes an empty effective keyword list to gallery items while retaining saved keywords', () => {
-        useSettingsStore.setState(state => ({
+        useSettingsStore.setState((state) => ({
             settings: {
                 ...state.settings,
                 promptMaskingEnabled: false,
@@ -310,7 +324,7 @@ describe('AppLayout', () => {
                     favoritesOnly: true,
                     pinnedOnly: false,
                     showGrids: true,
-                    showIntermediates: false
+                    showIntermediates: false,
                 }}
             />
         );
@@ -380,13 +394,7 @@ describe('AppLayout', () => {
 
     it('forwards collection persistence to MaintenanceView', async () => {
         const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
-        render(
-            <AppLayout
-                {...defaultProps}
-                viewMode="maintenance"
-                onSetCollectionMembership={onSetCollectionMembership}
-            />
-        );
+        render(<AppLayout {...defaultProps} viewMode="maintenance" onSetCollectionMembership={onSetCollectionMembership} />);
         expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
         expect(capturedProps.maintenance?.onSetCollectionMembership).toBe(onSetCollectionMembership);
     });
@@ -414,12 +422,14 @@ describe('AppLayout', () => {
 
     it('preserves interactive collection results while a collection search refreshes', () => {
         searchState.value.isFiltering = true;
-        render(<AppLayout
-            {...defaultProps}
-            filters={{ collectionId: 'collection-a' }}
-            activeCollection={{ id: 'collection-a', name: 'Collection A', imageIds: ['1'], createdAt: 1 }}
-            scopeName="Collection A"
-        />);
+        render(
+            <AppLayout
+                {...defaultProps}
+                filters={{ collectionId: 'collection-a' }}
+                activeCollection={{ id: 'collection-a', name: 'Collection A', imageIds: ['1'], createdAt: 1 }}
+                scopeName="Collection A"
+            />
+        );
 
         expect(screen.getByTestId('virtual-grid')).toBeTruthy();
         expect(screen.queryByTestId('grid-skeleton')).toBeNull();
@@ -443,12 +453,14 @@ describe('AppLayout', () => {
         searchState.value.totalImages = 0;
         searchState.value.globalTotal = 4;
         searchState.value.isFiltering = true;
-        render(<AppLayout
-            {...defaultProps}
-            filters={{ collectionId: 'collection-a' }}
-            activeCollection={{ id: 'collection-a', name: 'Collection A', imageIds: [], createdAt: 1 }}
-            scopeName="Collection A"
-        />);
+        render(
+            <AppLayout
+                {...defaultProps}
+                filters={{ collectionId: 'collection-a' }}
+                activeCollection={{ id: 'collection-a', name: 'Collection A', imageIds: [], createdAt: 1 }}
+                scopeName="Collection A"
+            />
+        );
 
         expect(screen.getByTestId('grid-skeleton')).toBeTruthy();
         expect(screen.queryByText('No Matches Found')).toBeNull();
@@ -550,11 +562,7 @@ describe('AppLayout', () => {
 
     it('keeps standard search results unobscured while focused', () => {
         const { container } = render(
-            <AppLayout
-                {...defaultProps}
-                isSearchFocused
-                searchProps={{ ...defaultProps.searchProps, isAiSearchEnabled: false }}
-            />
+            <AppLayout {...defaultProps} isSearchFocused searchProps={{ ...defaultProps.searchProps, isAiSearchEnabled: false }} />
         );
 
         expect(container.querySelector('.absolute.inset-0.z-40.bg-black\\/60')).toBeNull();
@@ -587,20 +595,33 @@ describe('AppLayout', () => {
     it('orchestrates sidebar, header, and filter-panel commands', async () => {
         const setFilters = vi.fn();
         const modals = {
-            setInitialSettingsTab: vi.fn(), openModal: vi.fn(), setShortcutsModalTab: vi.fn(),
-            setSlideshowShuffle: vi.fn(), isPinnedShelfCollapsed: false, setIsPinnedShelfCollapsed: vi.fn()
+            setInitialSettingsTab: vi.fn(),
+            openModal: vi.fn(),
+            setShortcutsModalTab: vi.fn(),
+            setSlideshowShuffle: vi.fn(),
+            isPinnedShelfCollapsed: false,
+            setIsPinnedShelfCollapsed: vi.fn(),
         };
         const colOps = {
-            createCollection: vi.fn(), saveSmartCollection: vi.fn(), deleteSmartCollection: vi.fn(),
-            addImagesToCollection: vi.fn().mockResolvedValue(undefined), renameCollection: vi.fn(),
-            deleteCollection: vi.fn(), toggleArchiveCollection: vi.fn(), togglePinCollection: vi.fn(),
-            setCollectionColor: vi.fn(), resetCollectionThumbnail: vi.fn(), updateCollectionFilters: vi.fn()
+            createCollection: vi.fn(),
+            saveSmartCollection: vi.fn(),
+            deleteSmartCollection: vi.fn(),
+            addImagesToCollection: vi.fn().mockResolvedValue(undefined),
+            renameCollection: vi.fn(),
+            deleteCollection: vi.fn(),
+            toggleArchiveCollection: vi.fn(),
+            togglePinCollection: vi.fn(),
+            setCollectionColor: vi.fn(),
+            resetCollectionThumbnail: vi.fn(),
+            updateCollectionFilters: vi.fn(),
         };
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         render(<AppLayout {...defaultProps} setFilters={setFilters} modals={modals} colOps={colOps} />);
 
         const sidebar = capturedProps.sidebar as {
-            onOpenSettings: () => void; onOpenShortcuts: () => void; onOpenDonation: () => void;
+            onOpenSettings: () => void;
+            onOpenShortcuts: () => void;
+            onOpenDonation: () => void;
         };
         sidebar.onOpenSettings();
         sidebar.onOpenShortcuts();
@@ -646,15 +667,17 @@ describe('AppLayout', () => {
         const handlePinImage = vi.fn();
         const setContextMenu = vi.fn();
         const setIsPinnedShelfCollapsed = vi.fn();
-        render(<AppLayout
-            {...defaultProps}
-            filters={{ collectionId: 'collection-1', pinnedOnly: false }}
-            handleImageClick={handleImageClick}
-            handleRangeSelection={handleRangeSelection}
-            actions={{ handlePinImage }}
-            handlers={{ setImages: vi.fn(), setContextMenu }}
-            modals={{ isPinnedShelfCollapsed: false, setIsPinnedShelfCollapsed }}
-        />);
+        render(
+            <AppLayout
+                {...defaultProps}
+                filters={{ collectionId: 'collection-1', pinnedOnly: false }}
+                handleImageClick={handleImageClick}
+                handleRangeSelection={handleRangeSelection}
+                actions={{ handlePinImage }}
+                handlers={{ setImages: vi.fn(), setContextMenu }}
+                modals={{ isPinnedShelfCollapsed: false, setIsPinnedShelfCollapsed }}
+            />
+        );
 
         expect(screen.getByTestId('pinned-shelf')).toBeTruthy();
         expect(screen.getByTestId('grid-item')).toBeTruthy();
@@ -714,13 +737,15 @@ describe('AppLayout', () => {
         const setViewingImageId = vi.fn();
         const handleUpdateNotes = vi.fn();
         const openMetadataRecovery = vi.fn();
-        render(<AppLayout
-            {...defaultProps}
-            viewMode="maintenance"
-            setViewingImageId={setViewingImageId}
-            handlers={{ handleUpdateNotes }}
-            actions={{ openMetadataRecovery }}
-        />);
+        render(
+            <AppLayout
+                {...defaultProps}
+                viewMode="maintenance"
+                setViewingImageId={setViewingImageId}
+                handlers={{ handleUpdateNotes }}
+                actions={{ openMetadataRecovery }}
+            />
+        );
         await screen.findByTestId('maintenance-view');
         const maintenance = capturedProps.maintenance as {
             onViewImage: (id: string) => void;
@@ -746,14 +771,16 @@ describe('AppLayout', () => {
         const handleImageClick = vi.fn();
         const handlePinImage = vi.fn();
         const setContextMenu = vi.fn();
-        const gridView = render(<AppLayout
-            {...defaultProps}
-            filters={{ collectionId: 'collection-1', pinnedOnly: false }}
-            handleImageClick={handleImageClick}
-            actions={{ handlePinImage }}
-            handlers={{ setImages: vi.fn(), setContextMenu }}
-            modals={{ isPinnedShelfCollapsed: false, setIsPinnedShelfCollapsed: vi.fn() }}
-        />);
+        const gridView = render(
+            <AppLayout
+                {...defaultProps}
+                filters={{ collectionId: 'collection-1', pinnedOnly: false }}
+                handleImageClick={handleImageClick}
+                actions={{ handlePinImage }}
+                handlers={{ setImages: vi.fn(), setContextMenu }}
+                modals={{ isPinnedShelfCollapsed: false, setIsPinnedShelfCollapsed: vi.fn() }}
+            />
+        );
         const shelf = capturedProps.pinnedShelf as {
             onImageClick: (event: React.MouseEvent, id: string, index: number) => void;
             onToggleFavorite: (event: React.MouseEvent, id: string) => void;
@@ -767,13 +794,15 @@ describe('AppLayout', () => {
         expect(setContextMenu).toHaveBeenCalledWith({ x: 2, y: 3, imageId: 'pinned' });
         gridView.unmount();
 
-        render(<AppLayout
-            {...defaultProps}
-            viewMode="timeline"
-            handleImageClick={handleImageClick}
-            actions={{ handlePinImage }}
-            handlers={{ setContextMenu }}
-        />);
+        render(
+            <AppLayout
+                {...defaultProps}
+                viewMode="timeline"
+                handleImageClick={handleImageClick}
+                actions={{ handlePinImage }}
+                handlers={{ setContextMenu }}
+            />
+        );
         const timeline = capturedProps.timeline as {
             onImageClick: (event: React.MouseEvent, id: string, index: number) => void;
             onToggleFavorite: (event: React.MouseEvent, id: string) => void;
@@ -796,11 +825,16 @@ describe('AppLayout', () => {
         const modals = { openModal };
         const actions = {
             executeDelete,
-            handleBulkFavorite: vi.fn(), handleBulkPin: vi.fn(), handleBulkMask: vi.fn()
+            handleBulkFavorite: vi.fn(),
+            handleBulkPin: vi.fn(),
+            handleBulkMask: vi.fn(),
         };
         render(<AppLayout {...defaultProps} modals={modals} actions={actions} handleOpenCollectionModal={handleOpenCollectionModal} />);
         const selection = capturedProps.selectionBar as {
-            onDelete: () => void; onExport: () => void; onAddToCollection: () => void; onCompare: () => void;
+            onDelete: () => void;
+            onExport: () => void;
+            onAddToCollection: () => void;
+            onCompare: () => void;
         };
         selection.onDelete();
         selection.onExport();
@@ -816,20 +850,27 @@ describe('AppLayout', () => {
     it('covers fallback layout keys, smart thumbnails, loading, and immediate deletion', () => {
         const originalStore = useSettingsStore.getState();
         useSettingsStore.setState({
-            settings: { ...originalStore.settings, thumbnailSize: undefined as unknown as number, confirmDelete: false }
+            settings: { ...originalStore.settings, thumbnailSize: undefined as unknown as number, confirmDelete: false },
         });
-        searchState.value.images = [{
-            id: 'smart-image', filename: 'smart.png', timestamp: 1, isPinned: false
-        } as AIImage];
+        searchState.value.images = [
+            {
+                id: 'smart-image',
+                filename: 'smart.png',
+                timestamp: 1,
+                isPinned: false,
+            } as AIImage,
+        ];
         searchState.value.isLoadingMore = true;
         const executeDelete = vi.fn();
-        render(<AppLayout
-            {...defaultProps}
-            filters={{ collectionId: 'collection-1', pinnedOnly: true, showIntermediates: true }}
-            activeCollection={null}
-            activeSmartCollection={{ id: 'smart-1', thumbnail: 'smart-image' }}
-            actions={{ executeDelete }}
-        />);
+        render(
+            <AppLayout
+                {...defaultProps}
+                filters={{ collectionId: 'collection-1', pinnedOnly: true, showIntermediates: true }}
+                activeCollection={null}
+                activeSmartCollection={{ id: 'smart-1', thumbnail: 'smart-image' }}
+                actions={{ executeDelete }}
+            />
+        );
 
         expect(screen.getByTestId('virtual-grid').getAttribute('data-transition-key')).toContain('default-size');
         expect(screen.getByTestId('virtual-grid').getAttribute('data-transition-key')).toContain('pinned-only');

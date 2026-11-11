@@ -7,9 +7,18 @@ import { useInvokeOwnerDiscovery } from '../../hooks/useInvokeOwnerDiscovery';
 import { InvokeAITab } from '../InvokeAITab';
 
 const mocks = vi.hoisted(() => ({
-    inspect: vi.fn(), apply: vi.fn(), open: vi.fn(), getSuppressedInvokeCollections: vi.fn(), refreshCollections: vi.fn(),
-    diagnose: vi.fn(), invoke: vi.fn(), developerFeatures: false,
-    cancelSync: vi.fn(), isInvokeSyncActive: false, isLiveSyncing: false, syncStatus: 'idle' as 'idle' | 'syncing',
+    inspect: vi.fn(),
+    apply: vi.fn(),
+    open: vi.fn(),
+    getSuppressedInvokeCollections: vi.fn(),
+    refreshCollections: vi.fn(),
+    diagnose: vi.fn(),
+    invoke: vi.fn(),
+    developerFeatures: false,
+    cancelSync: vi.fn(),
+    isInvokeSyncActive: false,
+    isLiveSyncing: false,
+    syncStatus: 'idle' as 'idle' | 'syncing',
     ownerScopeState: { status: 'ready' } as Record<string, unknown>,
 }));
 
@@ -17,14 +26,27 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('../../../../services/invoke/connection', () => ({
     inspectInvokeConnection: mocks.inspect,
-    resolveInvokePaths: (root: string) => ({ dbPath: `${root.replace(/\\/g, '/').replace(/\/$/, '')}/databases/invokeai.db`, imagesRoot: root }),
+    resolveInvokePaths: (root: string) => ({
+        dbPath: `${root.replace(/\\/g, '/').replace(/\/$/, '')}/databases/invokeai.db`,
+        imagesRoot: root,
+    }),
     diagnoseInvokeAI: mocks.diagnose,
 }));
-vi.mock('../../../../services/db/collectionRepo', () => ({ getSuppressedInvokeCollections: mocks.getSuppressedInvokeCollections, restoreInvokeCollection: vi.fn() }));
-vi.mock('../../../../stores/collectionStore', () => ({ useCollectionStore: (select: (state: { refreshCollections: typeof mocks.refreshCollections }) => unknown) => select({ refreshCollections: mocks.refreshCollections }) }));
+vi.mock('../../../../services/db/collectionRepo', () => ({
+    getSuppressedInvokeCollections: mocks.getSuppressedInvokeCollections,
+    restoreInvokeCollection: vi.fn(),
+}));
+vi.mock('../../../../stores/collectionStore', () => ({
+    useCollectionStore: (select: (state: { refreshCollections: typeof mocks.refreshCollections }) => unknown) =>
+        select({ refreshCollections: mocks.refreshCollections }),
+}));
 vi.mock('../../../../utils/settingsUtils', () => ({ areDeveloperFeaturesEnabled: () => mocks.developerFeatures }));
 vi.mock('../SyncSection', () => ({
-    SyncSection: ({ draftSession }: { draftSession: { draft: { importIntermediates: boolean }; update: (update: { importIntermediates: boolean }) => void } }) => (
+    SyncSection: ({
+        draftSession,
+    }: {
+        draftSession: { draft: { importIntermediates: boolean }; update: (update: { importIntermediates: boolean }) => void };
+    }) => (
         <button type="button" onClick={() => draftSession.update({ importIntermediates: !draftSession.draft.importIntermediates })}>
             Import intermediates: {String(draftSession.draft.importIntermediates)}
         </button>
@@ -32,24 +54,62 @@ vi.mock('../SyncSection', () => ({
     InvokeRecoverySection: () => <div>sync recovery</div>,
 }));
 vi.mock('../../../../contexts/LibraryContext', () => ({
-    useLibrary: () => ({ invokeOwnerScopeState: mocks.ownerScopeState, retryInvokeOwnerScope: vi.fn(), startInvokeSync: vi.fn(), applyInvokeConnection: mocks.apply, cancelSync: mocks.cancelSync, syncState: { status: mocks.syncStatus }, isInvokeSyncActive: mocks.isInvokeSyncActive, isLiveSyncing: mocks.isLiveSyncing }),
+    useLibrary: () => ({
+        invokeOwnerScopeState: mocks.ownerScopeState,
+        retryInvokeOwnerScope: vi.fn(),
+        startInvokeSync: vi.fn(),
+        applyInvokeConnection: mocks.apply,
+        cancelSync: mocks.cancelSync,
+        syncState: { status: mocks.syncStatus },
+        isInvokeSyncActive: mocks.isInvokeSyncActive,
+        isLiveSyncing: mocks.isLiveSyncing,
+    }),
 }));
 
-const legacyDiscovery = (root: string): InvokeOwnerDiscovery => ({ schemaMode: 'legacy', dbPath: `${root}/databases/invokeai.db`, imagesRoot: root, owners: [], unassignedImageCount: 0 });
-const settings = (invokeAiPath?: string) => ({ invokeAiPath } as AppSettings);
-const DraftHarness: React.FC<{ settings: AppSettings; setSettings: React.Dispatch<React.SetStateAction<AppSettings>>; onClose?: () => void }> = ({ settings, setSettings, onClose }) => {
+const legacyDiscovery = (root: string): InvokeOwnerDiscovery => ({
+    schemaMode: 'legacy',
+    dbPath: `${root}/databases/invokeai.db`,
+    imagesRoot: root,
+    owners: [],
+    unassignedImageCount: 0,
+});
+const settings = (invokeAiPath?: string) => ({ invokeAiPath }) as AppSettings;
+const DraftHarness: React.FC<{
+    settings: AppSettings;
+    setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
+    onClose?: () => void;
+}> = ({ settings, setSettings, onClose }) => {
     const draftSession = useInvokeConnectionDraft(settings, true);
     const ownerDiscoverySession = useInvokeOwnerDiscovery(draftSession.draft.invokeAiPath);
-    return <InvokeAITab settings={settings} setSettings={setSettings} draftSession={draftSession} ownerDiscoverySession={ownerDiscoverySession} onClose={onClose} />;
+    return (
+        <InvokeAITab
+            settings={settings}
+            setSettings={setSettings}
+            draftSession={draftSession}
+            ownerDiscoverySession={ownerDiscoverySession}
+            onClose={onClose}
+        />
+    );
 };
 const DraftNavigationHarness: React.FC<{ settings: AppSettings }> = ({ settings }) => {
     const [showInvoke, setShowInvoke] = React.useState(true);
     const draftSession = useInvokeConnectionDraft(settings, true);
     const ownerDiscoverySession = useInvokeOwnerDiscovery(draftSession.draft.invokeAiPath);
-    return <>
-        <button type="button" onClick={() => setShowInvoke(value => !value)}>Toggle Invoke tab</button>
-        {showInvoke && <InvokeAITab settings={settings} setSettings={vi.fn()} draftSession={draftSession} ownerDiscoverySession={ownerDiscoverySession} />}
-    </>;
+    return (
+        <>
+            <button type="button" onClick={() => setShowInvoke((value) => !value)}>
+                Toggle Invoke tab
+            </button>
+            {showInvoke && (
+                <InvokeAITab
+                    settings={settings}
+                    setSettings={vi.fn()}
+                    draftSession={draftSession}
+                    ownerDiscoverySession={ownerDiscoverySession}
+                />
+            )}
+        </>
+    );
 };
 
 describe('InvokeAITab draft connection flow', () => {
@@ -86,7 +146,9 @@ describe('InvokeAITab draft connection flow', () => {
         let finish!: (outcome: { status: 'completed'; viewCommitted: boolean }) => void;
         mocks.apply.mockImplementation((_draft, options?: { onAccepted?: () => void }) => {
             onAccepted = options?.onAccepted;
-            return new Promise(resolve => { finish = resolve; });
+            return new Promise((resolve) => {
+                finish = resolve;
+            });
         });
         const { unmount } = render(<DraftHarness settings={settings()} setSettings={vi.fn()} onClose={onClose} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
@@ -171,7 +233,13 @@ describe('InvokeAITab draft connection flow', () => {
     });
 
     it('keeps multi-user selection local until the final action', async () => {
-        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }], unassignedImageCount: 1 });
+        mocks.inspect.mockResolvedValue({
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Candidate/databases/invokeai.db',
+            imagesRoot: 'D:/Candidate',
+            owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+            unassignedImageCount: 1,
+        });
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
@@ -179,11 +247,23 @@ describe('InvokeAITab draft connection flow', () => {
         fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
         expect(mocks.apply).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
-        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' } })));
+        await waitFor(() =>
+            expect(mocks.apply).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+                })
+            )
+        );
     });
 
     it('retains checked discovery, owner selection, and import options across tab navigation', async () => {
-        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }], unassignedImageCount: 1 });
+        mocks.inspect.mockResolvedValue({
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Candidate/databases/invokeai.db',
+            imagesRoot: 'D:/Candidate',
+            owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+            unassignedImageCount: 1,
+        });
         render(<DraftNavigationHarness settings={settings()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
@@ -196,38 +276,81 @@ describe('InvokeAITab draft connection flow', () => {
         expect(screen.getByRole('button', { name: /import intermediates: true/i })).toBeTruthy();
         expect((screen.getByRole('button', { name: 'Connect & Import' }) as HTMLButtonElement).disabled).toBe(false);
         fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
-        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({
-            invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
-            importIntermediates: true,
-        })));
+        await waitFor(() =>
+            expect(mocks.apply).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+                    importIntermediates: true,
+                })
+            )
+        );
         expect(mocks.inspect).toHaveBeenCalledTimes(1);
     });
 
     it('auto-selects only a sole represented owner and hides the selector', async () => {
-        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }], unassignedImageCount: 0 });
+        mocks.inspect.mockResolvedValue({
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Candidate/databases/invokeai.db',
+            imagesRoot: 'D:/Candidate',
+            owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+            unassignedImageCount: 0,
+        });
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
         await screen.findByText(/selected it automatically/i);
         expect(screen.queryByRole('button', { name: /all users/i })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
-        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' } })));
+        await waitFor(() =>
+            expect(mocks.apply).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+                })
+            )
+        );
     });
 
     it('replaces a stale saved owner with the sole discovered owner', async () => {
-        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Applied/databases/invokeai.db', imagesRoot: 'D:/Applied', owners: [{ ownerId: 'owner-b', displayName: 'B', imageCount: 2 }], unassignedImageCount: 0 });
-        render(<DraftHarness settings={{ ...settings('D:/Applied'), invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' } }} setSettings={vi.fn()} />);
+        mocks.inspect.mockResolvedValue({
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Applied/databases/invokeai.db',
+            imagesRoot: 'D:/Applied',
+            owners: [{ ownerId: 'owner-b', displayName: 'B', imageCount: 2 }],
+            unassignedImageCount: 0,
+        });
+        render(
+            <DraftHarness
+                settings={{
+                    ...settings('D:/Applied'),
+                    invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+                }}
+                setSettings={vi.fn()}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
         await screen.findByText(/selected it automatically/i);
         expect(screen.getByRole('button', { name: 'Switch view' })).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Switch view' }));
-        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({
-            invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner', ownerId: 'owner-b' },
-        })));
+        await waitFor(() =>
+            expect(mocks.apply).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner', ownerId: 'owner-b' },
+                })
+            )
+        );
     });
 
     it('confirms All users only at the final action and restores focus when cancelled', async () => {
-        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', imageCount: 2 }, { ownerId: 'owner-b', imageCount: 1 }], unassignedImageCount: 0 });
+        mocks.inspect.mockResolvedValue({
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Candidate/databases/invokeai.db',
+            imagesRoot: 'D:/Candidate',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 2 },
+                { ownerId: 'owner-b', imageCount: 1 },
+            ],
+            unassignedImageCount: 0,
+        });
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
@@ -243,7 +366,14 @@ describe('InvokeAITab draft connection flow', () => {
     });
 
     it('requires explicit selection when the only owner has unassigned content', async () => {
-        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', imageCount: 2 }], unassignedImageCount: 1, unassignedBoardCount: 1 });
+        mocks.inspect.mockResolvedValue({
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Candidate/databases/invokeai.db',
+            imagesRoot: 'D:/Candidate',
+            owners: [{ ownerId: 'owner-a', imageCount: 2 }],
+            unassignedImageCount: 1,
+            unassignedBoardCount: 1,
+        });
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
@@ -255,9 +385,20 @@ describe('InvokeAITab draft connection flow', () => {
     it('does not reconfirm a cached applied All users view for Sync now', async () => {
         mocks.ownerScopeState = {
             status: 'ready',
-            discovery: { schemaMode: 'multi_user', dbPath: 'D:/Applied/databases/invokeai.db', imagesRoot: 'D:/Applied', owners: [{ ownerId: 'owner-a', imageCount: 2 }], unassignedImageCount: 0 },
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Applied/databases/invokeai.db',
+                imagesRoot: 'D:/Applied',
+                owners: [{ ownerId: 'owner-a', imageCount: 2 }],
+                unassignedImageCount: 0,
+            },
         };
-        render(<DraftHarness settings={{ ...settings('D:/Applied'), invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'all' } }} setSettings={vi.fn()} />);
+        render(
+            <DraftHarness
+                settings={{ ...settings('D:/Applied'), invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'all' } }}
+                setSettings={vi.fn()}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
         await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
         expect(screen.queryByText('Show images from all InvokeAI users?')).toBeNull();
@@ -265,7 +406,9 @@ describe('InvokeAITab draft connection flow', () => {
 
     it('describes cancelled preparation as a retryable choice when Settings reopens', () => {
         mocks.ownerScopeState = {
-            status: 'error', rootPath: 'D:/Applied', discovery: legacyDiscovery('D:/Applied'),
+            status: 'error',
+            rootPath: 'D:/Applied',
+            discovery: legacyDiscovery('D:/Applied'),
             failure: { kind: 'preparation_cancelled', details: 'Preparation cancelled.' },
         };
         render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
@@ -348,7 +491,12 @@ describe('InvokeAITab draft connection flow', () => {
 
     it('does not surface a completed discovery for a root replaced while testing', async () => {
         let resolveDiscovery: (value: InvokeOwnerDiscovery) => void = () => undefined;
-        mocks.inspect.mockImplementationOnce(() => new Promise(resolve => { resolveDiscovery = resolve; }));
+        mocks.inspect.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveDiscovery = resolve;
+                })
+        );
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Old' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
@@ -366,8 +514,6 @@ describe('InvokeAITab draft connection flow', () => {
         render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
 
         const formatter = new Intl.NumberFormat();
-        expect(screen.getByRole('status').textContent).toContain(
-            `${formatter.format(500)} / ${formatter.format(2000)}`,
-        );
+        expect(screen.getByRole('status').textContent).toContain(`${formatter.format(500)} / ${formatter.format(2000)}`);
     });
 });

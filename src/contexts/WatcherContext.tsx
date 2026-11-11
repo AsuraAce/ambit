@@ -46,7 +46,7 @@ const mergeTargetedPerfContext = (
             lastEventAt: receivedAt,
             eventCount: 1,
             pathCount,
-            mergedCycleCount: 1
+            mergedCycleCount: 1,
         };
     }
 
@@ -55,7 +55,7 @@ const mergeTargetedPerfContext = (
         lastEventAt: receivedAt,
         eventCount: current.eventCount + 1,
         pathCount: current.pathCount + pathCount,
-        mergedCycleCount: current.mergedCycleCount
+        mergedCycleCount: current.mergedCycleCount,
     };
 };
 
@@ -74,7 +74,7 @@ const mergeInvokePerfContext = (
             debounceScheduledAt: receivedAt,
             debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS,
             debounceFireDelayMs: 0,
-            mergedCycleCount: 1
+            mergedCycleCount: 1,
         };
     }
 
@@ -83,7 +83,7 @@ const mergeInvokePerfContext = (
         lastEventAt: receivedAt,
         eventCount: current.eventCount + 1,
         pathCount: current.pathCount + pathCount,
-        mergedCycleCount: current.mergedCycleCount
+        mergedCycleCount: current.mergedCycleCount,
     };
 };
 
@@ -93,19 +93,20 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
     const { refreshMetadata } = useSearch();
 
     // Zustand State
-    const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
-    const setIsLiveWatching = useLibraryStore(s => s.setIsLiveWatching);
+    const isLiveWatching = useLibraryStore((s) => s.isLiveWatching);
+    const setIsLiveWatching = useLibraryStore((s) => s.setIsLiveWatching);
     const [lastWatcherEvent, setLastWatcherEvent] = React.useState<number>(0);
-    const maintenanceCounts = useLibraryStore(s => s.maintenanceCounts);
-    const setMaintenanceCounts = useLibraryStore(s => s.setMaintenanceCounts);
-    const startLiveWatchSession = useLibraryStore(s => s.startLiveWatchSession);
+    const maintenanceCounts = useLibraryStore((s) => s.maintenanceCounts);
+    const setMaintenanceCounts = useLibraryStore((s) => s.setMaintenanceCounts);
+    const startLiveWatchSession = useLibraryStore((s) => s.startLiveWatchSession);
 
-    const setIsLiveWatchingDispatch = useCallback((value: React.SetStateAction<boolean>) => {
-        const nextIsLiveWatching = typeof value === 'function'
-            ? value(isLiveWatching)
-            : value;
-        setIsLiveWatching(nextIsLiveWatching);
-    }, [isLiveWatching, setIsLiveWatching]);
+    const setIsLiveWatchingDispatch = useCallback(
+        (value: React.SetStateAction<boolean>) => {
+            const nextIsLiveWatching = typeof value === 'function' ? value(isLiveWatching) : value;
+            setIsLiveWatching(nextIsLiveWatching);
+        },
+        [isLiveWatching, setIsLiveWatching]
+    );
 
     const refreshMaintenanceCounts = useCallback(async () => {
         if (!isLoaded) return;
@@ -113,21 +114,32 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
             const counts = await getMaintenanceCounts();
             setMaintenanceCounts(counts);
         } catch (e) {
-            console.error("Failed to refresh maintenance counts", e);
+            console.error('Failed to refresh maintenance counts', e);
         }
     }, [isLoaded, setMaintenanceCounts]);
 
     // Unified Watcher Logic (Live Sync)
-    const monitoredFoldersConfig = React.useMemo(() => JSON.stringify(
-        (settings.monitoredFolders || []).map(folder => ({
-            path: folder.path,
-            isActive: folder.isActive
-        }))
-    ), [settings.monitoredFolders]);
+    const monitoredFoldersConfig = React.useMemo(
+        () =>
+            JSON.stringify(
+                (settings.monitoredFolders || []).map((folder) => ({
+                    path: folder.path,
+                    isActive: folder.isActive,
+                }))
+            ),
+        [settings.monitoredFolders]
+    );
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
-    const callbacksRef = useRef({ refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
+    const callbacksRef = useRef({
+        refreshMaintenanceCounts,
+        refreshMetadata,
+        startInvokeSync,
+        settings,
+        startTargetedLiveSync,
+        syncStatus,
+    });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingGenericPathsRef = useRef<Set<string>>(new Set());
     const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
@@ -139,19 +151,21 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
         callbacksRef.current = { refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
     });
 
-    useEffect(() => useLibraryStore.subscribe((state, previous) => {
-        if (state.invokeSyncCancellationGeneration === previous.invokeSyncCancellationGeneration) return;
-        if (invokeSyncTimeoutRef.current) {
-            clearTimeout(invokeSyncTimeoutRef.current);
-            invokeSyncTimeoutRef.current = null;
-        }
-        pendingInvokePerfRef.current = null;
-    }), []);
+    useEffect(
+        () =>
+            useLibraryStore.subscribe((state, previous) => {
+                if (state.invokeSyncCancellationGeneration === previous.invokeSyncCancellationGeneration) return;
+                if (invokeSyncTimeoutRef.current) {
+                    clearTimeout(invokeSyncTimeoutRef.current);
+                    invokeSyncTimeoutRef.current = null;
+                }
+                pendingInvokePerfRef.current = null;
+            }),
+        []
+    );
 
     const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
-        paths
-            .map(path => path.replace(/\\/g, '/'))
-            .forEach(path => pendingGenericPathsRef.current.add(path));
+        paths.map((path) => path.replace(/\\/g, '/')).forEach((path) => pendingGenericPathsRef.current.add(path));
 
         const pendingPathCount = pendingGenericPathsRef.current.size;
 
@@ -160,7 +174,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 cycleId: pendingGenericPerfRef.current!.cycleId,
                 pendingPathCount,
                 eventCount: pendingGenericPerfRef.current!.eventCount,
-                mergedCycleCount: pendingGenericPerfRef.current!.mergedCycleCount
+                mergedCycleCount: pendingGenericPerfRef.current!.mergedCycleCount,
             });
             return genericLiveDrainPromiseRef.current;
         }
@@ -178,14 +192,11 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     batchPathCount: nextBatch.length,
                     eventCount: perfContext.eventCount,
                     mergedCycleCount: perfContext.mergedCycleCount,
-                    watcherToImportStartMs: elapsedMs(perfContext.firstEventAt)
+                    watcherToImportStartMs: elapsedMs(perfContext.firstEventAt),
                 });
 
                 const cb = callbacksRef.current;
-                const liveResult = await cb.startTargetedLiveSync(
-                    nextBatch,
-                    { ...perfContext, queueDepthAtStart: nextBatch.length }
-                );
+                const liveResult = await cb.startTargetedLiveSync(nextBatch, { ...perfContext, queueDepthAtStart: nextBatch.length });
 
                 if (liveResult.handledPaths.length > 0) {
                     await cb.refreshMaintenanceCounts();
@@ -198,7 +209,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     failedPathCount: liveResult.failedPaths.length,
                     importedCount: liveResult.importedCount,
                     cycleMs: elapsedMs(cycleStartAt),
-                    watcherToFinishMs: elapsedMs(perfContext.firstEventAt)
+                    watcherToFinishMs: elapsedMs(perfContext.firstEventAt),
                 });
             }
         })();
@@ -229,7 +240,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
             const activeInvokeRoot = normalizeInvokeRoot(currentSettings.invokeAiPath);
 
             if (currentSettings.monitoredFolders) {
-                currentSettings.monitoredFolders.forEach(f => {
+                currentSettings.monitoredFolders.forEach((f) => {
                     if (f.isActive) pathsToWatch.push(f.path);
                 });
             }
@@ -258,11 +269,11 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 const pathCount = changes.reduce((total, change) => total + change.paths.length, 0);
                 debugLiveWatchPerf('folder-change-event received', {
                     changeCount: changes.length,
-                    pathCount
+                    pathCount,
                 });
-                
+
                 const cb = callbacksRef.current;
-                
+
                 // Reconstruct the actual active invoke string directory locally
                 const activeInvokeRoot = (() => {
                     const root = normalizeInvokeRoot(cb.settings.invokeAiPath);
@@ -272,9 +283,9 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 const invokePaths: string[] = [];
                 const genericChanges: FolderChange[] = [];
 
-                changes.forEach(change => {
+                changes.forEach((change) => {
                     const genericPaths: string[] = [];
-                    change.paths.forEach(path => {
+                    change.paths.forEach((path) => {
                         const normalized = path.replace(/\\/g, '/').toLowerCase();
                         if (activeInvokeRoot && normalized.startsWith(activeInvokeRoot)) {
                             if (normalized.endsWith('.db') || normalized.endsWith('.db-wal')) {
@@ -293,7 +304,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 const missingPaths: string[] = [];
                 const identityMoves: Array<{ oldId: string; newId: string }> = [];
 
-                genericChanges.forEach(change => {
+                genericChanges.forEach((change) => {
                     if (change.kind === 'rename' && change.paths.length >= 2) {
                         const oldId = change.paths[0].replace(/\\/g, '/');
                         const newId = change.paths[change.paths.length - 1].replace(/\\/g, '/');
@@ -313,7 +324,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     genericImportPathCount: genericImportPaths.length,
                     missingPathCount: missingPaths.length,
                     renameCount: identityMoves.length,
-                    invokePathCount: invokePaths.length
+                    invokePathCount: invokePaths.length,
                 });
 
                 if (identityMoves.length > 0 || missingPaths.length > 0) {
@@ -321,7 +332,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                         if (identityMoves.length > 0) {
                             await moveImagePathIdentities(identityMoves);
                         }
-                        const uniqueMissingPaths = Array.from(new Set(missingPaths.map(path => path.replace(/\\/g, '/'))));
+                        const uniqueMissingPaths = Array.from(new Set(missingPaths.map((path) => path.replace(/\\/g, '/'))));
                         const markedMissing = await markImagePathIdentitiesMissing(uniqueMissingPaths);
                         if (identityMoves.length > 0 || markedMissing > 0) {
                             await cb.refreshMetadata();
@@ -336,7 +347,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 if (genericImportPaths.length > 0) {
                     startLiveWatchSession('generic', {
                         phase: 'watching',
-                        message: 'Checking monitored folders...'
+                        message: 'Checking monitored folders...',
                     });
                     pendingGenericPerfRef.current = mergeTargetedPerfContext(
                         pendingGenericPerfRef.current,
@@ -347,7 +358,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                         cycleId: pendingGenericPerfRef.current.cycleId,
                         receivedPathCount: genericImportPaths.length,
                         eventCount: pendingGenericPerfRef.current.eventCount,
-                        pathCount: pendingGenericPerfRef.current.pathCount
+                        pathCount: pendingGenericPerfRef.current.pathCount,
                     });
                     void drainGenericLiveChanges(genericImportPaths);
                 }
@@ -356,11 +367,14 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 setLastWatcherEvent(Date.now());
 
                 // Immediately Trigger full InvokeAI SQLite Sync evaluation if an Invoke local path dropped
-                if (invokePaths.length > 0 && cb.settings.invokeAiPath
-                    && eventCancellationGeneration === useLibraryStore.getState().invokeSyncCancellationGeneration) {
+                if (
+                    invokePaths.length > 0 &&
+                    cb.settings.invokeAiPath &&
+                    eventCancellationGeneration === useLibraryStore.getState().invokeSyncCancellationGeneration
+                ) {
                     startLiveWatchSession('invoke', {
                         phase: 'watching',
-                        message: 'Checking InvokeAI for completed images...'
+                        message: 'Checking InvokeAI for completed images...',
                     });
                     pendingInvokePerfRef.current = mergeInvokePerfContext(
                         pendingInvokePerfRef.current,
@@ -371,27 +385,27 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                         cycleId: pendingInvokePerfRef.current.cycleId,
                         receivedPathCount: invokePaths.length,
                         eventCount: pendingInvokePerfRef.current.eventCount,
-                        pathCount: pendingInvokePerfRef.current.pathCount
+                        pathCount: pendingInvokePerfRef.current.pathCount,
                     });
-                    
+
                     if (invokeSyncTimeoutRef.current) {
                         clearTimeout(invokeSyncTimeoutRef.current);
                         debugLiveWatchPerf('Invoke debounce rescheduled', {
                             cycleId: pendingInvokePerfRef.current.cycleId,
-                            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS,
                         });
                     }
 
                     pendingInvokePerfRef.current = {
                         ...pendingInvokePerfRef.current,
                         debounceScheduledAt: liveWatchNow(),
-                        debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                        debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS,
                     };
                     debugLiveWatchPerf('Invoke sync scheduled', {
                         cycleId: pendingInvokePerfRef.current.cycleId,
                         eventCount: pendingInvokePerfRef.current.eventCount,
                         pathCount: pendingInvokePerfRef.current.pathCount,
-                        debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                        debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS,
                     });
                     invokeSyncTimeoutRef.current = setTimeout(() => {
                         invokeSyncTimeoutRef.current = null;
@@ -403,7 +417,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                         const resolvedPerfContext: InvokeLiveWatchPerfContext = {
                             ...perfContext,
                             debounceFireDelayMs: Math.round(firedAt - perfContext.debounceScheduledAt),
-                            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS,
                         };
 
                         debugLiveWatchPerf('Invoke debounce fired', {
@@ -411,7 +425,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                             eventCount: resolvedPerfContext.eventCount,
                             pathCount: resolvedPerfContext.pathCount,
                             debounceFireDelayMs: resolvedPerfContext.debounceFireDelayMs,
-                            watcherToSyncStartMs: Math.round(firedAt - resolvedPerfContext.firstEventAt)
+                            watcherToSyncStartMs: Math.round(firedAt - resolvedPerfContext.firstEventAt),
                         });
                         void cb.startInvokeSync({ mode: 'live', perfContext: resolvedPerfContext });
                         invokeSyncTimeoutRef.current = null;
@@ -421,7 +435,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
 
             debugLiveWatchPerf('Native watcher initialized', {
                 watchedPathCount: pathsToWatch.length,
-                invokeDebounceMs: INVOKE_LIVE_DEBOUNCE_MS
+                invokeDebounceMs: INVOKE_LIVE_DEBOUNCE_MS,
             });
 
             if (activeInvokeRoot) {
@@ -434,36 +448,33 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     if (activationCancellationGeneration !== useLibraryStore.getState().invokeSyncCancellationGeneration) {
                         debugLiveWatchPerf('Invoke activation catch-up skipped', {
                             reason: 'sync-cancelled',
-                            root: activeInvokeRoot
+                            root: activeInvokeRoot,
                         });
                     } else if (cb.syncStatus === 'syncing') {
                         debugLiveWatchPerf('Invoke activation catch-up skipped', {
                             reason: 'sync-already-active',
-                            root: activeInvokeRoot
+                            root: activeInvokeRoot,
                         });
                     } else {
                         debugLiveWatchPerf('Invoke activation catch-up started', {
-                            root: activeInvokeRoot
+                            root: activeInvokeRoot,
                         });
                         void cb.startInvokeSync({ mode: 'live' });
                     }
                 }
             }
-
         };
 
         // Debounce initialization
         const timer = setTimeout(() => {
-            initWatcher().catch(error => console.error('[Watcher] Failed to start live watch', error));
+            initWatcher().catch((error) => console.error('[Watcher] Failed to start live watch', error));
         }, WATCHER_INIT_DEBOUNCE_MS);
         return () => {
             initCancelled = true;
             clearTimeout(timer);
             if (invokeSyncTimeoutRef.current) {
-                const shouldDrainPendingInvoke = (
-                    useLibraryStore.getState().liveWatchSessionCloseRequested
-                    && pendingInvokePerfRef.current !== null
-                );
+                const shouldDrainPendingInvoke =
+                    useLibraryStore.getState().liveWatchSessionCloseRequested && pendingInvokePerfRef.current !== null;
 
                 if (!shouldDrainPendingInvoke) {
                     clearTimeout(invokeSyncTimeoutRef.current);
@@ -471,17 +482,18 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 }
             }
         };
-
     }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, drainGenericLiveChanges, startLiveWatchSession]);
 
     return (
-        <WatcherContext.Provider value={{
-            isLiveWatching,
-            setIsLiveWatching: setIsLiveWatchingDispatch,
-            refreshMaintenanceCounts,
-            maintenanceCounts,
-            lastWatcherEvent
-        }}>
+        <WatcherContext.Provider
+            value={{
+                isLiveWatching,
+                setIsLiveWatching: setIsLiveWatchingDispatch,
+                refreshMaintenanceCounts,
+                maintenanceCounts,
+                lastWatcherEvent,
+            }}
+        >
             {children}
         </WatcherContext.Provider>
     );

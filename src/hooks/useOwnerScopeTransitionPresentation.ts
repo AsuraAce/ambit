@@ -42,14 +42,13 @@ export const useOwnerScopeTransitionPresentation = <T>({
     // An accepted first connection can still be persisting its path. Keep it gated until admission.
     const isOwnerScopeAdmitted = !isExplicitPreparation && isInvokeOwnerScopeAdmitted(configuredRoot, ownerScopeState);
     const isOwnerScopeBlocking = !isOwnerScopeAdmitted;
-    const isRuntimeTransition = !isInitialStartupPresentation
-        && ownerScopeState.status === 'applying'
-        && normalizedConfiguredRoot !== null
-        && applyingRoot === normalizedConfiguredRoot
-        && lastAdmittedRootRef.current === normalizedConfiguredRoot;
-    const scopeIdentity = ownerScopeState.scope?.mode === 'owner'
-        ? ownerScopeState.scope.ownerId
-        : (ownerScopeState.scope?.mode ?? 'none');
+    const isRuntimeTransition =
+        !isInitialStartupPresentation &&
+        ownerScopeState.status === 'applying' &&
+        normalizedConfiguredRoot !== null &&
+        applyingRoot === normalizedConfiguredRoot &&
+        lastAdmittedRootRef.current === normalizedConfiguredRoot;
+    const scopeIdentity = ownerScopeState.scope?.mode === 'owner' ? ownerScopeState.scope.ownerId : (ownerScopeState.scope?.mode ?? 'none');
     const isDelayedGateVisible = useDelayedBusyPresentation(isRuntimeTransition && !isExplicitPreparation, {
         revealDelayMs: RUNTIME_OWNER_SCOPE_GRACE_MS,
         minimumVisibleMs: 0,
@@ -69,16 +68,14 @@ export const useOwnerScopeTransitionPresentation = <T>({
         const wasBlocking = wasBlockingRef.current;
         const startedBlocking = isOwnerScopeBlocking && !wasBlocking;
         const finishedBlocking = !isOwnerScopeBlocking && wasBlocking;
-        const startedRuntimeTransition = isRuntimeTransition
-            && !wasRuntimeTransitionRef.current;
+        const startedRuntimeTransition = isRuntimeTransition && !wasRuntimeTransitionRef.current;
 
         if (startedBlocking) cleanupPerformedRef.current = false;
         if (startedRuntimeTransition) cleanupPendingRef.current = true;
 
         const shouldCleanupBlockedView = isOwnerScopeBlocking && !isRetainingPreviousView;
         const shouldCleanupCompletedQuickSwitch = finishedBlocking && cleanupPendingRef.current;
-        if (!cleanupPerformedRef.current
-            && (shouldCleanupBlockedView || shouldCleanupCompletedQuickSwitch)) {
+        if (!cleanupPerformedRef.current && (shouldCleanupBlockedView || shouldCleanupCompletedQuickSwitch)) {
             cleanupPerformedRef.current = true;
             onClearStaleView();
         }
@@ -86,18 +83,11 @@ export const useOwnerScopeTransitionPresentation = <T>({
         if (finishedBlocking) cleanupPendingRef.current = false;
         wasBlockingRef.current = isOwnerScopeBlocking;
         wasRuntimeTransitionRef.current = isRuntimeTransition;
-    }, [
-        isOwnerScopeBlocking,
-        isRetainingPreviousView,
-        isRuntimeTransition,
-        onClearStaleView,
-    ]);
+    }, [isOwnerScopeBlocking, isRetainingPreviousView, isRuntimeTransition, onClearStaleView]);
 
     const selectPresentation = (current: T): T => {
         if (!isOwnerScopeBlocking) retainedPresentationRef.current = current;
-        return isRetainingPreviousView && retainedPresentationRef.current !== null
-            ? retainedPresentationRef.current
-            : current;
+        return isRetainingPreviousView && retainedPresentationRef.current !== null ? retainedPresentationRef.current : current;
     };
 
     return {

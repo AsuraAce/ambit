@@ -18,18 +18,17 @@ export class WatcherService {
     async startWatching(paths: string[], onChangeEvent: WatcherCallback) {
         if (isBrowserMockMode()) {
             console.info('[WatcherService] Native watcher unavailable in browser mock mode; skipped start.', {
-                pathCount: paths.length
+                pathCount: paths.length,
             });
             return;
         }
 
         // Skip if already watching the exact same paths
-        const pathsChanged = paths.length !== this.lastPaths.length ||
-            paths.some((p, i) => p !== this.lastPaths[i]);
+        const pathsChanged = paths.length !== this.lastPaths.length || paths.some((p, i) => p !== this.lastPaths[i]);
 
         if (this.isWatching && !pathsChanged) {
             console.debug('[WatcherService] Native watcher already active for requested paths; skipped restart.', {
-                pathCount: paths.length
+                pathCount: paths.length,
             });
             return;
         }
@@ -48,7 +47,7 @@ export class WatcherService {
             await unwrap(commands.startNativeFolderWatcher(paths));
             if (startGeneration !== this.generation) {
                 console.info('[WatcherService] Native watcher start superseded before listener registration.', {
-                    pathCount: paths.length
+                    pathCount: paths.length,
                 });
                 await unwrap(commands.startNativeFolderWatcher([]));
                 return;
@@ -61,7 +60,7 @@ export class WatcherService {
             this.lastCallback = onChangeEvent;
             this.diagnostic = startBackgroundDiagnostic('job', 'Native folder watcher', {
                 pathCount: paths.length,
-                paths
+                paths,
             });
 
             // Listen for the debounced event from Rust
@@ -72,8 +71,9 @@ export class WatcherService {
                     const pathCount = event.payload?.reduce((total, change) => total + change.paths.length, 0) || 0;
                     console.log(`[WatcherService] Folder change detected with ${changeCount} changes across ${pathCount} paths`);
                     this.diagnostic?.update({ lastEventAt: Date.now(), lastChangeCount: changeCount, lastPathCount: pathCount });
-                    void Promise.resolve(onChangeEvent(event.payload))
-                        .catch(error => console.error('[WatcherService] Folder change handler failed', error));
+                    void Promise.resolve(onChangeEvent(event.payload)).catch((error) =>
+                        console.error('[WatcherService] Folder change handler failed', error)
+                    );
                 },
                 'Native folder watcher events'
             );
@@ -82,7 +82,7 @@ export class WatcherService {
             const listenerReady = await listener.ready;
             if (startGeneration !== this.generation) {
                 console.info('[WatcherService] Native watcher start superseded after listener registration.', {
-                    pathCount: paths.length
+                    pathCount: paths.length,
                 });
                 listener.cleanup();
                 return;
@@ -91,17 +91,20 @@ export class WatcherService {
             if (!listenerReady) {
                 await this.stopWatching();
             }
-
         } catch (err) {
-            console.error('[WatcherService] Failed to start native watcher:', {
-                pathCount: paths.length
-            }, err);
+            console.error(
+                '[WatcherService] Failed to start native watcher:',
+                {
+                    pathCount: paths.length,
+                },
+                err
+            );
             this.diagnostic?.finish('failed', { error: err instanceof Error ? err.message : String(err) });
             this.diagnostic = null;
             this.isWatching = false;
             this.lastPaths = [];
             this.lastCallback = null;
-            // Optionally throw here so the UI can display a Toast, or just leave `isWatching = false` 
+            // Optionally throw here so the UI can display a Toast, or just leave `isWatching = false`
             // so we can try again later.
         }
     }

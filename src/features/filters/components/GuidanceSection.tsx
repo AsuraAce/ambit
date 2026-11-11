@@ -22,7 +22,7 @@ import {
     HelpCircle,
     Shuffle,
     Palette,
-    Box
+    Box,
 } from 'lucide-react';
 
 interface GuidanceSectionProps {
@@ -61,20 +61,15 @@ const IPADAPTER_TYPES = [
     { id: 'standard', label: 'Standard', icon: ImageIcon },
 ];
 
-export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
-    filters,
-    setFilters,
-    isOpen,
-    onToggle
-}) => {
+export const GuidanceSection: React.FC<GuidanceSectionProps> = ({ filters, setFilters, isOpen, onToggle }) => {
     const { data: ranges, isLoading } = useParameterRangesQuery(filters);
     const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({
         controlNets: true,
-        ipAdapters: true
+        ipAdapters: true,
     });
 
     const toggleGroup = (group: string) => {
-        setExpandedGroups(prev => ({ ...prev, [group]: !prev[group] }));
+        setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
     };
 
     const hasControlNets = ranges?.controlNets && ranges.controlNets.length > 0;
@@ -87,8 +82,20 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
      * e.g. "models/ip-adapter-plus/model.bin" -> "ip-adapter-plus"
      */
     const resolveDescriptiveName = (name: string): string => {
-        const genericNames = new Set(['diffusion_pytorch_model', 'ip-adapter', 'controlnet', 'model', 'adapter', 'clip_vision', 'insightface', 'point_embedded']);
-        const pathParts = name.split(/[\\/]/).map(p => p.trim()).filter(Boolean);
+        const genericNames = new Set([
+            'diffusion_pytorch_model',
+            'ip-adapter',
+            'controlnet',
+            'model',
+            'adapter',
+            'clip_vision',
+            'insightface',
+            'point_embedded',
+        ]);
+        const pathParts = name
+            .split(/[\\/]/)
+            .map((p) => p.trim())
+            .filter(Boolean);
         let filename = pathParts.pop()?.replace(/\.(safetensors|ckpt|pth|bin|pt)$/i, '') || '';
 
         while (genericNames.has(filename.toLowerCase()) && pathParts.length > 0) {
@@ -108,17 +115,41 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
         // This is still useful while the background harvester hasn't run yet
         const descriptiveName = resolveDescriptiveName(modelName).toLowerCase();
 
-        const isIpAdapter = descriptiveName.includes('ip-adapter') || descriptiveName.includes('ipad_') || descriptiveName.includes('ip adapter') || descriptiveName.includes('ipadapter') || descriptiveName.includes('ipad');
-        const hasStrongIpKeyword = descriptiveName.includes('faceid') || descriptiveName.includes('face-id') || descriptiveName.includes('portrait') || descriptiveName.includes('reference') || descriptiveName.includes('precise') || descriptiveName.includes('face') || descriptiveName.includes('plus');
+        const isIpAdapter =
+            descriptiveName.includes('ip-adapter') ||
+            descriptiveName.includes('ipad_') ||
+            descriptiveName.includes('ip adapter') ||
+            descriptiveName.includes('ipadapter') ||
+            descriptiveName.includes('ipad');
+        const hasStrongIpKeyword =
+            descriptiveName.includes('faceid') ||
+            descriptiveName.includes('face-id') ||
+            descriptiveName.includes('portrait') ||
+            descriptiveName.includes('reference') ||
+            descriptiveName.includes('precise') ||
+            descriptiveName.includes('face') ||
+            descriptiveName.includes('plus');
 
         // Strong ControlNet indicators (subtypes)
-        const hasStrongCnetKeyword = descriptiveName.includes('canny') || descriptiveName.includes('depth') || descriptiveName.includes('pose') ||
-            descriptiveName.includes('scribble') || descriptiveName.includes('lineart') || descriptiveName.includes('softedge') ||
-            descriptiveName.includes('soft_edge') || descriptiveName.includes('soft-edge') || descriptiveName.includes('normal') ||
-            descriptiveName.includes('inpaint') || descriptiveName.includes('tile') || descriptiveName.includes('seg') ||
-            descriptiveName.includes('shuffle') || descriptiveName.includes('recolor') || descriptiveName.includes('mlsd');
+        const hasStrongCnetKeyword =
+            descriptiveName.includes('canny') ||
+            descriptiveName.includes('depth') ||
+            descriptiveName.includes('pose') ||
+            descriptiveName.includes('scribble') ||
+            descriptiveName.includes('lineart') ||
+            descriptiveName.includes('softedge') ||
+            descriptiveName.includes('soft_edge') ||
+            descriptiveName.includes('soft-edge') ||
+            descriptiveName.includes('normal') ||
+            descriptiveName.includes('inpaint') ||
+            descriptiveName.includes('tile') ||
+            descriptiveName.includes('seg') ||
+            descriptiveName.includes('shuffle') ||
+            descriptiveName.includes('recolor') ||
+            descriptiveName.includes('mlsd');
 
-        const isControlnet = descriptiveName.includes('controlnet') || descriptiveName.includes('cnet') || descriptiveName.includes('control_');
+        const isControlnet =
+            descriptiveName.includes('controlnet') || descriptiveName.includes('cnet') || descriptiveName.includes('control_');
 
         if (isIpAdapter || (hasStrongIpKeyword && !hasStrongCnetKeyword)) {
             if ((descriptiveName.includes('faceid') || descriptiveName.includes('face-id')) && descriptiveName.includes('plus')) {
@@ -133,7 +164,12 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             if (descriptiveName.includes('portrait')) {
                 return 'portrait';
             }
-            if (descriptiveName.includes('plus') || descriptiveName.includes('vit-h') || descriptiveName.includes('precise') || descriptiveName.includes('reference')) {
+            if (
+                descriptiveName.includes('plus') ||
+                descriptiveName.includes('vit-h') ||
+                descriptiveName.includes('precise') ||
+                descriptiveName.includes('reference')
+            ) {
                 return 'plus';
             }
             if (descriptiveName.includes('style')) {
@@ -155,7 +191,13 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             if (descriptiveName.includes('canny') || descriptiveName.includes('precise')) return 'canny';
             if (descriptiveName.includes('depth')) return 'depth';
             if (descriptiveName.includes('pose')) return 'pose';
-            if (descriptiveName.includes('scribble') || descriptiveName.includes('softedge') || descriptiveName.includes('soft_edge') || descriptiveName.includes('soft-edge')) return 'scribble';
+            if (
+                descriptiveName.includes('scribble') ||
+                descriptiveName.includes('softedge') ||
+                descriptiveName.includes('soft_edge') ||
+                descriptiveName.includes('soft-edge')
+            )
+                return 'scribble';
             if (descriptiveName.includes('lineart')) return 'lineart';
             if (descriptiveName.includes('normal')) return 'normal';
             if (descriptiveName.includes('inpaint')) return 'inpaint';
@@ -172,9 +214,9 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     // --- ControlNet Mapping ---
     const controlNetModelsByType = React.useMemo(() => {
         const mapping: Record<string, string[]> = { other: [] };
-        (ranges?.controlNets || []).forEach(model => {
+        (ranges?.controlNets || []).forEach((model) => {
             const type = getModelType(model);
-            if (type && CONTROLNET_TYPES.some(t => t.id === type)) {
+            if (type && CONTROLNET_TYPES.some((t) => t.id === type)) {
                 if (!mapping[type]) mapping[type] = [];
                 mapping[type].push(model);
             } else {
@@ -182,28 +224,30 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return mapping;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [ranges?.controlNets, ranges?.guidanceSubtypes]);
 
     const activeControlNetTypes = React.useMemo(() => {
         const selected = filters.controlNets;
         const activeTypes = new Set<string>();
-        selected.forEach(model => {
+        selected.forEach((model) => {
             const type = getModelType(model);
-            if (type && CONTROLNET_TYPES.some(t => t.id === type)) {
+            if (type && CONTROLNET_TYPES.some((t) => t.id === type)) {
                 activeTypes.add(type);
             } else if (controlNetModelsByType.other.includes(model)) {
                 activeTypes.add('other');
             }
         });
         return Array.from(activeTypes);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [filters.controlNets, controlNetModelsByType.other, ranges?.guidanceSubtypes]);
 
-
     const availableControlNetOptions = React.useMemo(() => {
-        const options = CONTROLNET_TYPES.filter(t => controlNetModelsByType[t.id])
-            .map(t => ({ id: t.id, label: t.label, icon: t.icon }));
+        const options = CONTROLNET_TYPES.filter((t) => controlNetModelsByType[t.id]).map((t) => ({
+            id: t.id,
+            label: t.label,
+            icon: t.icon,
+        }));
 
         if (controlNetModelsByType.other.length > 0) {
             options.push({ id: 'other', label: 'Other', icon: HelpCircle });
@@ -213,18 +257,18 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
 
     const handleControlNetTypeToggle = (selectedTypes: string[]) => {
         const newModels: string[] = [];
-        selectedTypes.forEach(typeId => {
+        selectedTypes.forEach((typeId) => {
             newModels.push(...controlNetModelsByType[typeId]);
         });
-        setFilters(prev => ({ ...prev, controlNets: newModels }));
+        setFilters((prev) => ({ ...prev, controlNets: newModels }));
     };
 
     // --- IP-Adapter Mapping ---
     const ipAdapterModelsByType = React.useMemo(() => {
         const mapping: Record<string, string[]> = { other: [] };
-        (ranges?.ipAdapters || []).forEach(model => {
+        (ranges?.ipAdapters || []).forEach((model) => {
             const type = getModelType(model);
-            if (type && IPADAPTER_TYPES.some(t => t.id === type)) {
+            if (type && IPADAPTER_TYPES.some((t) => t.id === type)) {
                 if (!mapping[type]) mapping[type] = [];
                 mapping[type].push(model);
             } else {
@@ -232,27 +276,26 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return mapping;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [ranges?.ipAdapters, ranges?.guidanceSubtypes]);
 
     const activeIpAdapterTypes = React.useMemo(() => {
         const selected = filters.ipAdapters;
         const activeTypes = new Set<string>();
-        selected.forEach(model => {
+        selected.forEach((model) => {
             const type = getModelType(model);
-            if (type && IPADAPTER_TYPES.some(t => t.id === type)) {
+            if (type && IPADAPTER_TYPES.some((t) => t.id === type)) {
                 activeTypes.add(type);
             } else if (ipAdapterModelsByType.other.includes(model)) {
                 activeTypes.add('other');
             }
         });
         return Array.from(activeTypes);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [filters.ipAdapters, ipAdapterModelsByType.other, ranges?.guidanceSubtypes]);
 
     const availableIpAdapterOptions = React.useMemo(() => {
-        const options = IPADAPTER_TYPES.filter(t => ipAdapterModelsByType[t.id])
-            .map(t => ({ id: t.id, label: t.label, icon: t.icon }));
+        const options = IPADAPTER_TYPES.filter((t) => ipAdapterModelsByType[t.id]).map((t) => ({ id: t.id, label: t.label, icon: t.icon }));
 
         if (ipAdapterModelsByType.other.length > 0) {
             options.push({ id: 'other', label: 'Other', icon: HelpCircle });
@@ -262,10 +305,10 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
 
     const handleIpAdapterTypeToggle = (selectedTypes: string[]) => {
         const newModels: string[] = [];
-        selectedTypes.forEach(typeId => {
+        selectedTypes.forEach((typeId) => {
             newModels.push(...ipAdapterModelsByType[typeId]);
         });
-        setFilters(prev => ({ ...prev, ipAdapters: newModels }));
+        setFilters((prev) => ({ ...prev, ipAdapters: newModels }));
     };
 
     if (!isOpen) {
@@ -280,7 +323,6 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
         <div className="space-y-1">
             <SectionHeader title="Guidance" isOpen={isOpen} onToggle={onToggle} isLoading={isLoading} />
             <div className="space-y-6 animate-in slide-in-from-top-2 duration-300 ease-spring px-3 pt-2 pb-2">
-
                 {hasControlNets && availableControlNetOptions.length > 0 && (
                     <div className="space-y-3">
                         <div
@@ -288,7 +330,9 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
                             onClick={() => toggleGroup('controlNets')}
                         >
                             <div className="text-[9px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition-colors">
-                                <ChevronRight className={`w-2.5 h-2.5 transition-transform duration-200 ${expandedGroups.controlNets ? 'rotate-90' : ''}`} />
+                                <ChevronRight
+                                    className={`w-2.5 h-2.5 transition-transform duration-200 ${expandedGroups.controlNets ? 'rotate-90' : ''}`}
+                                />
                                 ControlNets ({ranges.controlNets.length})
                             </div>
                         </div>
@@ -311,7 +355,9 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
                             onClick={() => toggleGroup('ipAdapters')}
                         >
                             <div className="text-[9px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition-colors">
-                                <ChevronRight className={`w-2.5 h-2.5 transition-transform duration-200 ${expandedGroups.ipAdapters ? 'rotate-90' : ''}`} />
+                                <ChevronRight
+                                    className={`w-2.5 h-2.5 transition-transform duration-200 ${expandedGroups.ipAdapters ? 'rotate-90' : ''}`}
+                                />
                                 IP-Adapters ({ranges.ipAdapters.length})
                             </div>
                         </div>

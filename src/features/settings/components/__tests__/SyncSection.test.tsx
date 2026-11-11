@@ -11,22 +11,31 @@ vi.mock('../../../../contexts/LibraryContext', () => ({
 }));
 vi.mock('../../../../hooks/useToast', () => ({ useToast: () => ({ addToast: vi.fn() }) }));
 
-const applied = (overrides: Partial<AppSettings> = {}) => ({
-    invokeAiPath: 'D:/Invoke', invokeSyncFavorites: true, invokeSyncBoards: true, importOrphans: true,
-    ...overrides,
-} as AppSettings);
+const applied = (overrides: Partial<AppSettings> = {}) =>
+    ({
+        invokeAiPath: 'D:/Invoke',
+        invokeSyncFavorites: true,
+        invokeSyncBoards: true,
+        importOrphans: true,
+        ...overrides,
+    }) as AppSettings;
 
 const multiUserDiscovery: InvokeOwnerDiscovery = {
-    schemaMode: 'multi_user', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke',
-    owners: [{ ownerId: 'owner-a', imageCount: 1 }], unassignedImageCount: 0,
+    schemaMode: 'multi_user',
+    dbPath: 'D:/Invoke/databases/invokeai.db',
+    imagesRoot: 'D:/Invoke',
+    owners: [{ ownerId: 'owner-a', imageCount: 1 }],
+    unassignedImageCount: 0,
 };
 
 const Harness: React.FC<{ settings?: AppSettings; ownerDiscovery?: InvokeOwnerDiscovery }> = ({ settings = applied(), ownerDiscovery }) => {
     const session = useInvokeConnectionDraft(settings, true);
-    return <>
-        <SyncSection draftSession={session} ownerDiscovery={ownerDiscovery} />
-        <InvokeRecoverySection settings={settings} setSettings={vi.fn()} hasPendingDraft={session.isDirty} />
-    </>;
+    return (
+        <>
+            <SyncSection draftSession={session} ownerDiscovery={ownerDiscovery} />
+            <InvokeRecoverySection settings={settings} setSettings={vi.fn()} hasPendingDraft={session.isDirty} />
+        </>
+    );
 };
 
 describe('SyncSection draft controls', () => {
@@ -56,10 +65,15 @@ describe('SyncSection draft controls', () => {
     });
 
     it('uses the draft owner scope to disable orphan recovery without clearing its preference', () => {
-        render(<Harness settings={applied({
-            invokeOwnerSelection: { dbPath: 'D:/Invoke/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
-            importOrphans: true,
-        })} ownerDiscovery={multiUserDiscovery} />);
+        render(
+            <Harness
+                settings={applied({
+                    invokeOwnerSelection: { dbPath: 'D:/Invoke/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+                    importOrphans: true,
+                })}
+                ownerDiscovery={multiUserDiscovery}
+            />
+        );
 
         const orphanRecovery = screen.getByRole('switch', { name: 'Orphan Recovery' }) as HTMLInputElement;
         expect(orphanRecovery.disabled).toBe(true);
@@ -72,9 +86,16 @@ describe('SyncSection draft controls', () => {
         const settings = applied({
             lastSyncedAt: 42,
             invokeDbSnapshot: {
-                dbPath: 'D:/Invoke/databases/invokeai.db', lastSyncedAt: 42,
-                importIntermediates: false, importOrphans: false, syncBoardsToCollections: false,
-                scopeMode: 'legacy', scopeOwnerId: null, pathRepairVersion: 1, importSchemaVersion: 1, files: [],
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                lastSyncedAt: 42,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                scopeMode: 'legacy',
+                scopeOwnerId: null,
+                pathRepairVersion: 1,
+                importSchemaVersion: 1,
+                files: [],
             },
         });
         render(<InvokeRecoverySection settings={settings} setSettings={setSettings} hasPendingDraft={false} />);

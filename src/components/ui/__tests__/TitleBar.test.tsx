@@ -131,7 +131,9 @@ describe('TitleBar', () => {
         expect(console.warn).toHaveBeenCalledWith('TitleBar: Failed to set window icon', expect.any(Error));
         view.unmount();
 
-        mockedGetCurrentWindow.mockImplementationOnce(() => { throw new Error('not native'); });
+        mockedGetCurrentWindow.mockImplementationOnce(() => {
+            throw new Error('not native');
+        });
         const failed = render(<TitleBar />);
         await waitFor(() => expect(console.warn).toHaveBeenCalledWith('TitleBar: Not in Tauri environment'));
         expect(failed.container.firstChild).toBeNull();
@@ -140,7 +142,11 @@ describe('TitleBar', () => {
     it('disposes listeners when initialization completes after unmount', async () => {
         const { win, unlisten } = createWindow();
         let resolveListen!: (unlisten: () => void) => void;
-        win.listen.mockReturnValueOnce(new Promise(resolve => { resolveListen = resolve; }));
+        win.listen.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveListen = resolve;
+            })
+        );
         mockedGetCurrentWindow.mockReturnValue(win as unknown as ReturnType<typeof getCurrentWindow>);
         const view = render(<TitleBar />);
         await screen.findByText('AMBIT');

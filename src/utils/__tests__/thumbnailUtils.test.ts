@@ -19,9 +19,9 @@ const image = (overrides: Partial<AIImage> = {}): AIImage => ({
         cfg: 0,
         sampler: '',
         positivePrompt: '',
-        negativePrompt: ''
+        negativePrompt: '',
     },
-    ...overrides
+    ...overrides,
 });
 
 const collection = (overrides: Partial<Collection>): Collection => ({
@@ -30,7 +30,7 @@ const collection = (overrides: Partial<Collection>): Collection => ({
     imageIds: [],
     createdAt: 1,
     source: 'ambit',
-    ...overrides
+    ...overrides,
 });
 
 describe('isCollectionThumbnailImage', () => {
@@ -43,7 +43,7 @@ describe('isCollectionThumbnailImage', () => {
         const active = collection({
             customThumbnail: 'img2',
             thumbnail: 'asset://C:/thumbs/img1.webp',
-            thumbnailSourceKind: 'customImage'
+            thumbnailSourceKind: 'customImage',
         });
 
         expect(isCollectionThumbnailImage(image({ id: 'img1' }), active)).toBe(false);
@@ -53,7 +53,7 @@ describe('isCollectionThumbnailImage', () => {
     it('uses resolved thumbnail urls for dynamic thumbnails', () => {
         const active = collection({
             thumbnail: 'asset://C:/thumbs/img1.webp',
-            thumbnailSourceKind: 'dynamic'
+            thumbnailSourceKind: 'dynamic',
         });
 
         expect(isCollectionThumbnailImage(image(), active)).toBe(true);
@@ -61,9 +61,14 @@ describe('isCollectionThumbnailImage', () => {
     });
 
     it('does not fall back to a stale thumbnail for custom-image collections', () => {
-        expect(isCollectionThumbnailImage(image(), collection({
-            thumbnail: image().thumbnailUrl,
-            thumbnailSourceKind: 'customImage'
-        }))).toBe(false);
+        expect(
+            isCollectionThumbnailImage(
+                image(),
+                collection({
+                    thumbnail: image().thumbnailUrl,
+                    thumbnailSourceKind: 'customImage',
+                })
+            )
+        ).toBe(false);
     });
 });

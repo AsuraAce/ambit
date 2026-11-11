@@ -22,7 +22,7 @@ export const useFileOperations = ({
     refreshCollections,
     refreshCollectionThumbnails,
     settings,
-    activeImageState
+    activeImageState,
 }: UseFileOperationsProps) => {
     const { isImporting, isRegeneratingThumbnails } = useLibraryStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -31,7 +31,7 @@ export const useFileOperations = ({
         images,
         setImages,
         refreshCollections,
-        settings
+        settings,
     });
 
     const exportOps = useExportOps({ images });
@@ -39,7 +39,7 @@ export const useFileOperations = ({
     const thumbnailOps = useThumbnailOps({
         images,
         setImages,
-        refreshCollectionThumbnails
+        refreshCollectionThumbnails,
     });
 
     const maintenanceOps = useMaintenanceOps({
@@ -47,7 +47,7 @@ export const useFileOperations = ({
         setImages,
         refreshCollections,
         settings,
-        activeImageState
+        activeImageState,
     });
 
     return {

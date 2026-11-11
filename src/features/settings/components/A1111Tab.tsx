@@ -15,7 +15,7 @@ interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     onClose?: () => void;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
+    onScanFolder?: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>;
 }
 
 const variantToGeneratorTool = (variant?: WebUIVariant): GeneratorTool | undefined => {
@@ -33,13 +33,10 @@ const variantToGeneratorTool = (variant?: WebUIVariant): GeneratorTool | undefin
     }
 };
 
-const variantToImportTool = (variant?: WebUIVariant): GeneratorTool =>
-    variantToGeneratorTool(variant) ?? GeneratorTool.UNKNOWN;
+const variantToImportTool = (variant?: WebUIVariant): GeneratorTool => variantToGeneratorTool(variant) ?? GeneratorTool.UNKNOWN;
 
 export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder }) => {
-    const {
-        refreshCollections
-    } = useLibraryContext();
+    const { refreshCollections } = useLibraryContext();
     const { refreshMetadata } = useSearch(); // Added hook usage
     const { addToast } = useToast();
     const [localTestResult, setLocalTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -58,7 +55,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
         setScanLogs([]);
         try {
             const { discoverA1111Candidates, getUnlinkedPriorityCandidatePaths } = await import('../../../services/a1111/config');
-            const existing = new Set(settings.monitoredFolders.map(f => f.path.replace(/\\/g, '/').toLowerCase()));
+            const existing = new Set(settings.monitoredFolders.map((f) => f.path.replace(/\\/g, '/').toLowerCase()));
             const { candidates: results, logs, warnings } = await discoverA1111Candidates(rootPath, existing, forceVariant);
 
             setCandidates(results);
@@ -67,24 +64,25 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
             // Auto-select priority folders that aren't linked yet
             setSelectedPaths(new Set(getUnlinkedPriorityCandidatePaths(results)));
 
-            const priorityCount = results.filter(c => c.isPriority).length;
+            const priorityCount = results.filter((c) => c.isPriority).length;
             setShowAllFolders(priorityCount === 0 && results.length > 0);
 
             if (warnings.length > 0) {
                 const warningLabel = warnings.length === 1 ? 'warning' : 'warnings';
-                const message = results.length === 0
-                    ? `Discovery completed with ${warnings.length} ${warningLabel} and no importable folders. Review scan debug log.`
-                    : `Discovery completed with ${warnings.length} ${warningLabel}. Review scan debug log.`;
+                const message =
+                    results.length === 0
+                        ? `Discovery completed with ${warnings.length} ${warningLabel} and no importable folders. Review scan debug log.`
+                        : `Discovery completed with ${warnings.length} ${warningLabel}. Review scan debug log.`;
                 setLocalTestResult({ success: false, message });
             } else if (results.length === 0) {
-                setLocalTestResult({ success: false, message: "No potential folders containing images found." });
+                setLocalTestResult({ success: false, message: 'No potential folders containing images found.' });
             }
         } catch (e) {
             console.error(e);
             setCandidates([]);
             setSelectedPaths(new Set());
             setShowAllFolders(false);
-            setLocalTestResult({ success: false, message: "Discovery failed. Check path permissions." });
+            setLocalTestResult({ success: false, message: 'Discovery failed. Check path permissions.' });
         } finally {
             setIsDiscovering(false);
         }
@@ -98,10 +96,10 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
     };
 
     const handleLinkSelected = async () => {
-        const toLink = candidates.filter(c => selectedPaths.has(c.path));
+        const toLink = candidates.filter((c) => selectedPaths.has(c.path));
         if (!onScanFolder) {
-            setLocalTestResult({ success: false, message: "Import service is unavailable." });
-            addToast("Import service is unavailable", "error");
+            setLocalTestResult({ success: false, message: 'Import service is unavailable.' });
+            addToast('Import service is unavailable', 'error');
             return;
         }
 
@@ -110,128 +108,119 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
 
         try {
             // 1. Prepare New Folders. Keep lastScanned empty until import succeeds.
-            const brandNew = toLink.filter(c => !c.isAlreadyLinked);
-            const alreadyLinked = toLink.filter(c => c.isAlreadyLinked);
+            const brandNew = toLink.filter((c) => !c.isAlreadyLinked);
+            const alreadyLinked = toLink.filter((c) => c.isAlreadyLinked);
 
             const now = Date.now();
-            const newFolderObjects: MonitoredFolder[] = brandNew.map(c => ({
+            const newFolderObjects: MonitoredFolder[] = brandNew.map((c) => ({
                 id: `a1111_${c.inferredType}_${now}_${Math.random().toString(36).substr(2, 5)}`,
                 path: c.path,
                 isActive: true,
                 imageCount: c.imageCount,
                 variant: variantToGeneratorTool(c.variant),
-                initialScanPending: true
+                initialScanPending: true,
             }));
-            newFolderIds = new Set(newFolderObjects.map(folder => folder.id));
+            newFolderIds = new Set(newFolderObjects.map((folder) => folder.id));
 
             // 2. Update Settings (UI will show them immediately)
             if (newFolderObjects.length > 0) {
-                setSettings(prev => ({
+                setSettings((prev) => ({
                     ...prev,
-                    monitoredFolders: [...prev.monitoredFolders, ...newFolderObjects]
+                    monitoredFolders: [...prev.monitoredFolders, ...newFolderObjects],
                 }));
             }
 
             // 3. Build Unified Task List
             const foldersToSync = [
-                ...alreadyLinked.map(c => ({ path: c.path, variant: variantToImportTool(c.variant) })),
-                ...newFolderObjects.map(f => ({ path: f.path, variant: f.variant }))
+                ...alreadyLinked.map((c) => ({ path: c.path, variant: variantToImportTool(c.variant) })),
+                ...newFolderObjects.map((f) => ({ path: f.path, variant: f.variant })),
             ];
 
             // 4. Run Unified Import
             const result = await onScanFolder(foldersToSync);
-                const completedAt = Date.now();
-                const importCancelled = !!result && result.wasCancelled;
-                const importCompleted = !!result && !result.wasCancelled && result.failedPaths.length === 0;
-                const completedNewFolderCount = newFolderObjects.filter(folder =>
-                    isImportSourceCompleted(result, folder.path)
-                ).length;
-                const cancelledNewFolderCount = newFolderObjects.filter(folder =>
-                    isImportSourceCancelled(result, folder.path)
-                ).length;
-                const retryableNewFolderCount = Math.max(
-                    0,
-                    newFolderObjects.length - completedNewFolderCount - cancelledNewFolderCount
-                );
-                const unfinishedNewFolderCount = cancelledNewFolderCount + retryableNewFolderCount;
+            const completedAt = Date.now();
+            const importCancelled = !!result && result.wasCancelled;
+            const importCompleted = !!result && !result.wasCancelled && result.failedPaths.length === 0;
+            const completedNewFolderCount = newFolderObjects.filter((folder) => isImportSourceCompleted(result, folder.path)).length;
+            const cancelledNewFolderCount = newFolderObjects.filter((folder) => isImportSourceCancelled(result, folder.path)).length;
+            const retryableNewFolderCount = Math.max(0, newFolderObjects.length - completedNewFolderCount - cancelledNewFolderCount);
+            const unfinishedNewFolderCount = cancelledNewFolderCount + retryableNewFolderCount;
 
-                if (newFolderIds.size > 0) {
-                    setSettings(prev => ({
-                        ...prev,
-                        monitoredFolders: prev.monitoredFolders.map(folder =>
-                            newFolderIds.has(folder.id)
-                                ? {
-                                    ...folder,
-                                    lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
-                                    initialScanPending: false,
-                                    initialScanCancelled: isImportSourceCancelled(result, folder.path)
-                                }
-                                : folder
-                        )
-                    }));
-                }
-
-                if (importCancelled) {
-                    const msg = completedNewFolderCount > 0
-                        ? `Import cancelled. ${completedNewFolderCount} folder(s) completed; ${unfinishedNewFolderCount} unfinished folder(s) were paused. Imported images were kept; rescan unfinished folders to continue.`
-                        : "Import cancelled. Imported images were kept; unfinished folders were paused. Rescan to continue.";
-                    setLocalTestResult({ success: false, message: msg });
-                    return;
-                }
-
-                if (!result) {
-                    setLocalTestResult({ success: false, message: "Import did not complete. Folder cursor was not advanced." });
-                    return;
-                }
-
-                let refreshFailed = false;
-                try {
-                    await refreshCollections();
-                    await refreshMetadata(); // Force full gallery refresh
-                } catch (refreshError) {
-                    refreshFailed = true;
-                    console.error("Post-import refresh failed", refreshError);
-                }
-
-                const totalCount = foldersToSync.length;
-                if (importCompleted) {
-                    const msg = refreshFailed
-                        ? `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned), but refresh failed.`
-                        : `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
-                    setLocalTestResult({ success: !refreshFailed, message: msg });
-                } else {
-                    const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Completed folders were marked scanned; folders with failures were left retryable.`;
-                    setLocalTestResult({ success: false, message: msg });
-                }
-        } catch (e) {
-            console.error("Link/Import failed", e);
             if (newFolderIds.size > 0) {
-                setSettings(prev => ({
+                setSettings((prev) => ({
                     ...prev,
-                    monitoredFolders: prev.monitoredFolders.map(folder =>
+                    monitoredFolders: prev.monitoredFolders.map((folder) =>
+                        newFolderIds.has(folder.id)
+                            ? {
+                                  ...folder,
+                                  lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
+                                  initialScanPending: false,
+                                  initialScanCancelled: isImportSourceCancelled(result, folder.path),
+                              }
+                            : folder
+                    ),
+                }));
+            }
+
+            if (importCancelled) {
+                const msg =
+                    completedNewFolderCount > 0
+                        ? `Import cancelled. ${completedNewFolderCount} folder(s) completed; ${unfinishedNewFolderCount} unfinished folder(s) were paused. Imported images were kept; rescan unfinished folders to continue.`
+                        : 'Import cancelled. Imported images were kept; unfinished folders were paused. Rescan to continue.';
+                setLocalTestResult({ success: false, message: msg });
+                return;
+            }
+
+            if (!result) {
+                setLocalTestResult({ success: false, message: 'Import did not complete. Folder cursor was not advanced.' });
+                return;
+            }
+
+            let refreshFailed = false;
+            try {
+                await refreshCollections();
+                await refreshMetadata(); // Force full gallery refresh
+            } catch (refreshError) {
+                refreshFailed = true;
+                console.error('Post-import refresh failed', refreshError);
+            }
+
+            const totalCount = foldersToSync.length;
+            if (importCompleted) {
+                const msg = refreshFailed
+                    ? `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned), but refresh failed.`
+                    : `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
+                setLocalTestResult({ success: !refreshFailed, message: msg });
+            } else {
+                const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Completed folders were marked scanned; folders with failures were left retryable.`;
+                setLocalTestResult({ success: false, message: msg });
+            }
+        } catch (e) {
+            console.error('Link/Import failed', e);
+            if (newFolderIds.size > 0) {
+                setSettings((prev) => ({
+                    ...prev,
+                    monitoredFolders: prev.monitoredFolders.map((folder) =>
                         newFolderIds.has(folder.id)
                             ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                             : folder
-                    )
+                    ),
                 }));
             }
-            setLocalTestResult({ success: false, message: "Use Check Console for details" });
-            addToast("Import failed", "error");
+            setLocalTestResult({ success: false, message: 'Use Check Console for details' });
+            addToast('Import failed', 'error');
         } finally {
             setIsDiscovering(false);
             setCandidates([]); // Clear selection
         }
     };
 
-    const displayedCandidates = showAllFolders
-        ? candidates
-        : candidates.filter(c => c.isPriority);
+    const displayedCandidates = showAllFolders ? candidates : candidates.filter((c) => c.isPriority);
 
     const hiddenCount = candidates.length - displayedCandidates.length;
 
     return (
         <div className="space-y-8 max-w-3xl">
-
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="mb-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-300">
                     <Palette className="w-4 h-4" /> Core Configuration
@@ -250,7 +239,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                         value={settings.a1111Path || ''}
                                         onChange={(e) => {
                                             const a1111Path = e.target.value;
-                                            setSettings(prev => ({ ...prev, a1111Path }));
+                                            setSettings((prev) => ({ ...prev, a1111Path }));
                                         }}
                                         placeholder="e.g. C:\\StableDiffusion or C:\\MyArchive"
                                         className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
@@ -266,9 +255,11 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                             const selected = await open({ directory: true, multiple: false, title: 'Select SD Folder' });
                                             if (selected && typeof selected === 'string') {
                                                 const { normalizePath } = await import('../../../utils/pathUtils');
-                                                setSettings(prev => ({ ...prev, a1111Path: normalizePath(selected) }));
+                                                setSettings((prev) => ({ ...prev, a1111Path: normalizePath(selected) }));
                                             }
-                                        } catch (e) { console.error(e); }
+                                        } catch (e) {
+                                            console.error(e);
+                                        }
                                     }}
                                     className="aspect-square h-[42px] flex items-center justify-center bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all"
                                 >
@@ -310,11 +301,11 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         <button
                             onClick={handleDiscover}
                             disabled={isDiscovering || !settings.a1111Path}
-                            className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.a1111Path
-                                || isDiscovering
-                                ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                                : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
-                                }`}
+                            className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${
+                                !settings.a1111Path || isDiscovering
+                                    ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
+                                    : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
+                            }`}
                         >
                             {isDiscovering ? (
                                 <>
@@ -328,14 +319,16 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                 </>
                             )}
                         </button>
-
                     </div>
 
                     {localTestResult && (
-                        <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${localTestResult.success
-                            ? 'border-sage-500/20 bg-sage-500/10 text-sage-600 dark:text-sage-300'
-                            : 'border-ember-500/20 bg-ember-500/10 text-ember-600 dark:text-ember-300'
-                            }`}>
+                        <div
+                            className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${
+                                localTestResult.success
+                                    ? 'border-sage-500/20 bg-sage-500/10 text-sage-600 dark:text-sage-300'
+                                    : 'border-ember-500/20 bg-ember-500/10 text-ember-600 dark:text-ember-300'
+                            }`}
+                        >
                             {localTestResult.success ? (
                                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                             ) : (
@@ -349,13 +342,17 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         <div className="space-y-4 animate-in fade-in duration-150 motion-reduce:animate-none">
                             <div className="flex items-center justify-between px-1">
                                 <div className="flex flex-col gap-1">
-                                    <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Discovery Results</h5>
+                                    <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">
+                                        Discovery Results
+                                    </h5>
                                     {!showAllFolders && hiddenCount > 0 && (
-                                        <span className="text-[9px] text-gray-500 font-medium">Showing standard output folders ({displayedCandidates.length} of {candidates.length})</span>
+                                        <span className="text-[9px] text-gray-500 font-medium">
+                                            Showing standard output folders ({displayedCandidates.length} of {candidates.length})
+                                        </span>
                                     )}
-                                    {candidates.some(c => c.variant && c.variant !== WebUIVariant.UNKNOWN) ? (
+                                    {candidates.some((c) => c.variant && c.variant !== WebUIVariant.UNKNOWN) ? (
                                         <span className="text-[10px] bg-harbor-500/10 text-harbor-600 dark:text-harbor-300 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit">
-                                            Detected: {candidates.find(c => c.variant && c.variant !== WebUIVariant.UNKNOWN)?.variant}
+                                            Detected: {candidates.find((c) => c.variant && c.variant !== WebUIVariant.UNKNOWN)?.variant}
                                         </span>
                                     ) : (
                                         forceVariant === 'Auto' && (
@@ -367,7 +364,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     )}
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    {candidates.some(c => !c.isPriority) ? (
+                                    {candidates.some((c) => !c.isPriority) ? (
                                         <label className="flex items-center gap-3 cursor-pointer group">
                                             <input
                                                 type="checkbox"
@@ -378,15 +375,21 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                                 checked={showAllFolders}
                                                 onChange={(e) => setShowAllFolders(e.target.checked)}
                                             />
-                                            <span className="text-[10px] font-bold text-gray-500 group-hover:text-sage-600 transition-colors uppercase tracking-tight">Show non-standard folders</span>
+                                            <span className="text-[10px] font-bold text-gray-500 group-hover:text-sage-600 transition-colors uppercase tracking-tight">
+                                                Show non-standard folders
+                                            </span>
                                             <div
                                                 className={`w-8 h-4 rounded-full relative transition-colors peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${showAllFolders ? 'bg-sage-500' : 'bg-gray-300 dark:bg-white/10'}`}
                                             >
-                                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${showAllFolders ? 'left-[17px]' : 'left-0.5'}`} />
+                                                <div
+                                                    className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${showAllFolders ? 'left-[17px]' : 'left-0.5'}`}
+                                                />
                                             </div>
                                         </label>
                                     ) : null}
-                                    <span className="text-[10px] font-bold text-sage-600 dark:text-sage-300 bg-sage-500/10 px-2 py-0.5 rounded-full">{displayedCandidates.length} found</span>
+                                    <span className="text-[10px] font-bold text-sage-600 dark:text-sage-300 bg-sage-500/10 px-2 py-0.5 rounded-full">
+                                        {displayedCandidates.length} found
+                                    </span>
                                 </div>
                             </div>
 
@@ -394,15 +397,26 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="border-b border-black/5 dark:border-white/5 bg-gray-100/50 dark:bg-white/5">
-                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest w-10">Link</th>
-                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Folder Name / Path</th>
-                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest w-32">Type</th>
-                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest w-24 text-right">Images</th>
+                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest w-10">
+                                                Link
+                                            </th>
+                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                                                Folder Name / Path
+                                            </th>
+                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest w-32">
+                                                Type
+                                            </th>
+                                            <th className="px-4 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest w-24 text-right">
+                                                Images
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-black/5 dark:divide-white/5">
                                         {displayedCandidates.map((c) => (
-                                            <tr key={c.path} className={`group hover:bg-white/50 dark:hover:bg-white/[0.03] transition-colors ${c.isAlreadyLinked ? 'opacity-40 grayscale' : ''}`}>
+                                            <tr
+                                                key={c.path}
+                                                className={`group hover:bg-white/50 dark:hover:bg-white/[0.03] transition-colors ${c.isAlreadyLinked ? 'opacity-40 grayscale' : ''}`}
+                                            >
                                                 <td className="px-4 py-3">
                                                     <label className="flex items-center justify-center cursor-pointer">
                                                         <input
@@ -425,7 +439,11 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                                         <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
                                                             <Folder className="w-3.5 h-3.5 text-gray-400" />
                                                             {c.name}
-                                                            {c.isAlreadyLinked && <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1.5 py-0.5 rounded uppercase font-black">Linked</span>}
+                                                            {c.isAlreadyLinked && (
+                                                                <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1.5 py-0.5 rounded uppercase font-black">
+                                                                    Linked
+                                                                </span>
+                                                            )}
                                                         </span>
                                                         <span className="text-[10px] text-gray-500 font-mono truncate max-w-md opacity-60">
                                                             {c.path.replace(settings.a1111Path || '', '...')}
@@ -436,8 +454,10 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                                     <select
                                                         value={c.inferredType}
                                                         onChange={(e) => {
-                                                            const newCandidates = candidates.map(cand =>
-                                                                cand.path === c.path ? { ...cand, inferredType: e.target.value as A1111FolderType } : cand
+                                                            const newCandidates = candidates.map((cand) =>
+                                                                cand.path === c.path
+                                                                    ? { ...cand, inferredType: e.target.value as A1111FolderType }
+                                                                    : cand
                                                             );
                                                             setCandidates(newCandidates);
                                                         }}
@@ -466,18 +486,18 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                 <button
                                     onClick={handleLinkSelected}
                                     disabled={selectedPaths.size === 0}
-                                    className={`px-8 py-2.5 rounded-xl text-sm font-black transition-all flex items-center gap-2.5 ${selectedPaths.size === 0
-                                        ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                                        : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
-                                        }`}
+                                    className={`px-8 py-2.5 rounded-xl text-sm font-black transition-all flex items-center gap-2.5 ${
+                                        selectedPaths.size === 0
+                                            ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
+                                            : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
+                                    }`}
                                 >
                                     <Plus className="w-4 h-4" />
-                                    {candidates.some(c => selectedPaths.has(c.path) && c.isAlreadyLinked)
+                                    {candidates.some((c) => selectedPaths.has(c.path) && c.isAlreadyLinked)
                                         ? `Link/Sync ${selectedPaths.size} Folders`
                                         : `Link & Import ${selectedPaths.size} Folders`}
                                 </button>
                             </div>
-
                         </div>
                     )}
 
@@ -495,7 +515,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         </div>
                     )}
                 </div>
-            </section >
+            </section>
         </div>
     );
 });

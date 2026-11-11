@@ -2,10 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { rebuildThumbnailFacetCache } from './db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 
-type RefreshCollectionThumbnails = (
-    debounced?: boolean,
-    force?: boolean
-) => Promise<void>;
+type RefreshCollectionThumbnails = (debounced?: boolean, force?: boolean) => Promise<void>;
 
 interface ThumbnailConsumerRefreshOptions {
     queryClient: QueryClient;

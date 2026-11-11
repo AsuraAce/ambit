@@ -22,9 +22,7 @@ describe('ParamItem', () => {
     });
 
     it('marks modified full-width values while defaults remain unmodified', () => {
-        const { container, rerender } = render(
-            <ParamItem label="Sampler" value="Euler" fullWidth isModified />
-        );
+        const { container, rerender } = render(<ParamItem label="Sampler" value="Euler" fullWidth isModified />);
 
         expect(container.firstElementChild?.className).toContain('col-span-2');
         expect(container.firstElementChild?.className).toContain('border-ember-300');

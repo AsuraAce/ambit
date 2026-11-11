@@ -16,22 +16,30 @@ vi.mock('../../../hooks/useLibraryContext', () => ({
         settings: { thumbnailSize: 200 },
         setSettings: mocks.setSettings,
         recentSearches: [],
-        setRecentSearches: vi.fn()
-    })
+        setRecentSearches: vi.fn(),
+    }),
 }));
 
 vi.mock('../../../features/filters/components/SearchBar', () => ({
     SearchBar: (props: Record<string, unknown>) => {
         mocks.searchBarProps = props;
         return <div data-testid="search-bar" data-submit-navigates-to-grid={String(props.submitNavigatesToGrid)} />;
-    }
+    },
 }));
 
 vi.mock('../../../features/library/components/ViewControls', () => ({
     SortOptionList: ({ onSelect }: { onSelect: (option: 'date_desc') => void }) => (
         <button onClick={() => onSelect('date_desc')}>Newest</button>
     ),
-    ViewControls: ({ setThumbnailSize, setLayoutMode, setSortOption, onSlideshow, showLayoutSwitcher, showSlideshowButton, showSortButton }: {
+    ViewControls: ({
+        setThumbnailSize,
+        setLayoutMode,
+        setSortOption,
+        onSlideshow,
+        showLayoutSwitcher,
+        showSlideshowButton,
+        showSortButton,
+    }: {
         setThumbnailSize: (size: number) => void;
         setLayoutMode: (mode: 'masonry') => void;
         setSortOption: (option: 'date_desc') => void;
@@ -51,11 +59,11 @@ vi.mock('../../../features/library/components/ViewControls', () => ({
             <button onClick={() => setSortOption('date_desc')}>Set Sort</button>
             {showSlideshowButton && <button onClick={onSlideshow}>Start Slideshow</button>}
         </div>
-    )
+    ),
 }));
 
 vi.mock('../../../features/filters/components/ActiveFilters', () => ({
-    ActiveFilters: () => <div data-testid="active-filters" />
+    ActiveFilters: () => <div data-testid="active-filters" />,
 }));
 
 vi.mock('../../../services/runtime', () => ({
@@ -75,7 +83,7 @@ const resetLibraryStore = () => {
         isScanningDiscovery: false,
         discoveryScanProgress: null,
         isBackgroundHealingActive: false,
-        backgroundHealingProgress: null
+        backgroundHealingProgress: null,
     });
 };
 
@@ -96,7 +104,7 @@ const defaultProps = {
         favoritesOnly: false,
         collectionId: null,
         showIntermediates: false,
-        showGrids: false
+        showGrids: false,
     },
     setFilters: vi.fn(),
     searchProps: {
@@ -108,7 +116,7 @@ const defaultProps = {
         isFocused: false,
         onFocus: vi.fn(),
         onBlur: vi.fn(),
-        onOpenSearchHelp: vi.fn()
+        onOpenSearchHelp: vi.fn(),
     },
     layoutMode: 'masonry' as const,
     setLayoutMode: vi.fn(),
@@ -156,7 +164,7 @@ describe('AppHeader', () => {
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
             message: 'Syncing completed InvokeAI images...',
-            progress: { current: 0, total: 0, message: undefined }
+            progress: { current: 0, total: 0, message: undefined },
         });
 
         const { container } = render(<AppHeader {...defaultProps} />);
@@ -180,7 +188,7 @@ describe('AppHeader', () => {
         useLibraryStore.getState().startLiveWatchSession('generic', {
             phase: 'importing',
             message: 'Importing new images...',
-            progress: { current: 1, total: 3, message: undefined }
+            progress: { current: 1, total: 3, message: undefined },
         });
 
         render(<AppHeader {...defaultProps} />);
@@ -196,7 +204,7 @@ describe('AppHeader', () => {
     it('keeps manual sync on the existing non-live-watch styling', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
-            syncProgress: { current: 1, total: 2, message: 'Syncing...' }
+            syncProgress: { current: 1, total: 2, message: 'Syncing...' },
         });
 
         const { container } = render(<AppHeader {...defaultProps} />);
@@ -210,7 +218,7 @@ describe('AppHeader', () => {
     it('keeps import and discovery scans on the header progress rail', () => {
         useLibraryStore.setState({
             isImporting: true,
-            importProgress: { current: 1, total: 4, message: 'Importing...' }
+            importProgress: { current: 1, total: 4, message: 'Importing...' },
         });
 
         const { rerender } = render(<AppHeader {...defaultProps} />);
@@ -222,7 +230,7 @@ describe('AppHeader', () => {
             isImporting: false,
             importProgress: null,
             isScanningDiscovery: true,
-            discoveryScanProgress: { current: 0, total: 0, message: 'Scanning resources...', mode: 'indeterminate' }
+            discoveryScanProgress: { current: 0, total: 0, message: 'Scanning resources...', mode: 'indeterminate' },
         });
         rerender(<AppHeader {...defaultProps} />);
 
@@ -260,7 +268,9 @@ describe('AppHeader', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Library scope: All Media, 618. Change library scope' }));
         fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
 
-        const update = setFilters.mock.calls[0][0] as (previous: typeof defaultProps.filters) => typeof defaultProps.filters & { sourceKind: 'photograph' };
+        const update = setFilters.mock.calls[0][0] as (
+            previous: typeof defaultProps.filters
+        ) => typeof defaultProps.filters & { sourceKind: 'photograph' };
         expect(update(defaultProps.filters)).toMatchObject({ mediaType: 'image', sourceKind: 'photograph' });
     });
 
@@ -271,10 +281,17 @@ describe('AppHeader', () => {
                 mediaType: 'all',
                 sourceKind: 'all',
             });
-            return <AppHeader {...defaultProps} filters={filters} setFilters={setFilters} scopeCounts={{
-                media: { all: 6, image: 4, video: 2 },
-                imageKinds: { all: 4, generated: 1, photograph: 3, other: 0 },
-            }} />;
+            return (
+                <AppHeader
+                    {...defaultProps}
+                    filters={filters}
+                    setFilters={setFilters}
+                    scopeCounts={{
+                        media: { all: 6, image: 4, video: 2 },
+                        imageKinds: { all: 4, generated: 1, photograph: 3, other: 0 },
+                    }}
+                />
+            );
         };
         render(<HeaderWithFilters />);
         await screen.findByTestId('search-bar');
@@ -347,14 +364,7 @@ describe('AppHeader', () => {
         const setLayoutMode = vi.fn();
         const setSortOption = vi.fn();
         const onSlideshow = vi.fn();
-        render(
-            <AppHeader
-                {...defaultProps}
-                setLayoutMode={setLayoutMode}
-                setSortOption={setSortOption}
-                onSlideshow={onSlideshow}
-            />
-        );
+        render(<AppHeader {...defaultProps} setLayoutMode={setLayoutMode} setSortOption={setSortOption} onSlideshow={onSlideshow} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Enable Live Watch' }));
         expect(useLibraryStore.getState().isLiveWatching).toBe(true);
@@ -399,7 +409,7 @@ describe('AppHeader', () => {
     it('shows model resolution and background healing progress with the correct priority and color', () => {
         useLibraryStore.setState({
             isResolvingModels: true,
-            modelResolutionProgress: { current: 1, total: 2, message: 'Resolving...' }
+            modelResolutionProgress: { current: 1, total: 2, message: 'Resolving...' },
         });
         const { container, rerender } = render(<AppHeader {...defaultProps} />);
         expect(container.querySelector('.bg-sage-500')).toBeTruthy();
@@ -408,13 +418,12 @@ describe('AppHeader', () => {
             isResolvingModels: false,
             modelResolutionProgress: null,
             isBackgroundHealingActive: true,
-            backgroundHealingProgress: { current: 0, total: 0, message: 'Healing...' }
+            backgroundHealingProgress: { current: 0, total: 0, message: 'Healing...' },
         });
         rerender(<AppHeader {...defaultProps} />);
 
         expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
-        expect(screen.getByTestId('app-header-progress-rail').firstElementChild?.getAttribute('style'))
-            .toContain('width: 100%');
+        expect(screen.getByTestId('app-header-progress-rail').firstElementChild?.getAttribute('style')).toContain('width: 100%');
     });
 
     it('hides grid-only controls outside grid and timeline views', () => {

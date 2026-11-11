@@ -72,8 +72,7 @@ const getSelects = (): [HTMLSelectElement, HTMLSelectElement] => {
     return [selects[0], selects[1]];
 };
 
-const getOptionLabels = (select: HTMLSelectElement): string[] =>
-    Array.from(select.options).map(option => option.textContent ?? '');
+const getOptionLabels = (select: HTMLSelectElement): string[] => Array.from(select.options).map((option) => option.textContent ?? '');
 
 const changeApiKey = async (value: string) => {
     act(() => apiKeyCapture.current!.onChange(value));
@@ -104,31 +103,16 @@ describe('IntelligenceTab', () => {
         render(<Harness initialSettings={createSettings()} />);
 
         let [modelSelect, thinkingSelect] = getSelects();
-        expect(getOptionLabels(thinkingSelect)).toEqual([
-            'Model Default',
-            'Minimal',
-            'Low',
-            'Medium',
-            'High',
-        ]);
+        expect(getOptionLabels(thinkingSelect)).toEqual(['Model Default', 'Minimal', 'Low', 'Medium', 'High']);
 
         fireEvent.change(modelSelect, { target: { value: 'gemini-3.1-pro-preview' } });
         [modelSelect, thinkingSelect] = getSelects();
         expect(thinkingSelect.value).toBe('default');
-        expect(getOptionLabels(thinkingSelect)).toEqual([
-            'Model Default',
-            'Low',
-            'Medium',
-            'High',
-        ]);
+        expect(getOptionLabels(thinkingSelect)).toEqual(['Model Default', 'Low', 'Medium', 'High']);
 
         fireEvent.change(modelSelect, { target: { value: 'gemini-2.5-flash' } });
         [modelSelect, thinkingSelect] = getSelects();
-        expect(getOptionLabels(thinkingSelect)).toEqual([
-            'Model Default',
-            'Off',
-            'Dynamic',
-        ]);
+        expect(getOptionLabels(thinkingSelect)).toEqual(['Model Default', 'Off', 'Dynamic']);
 
         fireEvent.change(modelSelect, { target: { value: 'gemini-2.5-pro' } });
         [, thinkingSelect] = getSelects();

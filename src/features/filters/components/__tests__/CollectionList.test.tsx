@@ -9,17 +9,17 @@ import { CollectionList } from '../CollectionList';
 const settingsContextMocks = vi.hoisted(() => ({
     resourceSortOptions: {} as Record<string, SidebarSortOption>,
     resourceViewModes: { collections: 'list' } as Record<string, 'list' | 'grid'>,
-    setSettings: vi.fn()
+    setSettings: vi.fn(),
 }));
 
 vi.mock('../../../../contexts/SettingsContext', () => ({
     useSettings: () => ({
         settings: {
             resourceViewModes: settingsContextMocks.resourceViewModes,
-            resourceSortOptions: settingsContextMocks.resourceSortOptions
+            resourceSortOptions: settingsContextMocks.resourceSortOptions,
         },
-        setSettings: settingsContextMocks.setSettings
-    })
+        setSettings: settingsContextMocks.setSettings,
+    }),
 }));
 
 vi.mock('../CollectionItem', () => ({
@@ -44,39 +44,76 @@ vi.mock('../CollectionItem', () => ({
             data-view={props.viewMode}
             data-pending={String(props.isThumbnailPending)}
             data-drop={String(props.dropTargetId === props.col.id)}
-            onDragEnter={event => props.handleDragEnter(event, props.col.id)}
-            onDragOver={event => props.handleDragOver(event, props.col.id)}
+            onDragEnter={(event) => props.handleDragEnter(event, props.col.id)}
+            onDragOver={(event) => props.handleDragOver(event, props.col.id)}
             onDragLeave={props.handleDragLeave}
-            onDrop={event => props.handleDrop(event, props.col.id)}
-            onContextMenu={event => props.handleContextMenu(event, props.col.id)}
+            onDrop={(event) => props.handleDrop(event, props.col.id)}
+            onContextMenu={(event) => props.handleContextMenu(event, props.col.id)}
         >
             <span>{props.col.name}</span>
-            <button aria-label={`rename-${props.col.id}`} onClick={() => { props.setEditingColId(props.col.id); props.setEditName(props.col.name); }}>rename</button>
-            <button aria-label={`nested-leave-${props.col.id}`} onClick={() => props.handleDragLeave({
-                preventDefault: vi.fn(),
-                stopPropagation: vi.fn(),
-                currentTarget: { contains: () => true },
-                relatedTarget: {},
-            } as unknown as React.DragEvent)}>nested leave</button>
+            <button
+                aria-label={`rename-${props.col.id}`}
+                onClick={() => {
+                    props.setEditingColId(props.col.id);
+                    props.setEditName(props.col.name);
+                }}
+            >
+                rename
+            </button>
+            <button
+                aria-label={`nested-leave-${props.col.id}`}
+                onClick={() =>
+                    props.handleDragLeave({
+                        preventDefault: vi.fn(),
+                        stopPropagation: vi.fn(),
+                        currentTarget: { contains: () => true },
+                        relatedTarget: {},
+                    } as unknown as React.DragEvent)
+                }
+            >
+                nested leave
+            </button>
             {props.editingColId === props.col.id && (
                 <form onSubmit={props.handleRenameSubmit}>
-                    <input aria-label={`name-${props.col.id}`} value={props.editName} onChange={event => props.setEditName(event.target.value)} />
+                    <input
+                        aria-label={`name-${props.col.id}`}
+                        value={props.editName}
+                        onChange={(event) => props.setEditName(event.target.value)}
+                    />
                     <button type="submit">save name</button>
                 </form>
             )}
         </div>
-    )
+    ),
 }));
 
 vi.mock('../../../collections/components/CollectionContextMenu', () => ({
     CollectionContextMenu: (props: Record<string, unknown>) => (
-        <div data-testid="collection-menu" data-archived={String(props.isArchived)} data-pinned={String(props.isPinned)} data-thumbnail={String(props.hasCustomThumbnail)} data-color={String(props.currentColor)}>
-            {['onClose', 'onRename', 'onToggleArchive', 'onTogglePin', 'onDelete', 'onPlaySlideshow', 'onExport', 'onResetThumbnail', 'onEditCollection'].map(key => (
-                <button key={key} onClick={() => (props[key] as () => void)()}>{key}</button>
+        <div
+            data-testid="collection-menu"
+            data-archived={String(props.isArchived)}
+            data-pinned={String(props.isPinned)}
+            data-thumbnail={String(props.hasCustomThumbnail)}
+            data-color={String(props.currentColor)}
+        >
+            {[
+                'onClose',
+                'onRename',
+                'onToggleArchive',
+                'onTogglePin',
+                'onDelete',
+                'onPlaySlideshow',
+                'onExport',
+                'onResetThumbnail',
+                'onEditCollection',
+            ].map((key) => (
+                <button key={key} onClick={() => (props[key] as () => void)()}>
+                    {key}
+                </button>
             ))}
             <button onClick={() => (props.onColorChange as (color: string | undefined) => void)('red')}>onColorChange</button>
         </div>
-    )
+    ),
 }));
 
 const filters: FilterState = {
@@ -92,16 +129,16 @@ const filters: FilterState = {
     ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
-    collectionId: null
+    collectionId: null,
 };
 
-const setFilters: React.Dispatch<React.SetStateAction<FilterState>> = () => { };
+const setFilters: React.Dispatch<React.SetStateAction<FilterState>> = () => {};
 
 const makeCollection = ({
     id,
     name,
     createdAt,
-    updatedAt
+    updatedAt,
 }: {
     id: string;
     name: string;
@@ -114,17 +151,11 @@ const makeCollection = ({
     count: 1,
     createdAt,
     updatedAt,
-    source: 'ambit'
+    source: 'ambit',
 });
 
-const renderCollectionList = (collections: Collection[]) => render(
-    <CollectionList
-        collections={collections}
-        filters={filters}
-        setFilters={setFilters}
-        onDeleteCollection={vi.fn()}
-    />
-);
+const renderCollectionList = (collections: Collection[]) =>
+    render(<CollectionList collections={collections} filters={filters} setFilters={setFilters} onDeleteCollection={vi.fn()} />);
 
 const expectCollectionOrder = (names: string[]) => {
     for (let index = 0; index < names.length - 1; index += 1) {
@@ -150,14 +181,14 @@ describe('CollectionList persisted sort narrowing', () => {
                 id: 'old-recent',
                 name: 'Old Recent',
                 createdAt: 100,
-                updatedAt: 900
+                updatedAt: 900,
             }),
             makeCollection({
                 id: 'new-stale',
                 name: 'New Stale',
                 createdAt: 900,
-                updatedAt: 100
-            })
+                updatedAt: 100,
+            }),
         ]);
 
         expectCollectionOrder(['New Stale', 'Old Recent']);
@@ -165,7 +196,7 @@ describe('CollectionList persisted sort narrowing', () => {
 
     it('falls back to recent sorting when an invalid collection sort is persisted', () => {
         settingsContextMocks.resourceSortOptions = {
-            collections: 'not_a_collection_sort' as unknown as SidebarSortOption
+            collections: 'not_a_collection_sort' as unknown as SidebarSortOption,
         };
 
         renderCollectionList([
@@ -173,14 +204,14 @@ describe('CollectionList persisted sort narrowing', () => {
                 id: 'old-recent',
                 name: 'Old Recent',
                 createdAt: 100,
-                updatedAt: 900
+                updatedAt: 900,
             }),
             makeCollection({
                 id: 'new-stale',
                 name: 'New Stale',
                 createdAt: 900,
-                updatedAt: 100
-            })
+                updatedAt: 100,
+            }),
         ]);
 
         expectCollectionOrder(['Old Recent', 'New Stale']);
@@ -214,12 +245,15 @@ describe('CollectionList interactions', () => {
         vi.clearAllMocks();
         settingsContextMocks.resourceSortOptions = {};
         settingsContextMocks.resourceViewModes = { collections: 'list' };
-        useCollectionStore.setState({
-            ...useCollectionStore.getInitialState(),
-            refreshSmartCounts,
-            thumbnailHydrationPendingIds: {},
-            smartSummaryPendingIds: {},
-        }, true);
+        useCollectionStore.setState(
+            {
+                ...useCollectionStore.getInitialState(),
+                refreshSmartCounts,
+                thumbnailHydrationPendingIds: {},
+                smartSummaryPendingIds: {},
+            },
+            true
+        );
     });
 
     it('renders toolbar extras, creation form, and a custom empty state', () => {
@@ -244,14 +278,19 @@ describe('CollectionList interactions', () => {
         renderList();
         expect(screen.getByTestId('collection-alpha').dataset.view).toBe('grid');
         fireEvent.click(screen.getByRole('button', { name: 'Switch to List View' }));
-        expect(settingsContextMocks.setSettings.mock.calls.at(-1)?.[0]({ resourceViewModes: { collections: 'grid' } }).resourceViewModes.collections).toBe('list');
+        expect(
+            settingsContextMocks.setSettings.mock.calls.at(-1)?.[0]({ resourceViewModes: { collections: 'grid' } }).resourceViewModes
+                .collections
+        ).toBe('list');
     });
 
     it('searches collections and clears the query when search closes', async () => {
-        renderList({ collections: [
-            makeCollection({ id: 'alpha', name: 'Alpha', createdAt: 1, updatedAt: 1 }),
-            makeCollection({ id: 'beta', name: 'Beta', createdAt: 2, updatedAt: 2 }),
-        ] });
+        renderList({
+            collections: [
+                makeCollection({ id: 'alpha', name: 'Alpha', createdAt: 1, updatedAt: 1 }),
+                makeCollection({ id: 'beta', name: 'Beta', createdAt: 2, updatedAt: 2 }),
+            ],
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
         fireEvent.change(screen.getByPlaceholderText('Find collection...'), { target: { value: 'alp' } });
         await waitFor(() => expect(screen.queryByText('Beta')).toBeNull());
@@ -275,18 +314,28 @@ describe('CollectionList interactions', () => {
     it('refreshes once while selected and retries after the same smart collection is reselected', async () => {
         const smart = { ...makeCollection({ id: 'smart', name: 'Smart', createdAt: 1, updatedAt: 1 }), filters: { ...filters } };
         const view = renderList({ collections: [smart], filters: { ...filters, collectionId: 'smart' } });
-        await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledWith({
-            collectionIds: ['smart'], includeArchived: true, includePromptSearch: true, markPending: true
-        }));
+        await waitFor(() =>
+            expect(refreshSmartCounts).toHaveBeenCalledWith({
+                collectionIds: ['smart'],
+                includeArchived: true,
+                includePromptSearch: true,
+                markPending: true,
+            })
+        );
         refreshSmartCounts.mockClear();
         view.rerender(<CollectionList {...view.props} />);
         expect(refreshSmartCounts).not.toHaveBeenCalled();
 
         view.rerender(<CollectionList {...view.props} filters={{ ...filters, collectionId: null }} />);
         view.rerender(<CollectionList {...view.props} />);
-        await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledWith({
-            collectionIds: ['smart'], includeArchived: true, includePromptSearch: true, markPending: true
-        }));
+        await waitFor(() =>
+            expect(refreshSmartCounts).toHaveBeenCalledWith({
+                collectionIds: ['smart'],
+                includeArchived: true,
+                includePromptSearch: true,
+                markPending: true,
+            })
+        );
     });
 
     it('separates pinned collections and forwards pending thumbnail state', () => {
@@ -300,9 +349,16 @@ describe('CollectionList interactions', () => {
     });
 
     it('paginates non-pinned collections by sixty', () => {
-        renderList({ collections: Array.from({ length: 61 }, (_, index) => makeCollection({
-            id: `id-${index}`, name: `Collection ${String(index).padStart(2, '0')}`, createdAt: index, updatedAt: index
-        })) });
+        renderList({
+            collections: Array.from({ length: 61 }, (_, index) =>
+                makeCollection({
+                    id: `id-${index}`,
+                    name: `Collection ${String(index).padStart(2, '0')}`,
+                    createdAt: index,
+                    updatedAt: index,
+                })
+            ),
+        });
         expect(screen.queryByText('Collection 00')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /show more/i }));
         expect(screen.getByText('Collection 00')).toBeTruthy();
@@ -328,7 +384,11 @@ describe('CollectionList interactions', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0);
         const { props } = renderList();
         const item = screen.getByTestId('collection-alpha');
-        const transfer = { dropEffect: 'none', types: ['custom'], getData: vi.fn((type: string) => type === 'application/x-ambit-image-ids' ? '["1"]' : '') };
+        const transfer = {
+            dropEffect: 'none',
+            types: ['custom'],
+            getData: vi.fn((type: string) => (type === 'application/x-ambit-image-ids' ? '["1"]' : '')),
+        };
         fireEvent.dragEnter(item, { dataTransfer: transfer });
         expect(item.dataset.drop).toBe('true');
         fireEvent.dragOver(item, { dataTransfer: transfer });
@@ -350,29 +410,29 @@ describe('CollectionList interactions', () => {
         ['count_desc', ['Many', 'Few']],
         ['date_asc', ['Old', 'New']],
         ['recent_asc', ['Stale', 'Recent']],
-        ['recent_desc', ['Recent', 'Stale']]
+        ['recent_desc', ['Recent', 'Stale']],
     ] as const)('sorts collections with %s', (sort, expected) => {
         settingsContextMocks.resourceSortOptions = { collections: sort };
         const expectedNames: readonly string[] = expected;
         const data = expectedNames.includes('Alpha')
             ? [
-                makeCollection({ id: 'z', name: 'Zulu', createdAt: 2, updatedAt: 2 }),
-                makeCollection({ id: 'a', name: 'Alpha', createdAt: 1, updatedAt: 1 })
-            ]
+                  makeCollection({ id: 'z', name: 'Zulu', createdAt: 2, updatedAt: 2 }),
+                  makeCollection({ id: 'a', name: 'Alpha', createdAt: 1, updatedAt: 1 }),
+              ]
             : expectedNames.includes('Few')
-                ? [
+              ? [
                     { ...makeCollection({ id: 'many', name: 'Many', createdAt: 2, updatedAt: 2 }), count: 5 },
-                    { ...makeCollection({ id: 'few', name: 'Few', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] }
+                    { ...makeCollection({ id: 'few', name: 'Few', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] },
                 ]
-                : expectedNames.includes('Old')
-                    ? [
-                        makeCollection({ id: 'new', name: 'New', createdAt: 20, updatedAt: 1 }),
-                        makeCollection({ id: 'old', name: 'Old', createdAt: 10, updatedAt: 2 })
-                    ]
-                    : [
-                        { ...makeCollection({ id: 'recent', name: 'Recent', createdAt: 1, updatedAt: 20 }) },
-                        { ...makeCollection({ id: 'stale', name: 'Stale', createdAt: 10, updatedAt: 0 }) }
-                    ];
+              : expectedNames.includes('Old')
+                ? [
+                      makeCollection({ id: 'new', name: 'New', createdAt: 20, updatedAt: 1 }),
+                      makeCollection({ id: 'old', name: 'Old', createdAt: 10, updatedAt: 2 }),
+                  ]
+                : [
+                      { ...makeCollection({ id: 'recent', name: 'Recent', createdAt: 1, updatedAt: 20 }) },
+                      { ...makeCollection({ id: 'stale', name: 'Stale', createdAt: 10, updatedAt: 0 }) },
+                  ];
         renderList({ collections: data });
         expectCollectionOrder([...expected]);
     });
@@ -391,9 +451,17 @@ describe('CollectionList interactions', () => {
     it('renders pinned and paginated layouts in grid mode', () => {
         settingsContextMocks.resourceViewModes = { collections: 'grid' };
         const pinned = { ...makeCollection({ id: 'pinned', name: 'Pinned', createdAt: 1, updatedAt: 1 }), isPinned: true };
-        const collections = [pinned, ...Array.from({ length: 61 }, (_, index) => makeCollection({
-            id: `grid-${index}`, name: `Grid ${index}`, createdAt: index, updatedAt: index
-        }))];
+        const collections = [
+            pinned,
+            ...Array.from({ length: 61 }, (_, index) =>
+                makeCollection({
+                    id: `grid-${index}`,
+                    name: `Grid ${index}`,
+                    createdAt: index,
+                    updatedAt: index,
+                })
+            ),
+        ];
         renderList({ collections });
         expect(screen.getByTestId('collection-pinned').parentElement?.className).toBe('');
         expect(screen.getByRole('button', { name: /show more/i }).className).toContain('col-span-3');
@@ -425,35 +493,51 @@ describe('CollectionList interactions', () => {
 
     it('uses static membership counts, sorts unknown smart counts last, and falls back to created dates', () => {
         settingsContextMocks.resourceSortOptions = { collections: 'count_asc' };
-        const countAsc = renderList({ collections: [
-            { ...makeCollection({ id: 'unknown', name: 'Unknown', createdAt: 3, updatedAt: 3 }), count: undefined, imageIds: ['1', '2', '3'], filters: { ...filters } },
-            { ...makeCollection({ id: 'two', name: 'Two', createdAt: 2, updatedAt: 2 }), count: undefined, imageIds: ['1', '2'] },
-            { ...makeCollection({ id: 'one', name: 'One', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] }
-        ] });
+        const countAsc = renderList({
+            collections: [
+                {
+                    ...makeCollection({ id: 'unknown', name: 'Unknown', createdAt: 3, updatedAt: 3 }),
+                    count: undefined,
+                    imageIds: ['1', '2', '3'],
+                    filters: { ...filters },
+                },
+                { ...makeCollection({ id: 'two', name: 'Two', createdAt: 2, updatedAt: 2 }), count: undefined, imageIds: ['1', '2'] },
+                { ...makeCollection({ id: 'one', name: 'One', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] },
+            ],
+        });
         expectCollectionOrder(['One', 'Two', 'Unknown']);
         countAsc.unmount();
 
         settingsContextMocks.resourceSortOptions = { collections: 'count_desc' };
-        const countDesc = renderList({ collections: [
-            { ...makeCollection({ id: 'unknown', name: 'Unknown', createdAt: 3, updatedAt: 3 }), count: undefined, imageIds: ['1', '2', '3'], filters: { ...filters } },
-            { ...makeCollection({ id: 'two', name: 'Two', createdAt: 2, updatedAt: 2 }), count: undefined, imageIds: ['1', '2'] },
-            { ...makeCollection({ id: 'one', name: 'One', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] }
-        ] });
+        const countDesc = renderList({
+            collections: [
+                {
+                    ...makeCollection({ id: 'unknown', name: 'Unknown', createdAt: 3, updatedAt: 3 }),
+                    count: undefined,
+                    imageIds: ['1', '2', '3'],
+                    filters: { ...filters },
+                },
+                { ...makeCollection({ id: 'two', name: 'Two', createdAt: 2, updatedAt: 2 }), count: undefined, imageIds: ['1', '2'] },
+                { ...makeCollection({ id: 'one', name: 'One', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] },
+            ],
+        });
         expectCollectionOrder(['Two', 'One', 'Unknown']);
         countDesc.unmount();
 
         settingsContextMocks.resourceSortOptions = { collections: 'recent_asc' };
-        renderList({ collections: [
-            { ...makeCollection({ id: 'new', name: 'New', createdAt: 20, updatedAt: 1 }), updatedAt: 0 },
-            { ...makeCollection({ id: 'old', name: 'Old', createdAt: 10, updatedAt: 1 }), updatedAt: 0 }
-        ] });
+        renderList({
+            collections: [
+                { ...makeCollection({ id: 'new', name: 'New', createdAt: 20, updatedAt: 1 }), updatedAt: 0 },
+                { ...makeCollection({ id: 'old', name: 'Old', createdAt: 10, updatedAt: 1 }), updatedAt: 0 },
+            ],
+        });
         expectCollectionOrder(['Old', 'New']);
     });
 
     it('falls back to plain-text drops and ignores empty data', () => {
         const { props } = renderList();
         const item = screen.getByTestId('collection-alpha');
-        fireEvent.drop(item, { dataTransfer: { getData: (type: string) => type === 'text/plain' ? 'plain-data' : '' } });
+        fireEvent.drop(item, { dataTransfer: { getData: (type: string) => (type === 'text/plain' ? 'plain-data' : '') } });
         expect(props.onDropOnCollection).toHaveBeenCalledWith('alpha', 'plain-data');
         fireEvent.drop(item, { dataTransfer: { getData: () => '' } });
         expect(props.onDropOnCollection).toHaveBeenCalledTimes(1);
@@ -462,7 +546,10 @@ describe('CollectionList interactions', () => {
     it('routes every context-menu action and begins rename editing', () => {
         const collection = {
             ...makeCollection({ id: 'alpha', name: 'Alpha', createdAt: 1, updatedAt: 1 }),
-            isArchived: false, isPinned: true, customThumbnail: 'thumb', color: 'blue'
+            isArchived: false,
+            isPinned: true,
+            customThumbnail: 'thumb',
+            color: 'blue',
         };
         const { props } = renderList({ collections: [collection] });
         const openMenu = () => fireEvent.contextMenu(screen.getByTestId('collection-alpha'));
@@ -473,10 +560,13 @@ describe('CollectionList interactions', () => {
         expect(screen.getByLabelText('name-alpha')).toBeTruthy();
 
         const actions: Array<[string, keyof typeof props]> = [
-            ['onToggleArchive', 'onToggleArchiveCollection'], ['onTogglePin', 'onTogglePinCollection'],
-            ['onDelete', 'onDeleteCollection'], ['onPlaySlideshow', 'onPlayCollection'],
-            ['onExport', 'onExportCollection'], ['onResetThumbnail', 'onResetCollectionThumbnail'],
-            ['onEditCollection', 'onEditCollection']
+            ['onToggleArchive', 'onToggleArchiveCollection'],
+            ['onTogglePin', 'onTogglePinCollection'],
+            ['onDelete', 'onDeleteCollection'],
+            ['onPlaySlideshow', 'onPlayCollection'],
+            ['onExport', 'onExportCollection'],
+            ['onResetThumbnail', 'onResetCollectionThumbnail'],
+            ['onEditCollection', 'onEditCollection'],
         ];
         for (const [button, prop] of actions) {
             openMenu();

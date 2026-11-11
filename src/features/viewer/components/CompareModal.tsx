@@ -4,13 +4,7 @@ import { X, ZoomIn, ZoomOut, RotateCcw, ArrowRightLeft, Sidebar, Heart, GitCompa
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
 import { getFilename } from '../../../utils/pathUtils';
-import {
-    CENTER_ANCHOR,
-    Point,
-    ViewportRect,
-    getAnchorPoint,
-    getZoomTransform
-} from '../../../utils/zoomMath';
+import { CENTER_ANCHOR, Point, ViewportRect, getAnchorPoint, getZoomTransform } from '../../../utils/zoomMath';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
@@ -46,11 +40,7 @@ interface CanvasSize {
     height: number;
 }
 
-const getCompareViewportRect = (
-    containerRect: DOMRect,
-    clientX: number,
-    mode: CompareMode
-): ViewportRect => {
+const getCompareViewportRect = (containerRect: DOMRect, clientX: number, mode: CompareMode): ViewportRect => {
     if (mode !== 'split') {
         return containerRect;
     }
@@ -62,22 +52,17 @@ const getCompareViewportRect = (
         left: isRightPane ? containerRect.left + halfWidth : containerRect.left,
         top: containerRect.top,
         width: halfWidth,
-        height: containerRect.height
+        height: containerRect.height,
     };
 };
 
-const getFittedRect = (
-    imageWidth: number,
-    imageHeight: number,
-    availableWidth: number,
-    availableHeight: number
-): MediaFrame => {
+const getFittedRect = (imageWidth: number, imageHeight: number, availableWidth: number, availableHeight: number): MediaFrame => {
     if (imageWidth <= 0 || imageHeight <= 0 || availableWidth <= 0 || availableHeight <= 0) {
         return {
             left: CANVAS_PADDING_PX,
             top: CANVAS_PADDING_PX,
             width: Math.max(0, availableWidth),
-            height: Math.max(0, availableHeight)
+            height: Math.max(0, availableHeight),
         };
     }
 
@@ -89,7 +74,7 @@ const getFittedRect = (
         left: CANVAS_PADDING_PX + (availableWidth - width) / 2,
         top: CANVAS_PADDING_PX + (availableHeight - height) / 2,
         width,
-        height
+        height,
     };
 };
 
@@ -103,23 +88,17 @@ const getUnionFrame = (frameA: MediaFrame, frameB: MediaFrame): MediaFrame => {
         left,
         top,
         width: Math.max(0, right - left),
-        height: Math.max(0, bottom - top)
+        height: Math.max(0, bottom - top),
     };
 };
 
-const framesAreEqual = (frameA: MediaFrame, frameB: MediaFrame) => (
+const framesAreEqual = (frameA: MediaFrame, frameB: MediaFrame) =>
     Math.abs(frameA.left - frameB.left) < 0.5 &&
     Math.abs(frameA.top - frameB.top) < 0.5 &&
     Math.abs(frameA.width - frameB.width) < 0.5 &&
-    Math.abs(frameA.height - frameB.height) < 0.5
-);
+    Math.abs(frameA.height - frameB.height) < 0.5;
 
-const getZoomedFrame = (
-    frame: MediaFrame,
-    canvasSize: CanvasSize,
-    position: { x: number, y: number },
-    scale: number
-): MediaFrame => {
+const getZoomedFrame = (frame: MediaFrame, canvasSize: CanvasSize, position: { x: number; y: number }, scale: number): MediaFrame => {
     if (canvasSize.width <= 0 || canvasSize.height <= 0) return frame;
 
     const originX = canvasSize.width / 2;
@@ -129,7 +108,7 @@ const getZoomedFrame = (
         left: originX + position.x + (frame.left - originX) * scale,
         top: originY + position.y + (frame.top - originY) * scale,
         width: frame.width * scale,
-        height: frame.height * scale
+        height: frame.height * scale,
     };
 };
 
@@ -145,7 +124,7 @@ const clampFrameToCanvas = (frame: MediaFrame, canvasSize: CanvasSize): MediaFra
         left,
         top,
         width: Math.max(0, right - left),
-        height: Math.max(0, bottom - top)
+        height: Math.max(0, bottom - top),
     };
 };
 
@@ -153,17 +132,17 @@ const ImageActions = ({
     img,
     side,
     onToggleFavorite,
-    onTogglePin
+    onTogglePin,
 }: {
-    img: AIImage,
-    side: 'left' | 'right',
-    onToggleFavorite: (id: string) => void,
-    onTogglePin?: (id: string, isPinned: boolean) => void
+    img: AIImage;
+    side: 'left' | 'right';
+    onToggleFavorite: (id: string) => void;
+    onTogglePin?: (id: string, isPinned: boolean) => void;
 }) => (
     <div className={`absolute top-3 ${side === 'left' ? 'left-3' : 'right-3'} z-50 flex gap-2 pointer-events-auto`}>
         <TooltipButton
-            label={img.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
-            content={img.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+            label={img.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+            content={img.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
             aria-pressed={img.isFavorite}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
@@ -173,13 +152,15 @@ const ImageActions = ({
             }}
             className="p-2.5 bg-black/60 hover:bg-black/90 rounded-full transition-all group cursor-pointer border border-white/10 backdrop-blur-md"
         >
-            <Heart className={`w-4 h-4 transition-transform group-hover:scale-110 ${img.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
+            <Heart
+                className={`w-4 h-4 transition-transform group-hover:scale-110 ${img.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`}
+            />
         </TooltipButton>
 
         {onTogglePin && (
             <TooltipButton
-                label={img.isPinned ? "Unpin" : "Pin to Top"}
-                content={img.isPinned ? "Unpin" : "Pin to Top"}
+                label={img.isPinned ? 'Unpin' : 'Pin to Top'}
+                content={img.isPinned ? 'Unpin' : 'Pin to Top'}
                 aria-pressed={Boolean(img.isPinned)}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
@@ -189,7 +170,9 @@ const ImageActions = ({
                 }}
                 className="p-2.5 bg-black/60 hover:bg-black/90 rounded-full transition-all group cursor-pointer border border-white/10 backdrop-blur-md"
             >
-                <Pin className={`w-4 h-4 transition-transform group-hover:scale-110 ${img.isPinned ? 'fill-sage-400 text-sage-400' : 'text-white'}`} />
+                <Pin
+                    className={`w-4 h-4 transition-transform group-hover:scale-110 ${img.isPinned ? 'fill-sage-400 text-sage-400' : 'text-white'}`}
+                />
             </TooltipButton>
         )}
     </div>
@@ -202,20 +185,23 @@ const ImageContainer = ({
     scale,
     isDraggingCanvas,
     imagePaddingClassName = 'p-6',
-    objectPosition = 'center'
+    objectPosition = 'center',
 }: {
-    img: AIImage,
-    position: { x: number, y: number },
-    scale: number,
-    isDraggingCanvas: boolean,
-    imagePaddingClassName?: string,
-    objectPosition?: React.CSSProperties['objectPosition']
+    img: AIImage;
+    position: { x: number; y: number };
+    scale: number;
+    isDraggingCanvas: boolean;
+    imagePaddingClassName?: string;
+    objectPosition?: React.CSSProperties['objectPosition'];
 }) => (
     <div className="relative w-full h-full flex items-center justify-center bg-zinc-950">
         {/* Image Transform */}
         <div
             className={`w-full h-full flex items-center justify-center ${imagePaddingClassName} box-border`}
-            style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDraggingCanvas ? 'none' : 'transform 0.1s ease-out' }}
+            style={{
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                transition: isDraggingCanvas ? 'none' : 'transform 0.1s ease-out',
+            }}
         >
             <SmartImage
                 src={img.url}
@@ -230,16 +216,8 @@ const ImageContainer = ({
     </div>
 );
 
-export const CompareModal: React.FC<CompareModalProps> = ({
-    imageA,
-    imageB,
-    onClose,
-    onToggleFavorite,
-    onTogglePin
-}) => {
-    const privacyExposureBlocked = useSettingsStore(state => (
-        state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
-    ));
+export const CompareModal: React.FC<CompareModalProps> = ({ imageA, imageB, onClose, onToggleFavorite, onTogglePin }) => {
+    const privacyExposureBlocked = useSettingsStore((state) => state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready');
     // View State
     const [mode, setMode] = useState<CompareMode>('split');
     const [scale, setScale] = useState(1);
@@ -251,11 +229,11 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         left: CANVAS_PADDING_PX,
         top: CANVAS_PADDING_PX,
         width: 0,
-        height: 0
+        height: 0,
     });
     const [canvasSize, setCanvasSize] = useState<CanvasSize>({
         width: 0,
-        height: 0
+        height: 0,
     });
 
     useEffect(() => {
@@ -273,16 +251,11 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     const sliderRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const closeButtonRef = useRef<HTMLButtonElement>(null);
-    const activeMediaFrame = clampFrameToCanvas(
-        getZoomedFrame(mediaFrame, canvasSize, position, scale),
-        canvasSize
-    );
+    const activeMediaFrame = clampFrameToCanvas(getZoomedFrame(mediaFrame, canvasSize, position, scale), canvasSize);
     const activeMediaFrameRef = useRef(activeMediaFrame);
 
     useEffect(() => {
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         closeButtonRef.current?.focus();
 
         return () => {
@@ -302,7 +275,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
             const rect = container.getBoundingClientRect();
             const nextCanvasSize = {
                 width: rect.width,
-                height: rect.height
+                height: rect.height,
             };
             const availableWidth = Math.max(0, rect.width - CANVAS_PADDING_PX * 2);
             const availableHeight = Math.max(0, rect.height - CANVAS_PADDING_PX * 2);
@@ -311,11 +284,12 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                 getFittedRect(imageB.width, imageB.height, availableWidth, availableHeight)
             );
 
-            setCanvasSize(prev => (
-                Math.abs(prev.width - nextCanvasSize.width) < 0.5 &&
-                Math.abs(prev.height - nextCanvasSize.height) < 0.5
-            ) ? prev : nextCanvasSize);
-            setMediaFrame(prev => framesAreEqual(prev, nextFrame) ? prev : nextFrame);
+            setCanvasSize((prev) =>
+                Math.abs(prev.width - nextCanvasSize.width) < 0.5 && Math.abs(prev.height - nextCanvasSize.height) < 0.5
+                    ? prev
+                    : nextCanvasSize
+            );
+            setMediaFrame((prev) => (framesAreEqual(prev, nextFrame) ? prev : nextFrame));
         };
 
         updateMediaFrame();
@@ -340,26 +314,32 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         setPosition(CENTER_ANCHOR);
     }, []);
 
-    const applyZoom = useCallback((targetScale: number, anchor: Point = CENTER_ANCHOR) => {
-        const nextView = getZoomTransform({
-            currentPosition: position,
-            currentScale: scale,
-            targetScale,
-            minScale: COMPARE_MIN_SCALE,
-            maxScale: COMPARE_MAX_SCALE,
-            anchor
-        });
+    const applyZoom = useCallback(
+        (targetScale: number, anchor: Point = CENTER_ANCHOR) => {
+            const nextView = getZoomTransform({
+                currentPosition: position,
+                currentScale: scale,
+                targetScale,
+                minScale: COMPARE_MIN_SCALE,
+                maxScale: COMPARE_MAX_SCALE,
+                anchor,
+            });
 
-        setScale(nextView.scale);
-        setPosition(nextView.position);
-    }, [position, scale]);
+            setScale(nextView.scale);
+            setPosition(nextView.position);
+        },
+        [position, scale]
+    );
 
-    const getAnchorForEvent = useCallback((e: React.MouseEvent | React.WheelEvent): Point => {
-        const containerRect = containerRef.current!.getBoundingClientRect();
-        const viewportRect = getCompareViewportRect(containerRect, e.clientX, mode);
+    const getAnchorForEvent = useCallback(
+        (e: React.MouseEvent | React.WheelEvent): Point => {
+            const containerRect = containerRef.current!.getBoundingClientRect();
+            const viewportRect = getCompareViewportRect(containerRect, e.clientX, mode);
 
-        return getAnchorPoint({ x: e.clientX, y: e.clientY }, viewportRect);
-    }, [mode]);
+            return getAnchorPoint({ x: e.clientX, y: e.clientY }, viewportRect);
+        },
+        [mode]
+    );
 
     const handleWheel = (e: React.WheelEvent) => {
         e.preventDefault();
@@ -380,7 +360,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
             e.preventDefault();
             setPosition({
                 x: e.clientX - dragStartRef.current.x,
-                y: e.clientY - dragStartRef.current.y
+                y: e.clientY - dragStartRef.current.y,
             });
         }
 
@@ -399,14 +379,13 @@ export const CompareModal: React.FC<CompareModalProps> = ({
             const frame = activeMediaFrameRef.current;
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            const isInsideFrame = (
+            const isInsideFrame =
                 frame.width > 0 &&
                 frame.height > 0 &&
                 x >= frame.left &&
                 x <= frame.left + frame.width &&
                 y >= frame.top &&
-                y <= frame.top + frame.height
-            );
+                y <= frame.top + frame.height;
             setIsOverlayHover(isInsideFrame);
         }
     };
@@ -449,14 +428,20 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         setIsDraggingSlider(true);
     };
 
-    const DiffRow = ({ label, valA, valB }: { label: string, valA: string | number, valB: string | number }) => {
+    const DiffRow = ({ label, valA, valB }: { label: string; valA: string | number; valB: string | number }) => {
         const isDiff = valA !== valB;
         return (
-            <div className={`grid grid-cols-1 gap-1 py-3 border-b border-white/5 text-sm hover:bg-white/5 transition-colors ${isDiff ? 'bg-ember-900/10' : ''}`}>
+            <div
+                className={`grid grid-cols-1 gap-1 py-3 border-b border-white/5 text-sm hover:bg-white/5 transition-colors ${isDiff ? 'bg-ember-900/10' : ''}`}
+            >
                 <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider px-4 mb-1">{label}</div>
                 <div className="grid grid-cols-2 gap-4 px-4">
-                    <div className={`truncate ${isDiff ? 'text-ember-300 font-medium' : 'text-gray-400'}`} title={String(valA)}>{valA}</div>
-                    <div className={`truncate ${isDiff ? 'text-ember-300 font-medium' : 'text-gray-400'}`} title={String(valB)}>{valB}</div>
+                    <div className={`truncate ${isDiff ? 'text-ember-300 font-medium' : 'text-gray-400'}`} title={String(valA)}>
+                        {valA}
+                    </div>
+                    <div className={`truncate ${isDiff ? 'text-ember-300 font-medium' : 'text-gray-400'}`} title={String(valB)}>
+                        {valB}
+                    </div>
                 </div>
             </div>
         );
@@ -464,9 +449,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
 
     // --- Diffing Logic ---
     const renderPromptDiff = (promptA: string, promptB: string) => {
-
-        const setA = new Set(promptA.split(/\s+/).map(w => w.toLowerCase().replace(/[^\w]/g, '')));
-        const setB = new Set(promptB.split(/\s+/).map(w => w.toLowerCase().replace(/[^\w]/g, '')));
+        const setA = new Set(promptA.split(/\s+/).map((w) => w.toLowerCase().replace(/[^\w]/g, '')));
+        const setB = new Set(promptB.split(/\s+/).map((w) => w.toLowerCase().replace(/[^\w]/g, '')));
 
         const renderDiffWords = (text: string, comparisonSet: Set<string>, colorClass: string) => {
             return text.split(/(\s+)/).map((part, i) => {
@@ -520,22 +504,22 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         left: activeMediaFrame.left,
         top: activeMediaFrame.top,
         width: activeMediaFrame.width,
-        height: activeMediaFrame.height
+        height: activeMediaFrame.height,
     };
     const sliderHandleStyle: React.CSSProperties = {
         left: sliderVisualX,
         top: activeMediaFrame.top,
         height: activeMediaFrame.height,
-        width: SLIDER_HIT_TARGET_WIDTH_PX
+        width: SLIDER_HIT_TARGET_WIDTH_PX,
     };
     const sliderDividerTrackStyle: React.CSSProperties = {
         left: sliderTravelX - activeMediaFrame.left,
-        width: SLIDER_HIT_TARGET_WIDTH_PX
+        width: SLIDER_HIT_TARGET_WIDTH_PX,
     };
     const overlayHintStyle: React.CSSProperties = {
         left: activeMediaFrame.left + activeMediaFrame.width / 2,
         top: Math.max(activeMediaFrame.top + 12, activeMediaFrame.top + activeMediaFrame.height - 48),
-        transform: 'translateX(-50%)'
+        transform: 'translateX(-50%)',
     };
     const sliderClipPath = `polygon(${activeMediaFrame.left}px ${activeMediaFrame.top}px, ${sliderTravelX + DIAGONAL_OFFSET_PX}px ${activeMediaFrame.top}px, ${sliderTravelX - DIAGONAL_OFFSET_PX}px ${activeMediaFrame.top + activeMediaFrame.height}px, ${activeMediaFrame.left}px ${activeMediaFrame.top + activeMediaFrame.height}px)`;
     const sliderDividerClipPath = `polygon(calc(50% + ${DIAGONAL_OFFSET_PX}px - ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 0, calc(50% + ${DIAGONAL_OFFSET_PX}px + ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 0, calc(50% - ${DIAGONAL_OFFSET_PX}px + ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 100%, calc(50% - ${DIAGONAL_OFFSET_PX}px - ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 100%)`;
@@ -553,11 +537,10 @@ export const CompareModal: React.FC<CompareModalProps> = ({
             onMouseMove={handleMouseMove}
             onClick={onClose}
         >
-
             {/* Darkened Header - Standardized to zinc-950/black */}
             <div
                 className="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-zinc-950 flex-shrink-0 z-50"
-                onClick={e => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2 text-gray-200 font-bold">
@@ -566,26 +549,71 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                     </div>
 
                     <div className="flex bg-black rounded-lg p-0.5 border border-white/10">
-                        <button type="button" aria-pressed={mode === 'split'} onClick={() => setMode('split')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'split' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Side by Side">Split</button>
-                        <button type="button" aria-pressed={mode === 'slider'} onClick={() => setMode('slider')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'slider' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Slider Swipe">Swipe</button>
-                        <button type="button" aria-pressed={mode === 'overlay'} onClick={() => setMode('overlay')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'overlay' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Hover Overlay">Overlay</button>
+                        <button
+                            type="button"
+                            aria-pressed={mode === 'split'}
+                            onClick={() => setMode('split')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'split' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                            title="Side by Side"
+                        >
+                            Split
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={mode === 'slider'}
+                            onClick={() => setMode('slider')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'slider' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                            title="Slider Swipe"
+                        >
+                            Swipe
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={mode === 'overlay'}
+                            onClick={() => setMode('overlay')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'overlay' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                            title="Hover Overlay"
+                        >
+                            Overlay
+                        </button>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 bg-black rounded-full px-3 py-1 border border-white/10">
-                        <TooltipButton label="Zoom Out" content="Zoom Out" onClick={() => applyZoom(scale - COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomOut className="w-4 h-4" /></TooltipButton>
+                        <TooltipButton
+                            label="Zoom Out"
+                            content="Zoom Out"
+                            onClick={() => applyZoom(scale - COMPARE_BUTTON_ZOOM_STEP)}
+                            className="p-1 hover:text-white text-gray-500"
+                        >
+                            <ZoomOut className="w-4 h-4" />
+                        </TooltipButton>
                         <span className="text-xs font-mono text-gray-400 w-12 text-center">{Math.round(scale * 100)}%</span>
-                        <TooltipButton label="Zoom In" content="Zoom In" onClick={() => applyZoom(scale + COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomIn className="w-4 h-4" /></TooltipButton>
+                        <TooltipButton
+                            label="Zoom In"
+                            content="Zoom In"
+                            onClick={() => applyZoom(scale + COMPARE_BUTTON_ZOOM_STEP)}
+                            className="p-1 hover:text-white text-gray-500"
+                        >
+                            <ZoomIn className="w-4 h-4" />
+                        </TooltipButton>
                         <div className="w-px h-3 bg-white/10 mx-1" />
-                        <TooltipButton label="Reset Zoom" content="Reset Zoom" onClick={resetZoom} className="p-1 hover:text-white text-gray-500"><RotateCcw className="w-4 h-4" /></TooltipButton>
+                        <TooltipButton
+                            label="Reset Zoom"
+                            content="Reset Zoom"
+                            onClick={resetZoom}
+                            className="p-1 hover:text-white text-gray-500"
+                        >
+                            <RotateCcw className="w-4 h-4" />
+                        </TooltipButton>
                     </div>
 
                     <div className="h-6 w-px bg-white/10" />
 
                     <TooltipButton
-                        label={isPanelOpen ? "Hide Diff Sidebar" : "Show Diff Sidebar"}
-                        content={isPanelOpen ? "Hide Diff Sidebar" : "Show Diff Sidebar"}
+                        label={isPanelOpen ? 'Hide Diff Sidebar' : 'Show Diff Sidebar'}
+                        content={isPanelOpen ? 'Hide Diff Sidebar' : 'Show Diff Sidebar'}
                         aria-pressed={isPanelOpen}
                         onClick={() => setIsPanelOpen(!isPanelOpen)}
                         className={`p-2 rounded-lg transition-colors ${isPanelOpen ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'}`}
@@ -593,14 +621,19 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                         <Sidebar className="w-5 h-5" />
                     </TooltipButton>
 
-                    <button ref={closeButtonRef} type="button" aria-label="Close Comparison" onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors">
+                    <button
+                        ref={closeButtonRef}
+                        type="button"
+                        aria-label="Close Comparison"
+                        onClick={onClose}
+                        className="p-2 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"
+                    >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
             </div>
 
             <div className="flex-1 flex overflow-hidden">
-
                 {/* Main Canvas Area */}
                 <div
                     ref={containerRef}
@@ -608,18 +641,27 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                     onWheel={handleWheel}
                     onMouseDown={handleMouseDown}
                     onDoubleClick={handleDoubleClick}
-                    onClick={e => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                 >
-
                     {/* SPLIT */}
                     {mode === 'split' && (
                         <div className="absolute inset-0 p-6 flex gap-4 overflow-hidden">
                             <div className="flex-1 overflow-hidden relative">
-                                <ImageContainer img={imageA} imagePaddingClassName="p-0" objectPosition="right center" {...commonImageProps} />
+                                <ImageContainer
+                                    img={imageA}
+                                    imagePaddingClassName="p-0"
+                                    objectPosition="right center"
+                                    {...commonImageProps}
+                                />
                                 <ImageActions img={imageA} side="left" onToggleFavorite={onToggleFavorite} onTogglePin={onTogglePin} />
                             </div>
                             <div className="flex-1 overflow-hidden relative">
-                                <ImageContainer img={imageB} imagePaddingClassName="p-0" objectPosition="left center" {...commonImageProps} />
+                                <ImageContainer
+                                    img={imageB}
+                                    imagePaddingClassName="p-0"
+                                    objectPosition="left center"
+                                    {...commonImageProps}
+                                />
                                 <ImageActions img={imageB} side="right" onToggleFavorite={onToggleFavorite} onTogglePin={onTogglePin} />
                             </div>
                         </div>
@@ -642,10 +684,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                                 <ImageActions img={imageB} side="right" onToggleFavorite={onToggleFavorite} onTogglePin={onTogglePin} />
                             </div>
                             <div className="absolute z-40 overflow-hidden pointer-events-none" style={activeMediaFrameStyle}>
-                                <div
-                                    className="absolute top-0 h-full -translate-x-1/2"
-                                    style={sliderDividerTrackStyle}
-                                >
+                                <div className="absolute top-0 h-full -translate-x-1/2" style={sliderDividerTrackStyle}>
                                     <div
                                         className="absolute inset-0 bg-sage-500 shadow-[0_0_18px_rgba(115,140,85,0.45),2px_0_20px_rgba(0,0,0,0.8)]"
                                         style={{ clipPath: sliderDividerClipPath }}
@@ -671,7 +710,9 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                             <div className="absolute inset-0 flex items-center justify-center">
                                 <ImageContainer img={imageA} {...commonImageProps} />
                             </div>
-                            <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ease-out ${isOverlayHover ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+                            <div
+                                className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ease-out ${isOverlayHover ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                            >
                                 <ImageContainer img={imageB} {...commonImageProps} />
                             </div>
                             <div className="absolute z-50 pointer-events-none" style={activeMediaFrameStyle}>
@@ -686,7 +727,6 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                             </div>
                         </div>
                     )}
-
                 </div>
 
                 {/* Right Sidebar - With Animation */}
@@ -695,7 +735,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                     aria-hidden={!isPanelOpen}
                     inert={isPanelOpen ? undefined : true}
                     className={`bg-surface-panel border-l border-white/10 flex flex-col flex-shrink-0 relative shadow-2xl z-20 transition-all duration-500 ease-spring overflow-hidden ${isPanelOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-20'}`}
-                    onClick={e => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                 >
                     <div
                         className="absolute left-0 top-0 bottom-0 w-1 hover:w-1.5 bg-transparent hover:bg-sage-500 cursor-ew-resize transition-all z-20"
@@ -711,8 +751,12 @@ export const CompareModal: React.FC<CompareModalProps> = ({
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar min-w-[300px]">
                         <div className="grid grid-cols-2 gap-4 px-4 py-4 bg-zinc-900/20 border-b border-white/10 text-xs font-mono text-gray-500">
-                            <div className="truncate text-center" title={imageA.filename}>{getFilename(imageA.filename)}</div>
-                            <div className="truncate text-center" title={imageB.filename}>{getFilename(imageB.filename)}</div>
+                            <div className="truncate text-center" title={imageA.filename}>
+                                {getFilename(imageA.filename)}
+                            </div>
+                            <div className="truncate text-center" title={imageB.filename}>
+                                {getFilename(imageB.filename)}
+                            </div>
                         </div>
 
                         <DiffRow label="Model" valA={imageA.metadata.model} valB={imageB.metadata.model} />
@@ -732,28 +776,43 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                                         </div>
                                     )}
                                     <div className="flex bg-black rounded-lg p-0.5 border border-white/10">
-                                        <TooltipButton label="Show Diff View" content="Show Diff View" aria-pressed={diffMode === 'diff'} onClick={() => setDiffMode('diff')} className={`p-1 rounded ${diffMode === 'diff' ? 'bg-white/10 text-white' : 'text-gray-500'}`}><Eye className="w-3 h-3" /></TooltipButton>
-                                        <TooltipButton label="Show Raw View" content="Show Raw View" aria-pressed={diffMode === 'raw'} onClick={() => setDiffMode('raw')} className={`p-1 rounded ${diffMode === 'raw' ? 'bg-white/10 text-white' : 'text-gray-500'}`}><EyeOff className="w-3 h-3" /></TooltipButton>
+                                        <TooltipButton
+                                            label="Show Diff View"
+                                            content="Show Diff View"
+                                            aria-pressed={diffMode === 'diff'}
+                                            onClick={() => setDiffMode('diff')}
+                                            className={`p-1 rounded ${diffMode === 'diff' ? 'bg-white/10 text-white' : 'text-gray-500'}`}
+                                        >
+                                            <Eye className="w-3 h-3" />
+                                        </TooltipButton>
+                                        <TooltipButton
+                                            label="Show Raw View"
+                                            content="Show Raw View"
+                                            aria-pressed={diffMode === 'raw'}
+                                            onClick={() => setDiffMode('raw')}
+                                            className={`p-1 rounded ${diffMode === 'raw' ? 'bg-white/10 text-white' : 'text-gray-500'}`}
+                                        >
+                                            <EyeOff className="w-3 h-3" />
+                                        </TooltipButton>
                                     </div>
                                 </div>
                             </div>
 
                             {imageA.metadata.positivePrompt === imageB.metadata.positivePrompt ? (
-                                <div className="text-sm text-gray-600 italic text-center py-4 bg-zinc-900/30 rounded-lg">Prompts are identical</div>
+                                <div className="text-sm text-gray-600 italic text-center py-4 bg-zinc-900/30 rounded-lg">
+                                    Prompts are identical
+                                </div>
+                            ) : diffMode === 'diff' ? (
+                                renderPromptDiff(imageA.metadata.positivePrompt, imageB.metadata.positivePrompt)
                             ) : (
-                                diffMode === 'diff' ? (
-                                    renderPromptDiff(imageA.metadata.positivePrompt, imageB.metadata.positivePrompt)
-                                ) : (
-                                    <div className="space-y-4">
-                                        {renderRawPrompt(imageA.metadata.positivePrompt, "Original (Image A)")}
-                                        {renderRawPrompt(imageB.metadata.positivePrompt, "New (Image B)")}
-                                    </div>
-                                )
+                                <div className="space-y-4">
+                                    {renderRawPrompt(imageA.metadata.positivePrompt, 'Original (Image A)')}
+                                    {renderRawPrompt(imageB.metadata.positivePrompt, 'New (Image B)')}
+                                </div>
                             )}
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
     );

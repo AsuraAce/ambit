@@ -7,12 +7,12 @@ import type { FolderChange } from '../../bindings';
 
 vi.mock('../../bindings', () => ({
     commands: {
-        startNativeFolderWatcher: vi.fn()
-    }
+        startNativeFolderWatcher: vi.fn(),
+    },
 }));
 
 vi.mock('../runtime', () => ({
-    isBrowserMockMode: vi.fn(() => false)
+    isBrowserMockMode: vi.fn(() => false),
 }));
 
 const mockedStartNativeFolderWatcher = vi.mocked(commands.startNativeFolderWatcher);
@@ -38,9 +38,11 @@ describe('WatcherService', () => {
     it('invalidates a pending native watcher start when stop is requested before startup settles', async () => {
         let resolveStart!: () => void;
         mockedStartNativeFolderWatcher
-            .mockReturnValueOnce(new Promise((resolve) => {
-                resolveStart = () => resolve({ status: 'ok', data: null });
-            }))
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveStart = () => resolve({ status: 'ok', data: null });
+                })
+            )
             .mockResolvedValue({ status: 'ok', data: null });
 
         const service = new WatcherService();
@@ -70,13 +72,15 @@ describe('WatcherService', () => {
         await service.startWatching(['C:/watch', 'D:/more'], onChange);
 
         expect(folderChangeHandler).toBeDefined();
-        const emitFolderChange: FolderChangeHandler = folderChangeHandler ?? (() => {
-            throw new Error('Expected folder-change-event listener to be registered');
-        });
+        const emitFolderChange: FolderChangeHandler =
+            folderChangeHandler ??
+            (() => {
+                throw new Error('Expected folder-change-event listener to be registered');
+            });
         emitFolderChange({
             event: 'folder-change-event',
             id: 1,
-            payload: [{ kind: 'create', paths: ['C:/watch/new.png'] }]
+            payload: [{ kind: 'create', paths: ['C:/watch/new.png'] }],
         });
         emitFolderChange({
             event: 'folder-change-event',
@@ -106,9 +110,7 @@ describe('WatcherService', () => {
     it('restarts when watched paths change', async () => {
         const firstUnlisten = vi.fn();
         const secondUnlisten = vi.fn();
-        mockedListen
-            .mockResolvedValueOnce(firstUnlisten)
-            .mockResolvedValueOnce(secondUnlisten);
+        mockedListen.mockResolvedValueOnce(firstUnlisten).mockResolvedValueOnce(secondUnlisten);
 
         const service = new WatcherService();
         await service.startWatching(['C:/watch'], vi.fn());
@@ -130,10 +132,9 @@ describe('WatcherService', () => {
 
         expect(mockedStartNativeFolderWatcher).not.toHaveBeenCalled();
         expect(mockedListen).not.toHaveBeenCalled();
-        expect(console.info).toHaveBeenCalledWith(
-            '[WatcherService] Native watcher unavailable in browser mock mode; skipped start.',
-            { pathCount: 1 }
-        );
+        expect(console.info).toHaveBeenCalledWith('[WatcherService] Native watcher unavailable in browser mock mode; skipped start.', {
+            pathCount: 1,
+        });
     });
 
     it('does not start a listener when there are no paths to watch', async () => {
@@ -153,10 +154,7 @@ describe('WatcherService', () => {
 
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(1, ['C:/watch']);
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(2, []);
-        expect(console.error).toHaveBeenCalledWith(
-            '[TauriListener] Failed to listen for folder-change-event',
-            expect.any(Error)
-        );
+        expect(console.error).toHaveBeenCalledWith('[TauriListener] Failed to listen for folder-change-event', expect.any(Error));
     });
 
     it('clears failed starts so a later request can retry', async () => {
@@ -171,11 +169,7 @@ describe('WatcherService', () => {
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(1, ['C:/watch']);
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(2, ['C:/watch']);
         expect(mockedListen).toHaveBeenCalledTimes(1);
-        expect(console.error).toHaveBeenCalledWith(
-            '[WatcherService] Failed to start native watcher:',
-            { pathCount: 1 },
-            'watcher refused'
-        );
+        expect(console.error).toHaveBeenCalledWith('[WatcherService] Failed to start native watcher:', { pathCount: 1 }, 'watcher refused');
     });
 
     it('formats Error start failures and stops a defensive active state without a listener', async () => {
@@ -207,9 +201,11 @@ describe('WatcherService', () => {
     it('cleans up a listener that becomes ready after a stop invalidates its start', async () => {
         let resolveListen!: (unlisten: () => void) => void;
         const unlisten = vi.fn();
-        mockedListen.mockReturnValueOnce(new Promise((resolve) => {
-            resolveListen = resolve;
-        }));
+        mockedListen.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveListen = resolve;
+            })
+        );
         const service = new WatcherService();
 
         const startPromise = service.startWatching(['C:/watch'], vi.fn());

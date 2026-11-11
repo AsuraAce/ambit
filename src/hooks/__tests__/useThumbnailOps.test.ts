@@ -66,11 +66,13 @@ describe('useThumbnailOps', () => {
     const setup = (images: AIImage[] = []) => {
         const setImages = vi.fn();
         const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
-        const hook = renderHook(() => useThumbnailOps({
-            images,
-            setImages,
-            refreshCollectionThumbnails,
-        }));
+        const hook = renderHook(() =>
+            useThumbnailOps({
+                images,
+                setImages,
+                refreshCollectionThumbnails,
+            })
+        );
         return { ...hook, setImages, refreshCollectionThumbnails };
     };
 
@@ -122,10 +124,7 @@ describe('useThumbnailOps', () => {
         const candidate = image('one');
         const updated = { ...candidate, thumbnailUrl: 'C:/thumb.webp' };
         mocks.getImagesByIds.mockResolvedValue([candidate]);
-        mocks.regenerate.mockImplementation(async (
-            _images: AIImage[],
-            progress: (current: number, total: number) => void
-        ) => {
+        mocks.regenerate.mockImplementation(async (_images: AIImage[], progress: (current: number, total: number) => void) => {
             progress(1, 1);
             return [updated];
         });
@@ -148,16 +147,14 @@ describe('useThumbnailOps', () => {
 
     it('forwards callback progress and reports cancellation after partial updates', async () => {
         const candidate = image('one');
-        mocks.regenerate.mockImplementation(async (
-            _images: AIImage[],
-            progress: (current: number, total: number) => void,
-            signal: AbortSignal
-        ) => {
-            progress(1, 2);
-            useLibraryStore.getState().thumbnailAbortController?.abort();
-            expect(signal.aborted).toBe(true);
-            return [{ ...candidate, thumbnailUrl: 'C:/partial.webp' }];
-        });
+        mocks.regenerate.mockImplementation(
+            async (_images: AIImage[], progress: (current: number, total: number) => void, signal: AbortSignal) => {
+                progress(1, 2);
+                useLibraryStore.getState().thumbnailAbortController?.abort();
+                expect(signal.aborted).toBe(true);
+                return [{ ...candidate, thumbnailUrl: 'C:/partial.webp' }];
+            }
+        );
         const onProgress = vi.fn();
         const { result } = setup([candidate]);
 

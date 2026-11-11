@@ -20,18 +20,34 @@ const counts: LibraryScopeCounts = {
 };
 
 describe('useLibraryScopeCounts', () => {
-    beforeEach(() => { vi.clearAllMocks(); mocks.useBrowser = false; mocks.count.mockResolvedValue(counts); });
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.useBrowser = false;
+        mocks.count.mockResolvedValue(counts);
+    });
     const setup = (enabled = false) => {
         const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-        const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-        const props = { filters: createDefaultFilters(), settings: createDefaultAppSettings(), privacyEnabled: false, allCollections: [] as Collection[], enabled };
+        const wrapper = ({ children }: { children: React.ReactNode }) => (
+            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        );
+        const props = {
+            filters: createDefaultFilters(),
+            settings: createDefaultAppSettings(),
+            privacyEnabled: false,
+            allCollections: [] as Collection[],
+            enabled,
+        };
         return { client, props, ...renderHook(useLibraryScopeCounts, { wrapper, initialProps: props }) };
     };
 
     it('waits for admission, then counts without restricting media or image kind', async () => {
         const hook = setup();
         expect(mocks.count).not.toHaveBeenCalled();
-        hook.rerender({ ...hook.props, enabled: true, filters: createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph', searchQuery: 'portrait' }) });
+        hook.rerender({
+            ...hook.props,
+            enabled: true,
+            filters: createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph', searchQuery: 'portrait' }),
+        });
         await waitFor(() => expect(hook.result.current.data).toEqual(counts));
         expect(mocks.count.mock.calls[0][0]).toContain('prompt');
         expect(mocks.count.mock.calls[0][0]).not.toContain('media_type');
@@ -40,7 +56,12 @@ describe('useLibraryScopeCounts', () => {
 
     it('isolates late search responses and retries failures without image-cache work', async () => {
         let finishOld!: (value: LibraryScopeCounts) => void;
-        mocks.count.mockReturnValueOnce(new Promise<LibraryScopeCounts>(resolve => { finishOld = resolve; }))
+        mocks.count
+            .mockReturnValueOnce(
+                new Promise<LibraryScopeCounts>((resolve) => {
+                    finishOld = resolve;
+                })
+            )
             .mockRejectedValueOnce(new Error('counts failed'));
         const hook = setup(true);
         await waitFor(() => expect(mocks.count).toHaveBeenCalledTimes(1));
@@ -48,7 +69,9 @@ describe('useLibraryScopeCounts', () => {
         await waitFor(() => expect(hook.result.current.isError).toBe(true));
         await act(async () => finishOld(counts));
         expect(hook.result.current.data).toBeUndefined();
-        await act(async () => { await hook.result.current.refetch(); });
+        await act(async () => {
+            await hook.result.current.refetch();
+        });
         await waitFor(() => expect(hook.result.current.data).toEqual(counts));
         expect(hook.client.getQueriesData({ queryKey: ['images'] })).toEqual([]);
     });
@@ -58,12 +81,25 @@ describe('useLibraryScopeCounts', () => {
         await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
         hook.rerender({ ...hook.props, enabled: true, filters: createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph' }) });
         expect(mocks.count).toHaveBeenCalledTimes(1);
-        await act(async () => { await hook.client.invalidateQueries({ queryKey: ['libraryStats'] }); });
+        await act(async () => {
+            await hook.client.invalidateQueries({ queryKey: ['libraryStats'] });
+        });
         expect(mocks.count).toHaveBeenCalledTimes(2);
         act(() => useLibraryStore.getState().incrementFacetCacheVersion());
         await waitFor(() => expect(mocks.count).toHaveBeenCalledTimes(3));
-        const collection: Collection = { id: 'smart', name: 'Smart', createdAt: 1, imageIds: [], filters: createDefaultFilters({ searchQuery: 'portrait' }) };
-        const smartProps = { ...hook.props, enabled: true, filters: createDefaultFilters({ collectionId: 'smart' }), allCollections: [collection] };
+        const collection: Collection = {
+            id: 'smart',
+            name: 'Smart',
+            createdAt: 1,
+            imageIds: [],
+            filters: createDefaultFilters({ searchQuery: 'portrait' }),
+        };
+        const smartProps = {
+            ...hook.props,
+            enabled: true,
+            filters: createDefaultFilters({ collectionId: 'smart' }),
+            allCollections: [collection],
+        };
         hook.rerender(smartProps);
         await waitFor(() => expect(mocks.count).toHaveBeenCalledTimes(4));
         expect(mocks.count.mock.calls[3][1]).toContain('%portrait%');
@@ -86,12 +122,20 @@ describe('useLibraryScopeCounts', () => {
         expect(mocks.count.mock.calls[1][0]).toContain('privacy_hidden = 0');
         const ownerSettings = createDefaultAppSettings({ invokeAiPath: 'C:/Invoke' });
         const scope = { dbPath: 'C:/Invoke/databases/invokeai.db', imagesRoot: 'C:/Invoke' };
-        act(() => useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'C:/Invoke', scope: { ...scope, mode: 'all' } }));
+        act(() =>
+            useInvokeOwnerScopeStore
+                .getState()
+                .setOwnerScopeState({ status: 'ready', rootPath: 'C:/Invoke', scope: { ...scope, mode: 'all' } })
+        );
         mocks.count.mockResolvedValue(counts);
         hook.rerender({ ...hook.props, enabled: true, settings: ownerSettings });
         await waitFor(() => expect(hook.result.current.data).toEqual(counts));
         mocks.count.mockReturnValue(new Promise(() => {}));
-        act(() => useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'C:/Invoke', scope: { ...scope, mode: 'owner', ownerId: 'other' } }));
+        act(() =>
+            useInvokeOwnerScopeStore
+                .getState()
+                .setOwnerScopeState({ status: 'ready', rootPath: 'C:/Invoke', scope: { ...scope, mode: 'owner', ownerId: 'other' } })
+        );
         expect(hook.result.current.data).toBeUndefined();
     });
 

@@ -1,4 +1,3 @@
-
 import { vi } from 'vitest';
 
 // Mock Tauri Core
@@ -13,7 +12,7 @@ vi.mock('@tauri-apps/api/app', () => ({
 
 // Mock Tauri Event
 vi.mock('@tauri-apps/api/event', () => ({
-    listen: vi.fn().mockResolvedValue(() => { }),
+    listen: vi.fn().mockResolvedValue(() => {}),
     emit: vi.fn(),
 }));
 
@@ -79,16 +78,16 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
         LocalData: 11,
         Resource: 12,
         Runtime: 13,
-    }
+    },
 }));
 
 // Mock Worker
 class MockWorker {
     onmessage: ((ev: MessageEvent) => any) | null = null;
-    addEventListener(ev: string, handler: any) { }
-    removeEventListener(ev: string, handler: any) { }
-    postMessage(data: any) { }
-    terminate() { }
+    addEventListener(ev: string, handler: any) {}
+    removeEventListener(ev: string, handler: any) {}
+    postMessage(data: any) {}
+    terminate() {}
 }
 vi.spyOn(MockWorker.prototype, 'addEventListener');
 vi.spyOn(MockWorker.prototype, 'postMessage');

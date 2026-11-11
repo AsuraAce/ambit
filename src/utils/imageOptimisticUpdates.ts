@@ -7,9 +7,7 @@ export const applyOptimisticPinOrder = (
     prioritizePinned: boolean
 ): AIImage[] => {
     const idSet = new Set(ids);
-    const updated = images.map(image => (
-        idSet.has(image.id) ? { ...image, isPinned } : image
-    ));
+    const updated = images.map((image) => (idSet.has(image.id) ? { ...image, isPinned } : image));
 
     if (!prioritizePinned) return updated;
 

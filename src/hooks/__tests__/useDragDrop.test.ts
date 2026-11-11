@@ -7,16 +7,12 @@ type TransferOverrides = Partial<DataTransfer> & {
     files?: FileList | Array<File & { path?: string }>;
 };
 
-const dragEvent = (
-    type: string,
-    transfer?: TransferOverrides,
-    coordinates: { clientX?: number; clientY?: number } = {}
-): DragEvent => {
+const dragEvent = (type: string, transfer?: TransferOverrides, coordinates: { clientX?: number; clientY?: number } = {}): DragEvent => {
     const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent;
     Object.defineProperties(event, {
         dataTransfer: { value: transfer, configurable: true },
         clientX: { value: coordinates.clientX ?? 1, configurable: true },
-        clientY: { value: coordinates.clientY ?? 1, configurable: true }
+        clientY: { value: coordinates.clientY ?? 1, configurable: true },
     });
     return event;
 };
@@ -121,10 +117,14 @@ describe('useDragDrop', () => {
         const pathless = new File([], 'b.png');
         renderHook(() => useDragDrop({ onImportPaths, onImportFiles }));
 
-        act(() => window.dispatchEvent(dragEvent('drop', {
-            types: ['Files'],
-            files: fileList(withPath, pathless)
-        })));
+        act(() =>
+            window.dispatchEvent(
+                dragEvent('drop', {
+                    types: ['Files'],
+                    files: fileList(withPath, pathless),
+                })
+            )
+        );
 
         expect(onImportPaths).toHaveBeenCalledWith(['C:/images/a.png']);
         expect(onImportFiles).not.toHaveBeenCalled();
@@ -145,10 +145,14 @@ describe('useDragDrop', () => {
         const first = vi.fn();
         const second = vi.fn();
         const files = fileList(new File([], 'latest.png'));
-        const { rerender } = renderHook(({ callback }) => useDragDrop({
-            onImportPaths,
-            onImportFiles: callback
-        }), { initialProps: { callback: first } });
+        const { rerender } = renderHook(
+            ({ callback }) =>
+                useDragDrop({
+                    onImportPaths,
+                    onImportFiles: callback,
+                }),
+            { initialProps: { callback: first } }
+        );
 
         rerender({ callback: second });
         act(() => window.dispatchEvent(dragEvent('drop', { types: ['Files'], files })));

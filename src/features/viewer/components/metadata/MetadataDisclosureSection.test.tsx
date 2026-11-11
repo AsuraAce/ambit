@@ -11,7 +11,11 @@ describe('MetadataDisclosureSection', () => {
             <MetadataDisclosureSection
                 title="Generation parameters"
                 icon={SlidersHorizontal}
-                trailing={<button type="button" onClick={onAction}>Copy</button>}
+                trailing={
+                    <button type="button" onClick={onAction}>
+                        Copy
+                    </button>
+                }
             >
                 <p>Parameter content</p>
             </MetadataDisclosureSection>

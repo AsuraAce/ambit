@@ -39,7 +39,11 @@ describe('StartupBoundary', () => {
             markTransportUnavailable: vi.fn(),
             setFailureLaunchId: vi.fn(),
         };
-        render(<StartupBoundary><BrokenChild /></StartupBoundary>);
+        render(
+            <StartupBoundary>
+                <BrokenChild />
+            </StartupBoundary>
+        );
 
         const fallback = screen.getByRole('alert');
         expect(fallback.textContent).toContain('Ambit couldn’t start');
@@ -67,11 +71,19 @@ describe('StartupBoundary', () => {
             if (shouldThrow) throw new Error('private runtime detail');
             return <div>Application content</div>;
         };
-        const view = render(<StartupBoundary><ConditionalChild /></StartupBoundary>);
+        const view = render(
+            <StartupBoundary>
+                <ConditionalChild />
+            </StartupBoundary>
+        );
 
         act(() => markListener?.('ready'));
         shouldThrow = true;
-        view.rerender(<StartupBoundary><ConditionalChild /></StartupBoundary>);
+        view.rerender(
+            <StartupBoundary>
+                <ConditionalChild />
+            </StartupBoundary>
+        );
 
         expect(screen.getByRole('alert').textContent).toContain('Something went wrong');
         expect(screen.getByRole('alert').textContent).not.toContain('Ambit couldn’t start');

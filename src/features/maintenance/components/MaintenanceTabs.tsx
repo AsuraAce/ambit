@@ -27,12 +27,10 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
     const tabRefs = React.useRef<Partial<Record<MaintenanceTab, HTMLButtonElement | null>>>({});
 
     // Hide Intermediates tab if there are no intermediate images
-    const tabs = MAINTENANCE_TABS.filter(tab =>
-        tab.id !== 'intermediates' || intermediatesCount > 0 || activeTab === 'intermediates'
-    );
+    const tabs = MAINTENANCE_TABS.filter((tab) => tab.id !== 'intermediates' || intermediatesCount > 0 || activeTab === 'intermediates');
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tab: MaintenanceTab) => {
-        const currentIndex = tabs.findIndex(candidate => candidate.id === tab);
+        const currentIndex = tabs.findIndex((candidate) => candidate.id === tab);
         if (currentIndex === -1) return;
 
         let nextIndex: number | null = null;
@@ -60,7 +58,9 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
                         </div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gallery Maintenance</h2>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">Organize your library, resolve conflicts, and manage removed items.</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">
+                        Organize your library, resolve conflicts, and manage removed items.
+                    </p>
                 </div>
 
                 <div
@@ -71,7 +71,9 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}
-                            ref={element => { tabRefs.current[tab.id] = element; }}
+                            ref={(element) => {
+                                tabRefs.current[tab.id] = element;
+                            }}
                             id={`maintenance-tab-${tab.id}`}
                             type="button"
                             role="tab"
@@ -82,10 +84,11 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
                                 if (activeTab !== tab.id) onTabChange(tab.id);
                             }}
                             onKeyDown={(event) => handleKeyDown(event, tab.id)}
-                            className={`flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-800 ${activeTab === tab.id
-                                ? 'z-10 bg-white text-sage-600 shadow-md dark:bg-zinc-700'
-                                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-                                }`}
+                            className={`flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-800 ${
+                                activeTab === tab.id
+                                    ? 'z-10 bg-white text-sage-600 shadow-md dark:bg-zinc-700'
+                                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                            }`}
                         >
                             <span className={activeTab === tab.id ? tab.color : 'text-current'}>{tab.label}</span>
                         </button>

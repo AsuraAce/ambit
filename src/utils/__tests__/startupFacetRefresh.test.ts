@@ -3,17 +3,17 @@ import { countTouchedFacetResources, refreshStartupFacetCache } from '../startup
 
 const mocks = vi.hoisted(() => ({
     rebuildFacetCacheStrict: vi.fn(),
-    refreshFacetCacheForResourcesStrict: vi.fn()
+    refreshFacetCacheForResourcesStrict: vi.fn(),
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCacheStrict: mocks.rebuildFacetCacheStrict,
-    refreshFacetCacheForResourcesStrict: mocks.refreshFacetCacheForResourcesStrict
+    refreshFacetCacheForResourcesStrict: mocks.refreshFacetCacheForResourcesStrict,
 }));
 
 vi.mock('../liveWatchPerf', () => ({
     elapsedMs: vi.fn(() => 1),
-    liveWatchNow: vi.fn(() => 1000)
+    liveWatchNow: vi.fn(() => 1000),
 }));
 
 const touchedResources = {
@@ -23,7 +23,7 @@ const touchedResources = {
     hypernetworks: [],
     controlNets: [],
     ipAdapters: [],
-    tools: ['InvokeAI']
+    tools: ['InvokeAI'],
 };
 
 describe('refreshStartupFacetCache', () => {
@@ -42,7 +42,7 @@ describe('refreshStartupFacetCache', () => {
             touchedFacetTypes: ['checkpoints', 'loras', 'tools'],
             touchedFacetResources: touchedResources,
             orphanScanEnabled: false,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         expect(result.strategy).toBe('resource-incremental');
@@ -66,10 +66,10 @@ describe('refreshStartupFacetCache', () => {
                 hypernetworks: [],
                 controlNets: [],
                 ipAdapters: [],
-                tools: []
+                tools: [],
             },
             orphanScanEnabled: false,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         expect(result.strategy).toBe('skipped');
@@ -88,7 +88,7 @@ describe('refreshStartupFacetCache', () => {
             touchedFacetTypes: ['checkpoints'],
             touchedFacetResources: touchedResources,
             orphanScanEnabled: false,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         expect(result.strategy).toBe('full');
@@ -107,7 +107,7 @@ describe('refreshStartupFacetCache', () => {
             touchedFacetTypes: ['checkpoints'],
             touchedFacetResources: touchedResources,
             orphanScanEnabled: true,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         expect(result.strategy).toBe('full');
@@ -126,7 +126,7 @@ describe('refreshStartupFacetCache', () => {
             touchedFacetTypes: ['loras'],
             touchedFacetResources: touchedResources,
             orphanScanEnabled: false,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         expect(result.strategy).toBe('fallback-full');
@@ -138,8 +138,13 @@ describe('refreshStartupFacetCache', () => {
 
     it('uses a full rebuild when touched resource details are missing or empty', async () => {
         const empty = {
-            checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
-            controlNets: [], ipAdapters: [], tools: [],
+            checkpoints: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: [],
         };
 
         const missing = await refreshStartupFacetCache({

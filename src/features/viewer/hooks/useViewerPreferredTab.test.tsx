@@ -50,7 +50,7 @@ describe('useViewerPreferredTab', () => {
         settingsState.settings.viewerPreferredTab = 'workflow';
         const { result, rerender } = renderHook(
             ({ tabs }: { tabs: ('details' | 'metadata' | 'workflow')[] }) => useViewerPreferredTab(tabs),
-            { initialProps: { tabs: ['details', 'metadata'] } },
+            { initialProps: { tabs: ['details', 'metadata'] } }
         );
 
         expect(result.current.activeTab).toBe('metadata');

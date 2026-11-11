@@ -25,13 +25,13 @@ vi.mock('../ImageCard', () => ({
     ImageCard: (props: CapturedImageCardProps) => {
         imageCardCapture.current = props;
         return <div data-testid="image-card" />;
-    }
+    },
 }));
 
 vi.mock('../../../../bindings', () => ({
     commands: {
-        verifyImagePaths: verifyImagePathsMock
-    }
+        verifyImagePaths: verifyImagePathsMock,
+    },
 }));
 
 const selectedIds = new Set<string>();
@@ -54,8 +54,8 @@ const image: AIImage = {
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: '',
-        negativePrompt: ''
-    }
+        negativePrompt: '',
+    },
 };
 
 const layoutPos = { x: 0, y: 0, width: 120, height: 90 };
@@ -66,7 +66,7 @@ const baseStyle: React.CSSProperties = {
     left: 0,
     width: 120,
     height: 90,
-    transform: 'translate3d(0px, 0px, 0)'
+    transform: 'translate3d(0px, 0px, 0)',
 };
 
 const createProps = (style: React.CSSProperties): React.ComponentProps<typeof GridItem> => ({
@@ -82,7 +82,7 @@ const createProps = (style: React.CSSProperties): React.ComponentProps<typeof Gr
     onTogglePin: () => undefined,
     onToggleFavorite: () => undefined,
     onContextMenu: () => undefined,
-    layoutPos
+    layoutPos,
 });
 
 const getGridItemRoot = () => {
@@ -115,9 +115,10 @@ describe('GridItem memoized motion styles', () => {
             <GridItem
                 {...createProps({
                     ...baseStyle,
-                    transition: 'transform 260ms cubic-bezier(0.2, 1.12, 0.22, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    transition:
+                        'transform 260ms cubic-bezier(0.2, 1.12, 0.22, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1)',
                     willChange: 'transform',
-                    opacity: 0.98
+                    opacity: 0.98,
                 })}
             />
         );
@@ -139,15 +140,20 @@ describe('GridItem memoized motion styles', () => {
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
         const onContextMenu = vi.fn();
-        render(<GridItem {...createProps(baseStyle)} {...{
-            onClick,
-            onToggleSelection,
-            onToggleFavorite,
-            onTogglePin,
-            onContextMenu,
-            isSelected: true,
-            isThumbnail: true,
-        }} />);
+        render(
+            <GridItem
+                {...createProps(baseStyle)}
+                {...{
+                    onClick,
+                    onToggleSelection,
+                    onToggleFavorite,
+                    onTogglePin,
+                    onContextMenu,
+                    isSelected: true,
+                    isThumbnail: true,
+                }}
+            />
+        );
         const card = imageCardCapture.current!;
         const event = {
             stopPropagation: vi.fn(),
@@ -197,7 +203,9 @@ describe('GridItem memoized motion styles', () => {
         imageCardCapture.current!.onDragStart({
             dataTransfer: {
                 effectAllowed: 'none',
-                setData: () => { throw error; },
+                setData: () => {
+                    throw error;
+                },
             },
         } as unknown as React.DragEvent);
 
@@ -231,20 +239,20 @@ describe('GridItem memoized motion styles', () => {
         consoleWarn.mockRestore();
     });
 
-    it.each([
-        [{ status: 'error', error: 'verification failed' }],
-        [new Error('offline')],
-    ])('logs path verification failures', async (outcome) => {
-        if (outcome instanceof Error) verifyImagePathsMock.mockRejectedValueOnce(outcome);
-        else verifyImagePathsMock.mockResolvedValueOnce(outcome);
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        render(<GridItem {...createProps(baseStyle)} />);
+    it.each([[{ status: 'error', error: 'verification failed' }], [new Error('offline')]])(
+        'logs path verification failures',
+        async (outcome) => {
+            if (outcome instanceof Error) verifyImagePathsMock.mockRejectedValueOnce(outcome);
+            else verifyImagePathsMock.mockResolvedValueOnce(outcome);
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            render(<GridItem {...createProps(baseStyle)} />);
 
-        imageCardCapture.current!.onImageError();
+            imageCardCapture.current!.onImageError();
 
-        await waitFor(() => expect(consoleError).toHaveBeenCalled());
-        consoleError.mockRestore();
-    });
+            await waitFor(() => expect(consoleError).toHaveBeenCalled());
+            consoleError.mockRestore();
+        }
+    );
 
     it('does not verify known-missing images or launch duplicate verification', async () => {
         const pending = new Promise(() => undefined);
@@ -273,10 +281,7 @@ describe('GridItem memoized motion styles', () => {
     });
 
     it('renders an unpinned stack badge', () => {
-        render(<GridItem
-            {...createProps(baseStyle)}
-            image={{ ...image, stack: [image, { ...image, id: 'image-2' }] }}
-        />);
+        render(<GridItem {...createProps(baseStyle)} image={{ ...image, stack: [image, { ...image, id: 'image-2' }] }} />);
 
         expect(screen.getByTitle('2 versions stacked').className).not.toContain('mt-8');
     });

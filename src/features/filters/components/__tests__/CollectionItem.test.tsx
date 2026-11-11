@@ -6,9 +6,7 @@ import { CollectionItem } from '../CollectionItem';
 import { createDefaultFilters } from '../../../../utils/filterState';
 
 vi.mock('../../../../components/ui/PrivacyAwareThumbnail', () => ({
-    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => (
-        <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />
-    )
+    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />,
 }));
 
 const filters: FilterState = {
@@ -24,7 +22,7 @@ const filters: FilterState = {
     ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
-    collectionId: null
+    collectionId: null,
 };
 
 const baseCollection: Collection = {
@@ -34,19 +32,19 @@ const baseCollection: Collection = {
     count: 1,
     createdAt: 1,
     updatedAt: 1,
-    source: 'ambit'
+    source: 'ambit',
 };
 
 const smartCollection: Collection = {
     ...baseCollection,
     id: 'smart-collection-1',
     name: 'Smart Collection One',
-    filters: createDefaultFilters({ dateRange: 'today' })
+    filters: createDefaultFilters({ dateRange: 'today' }),
 };
 
-const noopDrag = (_event: React.DragEvent, _collectionId: string) => { };
-const noopDrop = (_event: React.DragEvent, _collectionId: string) => { };
-const noopContextMenu = (_event: React.MouseEvent, _collectionId: string) => { };
+const noopDrag = (_event: React.DragEvent, _collectionId: string) => {};
+const noopDrop = (_event: React.DragEvent, _collectionId: string) => {};
+const noopContextMenu = (_event: React.MouseEvent, _collectionId: string) => {};
 
 const renderCollectionItem = (
     collection: Collection,
@@ -54,34 +52,37 @@ const renderCollectionItem = (
         isThumbnailPending?: boolean;
         viewMode?: 'grid' | 'list';
     } = {}
-) => render(
-    <CollectionItem
-        col={collection}
-        filters={filters}
-        setFilters={() => { }}
-        editingColId={null}
-        editName=""
-        setEditName={() => { }}
-        setEditingColId={() => { }}
-        handleRenameSubmit={() => { }}
-        handleDragEnter={noopDrag}
-        handleDragOver={noopDrag}
-        handleDragLeave={() => { }}
-        handleDrop={noopDrop}
-        handleContextMenu={noopContextMenu}
-        dropTargetId={null}
-        viewMode={options.viewMode ?? 'list'}
-        isThumbnailPending={options.isThumbnailPending}
-    />
-);
+) =>
+    render(
+        <CollectionItem
+            col={collection}
+            filters={filters}
+            setFilters={() => {}}
+            editingColId={null}
+            editName=""
+            setEditName={() => {}}
+            setEditingColId={() => {}}
+            handleRenameSubmit={() => {}}
+            handleDragEnter={noopDrag}
+            handleDragOver={noopDrag}
+            handleDragLeave={() => {}}
+            handleDrop={noopDrop}
+            handleContextMenu={noopContextMenu}
+            dropTargetId={null}
+            viewMode={options.viewMode ?? 'list'}
+            isThumbnailPending={options.isThumbnailPending}
+        />
+    );
 
 describe('CollectionItem thumbnail hydration states', () => {
-    it.each([['pending', 'Updating count'], ['failed', 'Count unavailable']] as const)(
-        'labels an ordinary %s count without exposing an old value', (countState, label) => {
-            renderCollectionItem({ ...baseCollection, count: 123, countState });
-            expect(screen.getByLabelText(label).textContent).toBe('\u2014');
-            expect(screen.queryByText('123')).toBeNull();
-        });
+    it.each([
+        ['pending', 'Updating count'],
+        ['failed', 'Count unavailable'],
+    ] as const)('labels an ordinary %s count without exposing an old value', (countState, label) => {
+        renderCollectionItem({ ...baseCollection, count: 123, countState });
+        expect(screen.getByLabelText(label).textContent).toBe('\u2014');
+        expect(screen.queryByText('123')).toBeNull();
+    });
     it('renders a skeleton while a collection thumbnail is pending', () => {
         renderCollectionItem(baseCollection, { isThumbnailPending: true });
 
@@ -93,7 +94,7 @@ describe('CollectionItem thumbnail hydration states', () => {
     it('renders the fallback once a collection has no thumbnail pending', () => {
         renderCollectionItem({
             ...baseCollection,
-            count: 0
+            count: 0,
         });
 
         expect(screen.getByTestId('collection-thumbnail-fallback')).toBeTruthy();
@@ -102,10 +103,13 @@ describe('CollectionItem thumbnail hydration states', () => {
     });
 
     it('renders an existing thumbnail instead of the pending skeleton', () => {
-        renderCollectionItem({
-            ...baseCollection,
-            thumbnail: 'asset://collection-thumb.webp'
-        }, { isThumbnailPending: true });
+        renderCollectionItem(
+            {
+                ...baseCollection,
+                thumbnail: 'asset://collection-thumb.webp',
+            },
+            { isThumbnailPending: true }
+        );
 
         expect(screen.getByTestId('privacy-aware-thumbnail').getAttribute('data-src')).toBe('asset://collection-thumb.webp');
         expect(screen.queryByTestId('collection-thumbnail-skeleton')).toBeNull();
@@ -115,7 +119,7 @@ describe('CollectionItem thumbnail hydration states', () => {
     it('renders the pending skeleton in grid mode', () => {
         renderCollectionItem(baseCollection, {
             isThumbnailPending: true,
-            viewMode: 'grid'
+            viewMode: 'grid',
         });
 
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
@@ -130,11 +134,14 @@ describe('CollectionItem thumbnail hydration states', () => {
     });
 
     it('renders a cached smart collection thumbnail instead of the pending skeleton', () => {
-        renderCollectionItem({
-            ...smartCollection,
-            thumbnail: 'asset://cached-smart-thumb.webp',
-            thumbnailSourceKind: 'dynamic'
-        }, { isThumbnailPending: true });
+        renderCollectionItem(
+            {
+                ...smartCollection,
+                thumbnail: 'asset://cached-smart-thumb.webp',
+                thumbnailSourceKind: 'dynamic',
+            },
+            { isThumbnailPending: true }
+        );
 
         expect(screen.getByTestId('privacy-aware-thumbnail').getAttribute('data-src')).toBe('asset://cached-smart-thumb.webp');
         expect(screen.queryByTestId('collection-thumbnail-skeleton')).toBeNull();
@@ -161,15 +168,15 @@ describe('CollectionItem thumbnail hydration states', () => {
             <CollectionItem
                 col={unknownSmart}
                 filters={filters}
-                setFilters={() => { }}
+                setFilters={() => {}}
                 editingColId={null}
                 editName=""
-                setEditName={() => { }}
-                setEditingColId={() => { }}
-                handleRenameSubmit={() => { }}
+                setEditName={() => {}}
+                setEditingColId={() => {}}
+                handleRenameSubmit={() => {}}
                 handleDragEnter={noopDrag}
                 handleDragOver={noopDrag}
-                handleDragLeave={() => { }}
+                handleDragLeave={() => {}}
                 handleDrop={noopDrop}
                 handleContextMenu={noopContextMenu}
                 dropTargetId={null}
@@ -182,15 +189,15 @@ describe('CollectionItem thumbnail hydration states', () => {
             <CollectionItem
                 col={{ ...unknownSmart, count: 0 }}
                 filters={filters}
-                setFilters={() => { }}
+                setFilters={() => {}}
                 editingColId={null}
                 editName=""
-                setEditName={() => { }}
-                setEditingColId={() => { }}
-                handleRenameSubmit={() => { }}
+                setEditName={() => {}}
+                setEditingColId={() => {}}
+                handleRenameSubmit={() => {}}
                 handleDragEnter={noopDrag}
                 handleDragOver={noopDrag}
-                handleDragLeave={() => { }}
+                handleDragLeave={() => {}}
                 handleDrop={noopDrop}
                 handleContextMenu={noopContextMenu}
                 dropTargetId={null}
@@ -206,10 +213,20 @@ describe('CollectionItem thumbnail hydration states', () => {
         const handleRenameSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
         render(
             <CollectionItem
-                col={baseCollection} filters={filters} setFilters={vi.fn()} editingColId={baseCollection.id} editName="Draft"
-                setEditName={setEditName} setEditingColId={setEditingColId} handleRenameSubmit={handleRenameSubmit}
-                handleDragEnter={noopDrag} handleDragOver={noopDrag} handleDragLeave={vi.fn()} handleDrop={noopDrop}
-                handleContextMenu={noopContextMenu} dropTargetId={null}
+                col={baseCollection}
+                filters={filters}
+                setFilters={vi.fn()}
+                editingColId={baseCollection.id}
+                editName="Draft"
+                setEditName={setEditName}
+                setEditingColId={setEditingColId}
+                handleRenameSubmit={handleRenameSubmit}
+                handleDragEnter={noopDrag}
+                handleDragOver={noopDrag}
+                handleDragLeave={vi.fn()}
+                handleDrop={noopDrop}
+                handleContextMenu={noopContextMenu}
+                dropTargetId={null}
             />
         );
         const input = screen.getByDisplayValue('Draft');
@@ -229,14 +246,28 @@ describe('CollectionItem thumbnail hydration states', () => {
         const handleContextMenu = vi.fn();
         const { container } = render(
             <CollectionItem
-                col={baseCollection} filters={filters} setFilters={vi.fn()} editingColId={null} editName=""
-                setEditName={vi.fn()} setEditingColId={vi.fn()} handleRenameSubmit={vi.fn()}
-                handleDragEnter={handleDragEnter} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave}
-                handleDrop={handleDrop} handleContextMenu={handleContextMenu} dropTargetId={baseCollection.id}
+                col={baseCollection}
+                filters={filters}
+                setFilters={vi.fn()}
+                editingColId={null}
+                editName=""
+                setEditName={vi.fn()}
+                setEditingColId={vi.fn()}
+                handleRenameSubmit={vi.fn()}
+                handleDragEnter={handleDragEnter}
+                handleDragOver={handleDragOver}
+                handleDragLeave={handleDragLeave}
+                handleDrop={handleDrop}
+                handleContextMenu={handleContextMenu}
+                dropTargetId={baseCollection.id}
             />
         );
         const root = container.firstElementChild as HTMLElement;
-        fireEvent.dragEnter(root); fireEvent.dragOver(root); fireEvent.dragLeave(root); fireEvent.drop(root); fireEvent.contextMenu(root);
+        fireEvent.dragEnter(root);
+        fireEvent.dragOver(root);
+        fireEvent.dragLeave(root);
+        fireEvent.drop(root);
+        fireEvent.contextMenu(root);
         expect(handleDragEnter).toHaveBeenCalledWith(expect.anything(), baseCollection.id);
         expect(handleDragOver).toHaveBeenCalledWith(expect.anything(), baseCollection.id);
         expect(handleDragLeave).toHaveBeenCalledTimes(1);
@@ -245,13 +276,25 @@ describe('CollectionItem thumbnail hydration states', () => {
         expect(root.className).toContain('ring-2');
     });
 
-    it.each(['image', 'video'] as const)('selects and deselects collections from %s without restoring an old scope', mediaType => {
+    it.each(['image', 'video'] as const)('selects and deselects collections from %s without restoring an old scope', (mediaType) => {
         let current = createDefaultFilters({ mediaType, sourceKind: 'photograph', searchQuery: 'old search' });
-        const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => { current = update(current); });
+        const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => {
+            current = update(current);
+        });
         const shared = {
-            col: baseCollection, setFilters, editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
-            handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
-            handleDrop: noopDrop, handleContextMenu: noopContextMenu, dropTargetId: null
+            col: baseCollection,
+            setFilters,
+            editingColId: null,
+            editName: '',
+            setEditName: vi.fn(),
+            setEditingColId: vi.fn(),
+            handleRenameSubmit: vi.fn(),
+            handleDragEnter: noopDrag,
+            handleDragOver: noopDrag,
+            handleDragLeave: vi.fn(),
+            handleDrop: noopDrop,
+            handleContextMenu: noopContextMenu,
+            dropTargetId: null,
         };
         const { rerender } = render(<CollectionItem {...shared} filters={current} />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
@@ -276,11 +319,34 @@ describe('CollectionItem thumbnail hydration states', () => {
     it('renders archived, pinned, smart, thumbnail, count, and color variants', () => {
         const colors = ['red', 'orange', 'green', 'blue', 'purple', 'unknown', undefined];
         const shared = {
-            filters, setFilters: vi.fn(), editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
-            handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
-            handleDrop: noopDrop, handleContextMenu: noopContextMenu, dropTargetId: null
+            filters,
+            setFilters: vi.fn(),
+            editingColId: null,
+            editName: '',
+            setEditName: vi.fn(),
+            setEditingColId: vi.fn(),
+            handleRenameSubmit: vi.fn(),
+            handleDragEnter: noopDrag,
+            handleDragOver: noopDrag,
+            handleDragLeave: vi.fn(),
+            handleDrop: noopDrop,
+            handleContextMenu: noopContextMenu,
+            dropTargetId: null,
         };
-        const { container, rerender } = render(<CollectionItem {...shared} col={{ ...smartCollection, thumbnail: 'thumb', isArchived: true, isPinned: true, color: 'red', count: 2, imageIds: ['a', 'b'] }} />);
+        const { container, rerender } = render(
+            <CollectionItem
+                {...shared}
+                col={{
+                    ...smartCollection,
+                    thumbnail: 'thumb',
+                    isArchived: true,
+                    isPinned: true,
+                    color: 'red',
+                    count: 2,
+                    imageIds: ['a', 'b'],
+                }}
+            />
+        );
         expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
         expect(screen.getByText('2')).toBeTruthy();
         expect(container.querySelector('.bg-red-500')).toBeTruthy();
@@ -297,22 +363,59 @@ describe('CollectionItem thumbnail hydration states', () => {
 
     it('covers grid thumbnails and colored list hydration variants', () => {
         const shared = {
-            filters: { ...filters, collectionId: baseCollection.id }, setFilters: vi.fn(), editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
-            handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
-            handleDrop: noopDrop, handleContextMenu: noopContextMenu
+            filters: { ...filters, collectionId: baseCollection.id },
+            setFilters: vi.fn(),
+            editingColId: null,
+            editName: '',
+            setEditName: vi.fn(),
+            setEditingColId: vi.fn(),
+            handleRenameSubmit: vi.fn(),
+            handleDragEnter: noopDrag,
+            handleDragOver: noopDrag,
+            handleDragLeave: vi.fn(),
+            handleDrop: noopDrop,
+            handleContextMenu: noopContextMenu,
         };
         const { container, rerender } = render(
-            <CollectionItem {...shared} col={{ ...baseCollection, thumbnail: 'thumb', isArchived: true, filters: smartCollection.filters, count: undefined, imageIds: ['a', 'b'] }} dropTargetId={baseCollection.id} viewMode="grid" />
+            <CollectionItem
+                {...shared}
+                col={{
+                    ...baseCollection,
+                    thumbnail: 'thumb',
+                    isArchived: true,
+                    filters: smartCollection.filters,
+                    count: undefined,
+                    imageIds: ['a', 'b'],
+                }}
+                dropTargetId={baseCollection.id}
+                viewMode="grid"
+            />
         );
         expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
         expect(screen.getByTitle(baseCollection.name).className).toContain('scale-105');
         expect(container.querySelector('.opacity-70.italic')).toBeTruthy();
 
-        rerender(<CollectionItem {...shared} filters={filters} col={{ ...baseCollection, thumbnail: 'thumb', count: undefined, imageIds: ['a', 'b'] }} dropTargetId={null} viewMode="grid" />);
+        rerender(
+            <CollectionItem
+                {...shared}
+                filters={filters}
+                col={{ ...baseCollection, thumbnail: 'thumb', count: undefined, imageIds: ['a', 'b'] }}
+                dropTargetId={null}
+                viewMode="grid"
+            />
+        );
         expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
         expect(screen.getByText('2')).toBeTruthy();
 
-        rerender(<CollectionItem {...shared} filters={filters} col={{ ...baseCollection, color: 'blue' }} dropTargetId={null} isThumbnailPending />);
+        rerender(
+            <CollectionItem
+                {...shared}
+                filters={filters}
+                col={{ ...baseCollection, color: 'blue' }}
+                dropTargetId={null}
+                isThumbnailPending
+            />
+        );
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
         expect(container.querySelector('.bg-blue-500')).toBeTruthy();
 

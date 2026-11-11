@@ -19,26 +19,35 @@ interface ScopeCountsOptions {
 
 /** Optional dropdown counts never participate in gallery page readiness. */
 export function useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled }: ScopeCountsOptions) {
-    const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
-    const scopeCountsVersion = useLibraryStore(state => state.scopeCountsVersion);
-    const ownerScopeKey = useInvokeOwnerScopeStore(state => (
-        getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
-    ));
+    const facetCacheVersion = useLibraryStore((state) => state.facetCacheVersion);
+    const scopeCountsVersion = useLibraryStore((state) => state.scopeCountsVersion);
+    const ownerScopeKey = useInvokeOwnerScopeStore((state) => getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState));
     const keywords = getEffectiveMaskedKeywords(settings);
-    const activeCollection = allCollections.find(collection => collection.id === filters.collectionId);
-    const scopeQuery = buildSqlWhereClause(
-        filters, privacyEnabled, settings.maskingMode, keywords, allCollections,
-        false, ['sourceKind', 'mediaType']
-    );
+    const activeCollection = allCollections.find((collection) => collection.id === filters.collectionId);
+    const scopeQuery = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, keywords, allCollections, false, [
+        'sourceKind',
+        'mediaType',
+    ]);
 
     return useQuery({
-        queryKey: ['libraryStats', 'scopeCounts', facetCacheVersion, scopeCountsVersion,
+        queryKey: [
+            'libraryStats',
+            'scopeCounts',
+            facetCacheVersion,
+            scopeCountsVersion,
             { ...filters, mediaType: 'all', sourceKind: 'all' },
-            activeCollection?.filters ?? null, activeCollection?.manualExclusions ?? [], scopeQuery,
-            privacyEnabled, settings.maskingMode, keywords, ownerScopeKey],
-        queryFn: () => isBrowserMockMode()
-            ? getBrowserMockScopeCounts(filters, { privacyEnabled, settings })
-            : countLibraryScopes(scopeQuery.where, scopeQuery.params, scopeQuery.collectionId, scopeQuery.loraName),
+            activeCollection?.filters ?? null,
+            activeCollection?.manualExclusions ?? [],
+            scopeQuery,
+            privacyEnabled,
+            settings.maskingMode,
+            keywords,
+            ownerScopeKey,
+        ],
+        queryFn: () =>
+            isBrowserMockMode()
+                ? getBrowserMockScopeCounts(filters, { privacyEnabled, settings })
+                : countLibraryScopes(scopeQuery.where, scopeQuery.params, scopeQuery.collectionId, scopeQuery.loraName),
         enabled,
         staleTime: 30_000,
         // No placeholder: a different query or privacy/owner scope has unknown counts.

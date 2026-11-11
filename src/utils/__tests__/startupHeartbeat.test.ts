@@ -72,7 +72,12 @@ describe('startup heartbeat', () => {
         vi.useFakeTimers();
         let now = 0;
         let resolveRequest: (() => void) | undefined;
-        const transport = vi.fn(() => new Promise<void>(resolve => { resolveRequest = resolve; }));
+        const transport = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveRequest = resolve;
+                })
+        );
         const heartbeat = createStartupHeartbeat({
             now: () => now,
             transport,
@@ -138,7 +143,9 @@ describe('startup heartbeat', () => {
     it('contains a synchronous transport failure without scheduling an immediate replay', async () => {
         vi.useFakeTimers();
         let now = 0;
-        const transport = vi.fn(() => { throw new Error('unavailable'); });
+        const transport = vi.fn(() => {
+            throw new Error('unavailable');
+        });
         const heartbeat = createStartupHeartbeat({
             now: () => now,
             transport,

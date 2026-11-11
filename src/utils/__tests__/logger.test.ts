@@ -10,7 +10,7 @@ const hostConsole = {
     debug: console.debug,
     info: console.info,
     warn: console.warn,
-    error: console.error
+    error: console.error,
 };
 
 type ConsoleMethod = keyof typeof hostConsole;
@@ -23,7 +23,7 @@ const installConsoleSpies = () => {
         debug: vi.spyOn(console, 'debug').mockImplementation(() => undefined),
         info: vi.spyOn(console, 'info').mockImplementation(() => undefined),
         warn: vi.spyOn(console, 'warn').mockImplementation(() => undefined),
-        error: vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        error: vi.spyOn(console, 'error').mockImplementation(() => undefined),
     };
 };
 
@@ -37,7 +37,7 @@ const restoreHostConsole = () => {
 
 const setLogLevel = (logLevel?: LogLevel) => {
     useSettingsStore.setState({
-        settings: createDefaultAppSettings({ logLevel })
+        settings: createDefaultAppSettings({ logLevel }),
     });
 };
 
@@ -75,7 +75,7 @@ describe('setupGlobalLogging', () => {
         ['debug', ['debug', 'log', 'info', 'warn', 'error']],
         ['warn', ['warn', 'error']],
         ['error', ['error']],
-        ['none', []]
+        ['none', []],
     ] as const)('routes only useful %s-level logs through the original console', (level, expectedMethods) => {
         setLogLevel(level);
         setupGlobalLogging();

@@ -28,13 +28,9 @@ const DECIMAL_COMPARISON_PATTERN = /^[<>]?(?:\d+(?:\.\d+)?|\.\d+)$/;
 const PENDING_DECIMAL_COMPARISON_PATTERN = /^[<>]?(?:\d+\.?|\.?)$/;
 const DIGITS_PATTERN = /^\d+$/;
 
-const isFiniteComparisonValue = (value: string): boolean => (
-    Number.isFinite(Number(value.replace(/^[<>]/, '')))
-);
+const isFiniteComparisonValue = (value: string): boolean => Number.isFinite(Number(value.replace(/^[<>]/, '')));
 
-const isSafeIntegerComparisonValue = (value: string): boolean => (
-    Number.isSafeInteger(Number(value.replace(/^[<>]/, '')))
-);
+const isSafeIntegerComparisonValue = (value: string): boolean => Number.isSafeInteger(Number(value.replace(/^[<>]/, '')));
 
 const hasUnfinishedQuote = (query: string): boolean => {
     let isEscaped = false;
@@ -75,22 +71,13 @@ const tokenizeSearchQuery = (query: string): SearchQueryToken[] => {
     return tokens;
 };
 
-const createIssue = (
-    kind: SearchQueryIssueKind,
-    message: string,
-    token?: string
-): SearchQueryReadiness => ({
+const createIssue = (kind: SearchQueryIssueKind, message: string, token?: string): SearchQueryReadiness => ({
     isReady: false,
     issue: { kind, message, token },
 });
 
-const isPositivePromptOperand = (token: SearchQueryToken | undefined): boolean => Boolean(
-    token
-    && !token.isNegative
-    && !token.isOrOperator
-    && (token.isQuoted || !token.term.includes(':'))
-    && token.term.length > 0
-);
+const isPositivePromptOperand = (token: SearchQueryToken | undefined): boolean =>
+    Boolean(token && !token.isNegative && !token.isOrOperator && (token.isQuoted || !token.term.includes(':')) && token.term.length > 0);
 
 export const canAppendPromptOr = (query: string): boolean => {
     if (hasUnfinishedQuote(query)) return false;
@@ -105,11 +92,7 @@ export const getSearchQueryReadiness = (query: string): SearchQueryReadiness => 
 
     const dateReadiness = getAdvancedDateSearchReadiness(query);
     if (!dateReadiness.isReady) {
-        return createIssue(
-            dateReadiness.issue ?? 'invalid',
-            'Use ISO dates like date:2026-04 or before:2025.',
-            dateReadiness.token
-        );
+        return createIssue(dateReadiness.issue ?? 'invalid', 'Use ISO dates like date:2026-04 or before:2025.', dateReadiness.token);
     }
 
     const tokens = tokenizeSearchQuery(query);
@@ -128,27 +111,16 @@ export const getSearchQueryReadiness = (query: string): SearchQueryReadiness => 
         }
         if (DATE_KEYS.has(key)) continue;
 
-        if (
-            INTEGER_COMPARISON_KEYS.has(key)
-            && (!INTEGER_COMPARISON_PATTERN.test(value) || !isSafeIntegerComparisonValue(value))
-        ) {
+        if (INTEGER_COMPARISON_KEYS.has(key) && (!INTEGER_COMPARISON_PATTERN.test(value) || !isSafeIntegerComparisonValue(value))) {
             return createIssue(
                 value === '<' || value === '>' ? 'pending' : 'invalid',
                 `Use ${key}:30, ${key}:>30, or ${key}:<30.`,
                 token.term
             );
         }
-        if (
-            DECIMAL_COMPARISON_KEYS.has(key)
-            && (!DECIMAL_COMPARISON_PATTERN.test(value) || !isFiniteComparisonValue(value))
-        ) {
-            const isPendingDecimal = !DECIMAL_COMPARISON_PATTERN.test(value)
-                && PENDING_DECIMAL_COMPARISON_PATTERN.test(value);
-            return createIssue(
-                isPendingDecimal ? 'pending' : 'invalid',
-                `Use ${key}:7, ${key}:>7, or ${key}:<7.`,
-                token.term
-            );
+        if (DECIMAL_COMPARISON_KEYS.has(key) && (!DECIMAL_COMPARISON_PATTERN.test(value) || !isFiniteComparisonValue(value))) {
+            const isPendingDecimal = !DECIMAL_COMPARISON_PATTERN.test(value) && PENDING_DECIMAL_COMPARISON_PATTERN.test(value);
+            return createIssue(isPendingDecimal ? 'pending' : 'invalid', `Use ${key}:7, ${key}:>7, or ${key}:<7.`, token.term);
         }
         if (key === 'seed' && !DIGITS_PATTERN.test(value)) {
             return createIssue('invalid', 'Use seed: followed by digits.', token.term);
@@ -156,11 +128,7 @@ export const getSearchQueryReadiness = (query: string): SearchQueryReadiness => 
         if (key === 'upscaled' && value.toLowerCase() !== 'true' && value.toLowerCase() !== 'false') {
             const normalizedValue = value.toLowerCase();
             const isPendingBoolean = 'true'.startsWith(normalizedValue) || 'false'.startsWith(normalizedValue);
-            return createIssue(
-                isPendingBoolean ? 'pending' : 'invalid',
-                'Use upscaled:true or upscaled:false.',
-                token.term
-            );
+            return createIssue(isPendingBoolean ? 'pending' : 'invalid', 'Use upscaled:true or upscaled:false.', token.term);
         }
     }
 

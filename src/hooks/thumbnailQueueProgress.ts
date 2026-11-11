@@ -11,28 +11,20 @@ export const THUMBNAIL_QUEUE_RUNNING_FOOTER = 'Runs at low priority and throttle
 export const THUMBNAIL_QUEUE_COMPLETE_FOOTER = 'Library thumbnails are up to date.';
 export const THUMBNAIL_QUEUE_FAILURE_FOOTER = 'Some files may be corrupt or unavailable.';
 
-const formatUnit = (count: number, unit: string) => (
-    `${count.toLocaleString()} ${unit}${count === 1 ? '' : 's'}`
-);
+const formatUnit = (count: number, unit: string) => `${count.toLocaleString()} ${unit}${count === 1 ? '' : 's'}`;
 
-const formatAttention = (count: number) => (
-    count === 1 ? '1 needs attention' : `${count.toLocaleString()} need attention`
-);
+const formatAttention = (count: number) => (count === 1 ? '1 needs attention' : `${count.toLocaleString()} need attention`);
 
-const formatMissing = (count: number) => (
-    `marked ${formatUnit(count, 'file')} missing`
-);
+const formatMissing = (count: number) => `marked ${formatUnit(count, 'file')} missing`;
 
-const formatDeferred = (count: number) => (
-    `deferred ${formatUnit(count, 'file')} from unavailable folders`
-);
+const formatDeferred = (count: number) => `deferred ${formatUnit(count, 'file')} from unavailable folders`;
 
 export const formatThumbnailQueueRunningMessage = ({
     checked,
     optimized,
     missing = 0,
     skipped = 0,
-    failed
+    failed,
 }: ThumbnailQueueProgressCounts): string => {
     if (checked <= 0) {
         return THUMBNAIL_QUEUE_START_MESSAGE;
@@ -69,7 +61,7 @@ export const formatThumbnailQueueCompleteMessage = ({
     optimized,
     missing = 0,
     skipped = 0,
-    failed
+    failed,
 }: ThumbnailQueueProgressCounts): string => {
     if (failed > 0) {
         const missingText = missing > 0 ? `; ${formatMissing(missing)}` : '';

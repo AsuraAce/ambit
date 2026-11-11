@@ -8,13 +8,13 @@ import { useSettingsStore } from '../../../../stores/settingsStore';
 const resizeMocks = vi.hoisted(() => ({
     observe: vi.fn(),
     disconnect: vi.fn(),
-    callbacks: [] as ResizeObserverCallback[]
+    callbacks: [] as ResizeObserverCallback[],
 }));
 
 vi.mock('../../../library/components/SmartImage', () => ({
     SmartImage: ({ src, alt, style }: { src: string; alt: string; style?: React.CSSProperties }) => (
         <img src={src} alt={alt} style={style} />
-    )
+    ),
 }));
 
 const originalResizeObserverDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
@@ -37,9 +37,9 @@ const createImage = (id: string, overrides: Partial<AIImage> = {}): AIImage => (
         cfg: id === 'a' ? 7 : 8,
         sampler: 'Euler',
         positivePrompt: id === 'a' ? 'red sunset over ocean' : 'blue sunrise above mountains',
-        negativePrompt: ''
+        negativePrompt: '',
     },
-    ...overrides
+    ...overrides,
 });
 
 const rect = (overrides: Partial<DOMRect> = {}): DOMRect => ({
@@ -52,7 +52,7 @@ const rect = (overrides: Partial<DOMRect> = {}): DOMRect => ({
     width: 1000,
     height: 600,
     toJSON: () => ({}),
-    ...overrides
+    ...overrides,
 });
 
 const renderModal = (overrides: Partial<React.ComponentProps<typeof CompareModal>> = {}) => {
@@ -62,7 +62,7 @@ const renderModal = (overrides: Partial<React.ComponentProps<typeof CompareModal
         onClose: vi.fn(),
         onToggleFavorite: vi.fn(),
         onTogglePin: vi.fn(),
-        ...overrides
+        ...overrides,
     };
     return { props, ...render(<CompareModal {...props} />) };
 };
@@ -171,8 +171,8 @@ describe('CompareModal', () => {
         const identical = createImage('b', {
             metadata: {
                 ...createImage('b').metadata,
-                positivePrompt: 'red sunset over ocean'
-            }
+                positivePrompt: 'red sunset over ocean',
+            },
         });
         const { container } = renderModal({ imageB: identical });
 
@@ -220,12 +220,12 @@ describe('CompareModal', () => {
         Object.defineProperty(globalThis, 'ResizeObserver', {
             configurable: true,
             writable: true,
-            value: MockResizeObserver
+            value: MockResizeObserver,
         });
 
         const view = renderModal({
             imageA: createImage('a', { width: 0, height: 0 }),
-            imageB: createImage('b', { width: 0, height: 0 })
+            imageB: createImage('b', { width: 0, height: 0 }),
         });
         expect(resizeMocks.observe).toHaveBeenCalled();
 

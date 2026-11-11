@@ -60,11 +60,14 @@ describe('SlideshowModal', () => {
         vi.useFakeTimers();
         vi.clearAllMocks();
         imageMocks.preloadedSources.length = 0;
-        vi.stubGlobal('Image', class Image {
-            set src(value: string) {
-                imageMocks.preloadedSources.push(value);
+        vi.stubGlobal(
+            'Image',
+            class Image {
+                set src(value: string) {
+                    imageMocks.preloadedSources.push(value);
+                }
             }
-        });
+        );
     });
 
     afterEach(() => {
@@ -75,9 +78,7 @@ describe('SlideshowModal', () => {
     });
 
     it('renders nothing while closed or when the requested image is missing', () => {
-        const { container, rerender } = render(
-            <SlideshowModal isOpen={false} images={images} initialIndex={0} onClose={onClose} />,
-        );
+        const { container, rerender } = render(<SlideshowModal isOpen={false} images={images} initialIndex={0} onClose={onClose} />);
         expect(container.innerHTML).toBe('');
 
         rerender(<SlideshowModal isOpen images={[]} initialIndex={0} onClose={onClose} />);
@@ -95,9 +96,7 @@ describe('SlideshowModal', () => {
     });
 
     it('navigates forward, backward, and wraps at the first image', () => {
-        const { container } = render(
-            <SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />,
-        );
+        const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />);
 
         fireEvent.click(iconButton(container, 'lucide-chevron-right'));
         expect(screen.getByAltText('slideshow').getAttribute('src')).toBe('asset://image-1.png');
@@ -135,9 +134,7 @@ describe('SlideshowModal', () => {
     });
 
     it('advances on the playback timer and pauses when the backdrop is clicked', () => {
-        const { container } = render(
-            <SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />,
-        );
+        const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />);
 
         act(() => vi.advanceTimersByTime(5000));
         expect(screen.getByAltText('slideshow').getAttribute('src')).toBe('asset://image-1.png');
@@ -152,9 +149,7 @@ describe('SlideshowModal', () => {
     });
 
     it('cycles through every duration and keeps control clicks from pausing playback', () => {
-        const { container } = render(
-            <SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />,
-        );
+        const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />);
         const durationButton = screen.getByTitle('Toggle Duration');
 
         expect(durationButton.textContent).toContain('5s');
@@ -175,9 +170,7 @@ describe('SlideshowModal', () => {
     });
 
     it('hides an idle HUD, restores it on movement, and closes from the HUD button', () => {
-        const { container } = render(
-            <SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />,
-        );
+        const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />);
         const backdrop = container.firstElementChild;
         if (!(backdrop instanceof HTMLElement)) throw new Error('Missing slideshow backdrop');
 
@@ -194,15 +187,7 @@ describe('SlideshowModal', () => {
 
     it('uses shuffled navigation without repeating the current preloaded image', () => {
         const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-        const { container } = render(
-            <SlideshowModal
-                isOpen
-                images={images}
-                initialIndex={0}
-                onClose={onClose}
-                isShuffleDefault
-            />,
-        );
+        const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} isShuffleDefault />);
 
         expect(random).toHaveBeenCalled();
         expect(imageMocks.preloadedSources.at(-1)).toBe('asset://image-1.png');
@@ -219,9 +204,7 @@ describe('SlideshowModal', () => {
 
     it('uses navigation fallback logic when a single image cannot be preloaded', () => {
         const singleImage = [images[0]];
-        const { container } = render(
-            <SlideshowModal isOpen images={singleImage} initialIndex={0} onClose={onClose} />,
-        );
+        const { container } = render(<SlideshowModal isOpen images={singleImage} initialIndex={0} onClose={onClose} />);
 
         expect(imageMocks.preloadedSources).toEqual([]);
         fireEvent.click(iconButton(container, 'lucide-chevron-right'));

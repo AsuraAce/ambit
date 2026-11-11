@@ -11,7 +11,7 @@ interface ConnectionsTabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     initialSubTab?: 'folders' | 'resources' | 'invokeai' | 'a1111' | 'comfyui';
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
+    onScanFolder?: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     onClose?: () => void;
     onInvokeAccepted?: () => void;
@@ -55,10 +55,11 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 min-w-[100px] py-2 px-3 text-xs font-bold rounded-lg transition-colors capitalize flex items-center justify-center gap-2 ${activeTab === tab.id
-                            ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                            }`}
+                        className={`flex-1 min-w-[100px] py-2 px-3 text-xs font-bold rounded-lg transition-colors capitalize flex items-center justify-center gap-2 ${
+                            activeTab === tab.id
+                                ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                        }`}
                     >
                         {tab.icon}
                         <span className="truncate">{tab.label}</span>
@@ -68,19 +69,9 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
 
             <div className="min-h-[400px]">
                 {activeTab === 'folders' && (
-                    <FoldersTab
-                        settings={settings}
-                        setSettings={setSettings}
-                        onScanFolder={onScanFolder}
-                        onInvokeSync={onInvokeSync}
-                    />
+                    <FoldersTab settings={settings} setSettings={setSettings} onScanFolder={onScanFolder} onInvokeSync={onInvokeSync} />
                 )}
-                {activeTab === 'resources' && (
-                    <ResourcesTab
-                        settings={settings}
-                        setSettings={setSettings}
-                    />
-                )}
+                {activeTab === 'resources' && <ResourcesTab settings={settings} setSettings={setSettings} />}
                 {activeTab === 'invokeai' && (
                     <InvokeAITab
                         settings={settings}
@@ -91,19 +82,9 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
                     />
                 )}
                 {activeTab === 'a1111' && (
-                    <A1111Tab
-                        settings={settings}
-                        setSettings={setSettings}
-                        onClose={onClose || (() => { })}
-                        onScanFolder={onScanFolder}
-                    />
+                    <A1111Tab settings={settings} setSettings={setSettings} onClose={onClose || (() => {})} onScanFolder={onScanFolder} />
                 )}
-                {activeTab === 'comfyui' && (
-                    <ComfyUITab
-                        settings={settings}
-                        setSettings={setSettings}
-                    />
-                )}
+                {activeTab === 'comfyui' && <ComfyUITab settings={settings} setSettings={setSettings} />}
             </div>
         </div>
     );

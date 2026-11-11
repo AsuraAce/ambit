@@ -8,15 +8,9 @@ export const isFilesystemRoot = (path: string): boolean =>
 
 export const normalizePath = (path: string): string => {
     const forwardSlashPath = path.replace(/\\/g, '/');
-    const preservedPrefix = forwardSlashPath.startsWith('//?/')
-        ? '//?/'
-        : (forwardSlashPath.startsWith('//') ? '//' : '');
-    const remainder = preservedPrefix
-        ? forwardSlashPath.slice(preservedPrefix.length)
-        : forwardSlashPath;
-    const normalizedRemainder = preservedPrefix
-        ? remainder.replace(/^\/+/, '').replace(/\/+/g, '/')
-        : remainder.replace(/\/+/g, '/');
+    const preservedPrefix = forwardSlashPath.startsWith('//?/') ? '//?/' : forwardSlashPath.startsWith('//') ? '//' : '';
+    const remainder = preservedPrefix ? forwardSlashPath.slice(preservedPrefix.length) : forwardSlashPath;
+    const normalizedRemainder = preservedPrefix ? remainder.replace(/^\/+/, '').replace(/\/+/g, '/') : remainder.replace(/\/+/g, '/');
 
     return preservedPrefix + normalizedRemainder;
 };
@@ -46,7 +40,7 @@ export const getFilename = (path: string): string => {
 };
 
 /**
- * Tauri's convertFileSrc on Windows can sometimes double-encode or use %2F 
+ * Tauri's convertFileSrc on Windows can sometimes double-encode or use %2F
  * which the internal asset handler might fail to parse (500 error).
  * This repairs it by ensuring standard slashes and colons.
  */
@@ -60,10 +54,7 @@ export const repairAssetUrl = (url: string): string => {
         url.startsWith('asset:')
     ) {
         // Decode both slashes and colons - Tauri's asset protocol needs plain paths
-        return url
-            .replace(/%2F/gi, '/')
-            .replace(/%3A/gi, ':')
-            .replace(/%5C/gi, '/');  // Also handle encoded backslashes
+        return url.replace(/%2F/gi, '/').replace(/%3A/gi, ':').replace(/%5C/gi, '/'); // Also handle encoded backslashes
     }
     return url;
 };
@@ -134,13 +125,13 @@ export const normalizeInvokeRoot = (rawPath: string | null | undefined): string 
     if (!rawPath) return null;
     let root = rawPath.trim().replace(/\\/g, '/').replace(/\/$/, '');
     if (!root) return null;
-    
+
     if (root.toLowerCase().endsWith('.db')) {
         root = root.replace(/\/[\w-]+\.db$/i, '');
         root = root.replace(/\/databases$/i, '');
     } else if (root.toLowerCase().endsWith('/databases')) {
         root = root.replace(/\/databases$/i, '');
     }
-    
+
     return root;
 };

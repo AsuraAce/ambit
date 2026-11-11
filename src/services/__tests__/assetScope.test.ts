@@ -4,19 +4,19 @@ import type { AppSettings } from '../../types';
 const mocks = vi.hoisted(() => ({
     browserMockMode: false,
     appLocalDataDir: vi.fn(),
-    registerLibraryPath: vi.fn()
+    registerLibraryPath: vi.fn(),
 }));
 
 vi.mock('../runtime', () => ({
-    isBrowserMockMode: () => mocks.browserMockMode
+    isBrowserMockMode: () => mocks.browserMockMode,
 }));
 
 vi.mock('@tauri-apps/api/path', () => ({
-    appLocalDataDir: mocks.appLocalDataDir
+    appLocalDataDir: mocks.appLocalDataDir,
 }));
 
 vi.mock('../../bindings', () => ({
-    commands: { registerLibraryPath: mocks.registerLibraryPath }
+    commands: { registerLibraryPath: mocks.registerLibraryPath },
 }));
 
 const loadService = async () => {
@@ -36,11 +36,9 @@ describe('assetScope', () => {
     // checks; a folder that cannot be registered must still be left out, not fail the call.
     it('keeps only the folders that could be registered, in order', async () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mocks.registerLibraryPath.mockImplementation(async (path: string) => (
-            path === 'D:/unplugged'
-                ? { status: 'error', error: 'Failed to resolve library path' }
-                : { status: 'ok', data: null }
-        ));
+        mocks.registerLibraryPath.mockImplementation(async (path: string) =>
+            path === 'D:/unplugged' ? { status: 'error', error: 'Failed to resolve library path' } : { status: 'ok', data: null }
+        );
         const { ensureFolderAccessible, filterAccessibleFolders } = await loadService();
 
         await expect(filterAccessibleFolders(['C:/one', 'D:/unplugged', 'C:/two'])).resolves.toEqual(['C:/one', 'C:/two']);
@@ -69,7 +67,7 @@ describe('assetScope', () => {
         'https://example.test/image.png',
         'custom:opaque-value',
         'asset://',
-        '/'
+        '/',
     ])('rejects non-local input %s', async (input) => {
         const { ensureAssetPathAccessible } = await loadService();
 
@@ -108,7 +106,11 @@ describe('assetScope', () => {
 
     it('deduplicates concurrent and case-insensitive directory registration', async () => {
         let resolve!: (value: { status: 'ok'; data: null }) => void;
-        mocks.registerLibraryPath.mockReturnValueOnce(new Promise(result => { resolve = result; }));
+        mocks.registerLibraryPath.mockReturnValueOnce(
+            new Promise((result) => {
+                resolve = result;
+            })
+        );
         const { ensureAssetPathAccessible } = await loadService();
 
         const first = ensureAssetPathAccessible('D:/Images/a.png');
@@ -131,38 +133,35 @@ describe('assetScope', () => {
         error.mockRestore();
     });
 
-    it.each([
-        { status: 'error', error: 'scope denied' },
-        new Error('invoke failed')
-    ])('evicts failed registrations so a later attempt can retry', async (failure) => {
-        if (failure instanceof Error) {
-            mocks.registerLibraryPath.mockRejectedValueOnce(failure);
-        } else {
-            mocks.registerLibraryPath.mockResolvedValueOnce(failure);
+    it.each([{ status: 'error', error: 'scope denied' }, new Error('invoke failed')])(
+        'evicts failed registrations so a later attempt can retry',
+        async (failure) => {
+            if (failure instanceof Error) {
+                mocks.registerLibraryPath.mockRejectedValueOnce(failure);
+            } else {
+                mocks.registerLibraryPath.mockResolvedValueOnce(failure);
+            }
+            const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            const { ensureAssetPathAccessible } = await loadService();
+
+            await expect(ensureAssetPathAccessible('D:/images/a.png')).rejects.toThrow();
+            await ensureAssetPathAccessible('D:/images/b.png');
+
+            expect(mocks.registerLibraryPath).toHaveBeenCalledTimes(2);
+            expect(error).toHaveBeenCalledWith('[AssetScope] Failed to register path scope for D:/images', expect.any(Error));
+            error.mockRestore();
         }
-        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        const { ensureAssetPathAccessible } = await loadService();
-
-        await expect(ensureAssetPathAccessible('D:/images/a.png')).rejects.toThrow();
-        await ensureAssetPathAccessible('D:/images/b.png');
-
-        expect(mocks.registerLibraryPath).toHaveBeenCalledTimes(2);
-        expect(error).toHaveBeenCalledWith(
-            '[AssetScope] Failed to register path scope for D:/images',
-            expect.any(Error)
-        );
-        error.mockRestore();
-    });
+    );
 
     it('registers every configured monitored, resource, and normalized Invoke root', async () => {
         const { ensureConfiguredAssetPathsAccessible } = await loadService();
         const settings = {
             monitoredFolders: [
                 { id: 'one', path: 'D:/images', isActive: true, imageCount: 0 },
-                { id: 'two', path: 'E:/images', isActive: false, imageCount: 0 }
+                { id: 'two', path: 'E:/images', isActive: false, imageCount: 0 },
             ],
             resourceFolders: ['F:/models'],
-            invokeAiPath: 'G:/InvokeAI/databases'
+            invokeAiPath: 'G:/InvokeAI/databases',
         } satisfies Pick<AppSettings, 'monitoredFolders' | 'resourceFolders' | 'invokeAiPath'>;
 
         await ensureConfiguredAssetPathsAccessible(settings);

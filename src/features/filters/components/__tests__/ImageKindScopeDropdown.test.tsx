@@ -28,9 +28,13 @@ describe('LibraryScopeDropdown', () => {
         renderScope({ mediaType: 'image', sourceKind: 'photograph' });
         fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos/ }));
 
-        expect(screen.getAllByRole('menuitemradio').map(option => option.getAttribute('aria-label'))).toEqual([
-            'All Media, 1,200', 'All Images, 1,175', 'Videos, 25',
-            'Generated Images, 900', 'Photos, 250', 'Other Images, 25',
+        expect(screen.getAllByRole('menuitemradio').map((option) => option.getAttribute('aria-label'))).toEqual([
+            'All Media, 1,200',
+            'All Images, 1,175',
+            'Videos, 25',
+            'Generated Images, 900',
+            'Photos, 250',
+            'Other Images, 25',
         ]);
         expect(screen.queryAllByRole('group')).toHaveLength(0);
         expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([
@@ -40,8 +44,11 @@ describe('LibraryScopeDropdown', () => {
 
     it('organizes one selection into media and image-kind sections without extra keyboard stops or dividers', () => {
         const props = {
-            mediaType: 'all' as const, sourceKind: 'all' as const, displayedCount: 1200,
-            scopeCounts, onScopeChange: vi.fn(),
+            mediaType: 'all' as const,
+            sourceKind: 'all' as const,
+            displayedCount: 1200,
+            scopeCounts,
+            onScopeChange: vi.fn(),
         };
         const { rerender } = render(<LibraryScopeDropdown {...props} />);
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
@@ -67,9 +74,15 @@ describe('LibraryScopeDropdown', () => {
         fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowUp' });
         expect(document.activeElement).toBe(videos);
 
-        rerender(<LibraryScopeDropdown {...props} scopeAvailability={{
-            ...scopeCounts, media: { ...scopeCounts.media, video: 0 },
-        }} />);
+        rerender(
+            <LibraryScopeDropdown
+                {...props}
+                scopeAvailability={{
+                    ...scopeCounts,
+                    media: { ...scopeCounts.media, video: 0 },
+                }}
+            />
+        );
         expect(screen.queryByRole('menuitemradio', { name: 'Videos, 25' })).toBeNull();
         expect(screen.queryByRole('separator')).toBeNull();
         expect(screen.getByText('Image Kind')).toBeTruthy();
@@ -79,12 +92,21 @@ describe('LibraryScopeDropdown', () => {
     it('keeps the image-kind heading with the first available subtype and omits an empty section', () => {
         const emptyKinds = { all: 0, generated: 0, photograph: 0, other: 0 };
         const props = {
-            mediaType: 'all' as const, sourceKind: 'all' as const, displayedCount: 1200,
-            scopeCounts, onScopeChange: vi.fn(),
+            mediaType: 'all' as const,
+            sourceKind: 'all' as const,
+            displayedCount: 1200,
+            scopeCounts,
+            onScopeChange: vi.fn(),
         };
-        const { rerender } = render(<LibraryScopeDropdown {...props} scopeAvailability={{
-            ...scopeCounts, imageKinds: { ...emptyKinds, other: 25 },
-        }} />);
+        const { rerender } = render(
+            <LibraryScopeDropdown
+                {...props}
+                scopeAvailability={{
+                    ...scopeCounts,
+                    imageKinds: { ...emptyKinds, other: 25 },
+                }}
+            />
+        );
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
         const other = screen.getByRole('menuitemradio', { name: 'Other Images, 25' });
         expect(screen.getByText('Image Kind').compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -95,12 +117,21 @@ describe('LibraryScopeDropdown', () => {
         rerender(<LibraryScopeDropdown {...props} scopeAvailability={availability} />);
         expect(screen.queryByText('Image Kind')).toBeNull();
         expect(screen.getByText('Media')).toBeTruthy();
-        expect(screen.getAllByRole('menuitemradio').map(option => option.getAttribute('aria-label'))).toEqual([
-            'All Media, 1,200', 'All Images, 1,175', 'Videos, 25',
+        expect(screen.getAllByRole('menuitemradio').map((option) => option.getAttribute('aria-label'))).toEqual([
+            'All Media, 1,200',
+            'All Images, 1,175',
+            'Videos, 25',
         ]);
 
-        rerender(<LibraryScopeDropdown {...props} mediaType="image" sourceKind="photograph"
-            scopeAvailability={availability} scopeCounts={{ ...scopeCounts, imageKinds: emptyKinds }} />);
+        rerender(
+            <LibraryScopeDropdown
+                {...props}
+                mediaType="image"
+                sourceKind="photograph"
+                scopeAvailability={availability}
+                scopeCounts={{ ...scopeCounts, imageKinds: emptyKinds }}
+            />
+        );
         const selectedPhoto = screen.getByRole('menuitemradio', { name: 'Photos, 0' });
         expect(screen.getByText('Image Kind').compareDocumentPosition(selectedPhoto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([selectedPhoto]);
@@ -108,22 +139,64 @@ describe('LibraryScopeDropdown', () => {
 
     it('owns its keyboard actions without triggering gallery navigation or opening the selected image', () => {
         const actions = {
-            setSelectedImageIndex: vi.fn(), setSelectedIds: vi.fn(), setLastSelectedId: vi.fn(), clearSelection: vi.fn(),
-            handleBulkDelete: vi.fn(), togglePrivacyMode: vi.fn(), toggleMasking: vi.fn(), toggleFavorite: vi.fn(),
-            togglePin: vi.fn(), openCollection: vi.fn(), openSettings: vi.fn(), openImport: vi.fn(),
-            closeAllModals: vi.fn(), toggleShortcuts: vi.fn(), toggleCommandPalette: vi.fn(),
+            setSelectedImageIndex: vi.fn(),
+            setSelectedIds: vi.fn(),
+            setLastSelectedId: vi.fn(),
+            clearSelection: vi.fn(),
+            handleBulkDelete: vi.fn(),
+            togglePrivacyMode: vi.fn(),
+            toggleMasking: vi.fn(),
+            toggleFavorite: vi.fn(),
+            togglePin: vi.fn(),
+            openCollection: vi.fn(),
+            openSettings: vi.fn(),
+            openImport: vi.fn(),
+            closeAllModals: vi.fn(),
+            toggleShortcuts: vi.fn(),
+            toggleCommandPalette: vi.fn(),
         };
         const selected: AIImage = {
-            id: 'selected', url: 'sample.png', thumbnailUrl: 'sample-thumb.png', filename: 'sample.png', timestamp: 1, width: 512, height: 512, isFavorite: false,
-            metadata: { tool: GeneratorTool.UNKNOWN, model: '', seed: 0, steps: 0, cfg: 0, sampler: '', positivePrompt: '', negativePrompt: '' },
+            id: 'selected',
+            url: 'sample.png',
+            thumbnailUrl: 'sample-thumb.png',
+            filename: 'sample.png',
+            timestamp: 1,
+            width: 512,
+            height: 512,
+            isFavorite: false,
+            metadata: {
+                tool: GeneratorTool.UNKNOWN,
+                model: '',
+                seed: 0,
+                steps: 0,
+                cfg: 0,
+                sampler: '',
+                positivePrompt: '',
+                negativePrompt: '',
+            },
         };
         const navigate = vi.fn(() => 0);
         const Harness = () => {
-            useGlobalShortcuts({ ...actions, viewMode: 'grid', selectedIds: new Set(['selected']), filteredImages: [selected],
-                lastSelectedId: 'selected', isViewerOpen: false, isModalOpen: false, searchInputRef: { current: null },
-                gridRef: { current: { navigate, scrollToItem: vi.fn() } } });
-            return <LibraryScopeDropdown mediaType="all" sourceKind="all" displayedCount={1200} scopeCounts={scopeCounts}
-                onScopeChange={vi.fn()} />;
+            useGlobalShortcuts({
+                ...actions,
+                viewMode: 'grid',
+                selectedIds: new Set(['selected']),
+                filteredImages: [selected],
+                lastSelectedId: 'selected',
+                isViewerOpen: false,
+                isModalOpen: false,
+                searchInputRef: { current: null },
+                gridRef: { current: { navigate, scrollToItem: vi.fn() } },
+            });
+            return (
+                <LibraryScopeDropdown
+                    mediaType="all"
+                    sourceKind="all"
+                    displayedCount={1200}
+                    scopeCounts={scopeCounts}
+                    onScopeChange={vi.fn()}
+                />
+            );
         };
         render(<Harness />);
         const trigger = screen.getByRole('button', { name: /Library scope:/ });
@@ -204,9 +277,12 @@ describe('LibraryScopeDropdown', () => {
     });
 
     it.each([
-        ['All Media', 1200, 'all', 'all'], ['All Images', 1175, 'image', 'all'],
-        ['Generated Images', 900, 'image', 'generated'], ['Photos', 250, 'image', 'photograph'],
-        ['Other Images', 25, 'image', 'other'], ['Videos', 25, 'video', 'all'],
+        ['All Media', 1200, 'all', 'all'],
+        ['All Images', 1175, 'image', 'all'],
+        ['Generated Images', 900, 'image', 'generated'],
+        ['Photos', 250, 'image', 'photograph'],
+        ['Other Images', 25, 'image', 'other'],
+        ['Videos', 25, 'video', 'all'],
     ] as const)('selects %s atomically and uses its exact label and count', (label, count, mediaType, sourceKind) => {
         const onScopeChange = vi.fn();
         renderScope({ mediaType, sourceKind, onScopeChange });
@@ -219,7 +295,7 @@ describe('LibraryScopeDropdown', () => {
         expect(onScopeChange).toHaveBeenCalledExactlyOnceWith({ mediaType, sourceKind });
     });
 
-    it.each(['all', 'video'] as const)('does not present a legacy dormant photo preference as active under %s', mediaType => {
+    it.each(['all', 'video'] as const)('does not present a legacy dormant photo preference as active under %s', (mediaType) => {
         renderScope({ mediaType, sourceKind: 'photograph' });
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
         expect(screen.getAllByRole('menuitemradio', { checked: true })).toHaveLength(1);
@@ -294,8 +370,10 @@ describe('LibraryScopeDropdown', () => {
         };
         renderScope({ mediaType: 'image', sourceKind: 'photograph', scopeCounts: emptyCounts, scopeAvailability: emptyCounts });
         fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 0/ }));
-        expect(screen.getAllByRole('menuitemradio').map(option => option.getAttribute('aria-label'))).toEqual([
-            'All Media, 0', 'All Images, 0', 'Photos, 0',
+        expect(screen.getAllByRole('menuitemradio').map((option) => option.getAttribute('aria-label'))).toEqual([
+            'All Media, 0',
+            'All Images, 0',
+            'Photos, 0',
         ]);
         expect(screen.getAllByRole('menuitemradio', { checked: true })).toHaveLength(1);
     });
@@ -316,14 +394,19 @@ describe('LibraryScopeDropdown', () => {
 
     it('returns to the effective selection only when the focused category disappears', () => {
         const props = {
-            mediaType: 'image' as const, sourceKind: 'photograph' as const, displayedCount: 250,
-            scopeCounts, onScopeChange: vi.fn(),
+            mediaType: 'image' as const,
+            sourceKind: 'photograph' as const,
+            displayedCount: 250,
+            scopeCounts,
+            onScopeChange: vi.fn(),
         };
         const { rerender } = render(<LibraryScopeDropdown {...props} />);
         fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos/ }));
         fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
         expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Other Images, 25' }));
-        rerender(<LibraryScopeDropdown {...props} scopeAvailability={{ ...scopeCounts, imageKinds: { ...scopeCounts.imageKinds, other: 0 } }} />);
+        rerender(
+            <LibraryScopeDropdown {...props} scopeAvailability={{ ...scopeCounts, imageKinds: { ...scopeCounts.imageKinds, other: 0 } }} />
+        );
         expect(screen.queryByRole('menuitemradio', { name: 'Other Images, 25' })).toBeNull();
         expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Photos, 250' }));
     });
@@ -348,7 +431,7 @@ describe('LibraryScopeDropdown', () => {
         }
     });
 
-    it.each(['Enter', ' '])('supports arrow wrapping, Home/End and %s activation', key => {
+    it.each(['Enter', ' '])('supports arrow wrapping, Home/End and %s activation', (key) => {
         const props = renderScope();
         const trigger = screen.getByRole('button', { name: /Library scope:/ });
         fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -365,8 +448,14 @@ describe('LibraryScopeDropdown', () => {
     });
 
     it('reaches count retry by arrow keys and prevents duplicate retries while loading', () => {
-        const props = { mediaType: 'all' as const, sourceKind: 'all' as const, displayedCount: undefined,
-            countsError: true, onRetryCounts: vi.fn(), onScopeChange: vi.fn() };
+        const props = {
+            mediaType: 'all' as const,
+            sourceKind: 'all' as const,
+            displayedCount: undefined,
+            countsError: true,
+            onRetryCounts: vi.fn(),
+            onScopeChange: vi.fn(),
+        };
         const { rerender } = render(<LibraryScopeDropdown {...props} countsLoading />);
         const trigger = screen.getByRole('button', { name: /Library scope:/ });
         fireEvent.keyDown(trigger, { key: 'ArrowUp' });

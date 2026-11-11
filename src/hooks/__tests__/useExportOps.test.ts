@@ -70,12 +70,7 @@ describe('useExportOps', () => {
         const onComplete = vi.fn();
         const { result } = renderHook(() => useExportOps({ images: [local] }));
 
-        await act(async () => result.current.exportImages(
-            'selected.zip',
-            new Set(['local', 'remote']),
-            'C:/out',
-            onComplete
-        ));
+        await act(async () => result.current.exportImages('selected.zip', new Set(['local', 'remote']), 'C:/out', onComplete));
 
         expect(mocks.getImagesByIds).toHaveBeenCalledWith(['local', 'remote']);
         expect(mocks.exportImagesToZip).toHaveBeenCalledWith([local, remote], 'C:/out', 'selected.zip');

@@ -7,35 +7,35 @@ import { invalidateInvokeSourceDatabase } from '../connection';
 import { openInvokeSourceDatabase } from '../sourceDatabase';
 
 vi.mock('../sourceDatabase', () => ({
-    openInvokeSourceDatabase: vi.fn()
+    openInvokeSourceDatabase: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-    convertFileSrc: vi.fn((path: string) => `asset://${path}`)
+    convertFileSrc: vi.fn((path: string) => `asset://${path}`),
 }));
 
 vi.mock('../../../bindings', () => ({
     commands: {
         listInvokeaiImages: vi.fn(),
-        scanImagesBulk: vi.fn()
-    }
+        scanImagesBulk: vi.fn(),
+    },
 }));
 
 vi.mock('../../db/connection', () => ({
-    getDb: vi.fn()
+    getDb: vi.fn(),
 }));
 
 vi.mock('../../db/imageRepo', () => ({
-    insertImagesBatch: vi.fn()
+    insertImagesBatch: vi.fn(),
 }));
 
-const createDb = (rows: Array<{ image_name: string, image_subfolder?: string | null }> = [], columns: string[] = []) => ({
+const createDb = (rows: Array<{ image_name: string; image_subfolder?: string | null }> = [], columns: string[] = []) => ({
     select: vi.fn(async (query: string) => {
         if (query.includes('PRAGMA table_info(images)')) {
-            return columns.map(name => ({ name }));
+            return columns.map((name) => ({ name }));
         }
         return rows;
-    })
+    }),
 });
 
 describe('scanForOrphans', () => {
@@ -43,57 +43,49 @@ describe('scanForOrphans', () => {
         invalidateInvokeSourceDatabase();
         vi.clearAllMocks();
         vi.mocked(getDb).mockResolvedValue({
-            select: vi.fn().mockResolvedValue([])
+            select: vi.fn().mockResolvedValue([]),
         } as never);
         vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb() as never);
-        vi.mocked(commands.scanImagesBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map((path) => ({
-                width: 512,
-                height: 512,
-                size: 123,
-                modified: 1000,
-                thumbnail: path,
-                microThumbnail: null,
-                thumbnailSource: null,
-                chunks: {},
-                metadata: {
-                    tool: 'InvokeAI',
-                    model: 'Model',
-                    seed: 1,
-                    steps: 20,
-                    cfg: 7,
-                    positivePrompt: 'prompt',
-                    negativePrompt: '',
-                    sampler: 'Euler',
-                    loras: [],
-                    controlNets: []
-                },
-                error: null
-            }))
-        }) as never);
+        vi.mocked(commands.scanImagesBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) => ({
+                        width: 512,
+                        height: 512,
+                        size: 123,
+                        modified: 1000,
+                        thumbnail: path,
+                        microThumbnail: null,
+                        thumbnailSource: null,
+                        chunks: {},
+                        metadata: {
+                            tool: 'InvokeAI',
+                            model: 'Model',
+                            seed: 1,
+                            steps: 20,
+                            cfg: 7,
+                            positivePrompt: 'prompt',
+                            negativePrompt: '',
+                            sampler: 'Euler',
+                            loras: [],
+                            controlNets: [],
+                        },
+                        error: null,
+                    })),
+                }) as never
+        );
         vi.mocked(insertImagesBatch).mockResolvedValue(undefined as never);
     });
 
     it('imports nested orphan files while skipping DB-synced and intermediate entries', async () => {
-        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([
-            { image_name: 'intermediate.png' },
-            { image_name: '' },
-        ]) as never);
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: 'intermediate.png' }, { image_name: '' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: [
-                'outputs/images/2026/05/25/new.png',
-                'outputs/images/2026/05/25/already.png',
-                'outputs/images/txt2img/intermediate.png'
-            ]
+            data: ['outputs/images/2026/05/25/new.png', 'outputs/images/2026/05/25/already.png', 'outputs/images/txt2img/intermediate.png'],
         } as never);
 
-        const imported = await scanForOrphans(
-            'D:/Invoke',
-            new Set(['outputs/images/2026/05/25/already.png']),
-            vi.fn()
-        );
+        const imported = await scanForOrphans('D:/Invoke', new Set(['outputs/images/2026/05/25/already.png']), vi.fn());
 
         expect(imported).toBe(1);
         expect(commands.scanImagesBulk).toHaveBeenCalledWith(
@@ -104,10 +96,12 @@ describe('scanForOrphans', () => {
             null,
             null
         );
-        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
-            id: 'D:/Invoke/outputs/images/2026/05/25/new.png',
-            filename: 'new.png'
-        }));
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(
+            expect.objectContaining({
+                id: 'D:/Invoke/outputs/images/2026/05/25/new.png',
+                filename: 'new.png',
+            })
+        );
     });
 
     it('uses the current time when an orphan has no modified timestamp', async () => {
@@ -117,14 +111,16 @@ describe('scanForOrphans', () => {
         } as never);
         vi.mocked(commands.scanImagesBulk).mockResolvedValue({
             status: 'ok',
-            data: [{
-                width: 1,
-                height: 1,
-                size: 1,
-                modified: 0,
-                thumbnail: null,
-                metadata: { model: 'Model' },
-            }],
+            data: [
+                {
+                    width: 1,
+                    height: 1,
+                    size: 1,
+                    modified: 0,
+                    thumbnail: null,
+                    metadata: { model: 'Model' },
+                },
+            ],
         } as never);
 
         await scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: true });
@@ -136,7 +132,7 @@ describe('scanForOrphans', () => {
         vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: '2026/05/25/intermediate.png' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/2026/05/25/intermediate.png']
+            data: ['outputs/images/2026/05/25/intermediate.png'],
         } as never);
 
         const imported = await scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false });
@@ -147,13 +143,12 @@ describe('scanForOrphans', () => {
     });
 
     it('matches intermediate rows by InvokeAI image_subfolder plus basename', async () => {
-        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb(
-            [{ image_name: 'intermediate.png', image_subfolder: '2026/05/25' }],
-            ['image_subfolder']
-        ) as never);
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(
+            createDb([{ image_name: 'intermediate.png', image_subfolder: '2026/05/25' }], ['image_subfolder']) as never
+        );
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/2026/05/25/intermediate.png']
+            data: ['outputs/images/2026/05/25/intermediate.png'],
         } as never);
 
         const imported = await scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false });
@@ -166,62 +161,41 @@ describe('scanForOrphans', () => {
     it('does not suppress nested orphan files just because another synced file shares the basename', async () => {
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: [
-                'outputs/images/2026/05/25/foo.png',
-                'outputs/images/txt2img/foo.png'
-            ]
+            data: ['outputs/images/2026/05/25/foo.png', 'outputs/images/txt2img/foo.png'],
         } as never);
 
-        const imported = await scanForOrphans(
-            'D:/Invoke',
-            new Set(['outputs/images/2026/05/25/foo.png']),
-            vi.fn(),
-            { importIntermediates: false }
-        );
+        const imported = await scanForOrphans('D:/Invoke', new Set(['outputs/images/2026/05/25/foo.png']), vi.fn(), {
+            importIntermediates: false,
+        });
 
         expect(imported).toBe(1);
-        expect(commands.scanImagesBulk).toHaveBeenCalledWith(
-            ['D:/Invoke/outputs/images/txt2img/foo.png'],
-            null,
-            true,
-            false,
-            null,
-            null
+        expect(commands.scanImagesBulk).toHaveBeenCalledWith(['D:/Invoke/outputs/images/txt2img/foo.png'], null, true, false, null, null);
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(
+            expect.objectContaining({
+                id: 'D:/Invoke/outputs/images/txt2img/foo.png',
+                filename: 'foo.png',
+            })
         );
-        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
-            id: 'D:/Invoke/outputs/images/txt2img/foo.png',
-            filename: 'foo.png'
-        }));
     });
 
     it('does not suppress a different folder when the intermediate row has a path-specific nested name', async () => {
         vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: '2026/05/25/foo.png' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: [
-                'outputs/images/2026/05/25/foo.png',
-                'outputs/images/txt2img/foo.png'
-            ]
+            data: ['outputs/images/2026/05/25/foo.png', 'outputs/images/txt2img/foo.png'],
         } as never);
 
         const imported = await scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false });
 
         expect(imported).toBe(1);
-        expect(commands.scanImagesBulk).toHaveBeenCalledWith(
-            ['D:/Invoke/outputs/images/txt2img/foo.png'],
-            null,
-            true,
-            false,
-            null,
-            null
-        );
+        expect(commands.scanImagesBulk).toHaveBeenCalledWith(['D:/Invoke/outputs/images/txt2img/foo.png'], null, true, false, null, null);
     });
 
     it('keeps basename-only matching for legacy intermediate rows without path truth', async () => {
         vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: 'legacy-intermediate.png' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/txt2img/legacy-intermediate.png']
+            data: ['outputs/images/txt2img/legacy-intermediate.png'],
         } as never);
 
         const imported = await scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false });
@@ -236,49 +210,38 @@ describe('scanForOrphans', () => {
         vi.mocked(openInvokeSourceDatabase).mockRejectedValue(new Error('database locked'));
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/new.png']
+            data: ['outputs/images/new.png'],
         } as never);
 
-        const imported = await scanForOrphans(
-            'D:\\Invoke\\databases\\invokeai.db',
-            new Set(),
-            vi.fn(),
-            { importIntermediates: false }
-        );
+        const imported = await scanForOrphans('D:\\Invoke\\databases\\invokeai.db', new Set(), vi.fn(), { importIntermediates: false });
 
         expect(imported).toBe(1);
         expect(openInvokeSourceDatabase).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
         expect(commands.listInvokeaiImages).toHaveBeenCalledWith('D:\\Invoke');
-        expect(error).toHaveBeenCalledWith(
-            '[Hybrid Sync] ERROR loading intermediates:',
-            expect.any(Error)
-        );
+        expect(error).toHaveBeenCalledWith('[Hybrid Sync] ERROR loading intermediates:', expect.any(Error));
         error.mockRestore();
     });
 
     it('normalizes a databases directory and allows importing intermediates on request', async () => {
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/intermediate.png']
+            data: ['outputs/images/intermediate.png'],
         } as never);
         vi.mocked(commands.scanImagesBulk).mockResolvedValue({
             status: 'ok',
-            data: [{
-                width: 64,
-                height: 64,
-                size: 10,
-                modified: 0,
-                thumbnail: null,
-                metadata: { isIntermediate: true }
-            }]
+            data: [
+                {
+                    width: 64,
+                    height: 64,
+                    size: 10,
+                    modified: 0,
+                    thumbnail: null,
+                    metadata: { isIntermediate: true },
+                },
+            ],
         } as never);
 
-        const imported = await scanForOrphans(
-            'D:/Invoke/databases',
-            new Set(),
-            vi.fn(),
-            { importIntermediates: true }
-        );
+        const imported = await scanForOrphans('D:/Invoke/databases', new Set(), vi.fn(), { importIntermediates: true });
 
         expect(openInvokeSourceDatabase).not.toHaveBeenCalled();
         expect(commands.listInvokeaiImages).toHaveBeenCalledWith('D:/Invoke');
@@ -299,8 +262,8 @@ describe('scanForOrphans', () => {
                 controlNets: [],
                 workflowJson: undefined,
                 rawParameters: undefined,
-                isIntermediate: true
-            }
+                isIntermediate: true,
+            },
         });
     });
 
@@ -311,10 +274,8 @@ describe('scanForOrphans', () => {
             .mockResolvedValueOnce({ status: 'ok', data: [] } as never);
         const progress = vi.fn();
 
-        await expect(scanForOrphans('D:/Invoke/', new Set(), progress, { importIntermediates: true }))
-            .resolves.toBe(0);
-        await expect(scanForOrphans('D:/Invoke', new Set(), progress, { importIntermediates: true }))
-            .resolves.toBe(0);
+        await expect(scanForOrphans('D:/Invoke/', new Set(), progress, { importIntermediates: true })).resolves.toBe(0);
+        await expect(scanForOrphans('D:/Invoke', new Set(), progress, { importIntermediates: true })).resolves.toBe(0);
 
         expect(error).toHaveBeenCalledWith('[OrphanScan] Failed to list images on disk:', expect.any(Error));
         expect(commands.scanImagesBulk).not.toHaveBeenCalled();
@@ -323,7 +284,7 @@ describe('scanForOrphans', () => {
 
     it('skips malformed, intermediate, and concurrently inserted scan rows', async () => {
         vi.mocked(getDb).mockResolvedValue({
-            select: vi.fn().mockResolvedValue([{ id: 'D:/Invoke/outputs/images/existing.png' }])
+            select: vi.fn().mockResolvedValue([{ id: 'D:/Invoke/outputs/images/existing.png' }]),
         } as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
@@ -331,21 +292,15 @@ describe('scanForOrphans', () => {
                 'outputs/images/missing.png',
                 'outputs/images/zero.png',
                 'outputs/images/intermediate.png',
-                'outputs/images/existing.png'
-            ]
+                'outputs/images/existing.png',
+            ],
         } as never);
         vi.mocked(commands.scanImagesBulk).mockResolvedValue({
             status: 'ok',
-            data: [
-                null,
-                { width: 0, metadata: null },
-                { width: 10, metadata: { isIntermediate: true } },
-                { width: 10, metadata: {} }
-            ]
+            data: [null, { width: 0, metadata: null }, { width: 10, metadata: { isIntermediate: true } }, { width: 10, metadata: {} }],
         } as never);
 
-        await expect(scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false }))
-            .resolves.toBe(0);
+        await expect(scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false })).resolves.toBe(0);
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
@@ -354,21 +309,23 @@ describe('scanForOrphans', () => {
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: files } as never);
         vi.mocked(commands.scanImagesBulk)
             .mockRejectedValueOnce(new Error('batch failed'))
-            .mockImplementationOnce(async (paths: string[]) => ({
-                status: 'ok',
-                data: paths.map(() => ({
-                    width: 1,
-                    height: 1,
-                    size: 1,
-                    modified: 1,
-                    thumbnail: null,
-                    metadata: null
-                }))
-            }) as never);
+            .mockImplementationOnce(
+                async (paths: string[]) =>
+                    ({
+                        status: 'ok',
+                        data: paths.map(() => ({
+                            width: 1,
+                            height: 1,
+                            size: 1,
+                            modified: 1,
+                            thumbnail: null,
+                            metadata: null,
+                        })),
+                    }) as never
+            );
         const progress = vi.fn();
 
-        await expect(scanForOrphans('D:/Invoke', new Set(), progress, { importIntermediates: true }))
-            .resolves.toBe(1);
+        await expect(scanForOrphans('D:/Invoke', new Set(), progress, { importIntermediates: true })).resolves.toBe(1);
         expect(commands.scanImagesBulk).toHaveBeenCalledTimes(2);
         expect(progress).toHaveBeenCalledWith('Importing untracked files...', 0, 101);
         expect(progress).toHaveBeenLastCalledWith('Importing untracked files...', 1, 101);
@@ -378,8 +335,7 @@ describe('scanForOrphans', () => {
         const controller = new AbortController();
         controller.abort();
 
-        await expect(scanForOrphans('D:/Invoke', new Set(), vi.fn(), { signal: controller.signal }))
-            .rejects.toThrow('Aborted');
+        await expect(scanForOrphans('D:/Invoke', new Set(), vi.fn(), { signal: controller.signal })).rejects.toThrow('Aborted');
 
         expect(getDb).not.toHaveBeenCalled();
         expect(commands.listInvokeaiImages).not.toHaveBeenCalled();
@@ -388,15 +344,20 @@ describe('scanForOrphans', () => {
 
     it.each(['enumeration', 'scan', 'write'] as const)(
         'waits for an in-flight %s and stops orphan recovery after cancellation',
-        async stage => {
+        async (stage) => {
             const controller = new AbortController();
             const files = Array.from({ length: 101 }, (_, index) => `outputs/images/${index}.png`);
             vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: files });
             let releaseWork!: () => void;
-            const pendingWork = new Promise<void>(resolve => { releaseWork = resolve; });
+            const pendingWork = new Promise<void>((resolve) => {
+                releaseWork = resolve;
+            });
             const workStarted = vi.fn();
             const committedPaths: string[] = [];
-            const waitForRelease = async () => { workStarted(); await pendingWork; };
+            const waitForRelease = async () => {
+                workStarted();
+                await pendingWork;
+            };
             if (stage === 'enumeration') {
                 vi.mocked(commands.listInvokeaiImages).mockImplementationOnce(async () => {
                     await waitForRelease();
@@ -409,9 +370,9 @@ describe('scanForOrphans', () => {
                     return scan(...args);
                 });
             } else {
-                vi.mocked(insertImagesBatch).mockImplementationOnce(async images => {
+                vi.mocked(insertImagesBatch).mockImplementationOnce(async (images) => {
                     await waitForRelease();
-                    committedPaths.push(...images.map(image => image.id));
+                    committedPaths.push(...images.map((image) => image.id));
                 });
             }
             const settled = vi.fn();

@@ -7,14 +7,14 @@ const env = { ...process.env };
 delete env.SKIP_TAURI_BUILD;
 
 const result = spawnSync('cargo', ['test', '--lib', '--bins'], {
-  cwd: fileURLToPath(new URL('../src-tauri/', import.meta.url)),
-  env,
-  stdio: 'inherit',
+    cwd: fileURLToPath(new URL('../src-tauri/', import.meta.url)),
+    env,
+    stdio: 'inherit',
 });
 
 if (result.error) {
-  console.error(result.error);
-  process.exit(1);
+    console.error(result.error);
+    process.exit(1);
 }
 
 process.exit(result.status ?? 1);

@@ -1,4 +1,3 @@
-
 import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useImageAI } from '../useImageAI';
@@ -16,8 +15,8 @@ vi.mock('../../services/geminiService', () => ({
 const mockGetState = vi.fn().mockReturnValue({ geminiApiKey: 'key123' });
 vi.mock('../../stores/settingsStore', () => ({
     useSettingsStore: Object.assign(vi.fn(), {
-        getState: () => mockGetState()
-    })
+        getState: () => mockGetState(),
+    }),
 }));
 
 describe('useImageAI', () => {
@@ -67,28 +66,28 @@ describe('useImageAI', () => {
     });
 
     it('forwards the effective thinking mode to image AI requests', async () => {
-        const { result } = renderHook(() => useImageAI({
-            enableAI: true,
-            aiModel: 'gemini-3.5-flash',
-            aiThinkingMode: 'low',
-        }));
+        const { result } = renderHook(() =>
+            useImageAI({
+                enableAI: true,
+                aiModel: 'gemini-3.5-flash',
+                aiThinkingMode: 'low',
+            })
+        );
 
         await act(async () => {
             await result.current.analyzePrompt('a cat', mockOnOpenSettings);
         });
 
-        expect(mockAnalyze).toHaveBeenCalledWith(
-            'a cat',
-            'key123',
-            'gemini-3.5-flash',
-            undefined,
-            'low'
-        );
+        expect(mockAnalyze).toHaveBeenCalledWith('a cat', 'key123', 'gemini-3.5-flash', undefined, 'low');
     });
 
     it('should handle loading state', async () => {
         let resolvePromise: (val: string) => void;
-        mockAnalyze.mockReturnValue(new Promise(resolve => { resolvePromise = resolve; }));
+        mockAnalyze.mockReturnValue(
+            new Promise((resolve) => {
+                resolvePromise = resolve;
+            })
+        );
 
         const { result } = renderHook(() => useImageAI({ enableAI: true }));
 
@@ -138,7 +137,7 @@ describe('useImageAI', () => {
         ['status 403', 'Invalid API key. Check your settings.'],
         ['network unavailable', 'Network error. Check your connection.'],
         ['fetch rejected', 'Network error. Check your connection.'],
-        ['unexpected failure', 'AI request failed. Please try again.']
+        ['unexpected failure', 'AI request failed. Please try again.'],
     ])('maps analysis error %s to a useful message', async (message, expected) => {
         const onError = vi.fn();
         mockAnalyze.mockRejectedValueOnce(new Error(message));

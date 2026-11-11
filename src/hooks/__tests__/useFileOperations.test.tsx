@@ -1,4 +1,3 @@
-
 import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFileOperations } from '../useFileOperations';
@@ -19,7 +18,7 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
     BaseDirectory: {
         AppLocalData: 0,
         Resource: 1,
-    }
+    },
 }));
 
 // Shared Mock Functions
@@ -94,9 +93,39 @@ describe('useFileOperations', () => {
     };
 
     const mockImages = [
-        { id: '1', url: 'url1', thumbnailUrl: 'thumb1', isFavorite: false, filename: 'f1.png', timestamp: 123, width: 100, height: 100, metadata: {} as any },
-        { id: '2', url: 'url2', thumbnailUrl: 'thumb2', isFavorite: true, filename: 'f2.png', timestamp: 124, width: 100, height: 100, metadata: {} as any },
-        { id: '3', url: 'url3', thumbnailUrl: 'url3', isFavorite: false, filename: 'unoptimized.png', timestamp: 125, width: 100, height: 100, metadata: {} as any },
+        {
+            id: '1',
+            url: 'url1',
+            thumbnailUrl: 'thumb1',
+            isFavorite: false,
+            filename: 'f1.png',
+            timestamp: 123,
+            width: 100,
+            height: 100,
+            metadata: {} as any,
+        },
+        {
+            id: '2',
+            url: 'url2',
+            thumbnailUrl: 'thumb2',
+            isFavorite: true,
+            filename: 'f2.png',
+            timestamp: 124,
+            width: 100,
+            height: 100,
+            metadata: {} as any,
+        },
+        {
+            id: '3',
+            url: 'url3',
+            thumbnailUrl: 'url3',
+            isFavorite: false,
+            filename: 'unoptimized.png',
+            timestamp: 125,
+            width: 100,
+            height: 100,
+            metadata: {} as any,
+        },
     ];
 
     beforeEach(() => {
@@ -105,13 +134,16 @@ describe('useFileOperations', () => {
         mockRefreshCollectionThumbnails.mockResolvedValue(undefined);
     });
 
-    const renderFileOperations = (images = mockImages) => renderHook(() => useFileOperations({
-        images,
-        setImages: mockSetImages,
-        refreshCollections: mockRefreshCollections,
-        refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-        settings: mockSettings,
-    }));
+    const renderFileOperations = (images = mockImages) =>
+        renderHook(() =>
+            useFileOperations({
+                images,
+                setImages: mockSetImages,
+                refreshCollections: mockRefreshCollections,
+                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
+                settings: mockSettings,
+            })
+        );
 
     it('should initialize correctly', () => {
         const { result } = renderFileOperations();
@@ -132,7 +164,7 @@ describe('useFileOperations', () => {
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
             expect(mockSetImages).toHaveBeenCalled();
             const updateImages = mockSetImages.mock.calls[0][0] as (images: typeof mockImages) => typeof mockImages;
-            expect(updateImages(mockImages).map(image => image.id)).toEqual(['2', '3']);
+            expect(updateImages(mockImages).map((image) => image.id)).toEqual(['2', '3']);
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 item from the library'), 'success');
             expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
             expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
@@ -163,14 +195,8 @@ describe('useFileOperations', () => {
 
             await act(async () => result.current.deleteImages(['1']));
 
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Library update succeeded, but filters may take a moment to refresh.',
-                'info'
-            );
-            expect(error).toHaveBeenCalledWith(
-                '[MaintenanceOps] removeFromLibrary: facet refresh failed',
-                expect.any(Error)
-            );
+            expect(mockAddToast).toHaveBeenCalledWith('Library update succeeded, but filters may take a moment to refresh.', 'info');
+            expect(error).toHaveBeenCalledWith('[MaintenanceOps] removeFromLibrary: facet refresh failed', expect.any(Error));
             error.mockRestore();
         });
 
@@ -184,10 +210,7 @@ describe('useFileOperations', () => {
 
             expect(mockSetImages).not.toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith('Failed to update library state', 'error');
-            expect(error).toHaveBeenCalledWith(
-                '[MaintenanceOps] removeFromLibrary: mutation failed',
-                expect.any(Error)
-            );
+            expect(error).toHaveBeenCalledWith('[MaintenanceOps] removeFromLibrary: mutation failed', expect.any(Error));
             error.mockRestore();
         });
     });
@@ -223,8 +246,20 @@ describe('useFileOperations', () => {
             const { processWebFiles } = await import('../../services/importService');
             const mockFiles = [new File([''], 'test.png', { type: 'image/png' })];
             const mockImportResult = {
-                images: [{ id: 'new-1', filename: 'test.png', url: 'new1', thumbnailUrl: 'nt1', timestamp: 456, width: 200, height: 200, isFavorite: false, metadata: {} as any }],
-                stats: { skipped: 0, errors: 0 }
+                images: [
+                    {
+                        id: 'new-1',
+                        filename: 'test.png',
+                        url: 'new1',
+                        thumbnailUrl: 'nt1',
+                        timestamp: 456,
+                        width: 200,
+                        height: 200,
+                        isFavorite: false,
+                        metadata: {} as any,
+                    },
+                ],
+                stats: { skipped: 0, errors: 0 },
             };
             (processWebFiles as any).mockResolvedValue(mockImportResult);
 

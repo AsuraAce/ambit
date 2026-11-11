@@ -9,8 +9,8 @@ import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../../st
 vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     motion: {
-        div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>
-    }
+        div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+    },
 }));
 
 const resetLibraryStore = () => {
@@ -44,23 +44,35 @@ const resetLibraryStore = () => {
         isRefreshingMetadata: false,
         refreshProgress: null,
         isActivityDockDismissed: false,
-        isActivityDockMinimized: false
+        isActivityDockMinimized: false,
     });
 };
 
 const createInvokeOperation = (overrides: Partial<InvokeOperationState> = {}): InvokeOperationState => ({
-    id: Symbol('sync'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
-    phase: 'syncing', viewCommitted: true,
+    id: Symbol('sync'),
+    origin: 'user',
+    rootPath: 'D:/Invoke',
+    targetLabel: 'Odin',
+    phase: 'syncing',
+    viewCommitted: true,
     progress: { current: 0, total: 0, message: 'Catching up images and boards...' },
     cancel: vi.fn(),
     ...overrides,
 });
 
 const completeInvokeOperation = (overrides: Partial<InvokeOperationState> = {}) => {
-    useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
-        ...current, phase: 'completed', message: 'Synchronization completed.', hasChanges: true,
-        imported: 0, updated: 0, ...overrides,
-    }));
+    useInvokeOwnerScopeStore.getState().setOperation(
+        (current) =>
+            current && {
+                ...current,
+                phase: 'completed',
+                message: 'Synchronization completed.',
+                hasChanges: true,
+                imported: 0,
+                updated: 0,
+                ...overrides,
+            }
+    );
     useLibraryStore.setState({ syncStatus: 'idle' });
 };
 
@@ -79,7 +91,7 @@ describe('ActivityDock', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
             invokeSyncActivityKind: 'manual',
-            syncProgress: { current: 2, total: 5, message: 'Syncing collections...' }
+            syncProgress: { current: 2, total: 5, message: 'Syncing collections...' },
         });
 
         render(<ActivityDock />);
@@ -93,10 +105,16 @@ describe('ActivityDock', () => {
     it('shows the committed owner operation and retains cancellation until settlement', () => {
         const cancel = vi.fn();
         useInvokeOwnerScopeStore.getState().setOperation({
-            id: Symbol('sync'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
-            phase: 'syncing', viewCommitted: true,
+            id: Symbol('sync'),
+            origin: 'user',
+            rootPath: 'D:/Invoke',
+            targetLabel: 'Odin',
+            phase: 'syncing',
+            viewCommitted: true,
             progress: { current: 2, total: 5, message: 'Processing images: 2/5' },
-            imported: 1, updated: 0, cancel,
+            imported: 1,
+            updated: 0,
+            cancel,
         });
         render(<ActivityDock />);
         expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
@@ -105,29 +123,39 @@ describe('ActivityDock', () => {
         expect(screen.getByText('0 updated')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(cancel).toHaveBeenCalledTimes(1);
-        act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelling' })));
+        act(() => useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling' }));
         expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
     });
 
-    it.each(['cancelled', 'failed'] as const)('retains the %s result with retry below other active work and dismisses only that result', phase => {
-        const retry = vi.fn();
-        useInvokeOwnerScopeStore.getState().setOperation({
-            id: Symbol('sync'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin', phase,
-            viewCommitted: true, progress: { current: 2, total: 5 }, message: `Sync ${phase}.`, retry,
-        });
-        useLibraryStore.setState({ isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2 } });
-        render(<ActivityDock />);
-        expect(screen.getByText('Duplicate Scan')).toBeTruthy();
-        expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
-        act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
-        expect(screen.getByRole('status').textContent).toBe(`Sync ${phase}.`);
-        expect(screen.queryByTestId('activity-dock-progress-rail')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        expect(retry).toHaveBeenCalledTimes(1);
-        fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
-        expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
-        expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
-    });
+    it.each(['cancelled', 'failed'] as const)(
+        'retains the %s result with retry below other active work and dismisses only that result',
+        (phase) => {
+            const retry = vi.fn();
+            useInvokeOwnerScopeStore.getState().setOperation({
+                id: Symbol('sync'),
+                origin: 'user',
+                rootPath: 'D:/Invoke',
+                targetLabel: 'Odin',
+                phase,
+                viewCommitted: true,
+                progress: { current: 2, total: 5 },
+                message: `Sync ${phase}.`,
+                retry,
+            });
+            useLibraryStore.setState({ isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2 } });
+            render(<ActivityDock />);
+            expect(screen.getByText('Duplicate Scan')).toBeTruthy();
+            expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+            act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+            expect(screen.getByRole('status').textContent).toBe(`Sync ${phase}.`);
+            expect(screen.queryByTestId('activity-dock-progress-rail')).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+            expect(retry).toHaveBeenCalledTimes(1);
+            fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
+            expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
+        }
+    );
 
     describe('InvokeAI presentation timing', () => {
         beforeEach(() => {
@@ -138,7 +166,8 @@ describe('ActivityDock', () => {
         it('keeps a quick unchanged startup silent without falling back to legacy sync progress', () => {
             useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
             useLibraryStore.setState({
-                syncStatus: 'syncing', invokeSyncActivityKind: 'startup',
+                syncStatus: 'syncing',
+                invokeSyncActivityKind: 'startup',
                 syncProgress: { current: 0, total: 0, message: 'Legacy catch-up progress' },
             });
             render(<ActivityDock />);
@@ -157,9 +186,15 @@ describe('ActivityDock', () => {
             useInvokeOwnerScopeStore.getState().setOperation(operation);
             render(<ActivityDock />);
             act(() => vi.advanceTimersByTime(2000));
-            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
-                ...current, progress: { current: 1, total: 2, message: 'Checking boards...' },
-            })));
+            act(() =>
+                useInvokeOwnerScopeStore.getState().setOperation(
+                    (current) =>
+                        current && {
+                            ...current,
+                            progress: { current: 1, total: 2, message: 'Checking boards...' },
+                        }
+                )
+            );
             act(() => vi.advanceTimersByTime(499));
             expect(screen.queryByRole('status')).toBeNull();
             act(() => vi.advanceTimersByTime(1));
@@ -202,14 +237,19 @@ describe('ActivityDock', () => {
         });
 
         it('reports repaired paths as a separate detail from imported and updated image counts', () => {
-            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({
-                phase: 'completed', imported: 2, updated: 3, pathsRepaired: 7,
-            }));
+            useInvokeOwnerScopeStore.getState().setOperation(
+                createInvokeOperation({
+                    phase: 'completed',
+                    imported: 2,
+                    updated: 3,
+                    pathsRepaired: 7,
+                })
+            );
             render(<ActivityDock />);
             expect(screen.getByText('2 added')).toBeTruthy();
             expect(screen.getByText('3 updated')).toBeTruthy();
             expect(screen.getByText('7 paths repaired')).toBeTruthy();
-            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, pathsRepaired: 0 })));
+            act(() => useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, pathsRepaired: 0 }));
             expect(screen.queryByText('0 paths repaired')).toBeNull();
         });
 
@@ -228,7 +268,12 @@ describe('ActivityDock', () => {
         });
 
         it('pauses while keyboard focus moves within the dock without taking focus', () => {
-            render(<><button type="button">Continue browsing</button><ActivityDock /></>);
+            render(
+                <>
+                    <button type="button">Continue browsing</button>
+                    <ActivityDock />
+                </>
+            );
             const outside = screen.getByRole('button', { name: 'Continue browsing' });
             outside.focus();
             act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' })));
@@ -322,11 +367,11 @@ describe('ActivityDock', () => {
             expect(screen.getByRole('status')).toBeTruthy();
         });
 
-        it.each(['cancelled', 'failed'] as const)('retains quick startup %s with Retry until manual dismissal', phase => {
+        it.each(['cancelled', 'failed'] as const)('retains quick startup %s with Retry until manual dismissal', (phase) => {
             const retry = vi.fn();
             useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
             render(<ActivityDock />);
-            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase, retry })));
+            act(() => useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase, retry }));
             act(() => vi.advanceTimersByTime(15000));
             fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
             expect(retry).toHaveBeenCalledOnce();
@@ -348,11 +393,17 @@ describe('ActivityDock', () => {
         });
 
         it('keeps preparation separate from background startup presentation', () => {
-            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup', phase: 'preparing', viewCommitted: false }));
+            useInvokeOwnerScopeStore
+                .getState()
+                .setOperation(createInvokeOperation({ origin: 'startup', phase: 'preparing', viewCommitted: false }));
             render(<ActivityDock />);
             act(() => vi.advanceTimersByTime(10000));
             expect(screen.queryByRole('status')).toBeNull();
-            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'syncing', viewCommitted: true })));
+            act(() =>
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOperation((current) => current && { ...current, phase: 'syncing', viewCommitted: true })
+            );
             act(() => vi.advanceTimersByTime(2499));
             expect(screen.queryByRole('status')).toBeNull();
             act(() => vi.advanceTimersByTime(1));
@@ -409,7 +460,12 @@ describe('ActivityDock', () => {
 
         it('cleans up timers across duplicate mounts and React effect replay', () => {
             useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
-            const view = render(<React.StrictMode><ActivityDock /><ActivityDock /></React.StrictMode>);
+            const view = render(
+                <React.StrictMode>
+                    <ActivityDock />
+                    <ActivityDock />
+                </React.StrictMode>
+            );
             act(() => vi.advanceTimersByTime(100));
             act(() => completeInvokeOperation({ hasChanges: false }));
             act(() => vi.advanceTimersByTime(10000));
@@ -433,7 +489,7 @@ describe('ActivityDock', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
             invokeSyncActivityKind: 'startup',
-            syncProgress: { current: 2, total: 5, message: 'Synchronizing boards...' }
+            syncProgress: { current: 2, total: 5, message: 'Synchronizing boards...' },
         });
 
         render(<ActivityDock />);
@@ -448,8 +504,8 @@ describe('ActivityDock', () => {
             duplicateScanProgress: {
                 current: 4,
                 total: 10,
-                message: 'Hashing images for exact duplicate detection...'
-            }
+                message: 'Hashing images for exact duplicate detection...',
+            },
         });
 
         render(<ActivityDock />);
@@ -466,8 +522,8 @@ describe('ActivityDock', () => {
             missingScanProgress: {
                 current: 3,
                 total: 12,
-                message: 'Checking file paths for missing images...'
-            }
+                message: 'Checking file paths for missing images...',
+            },
         });
 
         render(<ActivityDock />);
@@ -484,9 +540,9 @@ describe('ActivityDock', () => {
             importProgress: {
                 current: 1,
                 total: 5,
-                message: 'Importing images...'
+                message: 'Importing images...',
             },
-            importAbortController: null
+            importAbortController: null,
         });
 
         render(<ActivityDock />);
@@ -502,8 +558,8 @@ describe('ActivityDock', () => {
             importProgress: {
                 current: 1,
                 total: 5,
-                message: 'Importing images...'
-            }
+                message: 'Importing images...',
+            },
         });
 
         render(<ActivityDock />);
@@ -525,9 +581,9 @@ describe('ActivityDock', () => {
             importProgress: {
                 current: 1,
                 total: 5,
-                message: 'Importing images...'
+                message: 'Importing images...',
             },
-            importAbortController: abortController
+            importAbortController: abortController,
         });
 
         render(<ActivityDock />);
@@ -546,14 +602,14 @@ describe('ActivityDock', () => {
             progress: {
                 current: 1,
                 total: 10,
-                message: 'Importing images from 3 folders...'
-            }
+                message: 'Importing images from 3 folders...',
+            },
         });
         expect(runId).toBeTruthy();
         useLibraryStore.getState().setImportProgressForRun('old-run', {
             current: 9,
             total: 10,
-            message: 'Scanning C:/old-folder...'
+            message: 'Scanning C:/old-folder...',
         });
 
         render(<ActivityDock />);
@@ -568,8 +624,8 @@ describe('ActivityDock', () => {
             backgroundHealingProgress: {
                 current: 340,
                 total: 0,
-                message: 'Optimized 340 thumbnails'
-            }
+                message: 'Optimized 340 thumbnails',
+            },
         });
 
         render(<ActivityDock />);
@@ -590,8 +646,8 @@ describe('ActivityDock', () => {
             backgroundHealingProgress: {
                 current: 340,
                 total: 340,
-                message: 'Finished: 340 thumbnails optimized'
-            }
+                message: 'Finished: 340 thumbnails optimized',
+            },
         });
 
         render(<ActivityDock />);
@@ -610,8 +666,8 @@ describe('ActivityDock', () => {
             backgroundHealingProgress: {
                 current: 340,
                 total: 0,
-                message: 'Optimized 338 thumbnails; 2 need attention'
-            }
+                message: 'Optimized 338 thumbnails; 2 need attention',
+            },
         });
 
         render(<ActivityDock />);
@@ -630,8 +686,8 @@ describe('ActivityDock', () => {
                 updated: 123981,
                 errors: 0,
                 phase: 'processing',
-                message: 'Processed 126700/288222 (Updated: 123981). Timings: Fetch 54ms'
-            }
+                message: 'Processed 126700/288222 (Updated: 123981). Timings: Fetch 54ms',
+            },
         });
 
         render(<ActivityDock />);
@@ -657,14 +713,14 @@ describe('ActivityDock', () => {
                 message: 'Updating local asset index...',
                 mode: 'indeterminate',
                 detail: '718 model files found | 718 new/changed | 388 thumbnails linked',
-                startedAt: Date.now()
+                startedAt: Date.now(),
             },
             isBackgroundHealingActive: true,
             backgroundHealingProgress: {
                 current: 25,
                 total: 100,
-                message: 'Optimizing thumbnails...'
-            }
+                message: 'Optimizing thumbnails...',
+            },
         });
 
         const { container } = render(<ActivityDock />);
@@ -691,8 +747,8 @@ describe('ActivityDock', () => {
                 total: 20,
                 message: 'Registering discovered assets...',
                 mode: 'determinate',
-                detail: 'model.safetensors'
-            }
+                detail: 'model.safetensors',
+            },
         });
 
         render(<ActivityDock />);
@@ -713,8 +769,8 @@ describe('ActivityDock', () => {
                 message: 'Updating local asset index...',
                 mode: 'determinate',
                 detail: '97 indexed',
-                startedAt: Date.now() - 6500
-            }
+                startedAt: Date.now() - 6500,
+            },
         });
 
         render(<ActivityDock />);
@@ -736,8 +792,8 @@ describe('ActivityDock', () => {
                 message: 'Scanning resource folders...',
                 mode: 'indeterminate',
                 detail: '37 model files found | 1842 files checked',
-                startedAt: Date.now() - 6500
-            }
+                startedAt: Date.now() - 6500,
+            },
         });
 
         render(<ActivityDock />);
@@ -758,8 +814,8 @@ describe('ActivityDock', () => {
                 message: 'Resource scan complete',
                 mode: 'complete',
                 detail: '149 model files found | 12 thumbnails linked',
-                startedAt: Date.now() - 2000
-            }
+                startedAt: Date.now() - 2000,
+            },
         });
 
         render(<ActivityDock />);
@@ -779,7 +835,7 @@ describe('ActivityDock', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'watching',
-            message: 'Checking InvokeAI for completed images...'
+            message: 'Checking InvokeAI for completed images...',
         });
 
         render(<ActivityDock />);
@@ -802,7 +858,7 @@ describe('ActivityDock', () => {
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
             message: 'Syncing completed InvokeAI images...',
-            progress: { current: 0, total: 0, message: undefined }
+            progress: { current: 0, total: 0, message: undefined },
         });
 
         render(<ActivityDock />);
@@ -816,7 +872,7 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: 'Watching for new images...',
-                progress: null
+                progress: null,
             });
         });
 
@@ -835,7 +891,7 @@ describe('ActivityDock', () => {
 
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Syncing completed InvokeAI images...'
+            message: 'Syncing completed InvokeAI images...',
         });
 
         render(<ActivityDock />);
@@ -845,7 +901,7 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: 'Watching for new images...',
-                progress: null
+                progress: null,
             });
         });
 
@@ -859,7 +915,7 @@ describe('ActivityDock', () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'Syncing completed InvokeAI images...'
+                message: 'Syncing completed InvokeAI images...',
             });
             useLibraryStore.getState().reportLiveImagesReceived(2, { source: 'invoke' });
         });
@@ -881,7 +937,7 @@ describe('ActivityDock', () => {
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
             message: 'Syncing completed InvokeAI images...',
-            progress: { current: 0, total: 0, message: undefined }
+            progress: { current: 0, total: 0, message: undefined },
         });
 
         const { container } = render(<ActivityDock />);
@@ -927,7 +983,7 @@ describe('ActivityDock', () => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
                 phase: 'importing',
                 message: 'Importing new images...',
-                progress: { current: 1, total: 3, message: undefined }
+                progress: { current: 1, total: 3, message: undefined },
             });
         });
 
@@ -943,7 +999,7 @@ describe('ActivityDock', () => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
                 message: 'Syncing completed InvokeAI images...',
-                progress: { current: 0, total: 0, message: undefined }
+                progress: { current: 0, total: 0, message: undefined },
             });
         });
 
@@ -962,7 +1018,7 @@ describe('ActivityDock', () => {
 
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Syncing completed InvokeAI images...'
+            message: 'Syncing completed InvokeAI images...',
         });
 
         render(<ActivityDock />);
@@ -978,13 +1034,13 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'syncing',
                 message: 'Syncing completed InvokeAI images...',
-                progress: { current: 0, total: 0, message: undefined }
+                progress: { current: 0, total: 0, message: undefined },
             });
             useLibraryStore.getState().updateLiveWatchSession({
                 source: 'invoke',
                 phase: 'importing',
                 message: 'Importing new images...',
-                progress: { current: 1, total: 3, message: undefined }
+                progress: { current: 1, total: 3, message: undefined },
             });
         });
 
@@ -1004,7 +1060,7 @@ describe('ActivityDock', () => {
 
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Syncing completed InvokeAI images...'
+            message: 'Syncing completed InvokeAI images...',
         });
 
         render(<ActivityDock />);
@@ -1025,7 +1081,7 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: 'Watching for new images...',
-                progress: null
+                progress: null,
             });
         });
 
@@ -1049,7 +1105,7 @@ describe('ActivityDock', () => {
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
             message: 'Syncing completed InvokeAI images...',
-            progress: { current: 0, total: 0, message: undefined }
+            progress: { current: 0, total: 0, message: undefined },
         });
 
         render(<ActivityDock />);
@@ -1065,7 +1121,7 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: 'Watching for new images...',
-                progress: null
+                progress: null,
             });
         });
 
@@ -1088,7 +1144,7 @@ describe('ActivityDock', () => {
 
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Syncing completed InvokeAI images...'
+            message: 'Syncing completed InvokeAI images...',
         });
 
         render(<ActivityDock />);
@@ -1105,7 +1161,7 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'syncing',
                 message: 'Still syncing...',
-                progress: { current: 1, total: 2, message: undefined }
+                progress: { current: 1, total: 2, message: undefined },
             });
         });
 
@@ -1120,14 +1176,14 @@ describe('ActivityDock', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: 'Watching for new images...',
-                progress: null
+                progress: null,
             });
         });
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'Syncing completed InvokeAI images...'
+                message: 'Syncing completed InvokeAI images...',
             });
         });
 
@@ -1145,7 +1201,7 @@ describe('ActivityDock', () => {
 
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Syncing completed InvokeAI images...'
+            message: 'Syncing completed InvokeAI images...',
         });
 
         render(<ActivityDock />);
@@ -1162,8 +1218,8 @@ describe('ActivityDock', () => {
                 importProgress: {
                     current: 1,
                     total: 2,
-                    message: 'Importing selected files...'
-                }
+                    message: 'Importing selected files...',
+                },
             });
         });
 
@@ -1179,7 +1235,7 @@ describe('ActivityDock', () => {
 
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'watching',
-            message: 'Checking InvokeAI for completed images...'
+            message: 'Checking InvokeAI for completed images...',
         });
 
         render(<ActivityDock />);
@@ -1190,8 +1246,8 @@ describe('ActivityDock', () => {
                 importProgress: {
                     current: 1,
                     total: 2,
-                    message: 'Importing selected files...'
-                }
+                    message: 'Importing selected files...',
+                },
             });
         });
 
@@ -1207,7 +1263,7 @@ describe('ActivityDock', () => {
         useLibraryStore.setState({
             isRegeneratingThumbnails: true,
             thumbnailProgress: { current: 3, total: 10, message: 'Regenerating thumbnails...' },
-            thumbnailAbortController: abortController
+            thumbnailAbortController: abortController,
         });
         render(<ActivityDock />);
         expect(screen.getByText('Optimizing')).toBeTruthy();
@@ -1220,7 +1276,7 @@ describe('ActivityDock', () => {
         vi.mocked(invoke).mockResolvedValue(undefined);
         useLibraryStore.setState({
             isResolvingModels: true,
-            modelResolutionProgress: { current: 4, total: 8, message: 'Resolving model hashes...' }
+            modelResolutionProgress: { current: 4, total: 8, message: 'Resolving model hashes...' },
         });
         render(<ActivityDock />);
         expect(screen.getByText('Resolving Models')).toBeTruthy();
@@ -1241,7 +1297,7 @@ describe('ActivityDock', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
             invokeSyncActivityKind: 'startup',
-            syncProgress: { current: 1, total: 4, message: 'Syncing' }
+            syncProgress: { current: 1, total: 4, message: 'Syncing' },
         });
         const view = render(<ActivityDock />);
         fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
@@ -1255,7 +1311,7 @@ describe('ActivityDock', () => {
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
             backgroundHealingProgress: { current: 1, total: 4, message: 'Healing' },
-            isActivityDockMinimized: true
+            isActivityDockMinimized: true,
         });
         const { container } = render(<ActivityDock />);
         expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
@@ -1264,7 +1320,7 @@ describe('ActivityDock', () => {
     it('dismisses ordinary activity until the store reopens it', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
-            syncProgress: { current: 1, total: 2, message: 'Syncing' }
+            syncProgress: { current: 1, total: 2, message: 'Syncing' },
         });
         render(<ActivityDock />);
         fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
@@ -1280,13 +1336,17 @@ describe('ActivityDock', () => {
         useLibraryStore.setState(state);
         render(<ActivityDock />);
         fireEvent.click(screen.getByText('Cancel'));
-        expect(useLibraryStore.getState().isScanningDiscovery || useLibraryStore.getState().isScanningDuplicates || useLibraryStore.getState().isScanningMissingFiles).toBe(false);
+        expect(
+            useLibraryStore.getState().isScanningDiscovery ||
+                useLibraryStore.getState().isScanningDuplicates ||
+                useLibraryStore.getState().isScanningMissingFiles
+        ).toBe(false);
     });
 
     it('cancels background thumbnail optimization', () => {
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
-            backgroundHealingProgress: { current: 1, total: 0, message: 'Healing' }
+            backgroundHealingProgress: { current: 1, total: 0, message: 'Healing' },
         });
         render(<ActivityDock />);
         fireEvent.click(screen.getByText('Cancel'));
@@ -1304,8 +1364,8 @@ describe('ActivityDock', () => {
                 total: 0,
                 message: 'Scanning',
                 mode: 'indeterminate',
-                startedAt: Date.now() - 65000
-            }
+                startedAt: Date.now() - 65000,
+            },
         });
         render(<ActivityDock />);
         expect(screen.getByText('1m 5s elapsed')).toBeTruthy();
@@ -1331,8 +1391,8 @@ describe('ActivityDock', () => {
                 ...createInitialLiveWatchSessionState(),
                 active: true,
                 source: null,
-                phase: 'syncing'
-            }
+                phase: 'syncing',
+            },
         });
         render(<ActivityDock />);
         act(() => vi.advanceTimersByTime(2500));
@@ -1352,7 +1412,7 @@ describe('ActivityDock', () => {
     it('omits updated metadata counts when the backend has not supplied them', () => {
         useLibraryStore.setState({
             isRefreshingMetadata: true,
-            refreshProgress: { current: 2, total: 4, errors: 0 }
+            refreshProgress: { current: 2, total: 4, errors: 0 },
         });
         render(<ActivityDock />);
         expect(screen.getByText('2 / 4 images | 50%')).toBeTruthy();
@@ -1361,7 +1421,7 @@ describe('ActivityDock', () => {
     it('uses the starting fallback for activity without a message or phase', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
-            syncProgress: { current: 0, total: 0 }
+            syncProgress: { current: 0, total: 0 },
         });
         render(<ActivityDock />);
         expect(screen.getByText('Starting work...')).toBeTruthy();
@@ -1372,7 +1432,7 @@ describe('ActivityDock', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
             syncProgress: { current: 1, total: 2, message: 'Syncing' },
-            syncAbortController: abortController
+            syncAbortController: abortController,
         });
         render(<ActivityDock />);
         fireEvent.click(screen.getByText('Cancel'));

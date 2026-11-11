@@ -1,4 +1,3 @@
-
 import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useQueryClient } from '@tanstack/react-query';
@@ -6,11 +5,12 @@ import { useAppActions } from '../useAppActions';
 import type { ImagesQueryKey } from '../useImagesQuery';
 import type { AIImage, SourceKind } from '../../types';
 
-type MockImage = Pick<AIImage, 'id' | 'filename' | 'timestamp'> & Partial<AIImage> & {
-    detectedSourceKind?: SourceKind;
-    sourceKind?: SourceKind;
-    sourceKindOverride?: SourceKind;
-};
+type MockImage = Pick<AIImage, 'id' | 'filename' | 'timestamp'> &
+    Partial<AIImage> & {
+        detectedSourceKind?: SourceKind;
+        sourceKind?: SourceKind;
+        sourceKindOverride?: SourceKind;
+    };
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -32,8 +32,30 @@ const mockRefreshSmartCounts = vi.fn();
 const mockSetPrivacyEnabled = vi.fn();
 const mockUpdateImagesQueryCaches = vi.fn();
 let mockStoreImages: MockImage[] = [
-    { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 100 },
-    { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 200 },
+    {
+        id: '1',
+        isFavorite: false,
+        isPinned: false,
+        filename: '1.png',
+        timestamp: 100,
+        detectedSourceKind: 'generated',
+        sourceKind: 'generated',
+        sourceKindOverride: undefined,
+        captureWallTimeMs: undefined,
+        displayTimestamp: 100,
+    },
+    {
+        id: '2',
+        isFavorite: true,
+        isPinned: true,
+        filename: '2.png',
+        timestamp: 200,
+        detectedSourceKind: 'generated',
+        sourceKind: 'generated',
+        sourceKindOverride: undefined,
+        captureWallTimeMs: undefined,
+        displayTimestamp: 200,
+    },
 ];
 let mockStoreFilters = { collectionId: 'col1' as string | null };
 let mockSettings = { confirmDelete: true, enableAI: false, maskingMode: 'blur' };
@@ -63,19 +85,21 @@ vi.mock('../../utils/imageQueryCache', async (importOriginal) => {
 });
 
 vi.mock('../../stores/searchStore', () => ({
-    useSearchStore: (selector: any) => selector({
-        images: mockStoreImages,
-        setImages: mockSetImages,
-        filters: mockStoreFilters,
-    }),
+    useSearchStore: (selector: any) =>
+        selector({
+            images: mockStoreImages,
+            setImages: mockSetImages,
+            filters: mockStoreFilters,
+        }),
 }));
 
 vi.mock('../../stores/settingsStore', () => {
-    const useSettingsStore = (selector: (state: unknown) => unknown) => selector({
-        settings: mockSettings,
-        privacyEnabled: mockPrivacyEnabled,
-        setPrivacyEnabled: mockSetPrivacyEnabled,
-    });
+    const useSettingsStore = (selector: (state: unknown) => unknown) =>
+        selector({
+            settings: mockSettings,
+            privacyEnabled: mockPrivacyEnabled,
+            setPrivacyEnabled: mockSetPrivacyEnabled,
+        });
     useSettingsStore.getState = () => ({ settings: mockSettings, geminiApiKey: mockGeminiApiKey });
     return { useSettingsStore };
 });
@@ -87,10 +111,11 @@ vi.mock('../../stores/libraryStore', () => ({
 }));
 
 vi.mock('../../stores/collectionStore', () => ({
-    useCollectionStore: (selector: any) => selector({
-        refreshCollections: mockRefreshCollections,
-        refreshSmartCounts: mockRefreshSmartCounts,
-    }),
+    useCollectionStore: (selector: any) =>
+        selector({
+            refreshCollections: mockRefreshCollections,
+            refreshSmartCounts: mockRefreshSmartCounts,
+        }),
 }));
 
 describe('useAppActions', () => {
@@ -113,7 +138,9 @@ describe('useAppActions', () => {
         viewingImageId: null,
         selectedImageIndex: null,
         setSelectedImageIndex: mockSetSelectedImageIndex,
-        get viewerImages() { return mockStoreImages as unknown as AIImage[]; },
+        get viewerImages() {
+            return mockStoreImages as unknown as AIImage[];
+        },
         setViewerSessionImages: mockSetViewerSessionImages,
         fileOps: mockFileOps,
         selectedIds: new Set(['1']),
@@ -126,8 +153,30 @@ describe('useAppActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockStoreImages = [
-            { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 100 },
-            { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 200 },
+            {
+                id: '1',
+                isFavorite: false,
+                isPinned: false,
+                filename: '1.png',
+                timestamp: 100,
+                detectedSourceKind: 'generated',
+                sourceKind: 'generated',
+                sourceKindOverride: undefined,
+                captureWallTimeMs: undefined,
+                displayTimestamp: 100,
+            },
+            {
+                id: '2',
+                isFavorite: true,
+                isPinned: true,
+                filename: '2.png',
+                timestamp: 200,
+                detectedSourceKind: 'generated',
+                sourceKind: 'generated',
+                sourceKindOverride: undefined,
+                captureWallTimeMs: undefined,
+                displayTimestamp: 200,
+            },
         ];
         mockStoreFilters = { collectionId: 'col1' };
         mockSettings = { confirmDelete: true, enableAI: false, maskingMode: 'blur' };
@@ -203,13 +252,13 @@ describe('useAppActions', () => {
 
         expect(mockSetImages).toHaveBeenCalled();
         const update = mockSetImages.mock.calls[0][0] as (images: typeof mockStoreImages) => typeof mockStoreImages;
-        expect(update(mockStoreImages).map(image => image.isFavorite)).toEqual([true, true]);
+        expect(update(mockStoreImages).map((image) => image.isFavorite)).toEqual([true, true]);
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
             collectionIds: ['col1'],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Favorited'), 'success');
     });
@@ -224,7 +273,7 @@ describe('useAppActions', () => {
         expect(mockToggleImageFavorite).toHaveBeenCalledWith('1', true);
         expect(mockSetImages).toHaveBeenCalled();
         const update = mockSetImages.mock.calls[0][0] as (images: typeof mockStoreImages) => typeof mockStoreImages;
-        expect(update(mockStoreImages).map(image => image.isFavorite)).toEqual([true, true]);
+        expect(update(mockStoreImages).map((image) => image.isFavorite)).toEqual([true, true]);
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
@@ -254,7 +303,7 @@ describe('useAppActions', () => {
             collectionIds: ['col1'],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
     });
@@ -272,14 +321,16 @@ describe('useAppActions', () => {
     });
 
     it('resets the materialized image kind when Automatic restores detection', async () => {
-        mockStoreImages = [{
-            ...mockStoreImages[0],
-            detectedSourceKind: 'photograph',
-            sourceKindOverride: 'other',
-            sourceKind: 'other',
-            captureWallTimeMs: 456_789,
-            displayTimestamp: 100,
-        }];
+        mockStoreImages = [
+            {
+                ...mockStoreImages[0],
+                detectedSourceKind: 'photograph',
+                sourceKindOverride: 'other',
+                sourceKind: 'other',
+                captureWallTimeMs: 456_789,
+                displayTimestamp: 100,
+            },
+        ];
         const { result } = renderHook(() => useAppActions(props));
 
         await act(async () => {
@@ -296,9 +347,7 @@ describe('useAppActions', () => {
             displayTimestamp: 456_789,
         });
 
-        const updateViewer = mockSetViewerSessionImages.mock.calls[0][0] as (
-            images: MockImage[] | null
-        ) => MockImage[] | null;
+        const updateViewer = mockSetViewerSessionImages.mock.calls[0][0] as (images: MockImage[] | null) => MockImage[] | null;
         expect(updateViewer(mockStoreImages)?.[0]).toMatchObject({
             sourceKindOverride: undefined,
             sourceKind: 'photograph',
@@ -352,7 +401,7 @@ describe('useAppActions', () => {
             timestamp: 300,
         } as unknown as AIImage;
         const activeImageState = {
-            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            getImage: (id: string) => (id === directImage.id ? directImage : undefined),
             updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
                 if (id === directImage.id) directImage = updater(directImage);
             },
@@ -378,7 +427,7 @@ describe('useAppActions', () => {
             timestamp: 300,
         } as unknown as AIImage;
         const activeImageState = {
-            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            getImage: (id: string) => (id === directImage.id ? directImage : undefined),
             updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
                 if (id === directImage.id) directImage = updater(directImage);
             },
@@ -404,7 +453,7 @@ describe('useAppActions', () => {
             timestamp: 300,
         } as unknown as AIImage;
         const activeImageState = {
-            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            getImage: (id: string) => (id === directImage.id ? directImage : undefined),
             updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
                 if (id === directImage.id) directImage = updater(directImage);
             },
@@ -452,7 +501,7 @@ describe('useAppActions', () => {
     });
 
     it('should show the bulk pin toast without waiting for collection refresh', async () => {
-        mockRefreshCollections.mockImplementation(() => new Promise(() => { }));
+        mockRefreshCollections.mockImplementation(() => new Promise(() => {}));
         const { result } = renderHook(() => useAppActions(props));
 
         await act(async () => {
@@ -553,12 +602,7 @@ describe('useAppActions', () => {
 
         await act(async () => result.current.handleExportConfirm('videos.zip', 'C:/out'));
 
-        expect(mockFileOps.exportImages).toHaveBeenCalledWith(
-            'videos.zip',
-            videoProps.selectedIds,
-            'C:/out',
-            expect.any(Function)
-        );
+        expect(mockFileOps.exportImages).toHaveBeenCalledWith('videos.zip', videoProps.selectedIds, 'C:/out', expect.any(Function));
     });
 
     it('bulk-unfavorites selected favorites and rolls back favorite failures', async () => {
@@ -608,7 +652,7 @@ describe('useAppActions', () => {
         const { result } = renderHook(() => useAppActions(props));
         await act(async () => result.current.handleBulkMask('1', true));
         const maskTrue = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
-        expect(maskTrue(mockStoreImages).map(image => image.userMasked)).toEqual([true, undefined]);
+        expect(maskTrue(mockStoreImages).map((image) => image.userMasked)).toEqual([true, undefined]);
         expect(mockUpdateImagesQueryCaches).toHaveBeenCalledOnce();
         const updateCachedImage = mockUpdateImagesQueryCaches.mock.calls[0][1] as (image: AIImage) => AIImage;
         expect(updateCachedImage({ ...mockStoreImages[0], userMasked: false } as AIImage).userMasked).toBe(true);
@@ -619,13 +663,13 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith('1 item Unmasked', 'info');
         await act(async () => result.current.handleBulkMask('1', null));
         const maskAuto = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
-        expect(maskAuto(mockStoreImages).map(image => image.userMasked)).toEqual([undefined, undefined]);
+        expect(maskAuto(mockStoreImages).map((image) => image.userMasked)).toEqual([undefined, undefined]);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', null);
         expect(mockAddToast).toHaveBeenCalledWith('1 item Reset to Auto Mask', 'info');
 
         await act(async () => result.current.handleBulkMask());
         const maskToggle = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
-        expect(maskToggle(mockStoreImages).map(image => image.userMasked)).toEqual([true, undefined]);
+        expect(maskToggle(mockStoreImages).map((image) => image.userMasked)).toEqual([true, undefined]);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
         expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
         expect(mockRebuildThumbnailFacetCache).toHaveBeenCalled();
@@ -689,13 +733,15 @@ describe('useAppActions', () => {
         mockGeminiApiKey = 'key';
         const recoveredImage = mockStoreImages[0] as AIImage;
         const recoverMetadata = vi.fn().mockResolvedValue(recoveredImage);
-        const { result } = renderHook(() => useAppActions({
-            ...props,
-            viewingImageId: '1',
-            selectedImageIndex: 1,
-            selectedIds: new Set(['2']),
-            fileOps: { ...mockFileOps, recoverMetadata },
-        }));
+        const { result } = renderHook(() =>
+            useAppActions({
+                ...props,
+                viewingImageId: '1',
+                selectedImageIndex: 1,
+                selectedIds: new Set(['2']),
+                fileOps: { ...mockFileOps, recoverMetadata },
+            })
+        );
 
         act(() => result.current.openMetadataRecovery());
         await act(async () => result.current.executeMetadataRecovery('midjourney'));
@@ -710,13 +756,15 @@ describe('useAppActions', () => {
         mockGeminiApiKey = 'key';
         const frozenViewerImages = [mockStoreImages[1], mockStoreImages[0]] as AIImage[];
         const recoverMetadata = vi.fn().mockResolvedValue(frozenViewerImages[0]);
-        const { result } = renderHook(() => useAppActions({
-            ...props,
-            selectedImageIndex: 0,
-            viewerImages: frozenViewerImages,
-            selectedIds: new Set(['1']),
-            fileOps: { ...mockFileOps, recoverMetadata },
-        }));
+        const { result } = renderHook(() =>
+            useAppActions({
+                ...props,
+                selectedImageIndex: 0,
+                viewerImages: frozenViewerImages,
+                selectedIds: new Set(['1']),
+                fileOps: { ...mockFileOps, recoverMetadata },
+            })
+        );
 
         act(() => result.current.openMetadataRecovery());
         await act(async () => result.current.executeMetadataRecovery('generic'));
@@ -733,13 +781,15 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Prompt Recovery is unavailable in this runtime.', 'error');
         unavailable.unmount();
 
-        const recoverMetadata = vi.fn(async (id: string) => mockStoreImages.find(image => image.id === id) as AIImage);
-        const byIndex = renderHook(() => useAppActions({
-            ...props,
-            selectedImageIndex: 1,
-            selectedIds: new Set(),
-            fileOps: { ...mockFileOps, recoverMetadata },
-        }));
+        const recoverMetadata = vi.fn(async (id: string) => mockStoreImages.find((image) => image.id === id) as AIImage);
+        const byIndex = renderHook(() =>
+            useAppActions({
+                ...props,
+                selectedImageIndex: 1,
+                selectedIds: new Set(),
+                fileOps: { ...mockFileOps, recoverMetadata },
+            })
+        );
         act(() => byIndex.result.current.openMetadataRecovery());
         await act(async () => byIndex.result.current.executeMetadataRecovery('generic'));
         expect(recoverMetadata).toHaveBeenCalledWith('2', 'generic');
@@ -747,11 +797,13 @@ describe('useAppActions', () => {
         byIndex.unmount();
 
         recoverMetadata.mockClear();
-        const bySelection = renderHook(() => useAppActions({
-            ...props,
-            selectedIds: new Set(['1']),
-            fileOps: { ...mockFileOps, recoverMetadata },
-        }));
+        const bySelection = renderHook(() =>
+            useAppActions({
+                ...props,
+                selectedIds: new Set(['1']),
+                fileOps: { ...mockFileOps, recoverMetadata },
+            })
+        );
         act(() => bySelection.result.current.openMetadataRecovery());
         await act(async () => bySelection.result.current.executeMetadataRecovery('sdxl'));
         expect(recoverMetadata).toHaveBeenCalledWith('1', 'sdxl');
@@ -763,11 +815,13 @@ describe('useAppActions', () => {
         const recoveredImage = { ...mockStoreImages[0], id: 'maintenance-image' } as AIImage;
         const recoverMetadata = vi.fn().mockResolvedValue(recoveredImage);
         const onRecovered = vi.fn();
-        const { result } = renderHook(() => useAppActions({
-            ...props,
-            viewingImageId: 'gallery-image',
-            fileOps: { ...mockFileOps, recoverMetadata },
-        }));
+        const { result } = renderHook(() =>
+            useAppActions({
+                ...props,
+                viewingImageId: 'gallery-image',
+                fileOps: { ...mockFileOps, recoverMetadata },
+            })
+        );
 
         act(() => result.current.openMetadataRecovery('maintenance-image', onRecovered));
         await act(async () => result.current.executeMetadataRecovery('generic'));
@@ -783,10 +837,12 @@ describe('useAppActions', () => {
         mockGeminiApiKey = 'key';
         const recoverMetadata = vi.fn().mockResolvedValue(null);
         const onRecovered = vi.fn();
-        const { result } = renderHook(() => useAppActions({
-            ...props,
-            fileOps: { ...mockFileOps, recoverMetadata },
-        }));
+        const { result } = renderHook(() =>
+            useAppActions({
+                ...props,
+                fileOps: { ...mockFileOps, recoverMetadata },
+            })
+        );
 
         act(() => result.current.openMetadataRecovery('maintenance-image', onRecovered));
         await act(async () => result.current.executeMetadataRecovery('generic'));

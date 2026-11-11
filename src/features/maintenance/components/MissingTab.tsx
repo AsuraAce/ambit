@@ -33,34 +33,37 @@ export const MissingTab: React.FC<MissingTabProps> = ({
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
-    onBackgroundClick
+    onBackgroundClick,
 }) => {
-    const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
-        const overlayActions = (revealGranted: boolean) => (
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onViewImage(img.id, revealGranted);
-                }}
-                className="px-4 py-2 bg-white/90 dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-full text-xs font-bold shadow-xl transform scale-90 hover:scale-100 transition-all flex items-center gap-2 hover:bg-white dark:hover:bg-zinc-800"
-            >
-                <Eye className="w-4 h-4" /> View Image
-            </button>
-        );
+    const renderItem = useCallback(
+        (img: AIImage, style: React.CSSProperties, index: number) => {
+            const overlayActions = (revealGranted: boolean) => (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onViewImage(img.id, revealGranted);
+                    }}
+                    className="px-4 py-2 bg-white/90 dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-full text-xs font-bold shadow-xl transform scale-90 hover:scale-100 transition-all flex items-center gap-2 hover:bg-white dark:hover:bg-zinc-800"
+                >
+                    <Eye className="w-4 h-4" /> View Image
+                </button>
+            );
 
-        return (
-            <MaintenanceItem
-                key={img.id}
-                img={img}
-                style={style}
-                isSelected={selectedIds.has(img.id)}
-                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
-                maskedKeywords={maskedKeywords}
-                overlayActions={overlayActions}
-                isMissing={true}
-            />
-        );
-    }, [maskedKeywords, selectedIds, onItemClick, onViewImage]);
+            return (
+                <MaintenanceItem
+                    key={img.id}
+                    img={img}
+                    style={style}
+                    isSelected={selectedIds.has(img.id)}
+                    onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
+                    maskedKeywords={maskedKeywords}
+                    overlayActions={overlayActions}
+                    isMissing={true}
+                />
+            );
+        },
+        [maskedKeywords, selectedIds, onItemClick, onViewImage]
+    );
 
     if (images.length === 0) {
         return (

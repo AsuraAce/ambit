@@ -17,8 +17,7 @@ interface CalendarDay {
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const createLocalDate = (year: number, monthIndex: number, day: number): Date =>
-    new Date(year, monthIndex, day);
+const createLocalDate = (year: number, monthIndex: number, day: number): Date => new Date(year, monthIndex, day);
 
 const parseDateInput = (value: string | undefined): Date | null => {
     if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -26,16 +25,12 @@ const parseDateInput = (value: string | undefined): Date | null => {
     const [year, month, day] = value.split('-').map(Number);
     const date = createLocalDate(year, month - 1, day);
 
-    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
-        ? date
-        : null;
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
 };
 
-const startOfMonth = (date: Date): Date =>
-    createLocalDate(date.getFullYear(), date.getMonth(), 1);
+const startOfMonth = (date: Date): Date => createLocalDate(date.getFullYear(), date.getMonth(), 1);
 
-const addMonths = (date: Date, months: number): Date =>
-    createLocalDate(date.getFullYear(), date.getMonth() + months, 1);
+const addMonths = (date: Date, months: number): Date => createLocalDate(date.getFullYear(), date.getMonth() + months, 1);
 
 const getWeekStartsOn = (): number => {
     try {
@@ -66,7 +61,7 @@ const getMonthGrid = (month: Date, weekStartsOn: number): CalendarDay[] => {
             date,
             value,
             isCurrentMonth: date.getMonth() === monthStart.getMonth(),
-            isToday: value === todayValue
+            isToday: value === todayValue,
         };
     });
 };
@@ -83,7 +78,7 @@ const getInitialOpenMonth = (dateFrom: string | undefined, dateTo: string | unde
 
 const monthLabelFormatter = new Intl.DateTimeFormat(undefined, {
     month: 'long',
-    year: 'numeric'
+    year: 'numeric',
 });
 
 const getMonthLabel = (date: Date): string => monthLabelFormatter.format(date);
@@ -91,10 +86,7 @@ const getMonthLabel = (date: Date): string => monthLabelFormatter.format(date);
 const isWithinDraftRange = (value: string, dateFrom: string, dateTo: string): boolean =>
     !!dateFrom && !!dateTo && value >= dateFrom && value <= dateTo;
 
-export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
-    filters,
-    setFilters
-}) => {
+export const DateRangeSection: React.FC<DateRangeSectionProps> = ({ filters, setFilters }) => {
     const rootRef = React.useRef<HTMLDivElement>(null);
     const [isCustomOpen, setIsCustomOpen] = React.useState(false);
     const [draftFrom, setDraftFrom] = React.useState(filters.dateFrom ?? '');
@@ -114,11 +106,11 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
     const handlePresetClick = (range: FilterState['dateRange']) => {
         setIsCustomOpen(false);
         if (filters.dateRange !== range || filters.dateFrom || filters.dateTo) {
-            setFilters(prev => ({
+            setFilters((prev) => ({
                 ...prev,
                 dateRange: range,
                 dateFrom: undefined,
-                dateTo: undefined
+                dateTo: undefined,
             }));
         }
     };
@@ -145,10 +137,10 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
     const applyCustomRange = () => {
         const normalized = normalizeDateInputPair(draftFrom || undefined, draftTo || undefined);
 
-        setFilters(prev => ({
+        setFilters((prev) => ({
             ...prev,
             dateRange: normalized.dateFrom || normalized.dateTo ? 'custom' : 'all',
-            ...normalized
+            ...normalized,
         }));
         setIsCustomOpen(false);
     };
@@ -156,11 +148,11 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
     const clearCustomRange = () => {
         setDraftFrom('');
         setDraftTo('');
-        setFilters(prev => ({
+        setFilters((prev) => ({
             ...prev,
             dateRange: 'all',
             dateFrom: undefined,
-            dateTo: undefined
+            dateTo: undefined,
         }));
         setIsCustomOpen(false);
     };
@@ -198,10 +190,11 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
                     <button
                         key={range}
                         onClick={() => handlePresetClick(range)}
-                        className={`px-3 py-2 text-xs rounded-lg capitalize transition-all ease-spring duration-300 border ${filters.dateRange === range
+                        className={`px-3 py-2 text-xs rounded-lg capitalize transition-all ease-spring duration-300 border ${
+                            filters.dateRange === range
                                 ? 'bg-sage-600 text-white border-sage-500 shadow-lg shadow-sage-500/20'
                                 : 'bg-gray-100 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'
-                            }`}
+                        }`}
                     >
                         {range}
                     </button>
@@ -214,10 +207,11 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
                         onClick={openCustomRange}
                         aria-expanded={isCustomOpen}
                         aria-controls="date-range-popover"
-                        className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-all ease-spring duration-300 ${customLabel
+                        className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-all ease-spring duration-300 ${
+                            customLabel
                                 ? 'border-sage-500 bg-sage-600 text-white shadow-lg shadow-sage-500/20'
                                 : 'border-gray-200 bg-gray-100 text-gray-500 hover:border-gray-300 dark:border-white/5 dark:bg-zinc-800/50 dark:text-zinc-400 dark:hover:border-white/10'
-                            }`}
+                        }`}
                     >
                         <Calendar className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">{customLabel ?? 'Custom range'}</span>
@@ -244,21 +238,18 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
                         <div className="mb-3 flex items-center justify-between">
                             <button
                                 type="button"
-                                onClick={() => setOpenMonth(prev => addMonths(prev, -1))}
+                                onClick={() => setOpenMonth((prev) => addMonths(prev, -1))}
                                 aria-label="Previous month"
                                 className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-1 focus:ring-sage-500/30 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-200"
                             >
                                 <ChevronLeft className="h-3.5 w-3.5" />
                             </button>
-                            <div
-                                aria-label="Current calendar month"
-                                className="text-xs font-semibold text-gray-700 dark:text-zinc-200"
-                            >
+                            <div aria-label="Current calendar month" className="text-xs font-semibold text-gray-700 dark:text-zinc-200">
                                 {monthLabel}
                             </div>
                             <button
                                 type="button"
-                                onClick={() => setOpenMonth(prev => addMonths(prev, 1))}
+                                onClick={() => setOpenMonth((prev) => addMonths(prev, 1))}
                                 aria-label="Next month"
                                 className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-1 focus:ring-sage-500/30 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-200"
                             >
@@ -292,17 +283,18 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
                                         aria-label={day.date.toLocaleDateString(undefined, {
                                             month: 'long',
                                             day: 'numeric',
-                                            year: 'numeric'
+                                            year: 'numeric',
                                         })}
                                         aria-pressed={isSelected}
-                                        className={`flex h-7 min-w-0 items-center justify-center rounded-md text-xs transition-colors focus:outline-none focus:ring-1 focus:ring-sage-500/40 ${isSelected
+                                        className={`flex h-7 min-w-0 items-center justify-center rounded-md text-xs transition-colors focus:outline-none focus:ring-1 focus:ring-sage-500/40 ${
+                                            isSelected
                                                 ? 'bg-sage-600 font-semibold text-white shadow-sm shadow-sage-500/20'
                                                 : isInRange
-                                                    ? 'bg-sage-500/15 text-sage-700 dark:bg-sage-500/15 dark:text-sage-200'
-                                                    : day.isCurrentMonth
-                                                        ? 'text-gray-700 hover:bg-gray-100 dark:text-zinc-200 dark:hover:bg-white/5'
-                                                        : 'text-gray-300 hover:bg-gray-100/60 dark:text-zinc-700 dark:hover:bg-white/5'
-                                            } ${day.isToday && !isSelected ? 'ring-1 ring-sage-500/30' : ''}`}
+                                                  ? 'bg-sage-500/15 text-sage-700 dark:bg-sage-500/15 dark:text-sage-200'
+                                                  : day.isCurrentMonth
+                                                    ? 'text-gray-700 hover:bg-gray-100 dark:text-zinc-200 dark:hover:bg-white/5'
+                                                    : 'text-gray-300 hover:bg-gray-100/60 dark:text-zinc-700 dark:hover:bg-white/5'
+                                        } ${day.isToday && !isSelected ? 'ring-1 ring-sage-500/30' : ''}`}
                                     >
                                         {day.date.getDate()}
                                     </button>

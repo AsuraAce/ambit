@@ -11,13 +11,7 @@ interface ExportModalProps {
     isExporting: boolean;
 }
 
-export const ExportModal: React.FC<ExportModalProps> = ({
-    isOpen,
-    onClose,
-    count,
-    onConfirm,
-    isExporting
-}) => {
+export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, count, onConfirm, isExporting }) => {
     const [filename, setFilename] = useState(`ambit_export_${new Date().toISOString().slice(0, 10)}`);
     const [folder, setFolder] = useState<string | null>(null);
     const closeButtonRef = React.useRef<HTMLButtonElement>(null);
@@ -25,9 +19,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     React.useEffect(() => {
         if (!isOpen) return;
 
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         closeButtonRef.current?.focus();
 
         return () => {
@@ -40,7 +32,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const selected = await open({
             directory: true,
             multiple: false,
-            title: "Select Export Destination"
+            title: 'Select Export Destination',
         });
         if (selected) setFolder(selected);
     };
@@ -61,9 +53,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         initial={{ opacity: 0, scale: 0.9, y: 30 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         className="relative w-full max-w-sm bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-gray-200/50 dark:border-white/10 rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden"
-                        onClick={e => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header Accent */}
                         <div className="h-1.5 w-full bg-gradient-to-r from-sage-500 to-sage-600" />
@@ -82,7 +74,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                             <div className="space-y-6">
                                 {/* Filename Input */}
                                 <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">Archive Name</label>
+                                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">
+                                        Archive Name
+                                    </label>
                                     <div className="relative group">
                                         <input
                                             type="text"
@@ -92,25 +86,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                                             className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/5 rounded-2xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:ring-2 ring-sage-500/20 focus:border-sage-500/50 outline-none transition-all"
                                             disabled={isExporting}
                                         />
-                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">.zip</div>
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
+                                            .zip
+                                        </div>
                                     </div>
                                 </div>
 
                                 {/* Folder Picker */}
                                 <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">Destination</label>
+                                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">
+                                        Destination
+                                    </label>
                                     <button
                                         onClick={handlePickFolder}
                                         disabled={isExporting}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${folder
+                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
+                                            folder
                                                 ? 'bg-sage-50/50 dark:bg-sage-500/5 border-sage-500/30 text-sage-700 dark:text-sage-300'
                                                 : 'bg-gray-50 dark:bg-black/20 border-gray-200 dark:border-white/5 text-gray-500 dark:text-gray-400 hover:border-sage-500/30'
-                                            }`}
+                                        }`}
                                     >
                                         <FolderOpen className={`w-4 h-4 shrink-0 ${folder ? 'text-sage-500' : 'text-gray-400'}`} />
-                                        <span className="text-xs truncate flex-1">
-                                            {folder || "Choose destination folder..."}
-                                        </span>
+                                        <span className="text-xs truncate flex-1">{folder || 'Choose destination folder...'}</span>
                                         {folder && <CheckCircle2 className="w-3.5 h-3.5 text-sage-500 shrink-0" />}
                                     </button>
                                 </div>
@@ -123,10 +120,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                                     className="w-full py-4 px-6 bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-[0_8px_20px_-4px_rgba(115,140,85,0.4)] text-white rounded-2xl text-sm font-bold shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
                                     {isExporting ? (
-                                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                                        <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                                        >
                                             <Share className="w-4 h-4" />
                                         </motion.div>
-                                    ) : <Share className="w-4 h-4" />}
+                                    ) : (
+                                        <Share className="w-4 h-4" />
+                                    )}
                                     {isExporting ? 'Exporting...' : 'Begin Export'}
                                 </button>
                                 <button

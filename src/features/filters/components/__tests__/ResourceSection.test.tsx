@@ -7,17 +7,17 @@ import type { FilterState, SidebarSortOption } from '../../../../types';
 const commandMocks = vi.hoisted(() => ({
     setResourceThumbnailSensitivity: vi.fn(),
     unsetModelThumbnail: vi.fn(),
-    clearAllThumbnails: vi.fn()
+    clearAllThumbnails: vi.fn(),
 }));
 
 const settingsContextMocks = vi.hoisted(() => ({
     resourceSortOptions: {} as Record<string, SidebarSortOption>,
     resourceViewModes: { loras: 'list' } as Record<string, 'list' | 'grid'>,
-    setSettings: vi.fn()
+    setSettings: vi.fn(),
 }));
 
 vi.mock('../../../../bindings', () => ({
-    commands: commandMocks
+    commands: commandMocks,
 }));
 
 vi.mock('../../../../contexts/SettingsContext', () => ({
@@ -25,15 +25,15 @@ vi.mock('../../../../contexts/SettingsContext', () => ({
         settings: {
             resourceViewModes: settingsContextMocks.resourceViewModes,
             resourceSortOptions: settingsContextMocks.resourceSortOptions,
-            maskingMode: 'blur'
+            maskingMode: 'blur',
         },
         setSettings: settingsContextMocks.setSettings,
-        privacyEnabled: true
-    })
+        privacyEnabled: true,
+    }),
 }));
 
 vi.mock('../../../../components/ui/PrivacyAwareThumbnail', () => ({
-    PrivacyAwareThumbnail: () => <div data-testid="privacy-aware-thumbnail" />
+    PrivacyAwareThumbnail: () => <div data-testid="privacy-aware-thumbnail" />,
 }));
 
 const filters: FilterState = {
@@ -49,7 +49,7 @@ const filters: FilterState = {
     ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
-    collectionId: null
+    collectionId: null,
 };
 
 beforeEach(() => {
@@ -78,26 +78,29 @@ describe('ResourceSection thumbnail privacy menu', () => {
         commandMocks.clearAllThumbnails.mockResolvedValue({ status: 'ok', data: null });
     });
 
-    const renderSection = (thumbnailSensitivityOverride: number | null = null) => render(
-        <ResourceSection
-            title="Resources"
-            type="loras"
-            filters={filters}
-            setFilters={vi.fn()}
-            data={[{
-                name: 'Alpha',
-                hash: 'lora_Alpha',
-                count: 1,
-                thumbnailPath: 'alpha.webp',
-                thumbnailSensitivityOverride,
-                isManual: 1,
-                hasSidecar: 1,
-                isUserOverride: 1
-            }]}
-            isOpen
-            onToggle={vi.fn()}
-        />
-    );
+    const renderSection = (thumbnailSensitivityOverride: number | null = null) =>
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[
+                    {
+                        name: 'Alpha',
+                        hash: 'lora_Alpha',
+                        count: 1,
+                        thumbnailPath: 'alpha.webp',
+                        thumbnailSensitivityOverride,
+                        isManual: 1,
+                        hasSidecar: 1,
+                        isUserOverride: 1,
+                    },
+                ]}
+                isOpen
+                onToggle={vi.fn()}
+            />
+        );
 
     it('calls the sensitivity command for mask, show, and reset actions', async () => {
         const firstRender = renderSection();
@@ -154,42 +157,43 @@ describe('ResourceSection asset scope filtering', () => {
     const renderScopedSection = ({
         assetScope = 'used',
         validNames,
-        setFilters = vi.fn()
+        setFilters = vi.fn(),
     }: {
         assetScope?: AssetScope;
         validNames?: string[] | null;
         setFilters?: (update: (prev: FilterState) => FilterState) => void;
-    } = {}) => render(
-        <ResourceSection
-            title="Resources"
-            type="loras"
-            filters={filters}
-            setFilters={setFilters}
-            data={[
-                {
-                    name: 'UnusedLocal',
-                    hash: 'file:C:/models/UnusedLocal.safetensors',
-                    count: 0,
-                    isLocalDisk: true
-                },
-                {
-                    name: 'UsedLocal',
-                    hash: 'lora_UsedLocal',
-                    count: 3,
-                    isLocalDisk: true
-                },
-                {
-                    name: 'HarvestedOnly',
-                    hash: 'lora_HarvestedOnly',
-                    count: 2
-                }
-            ]}
-            isOpen
-            onToggle={vi.fn()}
-            assetScope={assetScope}
-            validNames={validNames}
-        />
-    );
+    } = {}) =>
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={setFilters}
+                data={[
+                    {
+                        name: 'UnusedLocal',
+                        hash: 'file:C:/models/UnusedLocal.safetensors',
+                        count: 0,
+                        isLocalDisk: true,
+                    },
+                    {
+                        name: 'UsedLocal',
+                        hash: 'lora_UsedLocal',
+                        count: 3,
+                        isLocalDisk: true,
+                    },
+                    {
+                        name: 'HarvestedOnly',
+                        hash: 'lora_HarvestedOnly',
+                        count: 2,
+                    },
+                ]}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope={assetScope}
+                validNames={validNames}
+            />
+        );
 
     it('hides zero-count local assets in the used scope', () => {
         renderScopedSection();
@@ -247,13 +251,15 @@ describe('ResourceSection asset scope filtering', () => {
                 type="loras"
                 filters={filters}
                 setFilters={setFilters}
-                data={[{
-                    name: 'Detailer-Style',
-                    hash: 'lora_Detailer-Style',
-                    count: 7,
-                    isLocalDisk: true,
-                    filterAliases: ['Detailer-Style', 'detailer style']
-                }]}
+                data={[
+                    {
+                        name: 'Detailer-Style',
+                        hash: 'lora_Detailer-Style',
+                        count: 7,
+                        isLocalDisk: true,
+                        filterAliases: ['Detailer-Style', 'detailer style'],
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
                 assetScope="used"
@@ -273,16 +279,15 @@ describe('ResourceSection asset scope filtering', () => {
                 type="loras"
                 filters={filters}
                 setFilters={vi.fn()}
-                data={[{
-                    name: 'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
-                    hash: 'lora_Flux Style - watercolor_flux_v1.1_rank_16_bf16',
-                    count: 2,
-                    isLocalDisk: true,
-                    filterAliases: [
-                        'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
-                        'watercolor_flux_v1.1_rank_16_bf16'
-                    ]
-                }]}
+                data={[
+                    {
+                        name: 'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
+                        hash: 'lora_Flux Style - watercolor_flux_v1.1_rank_16_bf16',
+                        count: 2,
+                        isLocalDisk: true,
+                        filterAliases: ['Flux Style - watercolor_flux_v1.1_rank_16_bf16', 'watercolor_flux_v1.1_rank_16_bf16'],
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
                 assetScope="used"
@@ -291,7 +296,7 @@ describe('ResourceSection asset scope filtering', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), {
-            target: { value: 'watercolor_flu' }
+            target: { value: 'watercolor_flu' },
         });
 
         expect(screen.getByText('Flux Style - watercolor_flux_v1.1_rank_16_bf16')).toBeTruthy();
@@ -304,13 +309,15 @@ describe('ResourceSection asset scope filtering', () => {
                 type="loras"
                 filters={filters}
                 setFilters={vi.fn()}
-                data={[{
-                    name: 'Detailer-Style',
-                    hash: 'lora_Detailer-Style',
-                    count: 7,
-                    isLocalDisk: true,
-                    filterAliases: ['Detailer-Style', 'detailer style']
-                }]}
+                data={[
+                    {
+                        name: 'Detailer-Style',
+                        hash: 'lora_Detailer-Style',
+                        count: 7,
+                        isLocalDisk: true,
+                        filterAliases: ['Detailer-Style', 'detailer style'],
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
                 assetScope="used"
@@ -328,15 +335,17 @@ describe('ResourceSection asset scope filtering', () => {
                 type="loras"
                 filters={filters}
                 setFilters={vi.fn()}
-                data={[{
-                    name: 'SidecarOnly',
-                    hash: 'file:C:/models/SidecarOnly.safetensors',
-                    count: 0,
-                    isLocalDisk: true,
-                    thumbnailPath: 'sidecar.webp',
-                    hasSidecar: 1,
-                    thumbnailSource: 'sidecar'
-                }]}
+                data={[
+                    {
+                        name: 'SidecarOnly',
+                        hash: 'file:C:/models/SidecarOnly.safetensors',
+                        count: 0,
+                        isLocalDisk: true,
+                        thumbnailPath: 'sidecar.webp',
+                        hasSidecar: 1,
+                        thumbnailSource: 'sidecar',
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
                 assetScope="local"
@@ -353,16 +362,18 @@ describe('ResourceSection asset scope filtering', () => {
                 type="loras"
                 filters={filters}
                 setFilters={vi.fn()}
-                data={[{
-                    name: 'ManualPreview',
-                    hash: 'file:C:/models/ManualPreview.safetensors',
-                    count: 0,
-                    isLocalDisk: true,
-                    thumbnailPath: 'manual.webp',
-                    hasSidecar: 1,
-                    isUserOverride: 1,
-                    thumbnailSource: 'manual'
-                }]}
+                data={[
+                    {
+                        name: 'ManualPreview',
+                        hash: 'file:C:/models/ManualPreview.safetensors',
+                        count: 0,
+                        isLocalDisk: true,
+                        thumbnailPath: 'manual.webp',
+                        hasSidecar: 1,
+                        isUserOverride: 1,
+                        thumbnailSource: 'manual',
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
                 assetScope="local"
@@ -386,11 +397,13 @@ describe('ResourceSection match mode controls', () => {
                 type="checkpoints"
                 filters={filters}
                 setFilters={vi.fn()}
-                data={[{
-                    name: 'Flux',
-                    hash: 'model_Flux',
-                    count: 3
-                }]}
+                data={[
+                    {
+                        name: 'Flux',
+                        hash: 'model_Flux',
+                        count: 3,
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
             />
@@ -410,11 +423,13 @@ describe('ResourceSection match mode controls', () => {
                 type="loras"
                 filters={filters}
                 setFilters={setFilters}
-                data={[{
-                    name: 'Detailer',
-                    hash: 'lora_Detailer',
-                    count: 3
-                }]}
+                data={[
+                    {
+                        name: 'Detailer',
+                        hash: 'lora_Detailer',
+                        count: 3,
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
             />
@@ -436,11 +451,13 @@ describe('ResourceSection match mode controls', () => {
                 type="loras"
                 filters={nextFilters}
                 setFilters={setFilters}
-                data={[{
-                    name: 'Detailer',
-                    hash: 'lora_Detailer',
-                    count: 3
-                }]}
+                data={[
+                    {
+                        name: 'Detailer',
+                        hash: 'lora_Detailer',
+                        count: 3,
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
             />
@@ -466,11 +483,13 @@ describe('ResourceSection toolbar tooltips', () => {
                 type="loras"
                 filters={filters}
                 setFilters={vi.fn()}
-                data={[{
-                    name: 'Detailer',
-                    hash: 'lora_Detailer',
-                    count: 3
-                }]}
+                data={[
+                    {
+                        name: 'Detailer',
+                        hash: 'lora_Detailer',
+                        count: 3,
+                    },
+                ]}
                 isOpen
                 onToggle={vi.fn()}
             />
@@ -518,24 +537,19 @@ describe('ResourceSection asset sorting', () => {
         vi.clearAllMocks();
     });
 
-    const renderSortingSection = ({
-        assetScope,
-        data
-    }: {
-        assetScope: AssetScope;
-        data: ComponentProps<typeof ResourceSection>['data'];
-    }) => render(
-        <ResourceSection
-            title="Resources"
-            type="loras"
-            filters={filters}
-            setFilters={vi.fn()}
-            data={data}
-            isOpen
-            onToggle={vi.fn()}
-            assetScope={assetScope}
-        />
-    );
+    const renderSortingSection = ({ assetScope, data }: { assetScope: AssetScope; data: ComponentProps<typeof ResourceSection>['data'] }) =>
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={data}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope={assetScope}
+            />
+        );
 
     it('sorts all-scope local-only assets by local modified date for Newest Added', () => {
         setResourceSort('added_desc');
@@ -547,7 +561,7 @@ describe('ResourceSection asset sorting', () => {
                     name: 'OlderUsedOnly',
                     hash: 'lora_OlderUsedOnly',
                     count: 12,
-                    createdAt: 800
+                    createdAt: 800,
                 },
                 {
                     name: 'NewestLocalUnused',
@@ -555,9 +569,9 @@ describe('ResourceSection asset sorting', () => {
                     count: 0,
                     isLocalDisk: true,
                     createdAt: 100,
-                    localModifiedAt: 900
-                }
-            ]
+                    localModifiedAt: 900,
+                },
+            ],
         });
 
         expectResourceOrder(['NewestLocalUnused', 'OlderUsedOnly']);
@@ -573,7 +587,7 @@ describe('ResourceSection asset sorting', () => {
                     name: 'OlderUsedOnly',
                     hash: 'lora_OlderUsedOnly',
                     count: 2,
-                    createdAt: 900
+                    createdAt: 900,
                 },
                 {
                     name: 'NewestUsedLocal',
@@ -581,9 +595,9 @@ describe('ResourceSection asset sorting', () => {
                     count: 10,
                     isLocalDisk: true,
                     createdAt: 100,
-                    localModifiedAt: 1000
-                }
-            ]
+                    localModifiedAt: 1000,
+                },
+            ],
         });
 
         expectResourceOrder(['NewestUsedLocal', 'OlderUsedOnly']);
@@ -599,7 +613,7 @@ describe('ResourceSection asset sorting', () => {
                     name: 'OlderUsedOnly',
                     hash: 'lora_OlderUsedOnly',
                     count: 12,
-                    createdAt: 1_700_000_000_000
+                    createdAt: 1_700_000_000_000,
                 },
                 {
                     name: 'RecentlyDownloadedLocal',
@@ -607,9 +621,9 @@ describe('ResourceSection asset sorting', () => {
                     count: 0,
                     isLocalDisk: true,
                     createdAt: 1_600_000_000_000,
-                    localModifiedAt: 1_700_100_000_000
-                }
-            ]
+                    localModifiedAt: 1_700_100_000_000,
+                },
+            ],
         });
 
         expectResourceOrder(['RecentlyDownloadedLocal', 'OlderUsedOnly']);
@@ -627,15 +641,15 @@ describe('ResourceSection asset sorting', () => {
                     count: 10,
                     isLocalDisk: true,
                     createdAt: 100,
-                    localModifiedAt: 1000
+                    localModifiedAt: 1000,
                 },
                 {
                     name: 'LibraryNewer',
                     hash: 'lora_LibraryNewer',
                     count: 2,
-                    createdAt: 900
-                }
-            ]
+                    createdAt: 900,
+                },
+            ],
         });
 
         expectResourceOrder(['LibraryNewer', 'LocalFileNewer']);
@@ -650,14 +664,14 @@ describe('ResourceSection asset sorting', () => {
                 {
                     name: 'Beta',
                     hash: 'lora_Beta',
-                    count: 5
+                    count: 5,
                 },
                 {
                     name: 'Alpha',
                     hash: 'lora_Alpha',
-                    count: 5
-                }
-            ]
+                    count: 5,
+                },
+            ],
         });
 
         expectResourceOrder(['Alpha', 'Beta']);
@@ -673,15 +687,15 @@ describe('ResourceSection asset sorting', () => {
                     name: 'NewerLowUse',
                     hash: 'lora_NewerLowUse',
                     count: 1,
-                    createdAt: 900
+                    createdAt: 900,
                 },
                 {
                     name: 'OlderHighUse',
                     hash: 'lora_OlderHighUse',
                     count: 5,
-                    createdAt: 100
-                }
-            ]
+                    createdAt: 100,
+                },
+            ],
         });
 
         expectResourceOrder(['OlderHighUse', 'NewerLowUse']);
@@ -698,7 +712,7 @@ describe('ResourceSection interactions and remaining states', () => {
             data: [{ name: 'Alpha', count: 3, hash: 'hash-alpha' }],
             isOpen: true,
             onToggle: vi.fn(),
-            ...overrides
+            ...overrides,
         };
         return { ...render(<ResourceSection {...props} />), props };
     };
@@ -734,7 +748,9 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('adds and removes aliased selections while preserving alias groups', () => {
         let current: FilterState = { ...filters, loras: [] };
-        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
+            current = update(current);
+        });
         const item = { name: 'Alpha', count: 3, filterAliases: ['alpha alias'] };
         const first = renderBasic({ filters: current, setFilters, data: [item] });
         fireEvent.click(screen.getByText('Alpha'));
@@ -751,7 +767,9 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('toggles match mode between all and any', () => {
         let current = { ...filters };
-        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
+            current = update(current);
+        });
         const first = renderBasic({ filters: current, setFilters });
         fireEvent.click(screen.getByRole('button', { name: /Match Any/ }));
         expect(current.matchModes?.loras).toBe('all');
@@ -764,7 +782,12 @@ describe('ResourceSection interactions and remaining states', () => {
     });
 
     it('opens, filters, and closes search while clearing the query', async () => {
-        renderBasic({ data: [{ name: 'Alpha', count: 2 }, { name: 'Beta', count: 1 }] });
+        renderBasic({
+            data: [
+                { name: 'Alpha', count: 2 },
+                { name: 'Beta', count: 1 },
+            ],
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), { target: { value: 'alp' } });
         expect(screen.getByText('Alpha')).toBeTruthy();
@@ -778,8 +801,12 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('renders empty, no-match, and loading messages for every singular label', () => {
         const types: Array<[ComponentProps<typeof ResourceSection>['type'], string]> = [
-            ['loras', 'LoRAs'], ['embeddings', 'Embeddings'], ['checkpoints', 'Checkpoints'],
-            ['controlNets', 'ControlNets'], ['ipAdapters', 'IP-Adapters'], ['hypernetworks', 'Hypernetworks']
+            ['loras', 'LoRAs'],
+            ['embeddings', 'Embeddings'],
+            ['checkpoints', 'Checkpoints'],
+            ['controlNets', 'ControlNets'],
+            ['ipAdapters', 'IP-Adapters'],
+            ['hypernetworks', 'Hypernetworks'],
         ];
         for (const [type, label] of types) {
             const view = renderBasic({ type, data: [] });
@@ -811,18 +838,22 @@ describe('ResourceSection interactions and remaining states', () => {
         ['name_desc', ['Zulu', 'Alpha']],
         ['recent_desc', ['Recent', 'Old']],
         ['recent_asc', ['Old', 'Recent']],
-        ['added_asc', ['Old', 'Recent']]
+        ['added_asc', ['Old', 'Recent']],
     ] as const)('sorts using %s', (sort, order) => {
         const expectedOrder: readonly string[] = order;
         setResourceSort(sort);
-        renderBasic({ data: [
-            { name: expectedOrder.includes('Alpha') ? 'Zulu' : 'High', count: 10, lastUsedAt: 20, createdAt: 20 },
-            { name: expectedOrder.includes('Alpha') ? 'Alpha' : 'Low', count: 1, lastUsedAt: 10, createdAt: 10 },
-            ...(expectedOrder.includes('Recent') ? [
-                { name: 'Recent', count: 2, lastUsedAt: 20, createdAt: 20 },
-                { name: 'Old', count: 2, lastUsedAt: 10, createdAt: 10 }
-            ] : [])
-        ] });
+        renderBasic({
+            data: [
+                { name: expectedOrder.includes('Alpha') ? 'Zulu' : 'High', count: 10, lastUsedAt: 20, createdAt: 20 },
+                { name: expectedOrder.includes('Alpha') ? 'Alpha' : 'Low', count: 1, lastUsedAt: 10, createdAt: 10 },
+                ...(expectedOrder.includes('Recent')
+                    ? [
+                          { name: 'Recent', count: 2, lastUsedAt: 20, createdAt: 20 },
+                          { name: 'Old', count: 2, lastUsedAt: 10, createdAt: 10 },
+                      ]
+                    : []),
+            ],
+        });
         expectResourceOrder([...order]);
     });
 
@@ -849,11 +880,11 @@ describe('ResourceSection interactions and remaining states', () => {
         ['embeddings', 'emb_Alpha', 'embeddings'],
         ['hypernetworks', 'hyper_Alpha', 'hypernetworks'],
         ['controlNets', 'cnet_Alpha', 'control_nets'],
-        ['ipAdapters', 'ipad_Alpha', 'ip_adapters']
+        ['ipAdapters', 'ipad_Alpha', 'ip_adapters'],
     ] as const)('maps %s fallback hashes and backend types', async (type, hash, backendType) => {
         renderBasic({
             type,
-            data: [{ name: 'Alpha', count: 1, isManual: 1, isUserOverride: 1 }]
+            data: [{ name: 'Alpha', count: 1, isManual: 1, isUserOverride: 1 }],
         });
         fireEvent.contextMenu(screen.getByText('Alpha'));
         fireEvent.click(screen.getByText('Use Dynamic'));
@@ -880,7 +911,9 @@ describe('ResourceSection interactions and remaining states', () => {
     it('covers selected, inventory-only, sidecar, and preview-url grid items', () => {
         settingsContextMocks.resourceViewModes = { loras: 'grid' };
         let current = { ...filters, loras: ['selected alias'] };
-        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
+            current = update(current);
+        });
         renderBasic({
             filters: current,
             setFilters,
@@ -889,8 +922,8 @@ describe('ResourceSection interactions and remaining states', () => {
                 { name: 'Selected', count: 2, filterAliases: ['selected alias'], thumbnailPath: 'selected.webp' },
                 { name: 'Inventory', count: 0, isLocalDisk: true, thumbnailPath: 'sidecar.webp', thumbnailSource: 'sidecar' },
                 { name: 'Preview', count: 1, isLocalDisk: true, previewUrl: 'preview.webp', thumbnailSource: 'sidecar' },
-                { name: 'No Thumb', count: 1 }
-            ]
+                { name: 'No Thumb', count: 1 },
+            ],
         });
 
         expect(screen.getByTitle('Inventory has no indexed library images')).toBeTruthy();
@@ -911,8 +944,8 @@ describe('ResourceSection interactions and remaining states', () => {
                 { name: 'SelectedZero', count: 0 },
                 { name: 'Allowed', count: 1 },
                 { name: 'Rejected', count: 1 },
-                { name: 'UnusedLocal', count: 0, isLocalDisk: true }
-            ]
+                { name: 'UnusedLocal', count: 0, isLocalDisk: true },
+            ],
         });
         expect(screen.getByText('SelectedZero')).toBeTruthy();
         expect(screen.getByText('Allowed')).toBeTruthy();
@@ -923,7 +956,10 @@ describe('ResourceSection interactions and remaining states', () => {
     it('excludes nonlocal unused resources from all scope', () => {
         const first = renderBasic({
             assetScope: 'all',
-            data: [{ name: 'Unavailable', count: 0 }, { name: 'Local', count: 0, isLocalDisk: true }]
+            data: [
+                { name: 'Unavailable', count: 0 },
+                { name: 'Local', count: 0, isLocalDisk: true },
+            ],
         });
         expect(screen.queryByText('Unavailable')).toBeNull();
         expect(screen.getByText('Local')).toBeTruthy();
@@ -932,36 +968,51 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('uses zero and alternate date fallbacks for recent and added sorting', () => {
         setResourceSort('recent_desc');
-        const first = renderBasic({ data: [
-            { name: 'No Recent', count: 1 },
-            { name: 'Has Recent', count: 1, lastUsedAt: 10 }
-        ] });
+        const first = renderBasic({
+            data: [
+                { name: 'No Recent', count: 1 },
+                { name: 'Has Recent', count: 1, lastUsedAt: 10 },
+            ],
+        });
         expectResourceOrder(['Has Recent', 'No Recent']);
         first.unmount();
 
         setResourceSort('recent_asc');
-        const second = renderBasic({ data: [
-            { name: 'No Recent', count: 1 },
-            { name: 'Has Recent', count: 1, lastUsedAt: 10 }
-        ] });
+        const second = renderBasic({
+            data: [
+                { name: 'No Recent', count: 1 },
+                { name: 'Has Recent', count: 1, lastUsedAt: 10 },
+            ],
+        });
         expectResourceOrder(['No Recent', 'Has Recent']);
         second.unmount();
 
         setResourceSort('added_desc');
-        const third = renderBasic({ assetScope: 'all', data: [
-            { name: 'Created Fallback', count: 0, isLocalDisk: true, createdAt: 20 },
-            { name: 'Modified Fallback', count: 1, localModifiedAt: 10 },
-            { name: 'No Date', count: 1 }
-        ] });
+        const third = renderBasic({
+            assetScope: 'all',
+            data: [
+                { name: 'Created Fallback', count: 0, isLocalDisk: true, createdAt: 20 },
+                { name: 'Modified Fallback', count: 1, localModifiedAt: 10 },
+                { name: 'No Date', count: 1 },
+            ],
+        });
         expectResourceOrder(['Created Fallback', 'Modified Fallback', 'No Date']);
         third.unmount();
     });
 
     it('renders context action enabled and disabled states from thumbnail metadata', () => {
-        renderBasic({ data: [{
-            name: 'Alpha', count: 1, isManual: 0, hasSidecar: 1, isUserOverride: 0,
-            thumbnailSensitivityOverride: 0
-        }] });
+        renderBasic({
+            data: [
+                {
+                    name: 'Alpha',
+                    count: 1,
+                    isManual: 0,
+                    hasSidecar: 1,
+                    isUserOverride: 0,
+                    thumbnailSensitivityOverride: 0,
+                },
+            ],
+        });
         fireEvent.contextMenu(screen.getByText('Alpha'));
         expect((screen.getByText('Use Preview').closest('button') as HTMLButtonElement).disabled).toBe(false);
         expect((screen.getByText('Use Dynamic').closest('button') as HTMLButtonElement).disabled).toBe(true);
@@ -981,7 +1032,9 @@ describe('ResourceSection interactions and remaining states', () => {
         const sparse = { ...filters } as Partial<FilterState>;
         delete sparse.loras;
         let current = sparse as FilterState;
-        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
+            current = update(current);
+        });
         renderBasic({ filters: current, setFilters });
         fireEvent.click(screen.getByText('Alpha'));
         expect(current.loras).toEqual(['Alpha']);
@@ -989,20 +1042,33 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('sorts missing recent and local added dates with name tie-breakers', () => {
         setResourceSort('recent_desc');
-        const first = renderBasic({ data: [{ name: 'Beta', count: 1 }, { name: 'Alpha', count: 1 }] });
+        const first = renderBasic({
+            data: [
+                { name: 'Beta', count: 1 },
+                { name: 'Alpha', count: 1 },
+            ],
+        });
         expectResourceOrder(['Alpha', 'Beta']);
         first.unmount();
 
         setResourceSort('recent_asc');
-        const second = renderBasic({ data: [{ name: 'Beta', count: 1 }, { name: 'Alpha', count: 1 }] });
+        const second = renderBasic({
+            data: [
+                { name: 'Beta', count: 1 },
+                { name: 'Alpha', count: 1 },
+            ],
+        });
         expectResourceOrder(['Alpha', 'Beta']);
         second.unmount();
 
         setResourceSort('added_desc');
-        const third = renderBasic({ assetScope: 'local', data: [
-            { name: 'Beta', count: 0, isLocalDisk: true },
-            { name: 'Alpha', count: 0, isLocalDisk: true }
-        ] });
+        const third = renderBasic({
+            assetScope: 'local',
+            data: [
+                { name: 'Beta', count: 0, isLocalDisk: true },
+                { name: 'Alpha', count: 0, isLocalDisk: true },
+            ],
+        });
         expectResourceOrder(['Alpha', 'Beta']);
         third.unmount();
     });

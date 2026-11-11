@@ -1,4 +1,3 @@
-
 /**
  * Calculates the Levenshtein distance between two strings.
  * Used for comparing prompts to detect variations/upscales.
@@ -27,7 +26,7 @@ export const calculateLevenshteinDistance = (a: string, b: string): number => {
                     matrix[i - 1][j - 1] + 1, // substitution
                     Math.min(
                         matrix[i][j - 1] + 1, // insertion
-                        matrix[i - 1][j] + 1  // deletion
+                        matrix[i - 1][j] + 1 // deletion
                     )
                 );
             }
@@ -44,7 +43,7 @@ export const calculateLevenshteinDistance = (a: string, b: string): number => {
 export const calculateSimilarity = (str1: string, str2: string): number => {
     const longer = str1.length > str2.length ? str1 : str2;
     if (longer.length === 0) return 1.0;
-    
+
     const distance = calculateLevenshteinDistance(str1, str2);
     return (longer.length - distance) / longer.length;
 };

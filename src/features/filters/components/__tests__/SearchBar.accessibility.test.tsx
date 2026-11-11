@@ -29,13 +29,11 @@ const createSearchProps = (overrides: Partial<React.ComponentProps<typeof Search
 const renderSearchBar = (
     initialFilters: FilterState = createDefaultFilters(),
     searchOverrides: Partial<React.ComponentProps<typeof SearchBar>['searchProps']> = {},
-    recentSearches: string[] = [],
+    recentSearches: string[] = []
 ) => {
     let currentFilters = initialFilters;
     const setFilters = vi.fn((update: React.SetStateAction<FilterState>) => {
-        currentFilters = typeof update === 'function'
-            ? update(currentFilters)
-            : update;
+        currentFilters = typeof update === 'function' ? update(currentFilters) : update;
     });
     const searchProps = createSearchProps(searchOverrides);
 
@@ -128,10 +126,7 @@ describe('SearchBar accessibility', () => {
     });
 
     it('does not duplicate Enter-only guidance after a prompt is entered', async () => {
-        renderSearchBar(
-            createDefaultFilters({ searchQuery: 'existing prompt' }),
-            { isAiSearchEnabled: true }
-        );
+        renderSearchBar(createDefaultFilters({ searchQuery: 'existing prompt' }), { isAiSearchEnabled: true });
         const guidance = await screen.findAllByText('Press Enter to analyze with AI.');
         const helper = screen.getByText('Search syntax opens standard query operators.');
         const input = screen.getByRole('combobox', { name: 'Ask Ambit with AI' });

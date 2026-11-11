@@ -1,16 +1,10 @@
-import {
-    commands,
-    type FileHashBackfillResult,
-} from '../../bindings';
+import { commands, type FileHashBackfillResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { isVideoAsset, type AIImage, type MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS_LIGHT, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
-import {
-    getBrowserMockImages,
-    updateBrowserMockImage,
-} from '../browserMockData';
+import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 interface ImagePathRow {
@@ -39,7 +33,6 @@ export const backfillParameterColumns = async (): Promise<number> => {
     return count;
 };
 
-
 export const normalizeAllPaths = async () => {
     if (isBrowserMockMode()) return;
 
@@ -64,13 +57,15 @@ export const verifyLibraryIntegrity = async (
     signal?: AbortSignal
 ): Promise<MissingFileAuditResult> => {
     if (isBrowserMockMode()) {
-        const total = getBrowserMockImages().filter(image => !image.isDeleted).length;
+        const total = getBrowserMockImages().filter((image) => !image.isDeleted).length;
         onProgress?.(total, total);
         return { scanned: total, total, missingIds: [], sampleMissingPaths: [], wasCancelled: !!signal?.aborted };
     }
 
     const db = await getDb();
-    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_missing = 0 AND is_deleted = 0');
+    const allImages = await db.select<ImagePathRow[]>(
+        'SELECT id, path FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_missing = 0 AND is_deleted = 0'
+    );
     const total = allImages.length;
 
     if (total === 0) return { scanned: 0, total: 0, missingIds: [], sampleMissingPaths: [], wasCancelled: false };
@@ -88,13 +83,13 @@ export const verifyLibraryIntegrity = async (
         }
 
         const chunk = allImages.slice(i, i + CHUNK_SIZE);
-        const paths = chunk.map(img => img.path);
+        const paths = chunk.map((img) => img.path);
 
         try {
             const missingPaths = await unwrap(commands.verifyImagePaths(paths));
             const missingPathSet = new Set(missingPaths);
-            const missingChunk = chunk.filter(img => missingPathSet.has(img.path));
-            const missingChunkIds = missingChunk.map(img => img.id);
+            const missingChunk = chunk.filter((img) => missingPathSet.has(img.path));
+            const missingChunkIds = missingChunk.map((img) => img.id);
 
             missingIds = [...missingIds, ...missingChunkIds];
 
@@ -119,7 +114,7 @@ export const verifyLibraryIntegrity = async (
 
 export const getMissingImages = async (): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !!image.isMissing && !image.isDeleted);
+        return getBrowserMockImages().filter((image) => !!image.isMissing && !image.isDeleted);
     }
 
     const db = await getDb();
@@ -136,7 +131,7 @@ export const getMissingImages = async (): Promise<AIImage[]> => {
 
 export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
     if (isBrowserMockMode()) {
-        ids.forEach(id => updateBrowserMockImage(id, { isMissing: true }));
+        ids.forEach((id) => updateBrowserMockImage(id, { isMissing: true }));
         return ids.length;
     }
 
@@ -162,17 +157,21 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
 
 export const getDeletedImages = async (): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => image.isDeleted);
+        return getBrowserMockImages().filter((image) => image.isDeleted);
     }
 
     const db = await getDb();
-    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS_LIGHT} FROM scoped_removed_images AS removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
+    const rows = await db.select<ImageRow[]>(
+        `SELECT ${REMOVED_IMAGE_FIELDS_LIGHT} FROM scoped_removed_images AS removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`
+    );
     return rows.map(mapRowToImage);
 };
 
 export const getIntermediateImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !isVideoAsset(image) && !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
+        return getBrowserMockImages().filter(
+            (image) => !isVideoAsset(image) && !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate)
+        );
     }
 
     const db = await getDb();
@@ -200,11 +199,12 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
 
 export const getUntaggedImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image =>
-            !isVideoAsset(image)
-            && !image.isDeleted
-            && !image.metadata.positivePrompt
-            && !isKnownInvokeImageAsset(image.invokeImageCategory)
+        return getBrowserMockImages().filter(
+            (image) =>
+                !isVideoAsset(image) &&
+                !image.isDeleted &&
+                !image.metadata.positivePrompt &&
+                !isKnownInvokeImageAsset(image.invokeImageCategory)
         );
     }
 
@@ -233,15 +233,18 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
     return rows.map(mapRowToImage);
 };
 
-const thumbnailRepairCandidateSource = (includeUpgradeable: boolean): string => (
+const thumbnailRepairCandidateSource = (includeUpgradeable: boolean): string =>
     includeUpgradeable
         ? `(SELECT * FROM thumbnail_repair_required
             UNION ALL
             SELECT * FROM thumbnail_repair_upgradeable)`
-        : 'thumbnail_repair_required'
-);
+        : 'thumbnail_repair_required';
 
-export const getUnoptimizedImages = async (whereClause: string = '', params: unknown[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
+export const getUnoptimizedImages = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    includeUpgradeable: boolean = false
+): Promise<AIImage[]> => {
     if (isBrowserMockMode()) return [];
 
     const db = await getDb();
@@ -280,7 +283,11 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: unk
  * Fast count-only query for unoptimized images.
  * Used by the scan button to show total without loading all rows.
  */
-export const getUnoptimizedImagesCount = async (whereClause: string = '', params: unknown[] = [], includeUpgradeable: boolean = false): Promise<number> => {
+export const getUnoptimizedImagesCount = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    includeUpgradeable: boolean = false
+): Promise<number> => {
     if (isBrowserMockMode()) return 0;
 
     const db = await getDb();
@@ -395,21 +402,15 @@ export const cancelImageFileHashBackfill = async (): Promise<void> => {
 
 export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        const eligible = getBrowserMockImages().filter(image => (
-            !image.isDeleted
-            && !image.isMissing
-            && !image.groupId
-            && !image.isIntermediate
-            && Boolean(image.fileHash?.trim())
-        ));
+        const eligible = getBrowserMockImages().filter(
+            (image) => !image.isDeleted && !image.isMissing && !image.groupId && !image.isIntermediate && Boolean(image.fileHash?.trim())
+        );
         const hashCounts = eligible.reduce<Map<string, number>>((counts, image) => {
             const hash = image.fileHash?.trim();
             if (hash) counts.set(hash, (counts.get(hash) ?? 0) + 1);
             return counts;
         }, new Map());
-        return eligible.filter(image => (
-            hashCounts.get(image.fileHash?.trim() ?? '') ?? 0
-        ) > 1);
+        return eligible.filter((image) => (hashCounts.get(image.fileHash?.trim() ?? '') ?? 0) > 1);
     }
 
     const db = await getDb();
@@ -450,17 +451,18 @@ export const getMaintenanceCounts = async () => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
-            untagged: images.filter(image =>
-                !isVideoAsset(image)
-                && !image.metadata.positivePrompt
-                && !image.isDeleted
-                && !isKnownInvokeImageAsset(image.invokeImageCategory)
+            untagged: images.filter(
+                (image) =>
+                    !isVideoAsset(image) &&
+                    !image.metadata.positivePrompt &&
+                    !image.isDeleted &&
+                    !isKnownInvokeImageAsset(image.invokeImageCategory)
             ).length,
             orphans: 0,
-            intermediates: images.filter(image => !isVideoAsset(image) && (image.isIntermediate || image.metadata.isIntermediate)).length,
-            missing: images.filter(image => image.isMissing).length,
-            trash: images.filter(image => image.isDeleted).length,
-            duplicates: 0
+            intermediates: images.filter((image) => !isVideoAsset(image) && (image.isIntermediate || image.metadata.isIntermediate)).length,
+            missing: images.filter((image) => image.isMissing).length,
+            trash: images.filter((image) => image.isDeleted).length,
+            duplicates: 0,
         };
     }
 
@@ -491,6 +493,6 @@ export const getMaintenanceCounts = async () => {
         intermediates: counts.intermediates || 0,
         missing: counts.missing || 0,
         trash: counts.trash || 0,
-        duplicates: 0 // Duplicates are processed manually from the UI via getDuplicateCandidates
+        duplicates: 0, // Duplicates are processed manually from the UI via getDuplicateCandidates
     };
 };

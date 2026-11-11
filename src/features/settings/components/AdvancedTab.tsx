@@ -53,7 +53,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
     const [activeTab, setActiveTab] = useState<'database' | 'interface' | 'support'>('database');
 
     // Danger Zone State
-    const [confirmAction, setConfirmAction] = useState<{ type: 'purge' | null, isOpen: boolean }>({ type: null, isOpen: false });
+    const [confirmAction, setConfirmAction] = useState<{ type: 'purge' | null; isOpen: boolean }>({ type: null, isOpen: false });
     const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
 
     const autoUpdateEnabled = settings.autoCheckForUpdates !== false;
@@ -66,9 +66,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
         }
 
         if (updateStatus === 'available') {
-            return pendingUpdateVersion
-                ? `Version ${pendingUpdateVersion} is ready to install.`
-                : 'A new version is ready to install.';
+            return pendingUpdateVersion ? `Version ${pendingUpdateVersion} is ready to install.` : 'A new version is ready to install.';
         }
 
         if (updateStatus === 'downloading') {
@@ -114,7 +112,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
 
     const handleLogLevelChange = (value: string) => {
         if (!isLogLevel(value)) return;
-        setSettings(prev => ({ ...prev, logLevel: value }));
+        setSettings((prev) => ({ ...prev, logLevel: value }));
         addToast(`Console log level set to ${value.toUpperCase()}`, 'success');
     };
 
@@ -187,17 +185,17 @@ export const AdvancedTab: React.FC<TabProps> = ({
 
     return (
         <div className="space-y-6 max-w-2xl">
-
             {/* Sub Tabs Navigation */}
             <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-xl">
                 {(['database', 'interface', 'support'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors capitalize ${activeTab === tab
-                            ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                            }`}
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors capitalize ${
+                            activeTab === tab
+                                ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                        }`}
                     >
                         {tab}
                     </button>
@@ -225,7 +223,9 @@ export const AdvancedTab: React.FC<TabProps> = ({
                         <div className="bg-red-50/50 dark:bg-red-500/5 border border-red-100 dark:border-red-500/10 rounded-xl overflow-hidden p-6 flex items-center justify-between">
                             <div>
                                 <div className="text-sm font-bold text-red-600 dark:text-red-300">Purge Database</div>
-                                <div className="text-xs text-red-600/70 dark:text-red-300/70 mt-1">Remove all imported metadata and reset application state.</div>
+                                <div className="text-xs text-red-600/70 dark:text-red-300/70 mt-1">
+                                    Remove all imported metadata and reset application state.
+                                </div>
                             </div>
                             <button
                                 type="button"
@@ -252,7 +252,8 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 <div>
                                     <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Automatic Updates</div>
                                     <div className="text-xs text-gray-500 mt-1">
-                                        Check GitHub Releases at startup and install newer public releases only after you confirm the update prompt.
+                                        Check GitHub Releases at startup and install newer public releases only after you confirm the update
+                                        prompt.
                                     </div>
                                 </div>
                                 <button
@@ -263,18 +264,26 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                     onClick={() => {
                                         const nextValue = !autoUpdateEnabled;
                                         setSettings((prev) => ({ ...prev, autoCheckForUpdates: nextValue }));
-                                        addToast(nextValue ? 'Automatic update checks enabled' : 'Automatic update checks disabled', 'success');
+                                        addToast(
+                                            nextValue ? 'Automatic update checks enabled' : 'Automatic update checks disabled',
+                                            'success'
+                                        );
                                     }}
                                     className={`w-12 h-7 rounded-full relative transition-colors ${autoUpdateEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                                 >
-                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${autoUpdateEnabled ? 'left-6' : 'left-1'}`} />
+                                    <div
+                                        className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${autoUpdateEnabled ? 'left-6' : 'left-1'}`}
+                                    />
                                 </button>
                             </div>
 
-                            <div className={`rounded-2xl border p-4 text-xs leading-relaxed ${updateStatus === 'error'
-                                ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300'
-                                : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300'
-                                }`}>
+                            <div
+                                className={`rounded-2xl border p-4 text-xs leading-relaxed ${
+                                    updateStatus === 'error'
+                                        ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300'
+                                        : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300'
+                                }`}
+                            >
                                 {updaterStatusLabel}
                             </div>
 
@@ -292,12 +301,15 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                     disabled={!canCheckForUpdates || isCheckingForUpdates || isInstallingUpdate}
                                     className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                 >
-                                    {isCheckingForUpdates || isInstallingUpdate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                    {isCheckingForUpdates || isInstallingUpdate ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                    )}
                                     {hasPendingUpdate ? 'View Update' : 'Check for Updates'}
                                 </button>
                             </div>
                         </div>
-
                     </div>
                 </div>
             )}
@@ -313,7 +325,9 @@ export const AdvancedTab: React.FC<TabProps> = ({
                         <div className="p-6 flex items-center justify-between gap-4">
                             <div>
                                 <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Console Log Level</div>
-                                <div className="text-xs text-gray-500 mt-1">Choose how much diagnostic detail Ambit writes to the developer console.</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    Choose how much diagnostic detail Ambit writes to the developer console.
+                                </div>
                             </div>
                             <select
                                 value={settings.logLevel || 'info'}
@@ -330,7 +344,8 @@ export const AdvancedTab: React.FC<TabProps> = ({
 
                         {settings.logLevel === 'debug' && (
                             <div className="p-4 bg-ember-50 dark:bg-ember-500/10 text-ember-600 dark:text-ember-300 text-xs font-medium leading-relaxed">
-                                Debug logging can be noisy. Use it when collecting information for an issue, then switch back to Info or Warn.
+                                Debug logging can be noisy. Use it when collecting information for an issue, then switch back to Info or
+                                Warn.
                             </div>
                         )}
 
@@ -338,7 +353,8 @@ export const AdvancedTab: React.FC<TabProps> = ({
                             <div>
                                 <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Library Database Location</div>
                                 <div className="text-xs text-gray-500 mt-1">
-                                    Ambit stores the library catalog in Local AppData. This is separate from the folder where the app itself is installed.
+                                    Ambit stores the library catalog in Local AppData. This is separate from the folder where the app itself
+                                    is installed.
                                 </div>
                             </div>
 
@@ -346,7 +362,8 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 <div className="space-y-2 text-xs">
                                     {dbDiagnostics.isUsingRoamingFallback && (
                                         <div className="rounded-lg border border-ember-200 bg-ember-50 p-3 font-medium text-ember-600 dark:border-ember-400/20 dark:bg-ember-500/10 dark:text-ember-300">
-                                            Ambit is using the legacy Roaming AppData database because no Local AppData database is available.
+                                            Ambit is using the legacy Roaming AppData database because no Local AppData database is
+                                            available.
                                         </div>
                                     )}
                                     <div className="rounded-lg bg-gray-50 p-3 dark:bg-black/20">
@@ -429,7 +446,9 @@ export const AdvancedTab: React.FC<TabProps> = ({
                         <div className="p-6 flex items-center justify-between gap-4">
                             <div>
                                 <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Maintenance</div>
-                                <div className="text-xs text-gray-500 mt-1">Open library repair tools for missing files, thumbnails, duplicates, and removed items.</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    Open library repair tools for missing files, thumbnails, duplicates, and removed items.
+                                </div>
                             </div>
                             <button
                                 type="button"

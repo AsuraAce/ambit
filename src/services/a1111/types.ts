@@ -4,7 +4,7 @@ export enum A1111FolderType {
     EXTRAS = 'extras',
     GRID = 'grid',
     SAVED = 'saved',
-    UNKNOWN = 'unknown'
+    UNKNOWN = 'unknown',
 }
 
 export enum WebUIVariant {
@@ -12,7 +12,7 @@ export enum WebUIVariant {
     FORGE = 'Forge',
     SDNEXT = 'SD.Next',
     ANAPNOE = 'Anapnoe',
-    UNKNOWN = 'Unknown'
+    UNKNOWN = 'Unknown',
 }
 
 export interface A1111Config {

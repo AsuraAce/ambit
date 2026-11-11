@@ -1,60 +1,62 @@
-
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import type React from 'react';
 import { useZoomPan } from '../useZoomPan';
 
-const createRect = (overrides: Partial<DOMRect> = {}): DOMRect => ({
-    bottom: 300,
-    height: 300,
-    left: 0,
-    right: 400,
-    top: 0,
-    width: 400,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-    ...overrides
-} as DOMRect);
+const createRect = (overrides: Partial<DOMRect> = {}): DOMRect =>
+    ({
+        bottom: 300,
+        height: 300,
+        left: 0,
+        right: 400,
+        top: 0,
+        width: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+        ...overrides,
+    }) as DOMRect;
 
 const wheelEvent = ({
     deltaY,
     clientX = 200,
     clientY = 150,
-    rect = createRect()
+    rect = createRect(),
 }: {
     deltaY: number;
     clientX?: number;
     clientY?: number;
     rect?: DOMRect;
-}): React.WheelEvent<Element> => ({
-    preventDefault: () => undefined,
-    stopPropagation: () => undefined,
-    deltaY,
-    clientX,
-    clientY,
-    currentTarget: {
-        getBoundingClientRect: () => rect
-    }
-} as unknown as React.WheelEvent<Element>);
+}): React.WheelEvent<Element> =>
+    ({
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+        deltaY,
+        clientX,
+        clientY,
+        currentTarget: {
+            getBoundingClientRect: () => rect,
+        },
+    }) as unknown as React.WheelEvent<Element>;
 
 const mouseEvent = ({
     clientX = 100,
     clientY = 100,
-    rect = createRect()
+    rect = createRect(),
 }: {
     clientX?: number;
     clientY?: number;
     rect?: DOMRect;
-} = {}): React.MouseEvent<Element> => ({
-    preventDefault: () => undefined,
-    stopPropagation: () => undefined,
-    clientX,
-    clientY,
-    currentTarget: {
-        getBoundingClientRect: () => rect
-    }
-} as unknown as React.MouseEvent<Element>);
+} = {}): React.MouseEvent<Element> =>
+    ({
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+        clientX,
+        clientY,
+        currentTarget: {
+            getBoundingClientRect: () => rect,
+        },
+    }) as unknown as React.MouseEvent<Element>;
 
 describe('useZoomPan', () => {
     it('should initialize with default scale 1 and position 0,0', () => {
@@ -77,11 +79,13 @@ describe('useZoomPan', () => {
         const { result } = renderHook(() => useZoomPan());
 
         act(() => {
-            result.current.handlers.onWheel(wheelEvent({
-                deltaY: -100,
-                clientX: 300,
-                clientY: 150
-            }));
+            result.current.handlers.onWheel(
+                wheelEvent({
+                    deltaY: -100,
+                    clientX: 300,
+                    clientY: 150,
+                })
+            );
         });
 
         expect(result.current.scale).toBeCloseTo(1.1);
@@ -101,11 +105,13 @@ describe('useZoomPan', () => {
         const contentYBefore = (anchor.y - result.current.position.y) / result.current.scale;
 
         act(() => {
-            result.current.handlers.onWheel(wheelEvent({
-                deltaY: 500,
-                clientX: 300,
-                clientY: 210
-            }));
+            result.current.handlers.onWheel(
+                wheelEvent({
+                    deltaY: 500,
+                    clientX: 300,
+                    clientY: 210,
+                })
+            );
         });
 
         const contentXAfter = (anchor.x - result.current.position.x) / result.current.scale;
@@ -134,20 +140,24 @@ describe('useZoomPan', () => {
         const { result } = renderHook(() => useZoomPan());
 
         act(() => {
-            result.current.handlers.onWheel(wheelEvent({
-                deltaY: -100,
-                clientX: 300,
-                clientY: 150
-            }));
+            result.current.handlers.onWheel(
+                wheelEvent({
+                    deltaY: -100,
+                    clientX: 300,
+                    clientY: 150,
+                })
+            );
         });
         expect(result.current.position.x).not.toBe(0);
 
         act(() => {
-            result.current.handlers.onWheel(wheelEvent({
-                deltaY: 5000,
-                clientX: 300,
-                clientY: 150
-            }));
+            result.current.handlers.onWheel(
+                wheelEvent({
+                    deltaY: 5000,
+                    clientX: 300,
+                    clientY: 150,
+                })
+            );
         });
 
         expect(result.current.scale).toBe(1);
@@ -193,10 +203,12 @@ describe('useZoomPan', () => {
         const { result } = renderHook(() => useZoomPan());
 
         act(() => {
-            result.current.handlers.onDoubleClick(mouseEvent({
-                clientX: 300,
-                clientY: 150
-            }));
+            result.current.handlers.onDoubleClick(
+                mouseEvent({
+                    clientX: 300,
+                    clientY: 150,
+                })
+            );
         });
         expect(result.current.scale).toBe(2);
         expect(result.current.position).toEqual({ x: -100, y: 0 });
@@ -212,8 +224,8 @@ describe('useZoomPan', () => {
         const { result } = renderHook(() => useZoomPan({ initialScale: 1.5, minScale: 1, maxScale: 3 }));
 
         act(() => {
-            result.current.setScale(scale => scale + 0.5);
-            result.current.setPosition(position => ({ x: position.x + 10, y: position.y + 20 }));
+            result.current.setScale((scale) => scale + 0.5);
+            result.current.setPosition((position) => ({ x: position.x + 10, y: position.y + 20 }));
         });
         expect(result.current.scale).toBe(2);
         expect(result.current.position).toEqual({ x: 10, y: 20 });

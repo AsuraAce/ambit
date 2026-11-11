@@ -29,12 +29,14 @@ export const useModalManager = () => {
         donation: false,
         export: false,
         commandPalette: false,
-        collectionEditor: false
+        collectionEditor: false,
     });
 
     const [pendingViewerDeleteId, setPendingViewerDeleteId] = useState<string | null>(null);
     const [collectionToDelete, setCollectionToDelete] = useState<string | null>(null);
-    const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'experiments' | 'intelligence' | 'invokeai' | 'comfyui' | 'a1111' | 'folders' | 'resources' | 'privacy' | 'dev'>('general');
+    const [initialSettingsTab, setInitialSettingsTab] = useState<
+        'general' | 'experiments' | 'intelligence' | 'invokeai' | 'comfyui' | 'a1111' | 'folders' | 'resources' | 'privacy' | 'dev'
+    >('general');
     const [shortcutsModalTab, setShortcutsModalTab] = useState<'shortcuts' | 'search' | 'setup'>('shortcuts');
     const [slideshowShuffle, setSlideshowShuffle] = useState(false);
     const [isPinnedShelfCollapsed, setIsPinnedShelfCollapsed] = useState(true);
@@ -42,25 +44,26 @@ export const useModalManager = () => {
     const [sourceCollectionId, setSourceCollectionId] = useState<string | null>(null);
     const [collectionToEditId, setCollectionToEditId] = useState<string | null>(null);
 
-    const openModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: true }));
-    const closeModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: false }));
-    const closeAllModals = () => setModals({
-        settings: false,
-        addToCollection: false,
-        deleteConfirm: false,
-        deleteCollection: false,
-        compare: false,
-        shortcuts: false,
-        onboarding: false,
-        recovery: false,
-        slideshow: false,
-        donation: false,
-        export: false,
-        commandPalette: false,
-        collectionEditor: false
-    });
+    const openModal = (key: ModalKey) => setModals((p) => ({ ...p, [key]: true }));
+    const closeModal = (key: ModalKey) => setModals((p) => ({ ...p, [key]: false }));
+    const closeAllModals = () =>
+        setModals({
+            settings: false,
+            addToCollection: false,
+            deleteConfirm: false,
+            deleteCollection: false,
+            compare: false,
+            shortcuts: false,
+            onboarding: false,
+            recovery: false,
+            slideshow: false,
+            donation: false,
+            export: false,
+            commandPalette: false,
+            collectionEditor: false,
+        });
 
-    const isAnyModalOpen = Object.values(modals).some(v => v);
+    const isAnyModalOpen = Object.values(modals).some((v) => v);
 
     return {
         modals,
@@ -86,6 +89,6 @@ export const useModalManager = () => {
         sourceCollectionId,
         setSourceCollectionId,
         collectionToEditId,
-        setCollectionToEditId
+        setCollectionToEditId,
     };
 };

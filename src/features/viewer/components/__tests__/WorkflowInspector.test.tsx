@@ -15,22 +15,22 @@ const mockScrollIntoView = vi.hoisted(() => vi.fn());
 vi.mock('../../../../bindings', () => ({
     commands: {
         inspectComfyuiMetadataChunks: (...args: unknown[]) => mockInspectComfyuiMetadataChunks(...args),
-        inspectComfyuiWorkflowGraph: (...args: unknown[]) => mockInspectComfyuiWorkflowGraph(...args)
-    }
+        inspectComfyuiWorkflowGraph: (...args: unknown[]) => mockInspectComfyuiWorkflowGraph(...args),
+    },
 }));
 
 vi.mock('../../../../stores/settingsStore', () => ({
     useSettingsStore: (selector: (state: { settings: { devMode: boolean } }) => unknown) =>
-        selector({ settings: { devMode: mockSettings.devMode } })
+        selector({ settings: { devMode: mockSettings.devMode } }),
 }));
 
 vi.mock('../../../../services/metadataParser', () => ({
-    scanImageWorkflow: vi.fn()
+    scanImageWorkflow: vi.fn(),
 }));
 
 vi.mock('../../../../services/db/imageRepo', () => ({
     updateImageWorkflow: vi.fn(),
-    updateImageWorkflowHint: vi.fn()
+    updateImageWorkflowHint: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: mockSave }));
@@ -41,20 +41,20 @@ const workflowJson = JSON.stringify({
         {
             id: 9,
             type: 'SaveImage',
-            inputs: [{ name: 'images', link: 1 }]
-        }
-    ]
+            inputs: [{ name: 'images', link: 1 }],
+        },
+    ],
 });
 
 const promptJson = JSON.stringify({
     '3': {
         class_type: 'KSampler',
-        inputs: { steps: 8, cfg: 1, sampler_name: 'euler' }
+        inputs: { steps: 8, cfg: 1, sampler_name: 'euler' },
     },
     '9': {
         class_type: 'SaveImage',
-        inputs: { images: ['3', 0] }
-    }
+        inputs: { images: ['3', 0] },
+    },
 });
 
 const diagnosticsReport = {
@@ -73,11 +73,11 @@ const diagnosticsReport = {
     fieldSources: {
         model: 'sampler_traversal',
         positive_prompt: 'sampler_traversal',
-        workflow_json: 'workflow_chunk'
+        workflow_json: 'workflow_chunk',
     },
     fieldSourceNodeIds: {
         model: ['3'],
-        positive_prompt: ['404']
+        positive_prompt: ['404'],
     },
     resourceSources: [],
     metadata: {
@@ -96,8 +96,8 @@ const diagnosticsReport = {
         hypernetworks: [],
         generationType: 'txt2img',
         hasWorkflowHint: true,
-        hasWorkflowJson: true
-    }
+        hasWorkflowJson: true,
+    },
 };
 
 const workflowGraphReport = {
@@ -107,29 +107,31 @@ const workflowGraphReport = {
     rootSamplerNodeIds: ['3'],
     selectedBranchNodeIds: ['3', '9'],
     outputAmbiguous: false,
-    edges: [{
-        sourceNodeId: '3',
-        sourceOutputSlot: 0,
-        targetNodeId: '9',
-        targetInputName: 'images',
-        targetInputSlot: null
-    }],
+    edges: [
+        {
+            sourceNodeId: '3',
+            sourceOutputSlot: 0,
+            targetNodeId: '9',
+            targetInputName: 'images',
+            targetInputSlot: null,
+        },
+    ],
     nodes: [
         {
             id: '3',
             nodeType: 'KSampler',
             title: 'KSampler',
             inputs: { steps: '8', cfg: '1', sampler_name: 'euler' },
-            subgraphPath: []
+            subgraphPath: [],
         },
         {
             id: '9',
             nodeType: 'SaveImage',
             title: 'SaveImage',
             inputs: { images: '["3",0]' },
-            subgraphPath: []
-        }
-    ]
+            subgraphPath: [],
+        },
+    ],
 };
 
 const makeImage = (tool: GeneratorTool = GeneratorTool.COMFYUI): AIImage => ({
@@ -151,12 +153,12 @@ const makeImage = (tool: GeneratorTool = GeneratorTool.COMFYUI): AIImage => ({
         positivePrompt: 'diagnostic prompt',
         negativePrompt: '',
         workflowJson,
-        hasWorkflowHint: true
+        hasWorkflowHint: true,
     },
     originalChunks: {
         workflow: workflowJson,
-        prompt: promptJson
-    }
+        prompt: promptJson,
+    },
 });
 const openParserDiagnostics = () => {
     fireEvent.click(screen.getByRole('button', { name: 'Parser Diagnostics' }));
@@ -167,7 +169,6 @@ const renderWithOpenParserDiagnostics = (image: AIImage = makeImage()) => {
     openParserDiagnostics();
     return view;
 };
-
 
 describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     beforeEach(() => {
@@ -180,21 +181,21 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         mockInspectComfyuiMetadataChunks.mockReset();
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
-            data: diagnosticsReport
+            data: diagnosticsReport,
         });
         mockInspectComfyuiWorkflowGraph.mockReset();
         mockInspectComfyuiWorkflowGraph.mockResolvedValue({
             status: 'ok',
-            data: workflowGraphReport
+            data: workflowGraphReport,
         });
         mockScrollIntoView.mockReset();
         Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
             value: mockScrollIntoView,
-            configurable: true
+            configurable: true,
         });
         Object.defineProperty(navigator, 'clipboard', {
             value: { writeText: mockClipboardWriteText },
-            configurable: true
+            configurable: true,
         });
     });
 
@@ -230,10 +231,16 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 nodeCount: 3,
                 nodes: [
                     { id: '29', nodeType: 'SaveImage', title: 'SaveImage', inputs: {}, subgraphPath: [] },
-                    { id: '30:19', nodeType: 'StringConcatenate', title: 'Krea Positive Prompt', inputs: { string_a: 'scene' }, subgraphPath: ['30'] },
-                    { id: '30:7:4', nodeType: 'KSampler', title: 'Nested Sampler', inputs: {}, subgraphPath: ['30', '7'] }
-                ]
-            }
+                    {
+                        id: '30:19',
+                        nodeType: 'StringConcatenate',
+                        title: 'Krea Positive Prompt',
+                        inputs: { string_a: 'scene' },
+                        subgraphPath: ['30'],
+                    },
+                    { id: '30:7:4', nodeType: 'KSampler', title: 'Nested Sampler', inputs: {}, subgraphPath: ['30', '7'] },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
@@ -244,7 +251,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByTitle('Krea Positive Prompt')).toBeTruthy();
 
         fireEvent.change(screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')..."), {
-            target: { value: '30:19' }
+            target: { value: '30:19' },
         });
         expect(screen.getByTitle('Krea Positive Prompt')).toBeTruthy();
         expect(screen.queryByTitle('Nested Sampler')).toBeNull();
@@ -290,37 +297,33 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         nodeType: 'CheckpointLoaderSimple',
                         title: 'Disconnected Loader',
                         inputs: {},
-                        subgraphPath: []
-                    }
-                ]
-            }
+                        subgraphPath: [],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
         const allNodes = await screen.findByRole('button', { name: 'All Nodes' });
-        await waitFor(() => expect(
-            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
-        ).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(false));
         const selectedBranch = screen.getByRole('button', { name: 'Selected Branch' });
         expect(allNodes.getAttribute('aria-pressed')).toBe('true');
         expect(screen.getByTitle('Disconnected Loader')).toBeTruthy();
 
         fireEvent.click(selectedBranch);
 
-        await waitFor(() => expect(
-            screen.getByRole('button', { name: 'Selected Branch' }).getAttribute('aria-pressed')
-        ).toBe('true'));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Selected Branch' }).getAttribute('aria-pressed')).toBe('true'));
         expect(screen.queryByTitle('Disconnected Loader')).toBeNull();
         expect(screen.getByText('2/3')).toBeTruthy();
 
         fireEvent.change(screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')..."), {
-            target: { value: 'Disconnected' }
+            target: { value: 'Disconnected' },
         });
         expect(screen.getByText('No matching nodes found.')).toBeTruthy();
 
         fireEvent.change(screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')..."), {
-            target: { value: 'KSampler' }
+            target: { value: 'KSampler' },
         });
         expect(screen.getByTitle('KSampler')).toBeTruthy();
         expect(screen.queryByTitle('SaveImage')).toBeNull();
@@ -339,8 +342,8 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         sourceOutputSlot: 0,
                         targetNodeId: '12',
                         targetInputName: 'model',
-                        targetInputSlot: null
-                    }
+                        targetInputSlot: null,
+                    },
                 ],
                 nodes: [
                     ...workflowGraphReport.nodes,
@@ -349,17 +352,15 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         nodeType: 'ExternalNode',
                         title: 'External Dependency',
                         inputs: {},
-                        subgraphPath: []
-                    }
-                ]
-            }
+                        subgraphPath: [],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
-        await waitFor(() => expect(
-            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
-        ).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(false));
         fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
         fireEvent.click(screen.getByTitle('KSampler').closest('button')!);
         fireEvent.click(screen.getByLabelText('Open outgoing connected node External Dependency (12)'));
@@ -404,9 +405,9 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 ...diagnosticsReport,
                 fieldSourceNodeIds: {
                     model: ['3', '12'],
-                    positive_prompt: ['404']
-                }
-            }
+                    positive_prompt: ['404'],
+                },
+            },
         });
         mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
             status: 'ok',
@@ -420,17 +421,15 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         nodeType: 'CheckpointLoaderSimple',
                         title: 'Disconnected Loader',
                         inputs: {},
-                        subgraphPath: []
-                    }
-                ]
-            }
+                        subgraphPath: [],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
-        await waitFor(() => expect(
-            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
-        ).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(false));
         expect(await screen.findByTitle('Jump to source node 3: KSampler')).toBeTruthy();
         expect(screen.getByTitle('Jump to source node 12: Disconnected Loader')).toBeTruthy();
         expect(screen.getByTitle('Source node 404 is not available in the normalized workflow graph.')).toBeTruthy();
@@ -461,10 +460,10 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         nodeType: 'KSampler',
                         title: 'Alternate Sampler',
                         inputs: {},
-                        subgraphPath: []
-                    }
-                ]
-            }
+                        subgraphPath: [],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
@@ -484,8 +483,8 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 rootSamplerNodeIds: [],
                 selectedBranchNodeIds: [],
                 edges: [],
-                nodes: [workflowGraphReport.nodes[1]]
-            }
+                nodes: [workflowGraphReport.nodes[1]],
+            },
         });
 
         renderWithOpenParserDiagnostics();
@@ -499,7 +498,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     it('falls back to the local graph when backend inspection fails', async () => {
         mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
             status: 'error',
-            error: 'normalizer unavailable'
+            error: 'normalizer unavailable',
         });
 
         renderWithOpenParserDiagnostics();
@@ -559,13 +558,13 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(parsed.chunkKeys).toEqual(['prompt', 'workflow']);
         expect(parsed.chunkLengths).toEqual({
             prompt: promptJson.length,
-            workflow: workflowJson.length
+            workflow: workflowJson.length,
         });
         expect(parsed.graphNodeCount).toBe(2);
         expect(parsed.outputSelection).toEqual({
             selectedOutputCandidateCount: 1,
             uniqueOutputRootSamplerCount: 1,
-            ambiguous: false
+            ambiguous: false,
         });
         expect(parsed.fieldSources.model).toBe('sampler_traversal');
         expect(parsed.resourceSources).toEqual([]);
@@ -592,7 +591,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         await waitFor(() => expect(mockWriteTextFile).toHaveBeenCalledTimes(1));
         expect(mockSave).toHaveBeenCalledWith({
             filters: [{ name: 'JSON', extensions: ['json'] }],
-            defaultPath: 'ambit-comfyui-support.json'
+            defaultPath: 'ambit-comfyui-support.json',
         });
         const [path, contents] = mockWriteTextFile.mock.calls[0] as [string, string];
         expect(path).toBe('C:/exports/ambit-comfyui-support.json');
@@ -681,9 +680,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('ignores diagnostics completion after unmount', async () => {
         let resolveInspection!: (value: { status: 'ok'; data: typeof diagnosticsReport }) => void;
-        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise(resolve => {
-            resolveInspection = resolve;
-        }));
+        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveInspection = resolve;
+            })
+        );
         const view = renderWithOpenParserDiagnostics();
         view.unmount();
 
@@ -693,9 +694,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('ignores diagnostics rejection after unmount', async () => {
         let rejectInspection!: (reason: unknown) => void;
-        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise((_resolve, reject) => {
-            rejectInspection = reject;
-        }));
+        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(
+            new Promise((_resolve, reject) => {
+                rejectInspection = reject;
+            })
+        );
         const view = renderWithOpenParserDiagnostics();
         view.unmount();
 
@@ -755,16 +758,14 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 ...diagnosticsReport,
                 fieldSources: {
                     ...diagnosticsReport.fieldSources,
-                    seed: 'sampler_fallback'
-                }
-            }
+                    seed: 'sampler_fallback',
+                },
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
-        expect(
-            await screen.findByTitle('Sampler fallback: found by scanning samplers, weaker than saved-output traversal.')
-        ).toBeTruthy();
+        expect(await screen.findByTitle('Sampler fallback: found by scanning samplers, weaker than saved-output traversal.')).toBeTruthy();
     });
 
     it('identifies retained flat parameters as medium-confidence evidence', async () => {
@@ -774,15 +775,17 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 ...diagnosticsReport,
                 fieldSources: {
                     ...diagnosticsReport.fieldSources,
-                    seed: 'flat_parameters'
-                }
-            }
+                    seed: 'flat_parameters',
+                },
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
         expect(
-            await screen.findByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')
+            await screen.findByTitle(
+                'Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.'
+            )
         ).toBeTruthy();
     });
 
@@ -791,13 +794,15 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: {
                 ...diagnosticsReport,
-                resourceSources: [{
-                    field: 'loras',
-                    value: 'disconnected_style',
-                    layer: 'sampler_traversal',
-                    nodeIds: ['12']
-                }]
-            }
+                resourceSources: [
+                    {
+                        field: 'loras',
+                        value: 'disconnected_style',
+                        layer: 'sampler_traversal',
+                        nodeIds: ['12'],
+                    },
+                ],
+            },
         });
         mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
             status: 'ok',
@@ -811,23 +816,23 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         nodeType: 'LoraLoaderModelOnly',
                         title: 'Disconnected LoRA',
                         inputs: {},
-                        subgraphPath: []
-                    }
-                ]
-            }
+                        subgraphPath: [],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
-        await waitFor(() => expect(
-            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
-        ).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(false));
         fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
         const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
         fireEvent.change(search, { target: { value: 'KSampler' } });
-        fireEvent.click(await screen.findByRole('button', {
-            name: 'Jump to LoRAs resource source node Disconnected LoRA (12)'
-        }));
+        fireEvent.click(
+            await screen.findByRole('button', {
+                name: 'Jump to LoRAs resource source node Disconnected LoRA (12)',
+            })
+        );
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
         expect(search.value).toBe('');
@@ -846,23 +851,27 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         field: 'embeddings',
                         value: 'flat_detail',
                         layer: 'flat_parameters',
-                        nodeIds: []
+                        nodeIds: [],
                     },
                     {
                         field: 'ip_adapters',
                         value: 'missing_adapter',
                         layer: 'sampler_traversal',
-                        nodeIds: ['404']
-                    }
-                ]
-            }
+                        nodeIds: ['404'],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('Resource Sources')).toBeTruthy();
         expect(screen.getByText('flat_detail')).toBeTruthy();
-        expect(screen.getByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')).toBeTruthy();
+        expect(
+            screen.getByTitle(
+                'Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.'
+            )
+        ).toBeTruthy();
         expect(screen.getByText('missing_adapter')).toBeTruthy();
         expect(screen.getByTitle('Resource source node 404 is not available in the normalized workflow graph.')).toBeTruthy();
         expect(screen.queryByRole('button', { name: /resource source node.*404/i })).toBeNull();
@@ -876,14 +885,16 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 selectedOutputCandidateCount: 2,
                 uniqueOutputRootSamplerCount: 2,
                 outputAmbiguous: true,
-                traversalIssues: [{
-                    field: 'positive_prompt',
-                    nodeId: '30:19',
-                    nodeType: 'TextGenerate',
-                    inputName: 'text',
-                    reason: 'generated_value_unavailable'
-                }]
-            }
+                traversalIssues: [
+                    {
+                        field: 'positive_prompt',
+                        nodeId: '30:19',
+                        nodeType: 'TextGenerate',
+                        inputName: 'text',
+                        reason: 'generated_value_unavailable',
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
@@ -902,14 +913,16 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: {
                 ...diagnosticsReport,
-                traversalIssues: [{
-                    field: 'model',
-                    nodeId: '12',
-                    nodeType: 'CheckpointLoaderSimple',
-                    inputName: 'model',
-                    reason: 'unsupported_node'
-                }]
-            }
+                traversalIssues: [
+                    {
+                        field: 'model',
+                        nodeId: '12',
+                        nodeType: 'CheckpointLoaderSimple',
+                        inputName: 'model',
+                        reason: 'unsupported_node',
+                    },
+                ],
+            },
         });
         mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
             status: 'ok',
@@ -923,23 +936,23 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                         nodeType: 'CheckpointLoaderSimple',
                         title: 'Disconnected Loader',
                         inputs: {},
-                        subgraphPath: []
-                    }
-                ]
-            }
+                        subgraphPath: [],
+                    },
+                ],
+            },
         });
 
         renderWithOpenParserDiagnostics();
 
-        await waitFor(() => expect(
-            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
-        ).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(false));
         fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
         const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
         fireEvent.change(search, { target: { value: 'KSampler' } });
-        fireEvent.click(await screen.findByRole('button', {
-            name: 'Jump to traversal blocker node Disconnected Loader (12)'
-        }));
+        fireEvent.click(
+            await screen.findByRole('button', {
+                name: 'Jump to traversal blocker node Disconnected Loader (12)',
+            })
+        );
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
         expect(search.value).toBe('');
@@ -954,11 +967,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             nodeId: String(100 + index),
             nodeType: 'UnknownTextNode',
             inputName: 'text',
-            reason: 'unsupported_node'
+            reason: 'unsupported_node',
         }));
         mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
             status: 'ok',
-            data: { ...diagnosticsReport, traversalIssues }
+            data: { ...diagnosticsReport, traversalIssues },
         });
 
         renderWithOpenParserDiagnostics();
@@ -978,9 +991,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
         view.rerender(<WorkflowInspector image={{ ...makeImage(), id: 'C:/library/other.png', filename: 'other.png' }} />);
 
-        await waitFor(() => expect(
-            screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')
-        ).toBe('false'));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')).toBe('false'));
         expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1);
         view.rerender(<WorkflowInspector image={makeImage()} />);
         expect(screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')).toBe('false');
@@ -990,23 +1001,23 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         const initialImage = makeImage();
         const updatedChunks = {
             ...initialImage.originalChunks!,
-            prompt: `${promptJson} updated`
+            prompt: `${promptJson} updated`,
         };
         let resolveUpdatedInspection!: (value: { status: 'ok'; data: typeof diagnosticsReport }) => void;
         mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
             status: 'ok',
-            data: diagnosticsReport
+            data: diagnosticsReport,
         });
-        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise((resolve) => {
-            resolveUpdatedInspection = resolve;
-        }));
+        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveUpdatedInspection = resolve;
+            })
+        );
 
         const view = renderWithOpenParserDiagnostics(initialImage);
         await screen.findByText('diagnostic_model');
         fireEvent.click(screen.getByRole('button', { name: 'Parser Diagnostics' }));
-        view.rerender(
-            <WorkflowInspector image={{ ...initialImage, originalChunks: updatedChunks }} />
-        );
+        view.rerender(<WorkflowInspector image={{ ...initialImage, originalChunks: updatedChunks }} />);
         openParserDiagnostics();
 
         expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(2);
@@ -1014,14 +1025,16 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByText('Loading diagnostics...')).toBeTruthy();
         expect(screen.queryByLabelText('Parser diagnostics actions')).toBeNull();
 
-        act(() => resolveUpdatedInspection({
-            status: 'ok',
-            data: {
-                ...diagnosticsReport,
-                graphNodeCount: 3,
-                metadata: { ...diagnosticsReport.metadata, model: 'updated_model' }
-            }
-        }));
+        act(() =>
+            resolveUpdatedInspection({
+                status: 'ok',
+                data: {
+                    ...diagnosticsReport,
+                    graphNodeCount: 3,
+                    metadata: { ...diagnosticsReport.metadata, model: 'updated_model' },
+                },
+            })
+        );
 
         expect(await screen.findByText('updated_model')).toBeTruthy();
         expect(screen.getByLabelText('Parser diagnostics actions')).toBeTruthy();
@@ -1032,11 +1045,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             nodeId: String(200 + index),
             nodeType: 'UnknownTextNode',
             inputName: 'text',
-            reason: 'unsupported_node'
+            reason: 'unsupported_node',
         }));
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
-            data: { ...diagnosticsReport, traversalIssues }
+            data: { ...diagnosticsReport, traversalIssues },
         });
         const view = renderWithOpenParserDiagnostics();
 
@@ -1046,9 +1059,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         view.rerender(<WorkflowInspector image={{ ...makeImage(), id: 'C:/library/other.png', filename: 'other.png' }} />);
 
         await waitFor(() => expect(screen.queryByText('#205')).toBeNull());
-        await waitFor(() => expect(
-            screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')
-        ).toBe('false'));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')).toBe('false'));
         openParserDiagnostics();
         expect((await screen.findByRole('button', { name: 'Show all (6)' })).getAttribute('aria-expanded')).toBe('false');
     });
@@ -1059,15 +1070,15 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             nodeId: String(index),
             nodeType: 'UnknownTextNode',
             inputName: 'text',
-            reason: 'unsupported_node'
+            reason: 'unsupported_node',
         }));
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
             data: {
                 ...diagnosticsReport,
                 traversalIssues,
-                traversalIssuesTruncated: true
-            }
+                traversalIssuesTruncated: true,
+            },
         });
         renderWithOpenParserDiagnostics();
 
@@ -1142,7 +1153,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     it('renders a diagnostics failure without breaking workflow display', async () => {
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'error',
-            error: 'parse failed'
+            error: 'parse failed',
         });
 
         renderWithOpenParserDiagnostics();

@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useState } from 'react';
 import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench, RefreshCw, History } from 'lucide-react';
@@ -64,8 +63,8 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
             ...prev,
             systemPrompts: {
                 ...(prev.systemPrompts || {}),
-                [key]: editValue
-            }
+                [key]: editValue,
+            },
         }));
         setOpenPrompt(null);
     };
@@ -130,8 +129,6 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
         };
     }, [addToast]);
 
-
-
     const tabs: { id: DevTabId; label: string; icon: React.ElementType }[] = [
         { id: 'prompts', label: 'AI Prompts', icon: BrainCircuit },
         { id: 'tools', label: 'Tools', icon: Wrench },
@@ -141,17 +138,17 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
     return (
         <>
             <div className="h-full flex flex-col pt-2">
-
                 {/* Tab Navigation - Fixed Header */}
                 <div className="shrink-0 px-8 pb-4 space-y-4">
                     <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                        <div
-                            onClick={handleDevModeToggle}
-                            className="flex items-center justify-between cursor-pointer group"
-                        >
+                        <div onClick={handleDevModeToggle} className="flex items-center justify-between cursor-pointer group">
                             <div>
-                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Developer Mode</div>
-                                <div className="text-xs text-gray-500">Enable prompt overrides, diagnostics, and low-level tooling for this development build.</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">
+                                    Developer Mode
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                    Enable prompt overrides, diagnostics, and low-level tooling for this development build.
+                                </div>
                             </div>
                             <button
                                 type="button"
@@ -160,7 +157,9 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                 aria-label="Developer Mode"
                                 className={`w-10 h-6 rounded-full relative transition-colors ${developerModeEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                             >
-                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${developerModeEnabled ? 'left-5' : 'left-1'}`} />
+                                <div
+                                    className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${developerModeEnabled ? 'left-5' : 'left-1'}`}
+                                />
                             </button>
                         </div>
                     </div>
@@ -175,10 +174,10 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
                                         className={cn(
-                                            "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-colors",
+                                            'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-colors',
                                             isActive
-                                                ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-300 shadow-sm"
-                                                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5"
+                                                ? 'bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-300 shadow-sm'
+                                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5'
                                         )}
                                     >
                                         <Icon className="w-4 h-4" />
@@ -192,237 +191,268 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
 
                 {/* Scrollable Content Area */}
                 {developerModeEnabled ? (
-                <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-6">
-                    {/* System Prompts Section */}
-                    {activeTab === 'prompts' && (
-                        <section className="space-y-4 animate-in fade-in duration-150 motion-reduce:animate-none">
-                            <div className="flex items-start gap-3 p-4 bg-amethyst-50 dark:bg-amethyst-500/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl">
-                                <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-300 mt-0.5 shrink-0" />
-                                <div>
-                                    <h4 className="text-sm font-bold text-amethyst-600 dark:text-amethyst-300">System Prompt Overrides</h4>
-                                    <p className="text-xs text-amethyst-600/70 dark:text-amethyst-300/70 mt-1 leading-relaxed">
-                                        Customize the internal instructions sent to the AI models.
-                                        Changes here apply immediately. "Reset to Default" removes your override.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-4">
-                                {(Object.keys(AI_PROMPTS) as AIPromptKey[]).map((key) => {
-                                    const isOverridden = !!settings.systemPrompts?.[key];
-                                    const isEditing = openPrompt === key;
-
-                                    return (
-                                        <div key={key} className={cn(
-                                            "bg-white dark:bg-zinc-900 border rounded-xl overflow-hidden transition-all",
-                                            isOverridden ? 'border-ember-500/30 ring-1 ring-ember-500/20 shadow-sm' : 'border-gray-200 dark:border-white/5'
-                                        )}>
-                                            <div className="px-4 py-3 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="text-xs font-bold font-mono text-gray-500 bg-gray-200 dark:bg-white/10 px-1.5 py-0.5 rounded">
-                                                        {key}
-                                                    </div>
-                                                    {isOverridden && (
-                                                        <span className="text-[10px] font-bold text-ember-600 dark:text-ember-300 bg-ember-100 dark:bg-ember-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                            <Wrench className="w-3 h-3" /> Modified
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    {isOverridden && (
-                                                        <TooltipButton
-                                                            label="Reset Prompt to Default"
-                                                            content="Reset Prompt to Default"
-                                                            onClick={() => handleResetPrompt(key)}
-                                                            className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 dark:hover:bg-red-500/20 dark:hover:text-red-300"
-                                                        >
-                                                            <Undo2 className="w-3.5 h-3.5" />
-                                                        </TooltipButton>
-                                                    )}
-                                                    {!isEditing && (
-                                                        <button
-                                                            onClick={() => handleEditPrompt(key)}
-                                                            className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-300 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {isEditing ? (
-                                                <div className="p-4 bg-gray-50 dark:bg-black/20 animate-in fade-in duration-150 motion-reduce:animate-none">
-                                                    <textarea
-                                                        value={editValue}
-                                                        onChange={(e) => setEditValue(e.target.value)}
-                                                        className="w-full h-96 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-white/10 rounded-lg p-3 text-xs font-mono text-gray-700 dark:text-gray-300 resize-y focus:outline-none focus:ring-2 focus:ring-amethyst-500/50"
-                                                        autoFocus
-                                                    />
-                                                    <div className="flex justify-end gap-2 mt-3">
-                                                        <button
-                                                            onClick={() => setOpenPrompt(null)}
-                                                            className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:hover:text-gray-200"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleSavePrompt(key)}
-                                                            className="px-4 py-1.5 bg-amethyst-600 hover:bg-amethyst-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg shadow-amethyst-500/20"
-                                                        >
-                                                            <Save className="w-3 h-3" /> Save Override
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="p-4 max-h-32 overflow-y-auto custom-scrollbar relative group">
-                                                    <pre className="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400 whitespace-pre-wrap font-mono group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
-                                                        {settings.systemPrompts?.[key] || AI_PROMPTS[key]}
-                                                    </pre>
-                                                    <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white dark:from-zinc-900 to-transparent pointer-events-none" />
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </section>
-                    )}
-
-                    {/* Tools Section */}
-                    {activeTab === 'tools' && (
-                        <section className="space-y-6 animate-in fade-in duration-150 motion-reduce:animate-none">
-                            <div className="mb-6 rounded-2xl border border-ember-200 bg-ember-50 p-6 dark:border-ember-500/30 dark:bg-ember-500/10">
-                                <div className="flex gap-4">
-                                    <Database className="w-6 h-6 text-ember-600 dark:text-ember-300 shrink-0" />
+                    <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-6">
+                        {/* System Prompts Section */}
+                        {activeTab === 'prompts' && (
+                            <section className="space-y-4 animate-in fade-in duration-150 motion-reduce:animate-none">
+                                <div className="flex items-start gap-3 p-4 bg-amethyst-50 dark:bg-amethyst-500/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl">
+                                    <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-300 mt-0.5 shrink-0" />
                                     <div>
-                                        <h5 className="mb-1 text-sm font-bold text-ember-600 dark:text-ember-300">Database Stress Testing</h5>
-                                        <p className="text-xs leading-relaxed text-ember-600 dark:text-ember-300">
-                                            Generate dummy data to benchmark application performance.
-                                            <br />
-                                            <strong>Note:</strong> This increases database size significantly.
+                                        <h4 className="text-sm font-bold text-amethyst-600 dark:text-amethyst-300">
+                                            System Prompt Overrides
+                                        </h4>
+                                        <p className="text-xs text-amethyst-600/70 dark:text-amethyst-300/70 mt-1 leading-relaxed">
+                                            Customize the internal instructions sent to the AI models. Changes here apply immediately.
+                                            "Reset to Default" removes your override.
                                         </p>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Optimize Database</div>
-                                        <div className="text-xs text-gray-500 mt-1">Run VACUUM and ANALYZE for local database maintenance.</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleOptimize}
-                                        disabled={isOptimizing}
-                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
-                                    >
-                                        {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
-                                        {isOptimizing ? 'Optimizing...' : 'Optimize Now'}
-                                    </button>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {(Object.keys(AI_PROMPTS) as AIPromptKey[]).map((key) => {
+                                        const isOverridden = !!settings.systemPrompts?.[key];
+                                        const isEditing = openPrompt === key;
+
+                                        return (
+                                            <div
+                                                key={key}
+                                                className={cn(
+                                                    'bg-white dark:bg-zinc-900 border rounded-xl overflow-hidden transition-all',
+                                                    isOverridden
+                                                        ? 'border-ember-500/30 ring-1 ring-ember-500/20 shadow-sm'
+                                                        : 'border-gray-200 dark:border-white/5'
+                                                )}
+                                            >
+                                                <div className="px-4 py-3 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-xs font-bold font-mono text-gray-500 bg-gray-200 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                                            {key}
+                                                        </div>
+                                                        {isOverridden && (
+                                                            <span className="text-[10px] font-bold text-ember-600 dark:text-ember-300 bg-ember-100 dark:bg-ember-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                <Wrench className="w-3 h-3" /> Modified
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        {isOverridden && (
+                                                            <TooltipButton
+                                                                label="Reset Prompt to Default"
+                                                                content="Reset Prompt to Default"
+                                                                onClick={() => handleResetPrompt(key)}
+                                                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 dark:hover:bg-red-500/20 dark:hover:text-red-300"
+                                                            >
+                                                                <Undo2 className="w-3.5 h-3.5" />
+                                                            </TooltipButton>
+                                                        )}
+                                                        {!isEditing && (
+                                                            <button
+                                                                onClick={() => handleEditPrompt(key)}
+                                                                className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-300 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {isEditing ? (
+                                                    <div className="p-4 bg-gray-50 dark:bg-black/20 animate-in fade-in duration-150 motion-reduce:animate-none">
+                                                        <textarea
+                                                            value={editValue}
+                                                            onChange={(e) => setEditValue(e.target.value)}
+                                                            className="w-full h-96 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-white/10 rounded-lg p-3 text-xs font-mono text-gray-700 dark:text-gray-300 resize-y focus:outline-none focus:ring-2 focus:ring-amethyst-500/50"
+                                                            autoFocus
+                                                        />
+                                                        <div className="flex justify-end gap-2 mt-3">
+                                                            <button
+                                                                onClick={() => setOpenPrompt(null)}
+                                                                className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:hover:text-gray-200"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleSavePrompt(key)}
+                                                                className="px-4 py-1.5 bg-amethyst-600 hover:bg-amethyst-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg shadow-amethyst-500/20"
+                                                            >
+                                                                <Save className="w-3 h-3" /> Save Override
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-4 max-h-32 overflow-y-auto custom-scrollbar relative group">
+                                                        <pre className="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400 whitespace-pre-wrap font-mono group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
+                                                            {settings.systemPrompts?.[key] || AI_PROMPTS[key]}
+                                                        </pre>
+                                                        <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white dark:from-zinc-900 to-transparent pointer-events-none" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                            </div>
+                            </section>
+                        )}
 
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset first-run onboarding</div>
-                                        <div className="text-xs text-gray-500 mt-1">Test the non-dismissible first-run flow without deleting application settings or library data.</div>
+                        {/* Tools Section */}
+                        {activeTab === 'tools' && (
+                            <section className="space-y-6 animate-in fade-in duration-150 motion-reduce:animate-none">
+                                <div className="mb-6 rounded-2xl border border-ember-200 bg-ember-50 p-6 dark:border-ember-500/30 dark:bg-ember-500/10">
+                                    <div className="flex gap-4">
+                                        <Database className="w-6 h-6 text-ember-600 dark:text-ember-300 shrink-0" />
+                                        <div>
+                                            <h5 className="mb-1 text-sm font-bold text-ember-600 dark:text-ember-300">
+                                                Database Stress Testing
+                                            </h5>
+                                            <p className="text-xs leading-relaxed text-ember-600 dark:text-ember-300">
+                                                Generate dummy data to benchmark application performance.
+                                                <br />
+                                                <strong>Note:</strong> This increases database size significantly.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsResetOnboardingConfirmOpen(true)}
-                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
-                                    >
-                                        <History className="w-3.5 h-3.5" /> Reset onboarding
-                                    </button>
                                 </div>
-                            </div>
 
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Rebuild Facet Cache</div>
-                                        <div className="text-xs text-gray-500 mt-1">Recalculate metadata facets if filters look stale after low-level changes.</div>
+                                <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Optimize Database</div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                Run VACUUM and ANALYZE for local database maintenance.
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleOptimize}
+                                            disabled={isOptimizing}
+                                            className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
+                                        >
+                                            {isOptimizing ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <Database className="w-3.5 h-3.5" />
+                                            )}
+                                            {isOptimizing ? 'Optimizing...' : 'Optimize Now'}
+                                        </button>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleRebuildCache}
-                                        disabled={isRebuilding}
-                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
-                                    >
-                                        {isRebuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                        {isRebuilding ? 'Rebuilding...' : 'Rebuild Cache'}
-                                    </button>
                                 </div>
-                            </div>
 
-                            {/* Metadata Diagnostics */}
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Metadata Diagnostics</div>
-                                        <div className="text-xs text-gray-500">Check raw metadata storage status</div>
+                                <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <div className="text-sm font-bold text-gray-900 dark:text-gray-200">
+                                                Reset first-run onboarding
+                                            </div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                Test the non-dismissible first-run flow without deleting application settings or library
+                                                data.
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsResetOnboardingConfirmOpen(true)}
+                                            className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
+                                        >
+                                            <History className="w-3.5 h-3.5" /> Reset onboarding
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                const res = await invoke<{ total: number, with_raw: number, with_pv: number, v0: number, v1: number }>('get_metadata_stats');
-                                                const msg = `Total: ${res.total}, With Raw: ${res.with_raw}, V0: ${res.v0}, V1: ${res.v1}`;
-                                                addToast(msg, 'info');
-                                                await navigator.clipboard.writeText(msg);
-                                                addToast('Stats copied to clipboard', 'success');
-                                            } catch (e: unknown) {
-                                                const message = e instanceof Error ? e.message : String(e);
-                                                addToast(`Error: ${message}`, 'error');
-                                            }
-                                        }}
-                                        className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-gray-100 px-4 py-2 text-xs font-bold text-gray-700 transition-all hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/20"
-                                    >
-                                        Run Check
-                                    </button>
                                 </div>
-                            </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 p-4 rounded-xl">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Target Image Count</label>
-                                    <select
-                                        value={targetCount}
-                                        onChange={(e) => setTargetCount(Number(e.target.value))}
-                                        className="w-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-sage-500/50 transition-all font-mono text-gray-900 dark:text-gray-100"
+                                <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Rebuild Facet Cache</div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                Recalculate metadata facets if filters look stale after low-level changes.
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleRebuildCache}
+                                            disabled={isRebuilding}
+                                            className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
+                                        >
+                                            {isRebuilding ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <RefreshCw className="w-3.5 h-3.5" />
+                                            )}
+                                            {isRebuilding ? 'Rebuilding...' : 'Rebuild Cache'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Metadata Diagnostics */}
+                                <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Metadata Diagnostics</div>
+                                            <div className="text-xs text-gray-500">Check raw metadata storage status</div>
+                                        </div>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const res = await invoke<{
+                                                        total: number;
+                                                        with_raw: number;
+                                                        with_pv: number;
+                                                        v0: number;
+                                                        v1: number;
+                                                    }>('get_metadata_stats');
+                                                    const msg = `Total: ${res.total}, With Raw: ${res.with_raw}, V0: ${res.v0}, V1: ${res.v1}`;
+                                                    addToast(msg, 'info');
+                                                    await navigator.clipboard.writeText(msg);
+                                                    addToast('Stats copied to clipboard', 'success');
+                                                } catch (e: unknown) {
+                                                    const message = e instanceof Error ? e.message : String(e);
+                                                    addToast(`Error: ${message}`, 'error');
+                                                }
+                                            }}
+                                            className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-gray-100 px-4 py-2 text-xs font-bold text-gray-700 transition-all hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/20"
+                                        >
+                                            Run Check
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 p-4 rounded-xl">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Target Image Count</label>
+                                        <select
+                                            value={targetCount}
+                                            onChange={(e) => setTargetCount(Number(e.target.value))}
+                                            className="w-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-sage-500/50 transition-all font-mono text-gray-900 dark:text-gray-100"
+                                            disabled={isGenerating}
+                                        >
+                                            <option value={1000}>1,000 images</option>
+                                            <option value={5000}>5,000 images</option>
+                                            <option value={10000}>10,000 images</option>
+                                            <option value={50000}>50,000 images</option>
+                                            <option value={100000}>100,000 images</option>
+                                        </select>
+                                    </div>
+
+                                    <button
+                                        onClick={handleStressTest}
                                         disabled={isGenerating}
+                                        className="w-full h-[43px] bg-sage-600 hover:bg-sage-500 disabled:bg-gray-300 dark:disabled:bg-white/5 text-white rounded-xl text-sm font-bold shadow-lg shadow-sage-500/20 flex items-center justify-center gap-2 transition-all transform active:scale-95 px-6"
                                     >
-                                        <option value={1000}>1,000 images</option>
-                                        <option value={5000}>5,000 images</option>
-                                        <option value={10000}>10,000 images</option>
-                                        <option value={50000}>50,000 images</option>
-                                        <option value={100000}>100,000 images</option>
-                                    </select>
+                                        {isGenerating ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Generating {progress.current.toLocaleString()}...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Zap className="w-4 h-4 fill-white" />
+                                                Start Stress Test
+                                            </>
+                                        )}
+                                    </button>
                                 </div>
-
-                                <button
-                                    onClick={handleStressTest}
-                                    disabled={isGenerating}
-                                    className="w-full h-[43px] bg-sage-600 hover:bg-sage-500 disabled:bg-gray-300 dark:disabled:bg-white/5 text-white rounded-xl text-sm font-bold shadow-lg shadow-sage-500/20 flex items-center justify-center gap-2 transition-all transform active:scale-95 px-6"
-                                >
-                                    {isGenerating ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            Generating {progress.current.toLocaleString()}...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Zap className="w-4 h-4 fill-white" />
-                                            Start Stress Test
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </section>
-                    )}
-
-                </div>
+                            </section>
+                        )}
+                    </div>
                 ) : (
                     <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8">
                         <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6">

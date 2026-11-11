@@ -69,32 +69,32 @@ export const useAppActions = ({
     lastSelectedId,
     imagesQueryKey,
     modalManager: modals, // Destructure with alias for minimum logic change
-    activeImageState
+    activeImageState,
 }: UseAppActionsProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const pendingMetadataRecoveryRef = React.useRef<PendingMetadataRecovery | null>(null);
 
     // Store access
-    const images = useSearchStore(s => s.images);
-    const setImages = useSearchStore(s => s.setImages);
-    const filters = useSearchStore(s => s.filters);
+    const images = useSearchStore((s) => s.images);
+    const setImages = useSearchStore((s) => s.setImages);
+    const filters = useSearchStore((s) => s.filters);
 
-    const settings = useSettingsStore(s => s.settings);
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
-    const setPrivacyEnabled = useSettingsStore(s => s.setPrivacyEnabled);
+    const settings = useSettingsStore((s) => s.settings);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
+    const setPrivacyEnabled = useSettingsStore((s) => s.setPrivacyEnabled);
 
-    const refreshCollections = useCollectionStore(s => s.refreshCollections);
-    const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
+    const refreshCollections = useCollectionStore((s) => s.refreshCollections);
+    const refreshSmartCounts = useCollectionStore((s) => s.refreshSmartCounts);
 
     const { openModal, closeModal, pendingViewerDeleteId, setPendingViewerDeleteId } = modals;
-    const getImage = (id: string) => activeImageState?.getImage(id) ?? images.find(image => image.id === id);
+    const getImage = (id: string) => activeImageState?.getImage(id) ?? images.find((image) => image.id === id);
     const updateImage = (id: string, updater: (image: AIImage) => AIImage) => {
         if (activeImageState) {
             activeImageState.updateImage(id, updater);
             return;
         }
-        setImages(prev => prev.map(image => image.id === id ? updater(image) : image));
+        setImages((prev) => prev.map((image) => (image.id === id ? updater(image) : image)));
     };
 
     const refreshCollectionsAfterImageFlagChange = React.useCallback(() => {
@@ -106,110 +106,125 @@ export const useAppActions = ({
             collectionIds: [filters.collectionId],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
     }, [filters.collectionId, refreshCollections, refreshSmartCounts]);
 
-    const persistPinChanges = React.useCallback(async (
-        ids: string[],
-        isPinned: boolean,
-        previousImages: typeof images,
-        optimisticImages: typeof images,
-        errorMessage: string,
-        previousActiveImage?: AIImage,
-        restoreGallery = true
-    ) => {
-        try {
-            await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
-            if (!restoreGallery) {
-                void queryClient.invalidateQueries({ queryKey: ['images'] });
+    const persistPinChanges = React.useCallback(
+        async (
+            ids: string[],
+            isPinned: boolean,
+            previousImages: typeof images,
+            optimisticImages: typeof images,
+            errorMessage: string,
+            previousActiveImage?: AIImage,
+            restoreGallery = true
+        ) => {
+            try {
+                await Promise.all(ids.map((id) => toggleImagePin(id, isPinned)));
+                if (!restoreGallery) {
+                    void queryClient.invalidateQueries({ queryKey: ['images'] });
+                }
+                refreshCollectionsAfterImageFlagChange();
+            } catch (error) {
+                console.error('[Pin] Failed to persist pin state', error);
+                if (restoreGallery) {
+                    setImages(previousImages);
+                    restoreImagesInQueryCaches(queryClient, previousImages, {
+                        previousOrder: optimisticImages,
+                        nextOrder: previousImages,
+                        reorderQueryKey: imagesQueryKey,
+                    });
+                } else if (previousActiveImage) {
+                    patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
+                        isPinned: previousActiveImage.isPinned,
+                    });
+                }
+                if (previousActiveImage && activeImageState) {
+                    activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
+                }
+                addToast(errorMessage, 'error');
             }
-            refreshCollectionsAfterImageFlagChange();
-        } catch (error) {
-            console.error('[Pin] Failed to persist pin state', error);
-            if (restoreGallery) {
-                setImages(previousImages);
-                restoreImagesInQueryCaches(queryClient, previousImages, {
-                    previousOrder: optimisticImages,
-                    nextOrder: previousImages,
-                    reorderQueryKey: imagesQueryKey
-                });
-            } else if (previousActiveImage) {
-                patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
-                    isPinned: previousActiveImage.isPinned,
-                });
-            }
-            if (previousActiveImage && activeImageState) {
-                activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
-            }
-            addToast(errorMessage, 'error');
-        }
-    }, [refreshCollectionsAfterImageFlagChange, setImages, addToast, queryClient, imagesQueryKey, activeImageState]);
+        },
+        [refreshCollectionsAfterImageFlagChange, setImages, addToast, queryClient, imagesQueryKey, activeImageState]
+    );
 
-    const persistFavoriteChanges = React.useCallback(async (
-        ids: string[],
-        isFavorite: boolean,
-        previousImages: typeof images,
-        previousActiveImage?: AIImage,
-        restoreGallery = true
-    ) => {
-        try {
-            await Promise.all(ids.map(id => toggleImageFavorite(id, isFavorite)));
-            refreshCollectionsAfterImageFlagChange();
-        } catch (error) {
-            console.error('[Favorite] Failed to persist favorite state', error);
-            if (restoreGallery) {
-                setImages(previousImages);
-                restoreImagesInQueryCaches(queryClient, previousImages);
-            } else if (previousActiveImage) {
-                patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
-                    isFavorite: previousActiveImage.isFavorite,
-                });
+    const persistFavoriteChanges = React.useCallback(
+        async (ids: string[], isFavorite: boolean, previousImages: typeof images, previousActiveImage?: AIImage, restoreGallery = true) => {
+            try {
+                await Promise.all(ids.map((id) => toggleImageFavorite(id, isFavorite)));
+                refreshCollectionsAfterImageFlagChange();
+            } catch (error) {
+                console.error('[Favorite] Failed to persist favorite state', error);
+                if (restoreGallery) {
+                    setImages(previousImages);
+                    restoreImagesInQueryCaches(queryClient, previousImages);
+                } else if (previousActiveImage) {
+                    patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
+                        isFavorite: previousActiveImage.isFavorite,
+                    });
+                }
+                if (previousActiveImage && activeImageState) {
+                    activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
+                }
+                addToast('Failed to update favorite state', 'error');
             }
-            if (previousActiveImage && activeImageState) {
-                activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
-            }
-            addToast('Failed to update favorite state', 'error');
-        }
-    }, [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, activeImageState]);
+        },
+        [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, activeImageState]
+    );
 
-    const executeDeleteByIds = React.useCallback(async (ids: string[], targetDeleteId: string | null) => {
-        const deleted = await fileOps.deleteImages(ids);
-        if (!deleted) return;
+    const executeDeleteByIds = React.useCallback(
+        async (ids: string[], targetDeleteId: string | null) => {
+            const deleted = await fileOps.deleteImages(ids);
+            if (!deleted) return;
 
-        if (targetDeleteId) {
-            const idx = viewerImages.findIndex(img => img.id === targetDeleteId);
-            if (idx !== -1) {
-                const remainingViewerImages = viewerImages.filter(img => !ids.includes(img.id));
-                let nextIndex: number | null = idx;
-                if (remainingViewerImages.length === 0) nextIndex = null;
-                else if (idx >= remainingViewerImages.length) nextIndex = remainingViewerImages.length - 1;
-                setViewerSessionImages(remainingViewerImages.length > 0 ? remainingViewerImages : null);
-                setSelectedImageIndex(nextIndex);
+            if (targetDeleteId) {
+                const idx = viewerImages.findIndex((img) => img.id === targetDeleteId);
+                if (idx !== -1) {
+                    const remainingViewerImages = viewerImages.filter((img) => !ids.includes(img.id));
+                    let nextIndex: number | null = idx;
+                    if (remainingViewerImages.length === 0) nextIndex = null;
+                    else if (idx >= remainingViewerImages.length) nextIndex = remainingViewerImages.length - 1;
+                    setViewerSessionImages(remainingViewerImages.length > 0 ? remainingViewerImages : null);
+                    setSelectedImageIndex(nextIndex);
+                } else {
+                    activeImageState?.removeImage(targetDeleteId);
+                }
             } else {
-                activeImageState?.removeImage(targetDeleteId);
+                setSelectedIds(new Set());
             }
-        } else {
-            setSelectedIds(new Set());
-        }
-        closeModal('deleteConfirm');
-        setPendingViewerDeleteId(null);
-    }, [fileOps, viewerImages, setViewerSessionImages, setSelectedImageIndex, setSelectedIds, closeModal, setPendingViewerDeleteId, activeImageState]);
+            closeModal('deleteConfirm');
+            setPendingViewerDeleteId(null);
+        },
+        [
+            fileOps,
+            viewerImages,
+            setViewerSessionImages,
+            setSelectedImageIndex,
+            setSelectedIds,
+            closeModal,
+            setPendingViewerDeleteId,
+            activeImageState,
+        ]
+    );
 
     const executeDelete = React.useCallback(async () => {
         const ids = pendingViewerDeleteId ? [pendingViewerDeleteId] : Array.from(selectedIds);
         await executeDeleteByIds(ids, pendingViewerDeleteId);
     }, [pendingViewerDeleteId, selectedIds, executeDeleteByIds]);
 
-    const requestDeleteForId = React.useCallback((id: string) => {
-        setPendingViewerDeleteId(id);
-        if (settings.confirmDelete) {
-            openModal('deleteConfirm');
-            return;
-        }
+    const requestDeleteForId = React.useCallback(
+        (id: string) => {
+            setPendingViewerDeleteId(id);
+            if (settings.confirmDelete) {
+                openModal('deleteConfirm');
+                return;
+            }
 
-        void executeDeleteByIds([id], id);
-    }, [settings.confirmDelete, openModal, setPendingViewerDeleteId, executeDeleteByIds]);
+            void executeDeleteByIds([id], id);
+        },
+        [settings.confirmDelete, openModal, setPendingViewerDeleteId, executeDeleteByIds]
+    );
 
     const handleDeleteViewerImage = (id: string) => {
         requestDeleteForId(id);
@@ -224,16 +239,19 @@ export const useAppActions = ({
     };
 
     const handleBulkFavorite = () => {
-        const anyUnfavorite = images.some(img => selectedIds.has(img.id) && !img.isFavorite);
+        const anyUnfavorite = images.some((img) => selectedIds.has(img.id) && !img.isFavorite);
         const previousImages = images;
         const ids = Array.from(selectedIds);
 
-        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
+        setImages((prev) => prev.map((img) => (selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img)));
         patchImageFlagsInQueryCaches(queryClient, ids, { isFavorite: anyUnfavorite });
 
         void persistFavoriteChanges(ids, anyUnfavorite, previousImages);
 
-        addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} ${selectedIds.size === 1 ? 'item' : 'items'}`, 'success');
+        addToast(
+            `${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} ${selectedIds.size === 1 ? 'item' : 'items'}`,
+            'success'
+        );
     };
 
     const handleFavoriteImage = (id: string, options: SingleImageActionOptions = {}) => {
@@ -242,34 +260,34 @@ export const useAppActions = ({
 
         const newFavorite = !img.isFavorite;
         const previousImages = images;
-        const isInCurrentQuery = images.some(image => image.id === id);
+        const isInCurrentQuery = images.some((image) => image.id === id);
 
-        updateImage(id, item => ({ ...item, isFavorite: newFavorite }));
+        updateImage(id, (item) => ({ ...item, isFavorite: newFavorite }));
         patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newFavorite });
         void persistFavoriteChanges([id], newFavorite, previousImages, img, isInCurrentQuery);
 
         if (options.showToast) {
-            addToast(newFavorite ? "Liked" : "Unliked", newFavorite ? "success" : "info");
+            addToast(newFavorite ? 'Liked' : 'Unliked', newFavorite ? 'success' : 'info');
         }
     };
 
     const handleBulkPin = () => {
-        const anyUnpinned = images.some(img => selectedIds.has(img.id) && !img.isPinned);
+        const anyUnpinned = images.some((img) => selectedIds.has(img.id) && !img.isPinned);
         const previousImages = images;
         const ids = Array.from(selectedIds);
-        const nextImages = applyOptimisticPinOrder(
-            previousImages,
-            ids,
-            anyUnpinned,
-            !!filters.collectionId
-        );
+        const nextImages = applyOptimisticPinOrder(previousImages, ids, anyUnpinned, !!filters.collectionId);
 
         setImages(nextImages);
-        patchImageFlagsInQueryCaches(queryClient, ids, { isPinned: anyUnpinned }, {
-            previousOrder: previousImages,
-            nextOrder: nextImages,
-            reorderQueryKey: imagesQueryKey
-        });
+        patchImageFlagsInQueryCaches(
+            queryClient,
+            ids,
+            { isPinned: anyUnpinned },
+            {
+                previousOrder: previousImages,
+                nextOrder: nextImages,
+                reorderQueryKey: imagesQueryKey,
+            }
+        );
 
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} ${selectedIds.size === 1 ? 'item' : 'items'}`, 'info');
         void persistPinChanges(ids, anyUnpinned, previousImages, nextImages, 'Failed to update pinned images');
@@ -293,7 +311,7 @@ export const useAppActions = ({
 
             let newValue = overrideValue;
             if (newValue === undefined) {
-                const currentImage = images.find(candidate => candidate.id === image.id);
+                const currentImage = images.find((candidate) => candidate.id === image.id);
                 if (!currentImage) return image;
                 newValue = !currentImage.userMasked;
             }
@@ -302,16 +320,16 @@ export const useAppActions = ({
             return image.userMasked === userMasked ? image : { ...image, userMasked };
         };
 
-        setImages(prev => prev.map(updateMaskedImage));
+        setImages((prev) => prev.map(updateMaskedImage));
         updateImagesQueryCaches(queryClient, updateMaskedImage);
 
         const promises: Promise<void>[] = [];
 
-        idsToToggle.forEach(id => {
+        idsToToggle.forEach((id) => {
             if (overrideValue !== undefined) {
                 promises.push(toggleImageMask(id, overrideValue));
             } else {
-                const img = images.find(i => i.id === id);
+                const img = images.find((i) => i.id === id);
                 if (img) {
                     promises.push(toggleImageMask(id, !img.userMasked));
                 }
@@ -341,64 +359,62 @@ export const useAppActions = ({
         addToast(message, 'info');
     };
 
-    const handleSetImageSourceKind = React.useCallback(async (
-        ids: string[],
-        sourceKindOverride: SourceKind | null
-    ) => {
-        if (ids.length === 0) return;
+    const handleSetImageSourceKind = React.useCallback(
+        async (ids: string[], sourceKindOverride: SourceKind | null) => {
+            if (ids.length === 0) return;
 
-        try {
-            await setImageSourceKind(ids, sourceKindOverride);
-            const idSet = new Set(ids);
-            const patchImage = (image: AIImage): AIImage => {
-                if (!idSet.has(image.id)) return image;
-                const effectiveKind = sourceKindOverride ?? getDetectedSourceKind(image);
-                return {
-                    ...image,
-                    sourceKindOverride: sourceKindOverride ?? undefined,
-                    sourceKind: effectiveKind,
-                    displayTimestamp: effectiveKind === 'photograph'
-                        ? (image.captureWallTimeMs ?? image.timestamp)
-                        : image.timestamp,
+            try {
+                await setImageSourceKind(ids, sourceKindOverride);
+                const idSet = new Set(ids);
+                const patchImage = (image: AIImage): AIImage => {
+                    if (!idSet.has(image.id)) return image;
+                    const effectiveKind = sourceKindOverride ?? getDetectedSourceKind(image);
+                    return {
+                        ...image,
+                        sourceKindOverride: sourceKindOverride ?? undefined,
+                        sourceKind: effectiveKind,
+                        displayTimestamp: effectiveKind === 'photograph' ? (image.captureWallTimeMs ?? image.timestamp) : image.timestamp,
+                    };
                 };
-            };
 
-            setImages(previous => previous.map(patchImage));
-            setViewerSessionImages(previous => previous?.map(patchImage) ?? null);
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ['images'] }),
-                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-                queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
-            ]);
-            refreshCollectionsAfterImageFlagChange();
+                setImages((previous) => previous.map(patchImage));
+                setViewerSessionImages((previous) => previous?.map(patchImage) ?? null);
+                await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ['images'] }),
+                    queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                    queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+                ]);
+                refreshCollectionsAfterImageFlagChange();
 
-            const label = sourceKindOverride === null
-                ? 'Automatic'
-                : sourceKindOverride === 'photograph'
-                    ? 'Photo'
-                    : sourceKindOverride === 'generated'
-                        ? 'Generated'
-                        : 'Other';
-            addToast(`${ids.length === 1 ? 'Image' : `${ids.length} images`} set to ${label}`, 'success');
-        } catch (error) {
-            console.error('[ImageKind] Failed to update source kind', error);
-            addToast('Failed to update image kind', 'error');
-            throw error;
-        }
-    }, [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, setViewerSessionImages]);
+                const label =
+                    sourceKindOverride === null
+                        ? 'Automatic'
+                        : sourceKindOverride === 'photograph'
+                          ? 'Photo'
+                          : sourceKindOverride === 'generated'
+                            ? 'Generated'
+                            : 'Other';
+                addToast(`${ids.length === 1 ? 'Image' : `${ids.length} images`} set to ${label}`, 'success');
+            } catch (error) {
+                console.error('[ImageKind] Failed to update source kind', error);
+                addToast('Failed to update image kind', 'error');
+                throw error;
+            }
+        },
+        [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, setViewerSessionImages]
+    );
 
     const handleTogglePrivacy = () => {
         const next = !privacyEnabled;
         setPrivacyEnabled(next);
-        addToast(next ? "Privacy Mode Enabled" : "Privacy Mode Disabled (Hidden/Blurred items revealed)", "info");
+        addToast(next ? 'Privacy Mode Enabled' : 'Privacy Mode Disabled (Hidden/Blurred items revealed)', 'info');
     };
 
-    const resolveMetadataRecoveryTargetId = (targetId?: string) => (
-        targetId
-        || viewingImageId
-        || (selectedImageIndex !== null ? viewerImages[selectedImageIndex]?.id : null)
-        || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null)
-    );
+    const resolveMetadataRecoveryTargetId = (targetId?: string) =>
+        targetId ||
+        viewingImageId ||
+        (selectedImageIndex !== null ? viewerImages[selectedImageIndex]?.id : null) ||
+        (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
 
     const openMetadataRecovery = (targetId?: string, onRecovered?: (image: AIImage) => void) => {
         const resolvedTargetId = resolveMetadataRecoveryTargetId(targetId);
@@ -406,8 +422,7 @@ export const useAppActions = ({
             addToast('Select an image before starting Prompt Recovery.', 'error');
             return;
         }
-        const target = viewerImages.find(image => image.id === resolvedTargetId)
-            ?? images.find(image => image.id === resolvedTargetId);
+        const target = viewerImages.find((image) => image.id === resolvedTargetId) ?? images.find((image) => image.id === resolvedTargetId);
         if (target && isVideoAsset(target)) {
             addToast('Prompt Recovery is currently image-only.', 'info');
             return;
@@ -460,25 +475,30 @@ export const useAppActions = ({
     const handlePinImage = (id: string, newPinned: boolean, options: SingleImageActionOptions = { showToast: true }) => {
         const previousActiveImage = getImage(id);
         const previousImages = images;
-        const isInCurrentQuery = images.some(image => image.id === id);
+        const isInCurrentQuery = images.some((image) => image.id === id);
         const nextImages = isInCurrentQuery
             ? applyOptimisticPinOrder(previousImages, [id], newPinned, !!filters.collectionId)
             : previousImages;
 
         if (isInCurrentQuery) {
             setImages(nextImages);
-            patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newPinned }, {
-                previousOrder: previousImages,
-                nextOrder: nextImages,
-                reorderQueryKey: imagesQueryKey
-            });
+            patchImageFlagsInQueryCaches(
+                queryClient,
+                [id],
+                { isPinned: newPinned },
+                {
+                    previousOrder: previousImages,
+                    nextOrder: nextImages,
+                    reorderQueryKey: imagesQueryKey,
+                }
+            );
         } else if (activeImageState) {
-            activeImageState.updateImage(id, image => ({ ...image, isPinned: newPinned }));
+            activeImageState.updateImage(id, (image) => ({ ...image, isPinned: newPinned }));
             patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newPinned });
         }
 
         if (options.showToast !== false) {
-            addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+            addToast(newPinned ? 'Pinned to top' : 'Unpinned', 'info');
         }
         void persistPinChanges(
             [id],
@@ -509,14 +529,14 @@ export const useAppActions = ({
     };
 
     const runBackfill = async () => {
-        addToast("Starting background backfill...", "info");
+        addToast('Starting background backfill...', 'info');
         const count = await backfillParameterColumns();
         if (count > 0) {
-            addToast(`Backfill complete: ${count} images updated`, "success");
+            addToast(`Backfill complete: ${count} images updated`, 'success');
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             await queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
         } else {
-            addToast("Backfill complete: No images needed updating", "success");
+            addToast('Backfill complete: No images needed updating', 'success');
         }
     };
 
@@ -537,6 +557,6 @@ export const useAppActions = ({
         handleShortcutFavorite,
         handleShortcutPin,
         toggleFavorite: handleFavoriteImage,
-        runBackfill
+        runBackfill,
     };
 };

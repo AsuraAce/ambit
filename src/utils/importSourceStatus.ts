@@ -5,8 +5,7 @@ import { normalizePath } from './pathUtils';
 export const formatUnscannableRootsWarning = (roots: string[]): string =>
     `Ambit can't scan a whole drive (${roots.join(', ')}). In Settings → Connections → Folders, replace it with a subfolder.`;
 
-const toPathSet = (paths: string[]): Set<string> =>
-    new Set(paths.map(path => normalizePath(path)));
+const toPathSet = (paths: string[]): Set<string> => new Set(paths.map((path) => normalizePath(path)));
 
 export const isImportSourceCompleted = (result: ImportResult | void, sourcePath: string): boolean => {
     if (!result) return false;

@@ -23,12 +23,12 @@ const mocks = vi.hoisted(() => ({
     statsQuery: { current: {} as unknown },
     queryClient: {
         invalidateQueries: vi.fn().mockResolvedValue(undefined),
-        cancelQueries: vi.fn().mockResolvedValue(undefined)
+        cancelQueries: vi.fn().mockResolvedValue(undefined),
     },
     repository: {
         load: vi.fn(),
         save: vi.fn(),
-        update: vi.fn()
+        update: vi.fn(),
     },
     getDb: vi.fn().mockResolvedValue(undefined),
     refreshPrivacyMaskIndex: vi.fn(),
@@ -46,32 +46,33 @@ const mocks = vi.hoisted(() => ({
     incrementFacetCacheVersion: vi.fn(),
     incrementScopeCountsVersion: vi.fn(),
     shouldPrefetchResultPages: vi.fn(),
-    refreshSmartCounts: vi.fn()
+    refreshSmartCounts: vi.fn(),
 }));
 
 vi.mock('../SettingsContext', () => ({ useSettings: () => mocks.settings.current }));
 vi.mock('../CollectionContext', () => ({ useCollections: () => mocks.collections.current }));
 vi.mock('../../stores/searchStore', () => ({
-    useSearchStore: Object.assign(
-        () => mocks.searchState.current,
-        { getState: () => mocks.searchState.current }
-    )
+    useSearchStore: Object.assign(() => mocks.searchState.current, { getState: () => mocks.searchState.current }),
 }));
 vi.mock('../../hooks/useImagesQuery', () => ({
     useImagesQuery: (args: { settingsLoaded?: boolean }) => {
         mocks.imagesQueryArgs.current = args;
         return mocks.imagesQuery.current;
-    }
+    },
 }));
 vi.mock('../../hooks/useLibraryStatsQuery', () => ({ useLibraryStatsQuery: () => mocks.statsQuery.current }));
-vi.mock('../../hooks/useLibraryScopeAvailability', () => ({ useLibraryScopeAvailability: (args: { enabled: boolean }) => {
-    mocks.availabilityArgs.current = args;
-    return mocks.availabilityQuery.current;
-} }));
-vi.mock('../../hooks/useLibraryScopeCounts', () => ({ useLibraryScopeCounts: (args: { enabled: boolean }) => {
-    mocks.scopeCountsArgs.current = args;
-    return mocks.scopeQuery.current;
-} }));
+vi.mock('../../hooks/useLibraryScopeAvailability', () => ({
+    useLibraryScopeAvailability: (args: { enabled: boolean }) => {
+        mocks.availabilityArgs.current = args;
+        return mocks.availabilityQuery.current;
+    },
+}));
+vi.mock('../../hooks/useLibraryScopeCounts', () => ({
+    useLibraryScopeCounts: (args: { enabled: boolean }) => {
+        mocks.scopeCountsArgs.current = args;
+        return mocks.scopeQuery.current;
+    },
+}));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => mocks.queryClient }));
 vi.mock('../../services/repository', () => ({ appRepository: mocks.repository }));
 vi.mock('../../services/db/connection', () => ({ getDb: mocks.getDb }));
@@ -79,35 +80,40 @@ vi.mock('../../bindings', () => ({ commands: { refreshPrivacyMaskIndex: mocks.re
 vi.mock('../../utils/spectaUtils', () => ({ unwrap: mocks.unwrap }));
 vi.mock('../../services/runtime', () => ({ isBrowserMockMode: () => mocks.browserMockMode.current }));
 vi.mock('../../utils/sqlHelpers', () => ({ buildSqlWhereClause: mocks.buildSqlWhereClause }));
-vi.mock('../../utils/filterState', async importOriginal => ({
-    ...await importOriginal<typeof import('../../utils/filterState')>(),
-    shouldPrefetchResultPages: mocks.shouldPrefetchResultPages
+vi.mock('../../utils/filterState', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../utils/filterState')>()),
+    shouldPrefetchResultPages: mocks.shouldPrefetchResultPages,
 }));
 vi.mock('../../services/db/imageRepo', () => ({
     checkHiddenContentAvailability: mocks.checkHiddenContentAvailability,
     rebuildThumbnailFacetCache: mocks.rebuildThumbnailFacetCache,
     updateFavorite: mocks.updateFavorite,
-    updatePinned: mocks.updatePinned
+    updatePinned: mocks.updatePinned,
 }));
 vi.mock('../../services/db/collectionRepo', () => ({
-    clearAllCollectionThumbnailCaches: mocks.clearAllCollectionThumbnailCaches
+    clearAllCollectionThumbnailCaches: mocks.clearAllCollectionThumbnailCaches,
 }));
 vi.mock('../../stores/libraryStore', () => ({
     useLibraryStore: Object.assign(
         (selector: (state: { keywordStatsEnabled: boolean }) => unknown) => selector({ keywordStatsEnabled: false }),
-        { getState: () => ({ incrementFacetCacheVersion: mocks.incrementFacetCacheVersion, incrementScopeCountsVersion: mocks.incrementScopeCountsVersion }) }
-    )
+        {
+            getState: () => ({
+                incrementFacetCacheVersion: mocks.incrementFacetCacheVersion,
+                incrementScopeCountsVersion: mocks.incrementScopeCountsVersion,
+            }),
+        }
+    ),
 }));
 vi.mock('../../stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
-        selector({ refreshSmartCounts: mocks.refreshSmartCounts })
+        selector({ refreshSmartCounts: mocks.refreshSmartCounts }),
 }));
 vi.mock('../../utils/imageQueryCache', () => ({
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
-    restoreImagesInQueryCaches: mocks.restoreImagesInQueryCaches
+    restoreImagesInQueryCaches: mocks.restoreImagesInQueryCaches,
 }));
 vi.mock('../../utils/imageOptimisticUpdates', () => ({
-    applyOptimisticPinOrder: mocks.applyOptimisticPinOrder
+    applyOptimisticPinOrder: mocks.applyOptimisticPinOrder,
 }));
 
 const baseFilters: FilterState = {
@@ -127,30 +133,32 @@ const baseFilters: FilterState = {
     showGrids: false,
     showIntermediates: false,
     showInvokeImageAssets: false,
-    sourceKind: 'all'
+    sourceKind: 'all',
 };
 
-const image = (overrides: Partial<AIImage> = {}): AIImage => ({
-    id: 'image-1',
-    path: 'C:/images/image-1.png',
-    url: 'asset://image-1',
-    filename: 'image-1.png',
-    timestamp: 1,
-    isFavorite: false,
-    isPinned: false,
-    ...overrides
-} as AIImage);
+const image = (overrides: Partial<AIImage> = {}): AIImage =>
+    ({
+        id: 'image-1',
+        path: 'C:/images/image-1.png',
+        url: 'asset://image-1',
+        filename: 'image-1.png',
+        timestamp: 1,
+        isFavorite: false,
+        isPinned: false,
+        ...overrides,
+    }) as AIImage;
 
-const settings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
-    maskingMode: 'blur',
-    promptMaskingEnabled: true,
-    maskedKeywords: [],
-    libraryShowGrids: false,
-    libraryShowIntermediates: false,
-    libraryShowInvokeImageAssets: false,
-    librarySourceKind: 'all',
-    ...overrides
-} as AppSettings);
+const settings = (overrides: Partial<AppSettings> = {}): AppSettings =>
+    ({
+        maskingMode: 'blur',
+        promptMaskingEnabled: true,
+        maskedKeywords: [],
+        libraryShowGrids: false,
+        libraryShowIntermediates: false,
+        libraryShowInvokeImageAssets: false,
+        librarySourceKind: 'all',
+        ...overrides,
+    }) as AppSettings;
 
 let latest: SearchValue;
 
@@ -159,7 +167,12 @@ const Consumer = () => {
     return <div>{latest.images.length}</div>;
 };
 
-const renderProvider = () => render(<SearchProvider><Consumer /></SearchProvider>);
+const renderProvider = () =>
+    render(
+        <SearchProvider>
+            <Consumer />
+        </SearchProvider>
+    );
 
 describe('SearchProvider', () => {
     beforeEach(() => {
@@ -182,19 +195,19 @@ describe('SearchProvider', () => {
             setFilters: vi.fn(),
             sortOption: 'date_desc' as SortOption,
             setSortOption: vi.fn(),
-            clearAllFilters: vi.fn()
+            clearAllFilters: vi.fn(),
         };
         mocks.settings.current = {
             settings: settings(),
             setSettings: vi.fn(),
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.collections.current = {
             collections: [] as Collection[],
             smartCollections: [] as Collection[],
             refreshCollections: vi.fn().mockResolvedValue(undefined),
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.imagesQuery.current = {
             data: undefined,
@@ -204,24 +217,26 @@ describe('SearchProvider', () => {
             isFetchingNextPage: false,
             isLoading: false,
             isPlaceholderData: false,
-            queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null, 'invoke:none'] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null, 'invoke:none'] as ImagesQueryKey,
         };
         mocks.imagesQueryArgs.current = null;
         mocks.statsQuery.current = {
             data: undefined,
             isFacetsFetching: false,
             isStatsSummaryLoading: false,
-            isKeywordStatsLoading: false
+            isKeywordStatsLoading: false,
         };
         mocks.repository.load.mockResolvedValue({ settings: {} });
         mocks.repository.save.mockResolvedValue(undefined);
-        mocks.repository.update.mockImplementation(async (updater: (state: unknown) => unknown) => updater({
-            images: [],
-            collections: [],
-            smartCollections: [],
-            settings: settings(),
-            recentSearches: ['portrait']
-        }));
+        mocks.repository.update.mockImplementation(async (updater: (state: unknown) => unknown) =>
+            updater({
+                images: [],
+                collections: [],
+                smartCollections: [],
+                settings: settings(),
+                recentSearches: ['portrait'],
+            })
+        );
         mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false });
         mocks.buildSqlWhereClause.mockReturnValue({ where: 'deleted_at IS NULL', params: ['value'] });
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: false, updated: 0 });
@@ -246,30 +261,52 @@ describe('SearchProvider', () => {
         const view = renderProvider();
         expect(latest.isLibraryReady).toBe(false);
         mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), status: 'error' };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(latest.isLibraryReady).toBe(false);
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
             status: 'success',
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(latest.isLibraryReady).toBe(true);
         mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isPlaceholderData: true };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         // Normal filtering must retain the existing foreground-query throttle, not cancel maintenance.
         expect(latest.isLibraryReady).toBe(true);
         mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isPlaceholderData: false, status: 'error' };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(latest.isLibraryReady).toBe(true);
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null, 'invoke:different-owner'],
             isPlaceholderData: true,
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(latest.isLibraryReady).toBe(false);
-        await act(async () => { await Promise.resolve(); });
+        await act(async () => {
+            await Promise.resolve();
+        });
     });
 
     it('requires consumers to be rendered within the provider', () => {
@@ -321,42 +358,77 @@ describe('SearchProvider', () => {
         await act(async () => {});
         expect(mocks.availabilityArgs.current?.enabled).toBe(false);
         expect(mocks.scopeCountsArgs.current?.enabled).toBe(false);
-        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, status: 'success', data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] } };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            status: 'success',
+            data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
+        };
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(latest.isLibraryReady).toBe(true);
         expect(mocks.availabilityArgs.current?.enabled).toBe(true);
         expect(mocks.scopeCountsArgs.current?.enabled).toBe(true);
-        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, isPlaceholderData: true, isFetching: true };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isPlaceholderData: true, isFetching: true };
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(mocks.availabilityArgs.current?.enabled).toBe(false);
         expect(mocks.scopeCountsArgs.current?.enabled).toBe(false);
     });
 
-    it.each(['pending', 'failed'] as const)('keeps gallery readiness independent of %s optional counts and retries only failures', async state => {
-        const failedRetry = vi.fn().mockResolvedValue(undefined);
-        const successfulRetry = vi.fn().mockResolvedValue(undefined);
-        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, status: 'success', data: { pages: [{ images: [image()], totalCount: 1, globalCount: 5 }] } };
-        mocks.scopeQuery.current = { data: undefined, isPending: state === 'pending', isFetching: state === 'pending', isError: state === 'failed', refetch: failedRetry };
-        mocks.availabilityQuery.current = { data: undefined, isPending: false, isError: false, isFetching: false, refetch: successfulRetry };
-        const view = renderProvider();
-        await act(async () => {});
-        expect(latest.isLibraryReady).toBe(true);
-        expect(latest.images).toEqual([image()]);
-        expect(latest.scopeCounts).toBeUndefined();
-        expect(latest.scopeResultCount).toBe(1);
-        expect(latest.scopeCountsError).toBe(state === 'failed');
-        expect(latest.scopeCountsLoading).toBe(state === 'pending');
-        await act(async () => latest.retryScopeCounts());
-        expect(failedRetry).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
-        expect(successfulRetry).not.toHaveBeenCalled();
-        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalled();
-        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, isFetching: true, isPlaceholderData: true };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
-        expect(latest.scopeResultCount).toBeUndefined();
-        expect(latest.scopeCountsError).toBe(false);
-        await act(async () => latest.retryScopeCounts());
-        expect(failedRetry).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
-    });
+    it.each(['pending', 'failed'] as const)(
+        'keeps gallery readiness independent of %s optional counts and retries only failures',
+        async (state) => {
+            const failedRetry = vi.fn().mockResolvedValue(undefined);
+            const successfulRetry = vi.fn().mockResolvedValue(undefined);
+            mocks.imagesQuery.current = {
+                ...(mocks.imagesQuery.current as object),
+                status: 'success',
+                data: { pages: [{ images: [image()], totalCount: 1, globalCount: 5 }] },
+            };
+            mocks.scopeQuery.current = {
+                data: undefined,
+                isPending: state === 'pending',
+                isFetching: state === 'pending',
+                isError: state === 'failed',
+                refetch: failedRetry,
+            };
+            mocks.availabilityQuery.current = {
+                data: undefined,
+                isPending: false,
+                isError: false,
+                isFetching: false,
+                refetch: successfulRetry,
+            };
+            const view = renderProvider();
+            await act(async () => {});
+            expect(latest.isLibraryReady).toBe(true);
+            expect(latest.images).toEqual([image()]);
+            expect(latest.scopeCounts).toBeUndefined();
+            expect(latest.scopeResultCount).toBe(1);
+            expect(latest.scopeCountsError).toBe(state === 'failed');
+            expect(latest.scopeCountsLoading).toBe(state === 'pending');
+            await act(async () => latest.retryScopeCounts());
+            expect(failedRetry).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
+            expect(successfulRetry).not.toHaveBeenCalled();
+            expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalled();
+            mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isFetching: true, isPlaceholderData: true };
+            view.rerender(
+                <SearchProvider>
+                    <Consumer />
+                </SearchProvider>
+            );
+            expect(latest.scopeResultCount).toBeUndefined();
+            expect(latest.scopeCountsError).toBe(false);
+            await act(async () => latest.retryScopeCounts());
+            expect(failedRetry).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
+        }
+    );
 
     it('does not start a queued privacy refresh after InvokeAI admission closes', async () => {
         let resolveDb: (() => void) | undefined;
@@ -371,9 +443,11 @@ describe('SearchProvider', () => {
             status: 'ready',
             rootPath: 'D:/Invoke',
         });
-        mocks.getDb.mockReturnValueOnce(new Promise<void>(resolve => {
-            resolveDb = resolve;
-        }));
+        mocks.getDb.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                resolveDb = resolve;
+            })
+        );
 
         renderProvider();
         await waitFor(() => expect(mocks.getDb).toHaveBeenCalledOnce());
@@ -396,17 +470,25 @@ describe('SearchProvider', () => {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [first], totalCount: 4, globalCount: 9 }] },
             hasNextPage: true,
-            isLoading: true
+            isLoading: true,
         };
         mocks.statsQuery.current = {
             data: {
-                facets: { checkpoints: [{ name: 'model', count: 1 }], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] },
+                facets: {
+                    checkpoints: [{ name: 'model', count: 1 }],
+                    loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: [],
+                },
                 stats: { totalImages: 4, totalGenerations: 3, avgSteps: 20, estSizeMB: '1', modelStats: [], keywordStats: [] },
-                validNames: { checkpoints: ['model'] }
+                validNames: { checkpoints: ['model'] },
             },
             isFacetsFetching: true,
             isStatsSummaryLoading: true,
-            isKeywordStatsLoading: true
+            isKeywordStatsLoading: true,
         };
 
         renderProvider();
@@ -429,13 +511,13 @@ describe('SearchProvider', () => {
             settings: settings({ maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [previous], totalCount: 1, globalCount: 9 }] },
             isFetching: true,
-            isPlaceholderData: true
+            isPlaceholderData: true,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
@@ -456,12 +538,12 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'blur', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
-            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const view = renderProvider();
@@ -469,16 +551,20 @@ describe('SearchProvider', () => {
         await waitFor(() => expect(latest.images).toEqual([blurred]));
 
         mocks.settings.current = {
-            ...mocks.settings.current as object,
-            settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] })
+            ...(mocks.settings.current as object),
+            settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: undefined,
             isFetching: true,
-            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
 
         await waitFor(() => expect(latest.images).toEqual([]));
         expect(latest.globalTotal).toBe(0);
@@ -487,9 +573,13 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
-            isFetching: false
+            isFetching: false,
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
 
         await waitFor(() => expect(latest.images).toEqual([safe]));
         expect(latest.globalTotal).toBe(2);
@@ -501,7 +591,7 @@ describe('SearchProvider', () => {
         const observedImageIds: string[][] = [];
         const TransitionConsumer = () => {
             latest = useSearch();
-            observedImageIds.push(latest.images.map(item => item.id));
+            observedImageIds.push(latest.images.map((item) => item.id));
             return null;
         };
         useSettingsStore.setState({ privacyEnabled: true });
@@ -509,29 +599,37 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'blur', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
-            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
-        const view = render(<SearchProvider><TransitionConsumer /></SearchProvider>);
+        const view = render(
+            <SearchProvider>
+                <TransitionConsumer />
+            </SearchProvider>
+        );
         await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
         await waitFor(() => expect(latest.images).toEqual([blurred]));
         observedImageIds.length = 0;
 
         mocks.settings.current = {
-            ...mocks.settings.current as object,
-            settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] })
+            ...(mocks.settings.current as object),
+            settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
-            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
-        view.rerender(<SearchProvider><TransitionConsumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <TransitionConsumer />
+            </SearchProvider>
+        );
 
         expect(observedImageIds).not.toContainEqual(['blurred']);
         await waitFor(() => expect(latest.images).toEqual([safe]));
@@ -541,7 +639,7 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [], totalCount: 0, globalCount: 9 }] },
-            isFetching: true
+            isFetching: true,
         };
 
         renderProvider();
@@ -555,7 +653,7 @@ describe('SearchProvider', () => {
         const state = mocks.searchState.current as SearchValue;
         const fetchNextPage = (mocks.imagesQuery.current as { fetchNextPage: ReturnType<typeof vi.fn> }).fetchNextPage;
 
-        act(() => latest.setSortOption(previous => previous === 'date_desc' ? 'name_asc' : 'date_desc'));
+        act(() => latest.setSortOption((previous) => (previous === 'date_desc' ? 'name_asc' : 'date_desc')));
         act(() => latest.setSortOption('size_desc'));
         expect(state.setSortOption).toHaveBeenCalledWith('name_asc');
         expect(state.setSortOption).toHaveBeenCalledWith('size_desc');
@@ -577,7 +675,11 @@ describe('SearchProvider', () => {
         const view = renderProvider();
         const initialClearAllFilters = latest.clearAllFilters;
 
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
 
         expect(latest.clearAllFilters).toBe(initialClearAllFilters);
     });
@@ -586,11 +688,16 @@ describe('SearchProvider', () => {
         renderProvider();
         await act(async () => {});
         mocks.queryClient.invalidateQueries.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
-            queryKey[0] === 'images' ? Promise.resolve() : new Promise(() => {}));
+            queryKey[0] === 'images' ? Promise.resolve() : new Promise(() => {})
+        );
         await act(async () => latest.fetchData(false));
         expect(mocks.incrementScopeCountsVersion).toHaveBeenCalledOnce();
-        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['libraryStats', 'scopeCounts'] }));
-        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['libraryStats', 'scopeAvailability'] }));
+        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalledWith(
+            expect.objectContaining({ queryKey: ['libraryStats', 'scopeCounts'] })
+        );
+        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalledWith(
+            expect.objectContaining({ queryKey: ['libraryStats', 'scopeAvailability'] })
+        );
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
         mocks.queryClient.invalidateQueries.mockResolvedValue(undefined);
     });
@@ -601,7 +708,7 @@ describe('SearchProvider', () => {
             ...(mocks.imagesQuery.current as object),
             fetchNextPage,
             hasNextPage: true,
-            isFetchingNextPage: false
+            isFetchingNextPage: false,
         };
         const view = renderProvider();
         await act(() => latest.loadMoreImages());
@@ -609,9 +716,13 @@ describe('SearchProvider', () => {
 
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            isFetchingNextPage: true
+            isFetchingNextPage: true,
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         await act(() => latest.loadMoreImages());
         expect(fetchNextPage).toHaveBeenCalledOnce();
     });
@@ -619,7 +730,7 @@ describe('SearchProvider', () => {
     it('exposes valid facet names only while drilldown is active', async () => {
         mocks.statsQuery.current = {
             ...(mocks.statsQuery.current as object),
-            data: { validNames: { checkpoints: ['model'] } }
+            data: { validNames: { checkpoints: ['model'] } },
         };
         renderProvider();
         await act(() => Promise.resolve());
@@ -629,7 +740,7 @@ describe('SearchProvider', () => {
 
         mocks.statsQuery.current = {
             ...(mocks.statsQuery.current as object),
-            data: {}
+            data: {},
         };
     });
 
@@ -667,9 +778,11 @@ describe('SearchProvider', () => {
 
         expect(mocks.updateFavorite).toHaveBeenCalledWith(original.id, true);
         expect(mocks.updatePinned).toHaveBeenCalledWith(original.id, true);
-        const refreshCollections = (mocks.collections.current as {
-            refreshCollections: ReturnType<typeof vi.fn>;
-        }).refreshCollections;
+        const refreshCollections = (
+            mocks.collections.current as {
+                refreshCollections: ReturnType<typeof vi.fn>;
+            }
+        ).refreshCollections;
         expect(refreshCollections).toHaveBeenCalledTimes(2);
         expect(refreshCollections).toHaveBeenCalledWith(true);
         expect(mocks.refreshSmartCounts).toHaveBeenCalledTimes(2);
@@ -677,10 +790,11 @@ describe('SearchProvider', () => {
             collectionIds: ['smart-prompt'],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
         expect(mocks.patchImageFlagsInQueryCaches).toHaveBeenCalledWith(mocks.queryClient, [original.id], { isFavorite: true });
-        const optimisticFavoriteImages = ((mocks.searchState.current as SearchValue).setImages as ReturnType<typeof vi.fn>).mock.calls[0][0] as AIImage[];
+        const optimisticFavoriteImages = ((mocks.searchState.current as SearchValue).setImages as ReturnType<typeof vi.fn>).mock
+            .calls[0][0] as AIImage[];
         expect(optimisticFavoriteImages[1]).toBe(untouched);
         expect(mocks.applyOptimisticPinOrder).toHaveBeenCalledWith(
             [expect.objectContaining({ id: original.id, isFavorite: true }), untouched],
@@ -707,7 +821,7 @@ describe('SearchProvider', () => {
         expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(2, mocks.queryClient, [original], {
             previousOrder: [next],
             nextOrder: [original],
-            reorderQueryKey: latest.imagesQueryKey
+            reorderQueryKey: latest.imagesQueryKey,
         });
     });
 
@@ -715,7 +829,7 @@ describe('SearchProvider', () => {
         vi.useFakeTimers();
         mocks.repository.load.mockResolvedValue({
             recentSearches: ['portrait'],
-            settings: {}
+            settings: {},
         });
         mocks.settings.current = {
             settings: settings({
@@ -725,7 +839,7 @@ describe('SearchProvider', () => {
             }),
             setSettings: vi.fn(),
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true });
         renderProvider();
@@ -739,7 +853,9 @@ describe('SearchProvider', () => {
         act(() => latest.setRecentSearches(['landscape']));
         await act(() => Promise.resolve());
         expect(mocks.repository.update).toHaveBeenCalledOnce();
-        const recentSearchUpdater = mocks.repository.update.mock.calls[0][0] as (state: { recentSearches: string[] }) => { recentSearches: string[] };
+        const recentSearchUpdater = mocks.repository.update.mock.calls[0][0] as (state: { recentSearches: string[] }) => {
+            recentSearches: string[];
+        };
         expect(recentSearchUpdater({ recentSearches: ['portrait'] }).recentSearches).toEqual(['landscape']);
         await act(() => latest.refreshHiddenAvailability());
     });
@@ -754,23 +870,25 @@ describe('SearchProvider', () => {
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
         mocks.searchState.current = {
             ...(mocks.searchState.current as object),
-            filters: { ...baseFilters, showGrids: true, showIntermediates: true, showInvokeImageAssets: true }
+            filters: { ...baseFilters, showGrids: true, showIntermediates: true, showInvokeImageAssets: true },
         };
         mocks.settings.current = {
             settings: currentSettings,
             setSettings,
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
         renderProvider();
 
         await waitFor(() => expect(setFilters).toHaveBeenCalled());
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
-        expect(updater((mocks.searchState.current as SearchValue).filters)).toEqual(expect.objectContaining({
-            showGrids: false,
-            showIntermediates: false,
-            showInvokeImageAssets: false,
-        }));
+        expect(updater((mocks.searchState.current as SearchValue).filters)).toEqual(
+            expect.objectContaining({
+                showGrids: false,
+                showIntermediates: false,
+                showInvokeImageAssets: false,
+            })
+        );
         expect(setSettings).not.toHaveBeenCalled();
     });
 
@@ -781,7 +899,7 @@ describe('SearchProvider', () => {
             settings: settings({ librarySourceKind: 'photograph' }),
             setSettings,
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
 
         const rendered = renderProvider();
@@ -789,11 +907,15 @@ describe('SearchProvider', () => {
         expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
         const hydratedSourceKind = setFilters.mock.calls
             .map(([update]) => (update as (value: FilterState) => FilterState)(baseFilters))
-            .find(filters => filters.sourceKind === 'photograph');
+            .find((filters) => filters.sourceKind === 'photograph');
         expect(hydratedSourceKind?.sourceKind).toBe('photograph');
         expect(hydratedSourceKind?.mediaType).toBe('image');
         mocks.searchState.current = { ...(mocks.searchState.current as object), filters: hydratedSourceKind };
-        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        rendered.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
         expect(setSettings).not.toHaveBeenCalled();
     });
@@ -802,17 +924,39 @@ describe('SearchProvider', () => {
         const setSettings = vi.fn();
         mocks.settings.current = {
             settings: settings({ libraryMediaType: 'image', librarySourceKind: 'photograph' }),
-            setSettings, privacyEnabled: false, isLoaded: true,
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: true,
         };
-        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'image', sourceKind: 'photograph' } };
+        mocks.searchState.current = {
+            ...(mocks.searchState.current as object),
+            filters: { ...baseFilters, mediaType: 'image', sourceKind: 'photograph' },
+        };
         const rendered = renderProvider();
         expect(setSettings).not.toHaveBeenCalled();
-        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'video', sourceKind: 'photograph' } };
-        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        mocks.searchState.current = {
+            ...(mocks.searchState.current as object),
+            filters: { ...baseFilters, mediaType: 'video', sourceKind: 'photograph' },
+        };
+        rendered.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'video', librarySourceKind: 'all' });
-        mocks.settings.current = { ...(mocks.settings.current as object), settings: settings({ libraryMediaType: 'video', librarySourceKind: 'all' }) };
-        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'all', sourceKind: 'all' } };
-        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        mocks.settings.current = {
+            ...(mocks.settings.current as object),
+            settings: settings({ libraryMediaType: 'video', librarySourceKind: 'all' }),
+        };
+        mocks.searchState.current = {
+            ...(mocks.searchState.current as object),
+            filters: { ...baseFilters, mediaType: 'all', sourceKind: 'all' },
+        };
+        rendered.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'all', librarySourceKind: 'all' });
     });
 
@@ -822,7 +966,9 @@ describe('SearchProvider', () => {
         const previous = { ...baseFilters, mediaType: 'image' as const, sourceKind: 'generated' as const };
         mocks.settings.current = {
             settings: settings({ libraryMediaType: mediaType, librarySourceKind: 'photograph' }),
-            setSettings, privacyEnabled: false, isLoaded: true,
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: true,
         };
         mocks.searchState.current = { ...(mocks.searchState.current as object), filters: previous };
         const rendered = renderProvider();
@@ -830,10 +976,14 @@ describe('SearchProvider', () => {
         expect(setSettings).not.toHaveBeenCalled();
         const hydratedScope = setFilters.mock.calls
             .map(([update]) => (update as (value: FilterState) => FilterState)(previous))
-            .find(filters => filters.mediaType === mediaType);
+            .find((filters) => filters.mediaType === mediaType);
         expect(hydratedScope).toMatchObject({ mediaType, sourceKind: 'all' });
         mocks.searchState.current = { ...(mocks.searchState.current as object), filters: hydratedScope };
-        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        rendered.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
         expect(setSettings).toHaveBeenCalledExactlyOnceWith({ libraryMediaType: mediaType, librarySourceKind: 'all' });
     });
@@ -844,7 +994,7 @@ describe('SearchProvider', () => {
             settings: settings({ librarySourceKind: 'all' }),
             setSettings,
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
         const rendered = renderProvider();
 
@@ -853,9 +1003,13 @@ describe('SearchProvider', () => {
 
         mocks.searchState.current = {
             ...(mocks.searchState.current as object),
-            filters: { ...baseFilters, sourceKind: 'photograph' }
+            filters: { ...baseFilters, sourceKind: 'photograph' },
         };
-        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        rendered.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
 
         await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ librarySourceKind: 'photograph', libraryMediaType: 'image' }));
     });
@@ -866,7 +1020,7 @@ describe('SearchProvider', () => {
             settings: settings({ libraryShowGrids: undefined, libraryShowIntermediates: true }),
             setSettings: vi.fn(),
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
         renderProvider();
         await waitFor(() => expect(setFilters).toHaveBeenCalled());
@@ -881,7 +1035,7 @@ describe('SearchProvider', () => {
             settings: settings(),
             setSettings,
             privacyEnabled: false,
-            isLoaded: false
+            isLoaded: false,
         };
         const rendered = renderProvider();
 
@@ -897,9 +1051,13 @@ describe('SearchProvider', () => {
             }),
             setSettings,
             privacyEnabled: false,
-            isLoaded: true
+            isLoaded: true,
         };
-        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        rendered.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         await waitFor(() => expect(setFilters).toHaveBeenCalledOnce());
         expect(setSettings).not.toHaveBeenCalled();
     });
@@ -911,12 +1069,14 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'hide', maskedKeywords: [' Face ', ''] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: true, updated: 2 });
-        mocks.rebuildThumbnailFacetCache.mockReturnValueOnce(new Promise<void>(resolve => {
-            resolveRebuild = resolve;
-        }));
+        mocks.rebuildThumbnailFacetCache.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                resolveRebuild = resolve;
+            })
+        );
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
         renderProvider();
 
@@ -937,7 +1097,7 @@ describe('SearchProvider', () => {
             settings: retainedSettings,
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
@@ -955,16 +1115,18 @@ describe('SearchProvider', () => {
             settings: settings({ maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         (mocks.searchState.current as SearchValue).images = [staleImage];
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [staleImage], totalCount: 1, globalCount: 1 }] },
         };
-        mocks.refreshPrivacyMaskIndex.mockReturnValue(new Promise(resolve => {
-            resolveRefresh = resolve;
-        }));
+        mocks.refreshPrivacyMaskIndex.mockReturnValue(
+            new Promise((resolve) => {
+                resolveRefresh = resolve;
+            })
+        );
 
         const view = renderProvider();
 
@@ -980,7 +1142,7 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: false, updated: 1 });
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -993,7 +1155,7 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
         renderProvider();
@@ -1007,15 +1169,14 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.refreshPrivacyMaskIndex.mockRejectedValue(new Error('refresh failed'));
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         renderProvider();
-        await waitFor(() => expect(console.error).toHaveBeenCalledWith(
-            '[Privacy] Failed to refresh privacy mask index',
-            expect.any(Error)
-        ));
+        await waitFor(() =>
+            expect(console.error).toHaveBeenCalledWith('[Privacy] Failed to refresh privacy mask index', expect.any(Error))
+        );
         expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('failed');
         expect(useSettingsStore.getState().privacyMaskIndexError).toBe('refresh failed');
         expect(latest.images).toEqual([]);
@@ -1027,7 +1188,7 @@ describe('SearchProvider', () => {
             settings: settings({ maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.refreshPrivacyMaskIndex
             .mockRejectedValueOnce(new Error('refresh failed'))
@@ -1049,24 +1210,36 @@ describe('SearchProvider', () => {
             settings: settings({ maskedKeywords: ['first'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
         mocks.refreshPrivacyMaskIndex
-            .mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve; }))
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveFirst = resolve;
+                })
+            )
             .mockResolvedValue({ changed: false, updated: 0 });
         const view = renderProvider();
         await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledWith(['first']));
 
         mocks.settings.current = {
-            ...mocks.settings.current as object,
+            ...(mocks.settings.current as object),
             settings: settings({ maskedKeywords: ['superseded'] }),
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
         mocks.settings.current = {
-            ...mocks.settings.current as object,
+            ...(mocks.settings.current as object),
             settings: settings({ maskedKeywords: ['latest'] }),
         };
-        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        view.rerender(
+            <SearchProvider>
+                <Consumer />
+            </SearchProvider>
+        );
 
         await act(async () => resolveFirst?.({ changed: false, updated: 0 }));
         await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledTimes(2));
@@ -1080,11 +1253,13 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
-        mocks.refreshPrivacyMaskIndex.mockReturnValue(new Promise(resolve => {
-            resolveRefresh = resolve;
-        }));
+        mocks.refreshPrivacyMaskIndex.mockReturnValue(
+            new Promise((resolve) => {
+                resolveRefresh = resolve;
+            })
+        );
         const view = renderProvider();
         await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledOnce());
         view.unmount();
@@ -1098,11 +1273,13 @@ describe('SearchProvider', () => {
             settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
             privacyEnabled: true,
-            isLoaded: true
+            isLoaded: true,
         };
-        mocks.refreshPrivacyMaskIndex.mockReturnValue(new Promise((_resolve, reject) => {
-            rejectRefresh = reject;
-        }));
+        mocks.refreshPrivacyMaskIndex.mockReturnValue(
+            new Promise((_resolve, reject) => {
+                rejectRefresh = reject;
+            })
+        );
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const view = renderProvider();
         await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledOnce());

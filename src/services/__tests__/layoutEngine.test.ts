@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { calculateLayout } from '../layoutEngine';
 
-interface Item { ratio: number }
+interface Item {
+    ratio: number;
+}
 const config = (layoutMode: 'grid' | 'masonry' | 'justified', items: Item[], overrides = {}) => ({
     items,
     layoutMode,
@@ -17,12 +19,20 @@ describe('calculateLayout', () => {
     it('returns an empty layout without usable width or items', () => {
         expect(calculateLayout(config('grid', []))).toEqual({ positions: [], totalHeight: 0, columns: 1, rowHeight: 0 });
         expect(calculateLayout(config('grid', [{ ratio: 1 }], { containerWidth: 20 }))).toEqual({
-            positions: [], totalHeight: 0, columns: 1, rowHeight: 0,
+            positions: [],
+            totalHeight: 0,
+            columns: 1,
+            rowHeight: 0,
         });
     });
 
     it('builds a square grid with minimum one column', () => {
-        const result = calculateLayout(config('grid', Array.from({ length: 6 }, () => ({ ratio: 1 }))));
+        const result = calculateLayout(
+            config(
+                'grid',
+                Array.from({ length: 6 }, () => ({ ratio: 1 }))
+            )
+        );
         expect(result.columns).toBe(4);
         expect(result.rowHeight).toBe(112);
         expect(result.positions[0]).toEqual({ left: 10, top: 10, width: 112, height: 112 });
@@ -33,9 +43,7 @@ describe('calculateLayout', () => {
     });
 
     it('places masonry items in the shortest column and clamps ratios', () => {
-        const result = calculateLayout(config('masonry', [
-            { ratio: 0.1 }, { ratio: 3 }, { ratio: 1 }, { ratio: 1 }, { ratio: 1 },
-        ]));
+        const result = calculateLayout(config('masonry', [{ ratio: 0.1 }, { ratio: 3 }, { ratio: 1 }, { ratio: 1 }, { ratio: 1 }]));
         expect(result.columns).toBe(4);
         expect(result.positions[0].height).toBe(224);
         expect(result.positions[1].height).toBe(56);
@@ -45,9 +53,9 @@ describe('calculateLayout', () => {
     });
 
     it('balances full justified rows and leaves the final row at target height', () => {
-        const result = calculateLayout(config('justified', [
-            { ratio: 0.1 }, { ratio: 4 }, { ratio: 1 }, { ratio: 1 }, { ratio: 1 },
-        ], { containerWidth: 400 }));
+        const result = calculateLayout(
+            config('justified', [{ ratio: 0.1 }, { ratio: 4 }, { ratio: 1 }, { ratio: 1 }, { ratio: 1 }], { containerWidth: 400 })
+        );
         expect(result.positions).toHaveLength(5);
         expect(result.positions[0].height).toBe(90);
         expect(result.positions[1].width).toBe(225);

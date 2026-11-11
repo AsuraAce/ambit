@@ -14,7 +14,7 @@ const mockGenerateContent = vi.fn();
 vi.mock('@google/genai', () => {
     class MockGoogleGenAI {
         models = {
-            generateContent: mockGenerateContent
+            generateContent: mockGenerateContent,
         };
     }
     return {
@@ -47,9 +47,11 @@ describe('geminiService: verifyApiKey', () => {
 
         expect(result.valid).toBe(true);
         // Verify we are calling with the default model
-        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
-            model: 'gemini-3.1-flash-lite'
-        }));
+        expect(mockGenerateContent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                model: 'gemini-3.1-flash-lite',
+            })
+        );
     });
 
     it('should use a custom model if provided', async () => {
@@ -58,9 +60,11 @@ describe('geminiService: verifyApiKey', () => {
         const result = await verifyApiKey('valid-key', 'gemini-2.0-pro-exp');
 
         expect(result.valid).toBe(true);
-        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
-            model: 'gemini-2.0-pro-exp'
-        }));
+        expect(mockGenerateContent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                model: 'gemini-2.0-pro-exp',
+            })
+        );
     });
 
     it('should return valid: false and error message on invalid key', async () => {
@@ -143,9 +147,11 @@ describe('geminiService: thinking configuration', () => {
 
         expect(mockGenerateContent).toHaveBeenCalledTimes(5);
         for (const [request] of mockGenerateContent.mock.calls) {
-            expect(request.config).toEqual(expect.objectContaining({
-                thinkingConfig: { thinkingLevel: 'LOW' },
-            }));
+            expect(request.config).toEqual(
+                expect.objectContaining({
+                    thinkingConfig: { thinkingLevel: 'LOW' },
+                })
+            );
         }
     });
 });
@@ -160,14 +166,13 @@ describe('geminiService: image recovery', () => {
 
         await recoverImageMetadata('data:image/jpeg;base64,abc', 'generic', 'key');
 
-        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: 'image/jpeg', data: 'abc' } },
-                    expect.objectContaining({ text: expect.any(String) })
-                ]
-            }
-        }));
+        expect(mockGenerateContent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                contents: {
+                    parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'abc' } }, expect.objectContaining({ text: expect.any(String) })],
+                },
+            })
+        );
     });
 });
 
@@ -182,10 +187,12 @@ describe('geminiService: fallback behavior', () => {
         mockGenerateContent.mockResolvedValueOnce({ text: 'analysis' });
 
         await expect(analyzePromptAndSuggest('prompt', '')).resolves.toBe('analysis');
-        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
-            model: 'gemini-3.1-flash-lite',
-            config: undefined
-        }));
+        expect(mockGenerateContent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                model: 'gemini-3.1-flash-lite',
+                config: undefined,
+            })
+        );
     });
 
     it('rejects workflows when neither an explicit nor environment key exists', async () => {
@@ -197,13 +204,13 @@ describe('geminiService: fallback behavior', () => {
         mockGenerateContent.mockResolvedValueOnce(null);
         await expect(verifyApiKey('key')).resolves.toEqual({
             valid: false,
-            error: 'Invalid response from Gemini API'
+            error: 'Invalid response from Gemini API',
         });
 
         mockGenerateContent.mockRejectedValueOnce(new Error('permission denied'));
         await expect(verifyApiKey('key')).resolves.toEqual({
             valid: false,
-            error: 'Model not found or access denied'
+            error: 'Model not found or access denied',
         });
 
         mockGenerateContent.mockRejectedValueOnce({ reason: 'opaque' });
@@ -253,17 +260,17 @@ describe('geminiService: fallback behavior', () => {
     });
 
     it('uses custom prompts without thinking overrides', async () => {
-        mockGenerateContent
-            .mockResolvedValueOnce({ text: '["one"]' })
-            .mockResolvedValueOnce({ text: '{"searchQuery":"mapped"}' });
+        mockGenerateContent.mockResolvedValueOnce({ text: '["one"]' }).mockResolvedValueOnce({ text: '{"searchQuery":"mapped"}' });
 
         await generatePromptVariations('prompt', 'key', undefined, { VARIATIONS: 'Custom {{prompt}}' });
         await generateFiltersFromQuery('query', 'key', undefined, { FILTERS: 'Find {{query}} on {{today}}' });
 
-        expect(mockGenerateContent.mock.calls[0][0]).toEqual(expect.objectContaining({
-            contents: 'Custom prompt',
-            config: expect.not.objectContaining({ thinkingConfig: expect.anything() })
-        }));
+        expect(mockGenerateContent.mock.calls[0][0]).toEqual(
+            expect.objectContaining({
+                contents: 'Custom prompt',
+                config: expect.not.objectContaining({ thinkingConfig: expect.anything() }),
+            })
+        );
         expect(mockGenerateContent.mock.calls[1][0].contents).toContain('Find query on ');
     });
 
@@ -272,11 +279,13 @@ describe('geminiService: fallback behavior', () => {
         await expect(recoverImageMetadata('raw-base64', 'missing-style' as never, 'key')).rejects.toThrow(
             'Failed to validate Gemini response'
         );
-        expect(mockGenerateContent).toHaveBeenLastCalledWith(expect.objectContaining({
-            contents: expect.objectContaining({
-                parts: expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'raw-base64' } }])
+        expect(mockGenerateContent).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                contents: expect.objectContaining({
+                    parts: expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'raw-base64' } }]),
+                }),
             })
-        }));
+        );
 
         mockGenerateContent.mockResolvedValueOnce({ text: '' });
         await expect(recoverImageMetadata('raw-base64', 'generic', 'key')).rejects.toThrow('Failed to generate metadata');

@@ -94,9 +94,11 @@ describe('SettingsContext', () => {
     it('flushes settings before exiting for a Tauri close request', async () => {
         lifecycle.tauriRuntime = true;
         let resolveFlush: () => void = () => undefined;
-        store.flushSettings.mockReturnValue(new Promise<void>((resolve) => {
-            resolveFlush = resolve;
-        }));
+        store.flushSettings.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolveFlush = resolve;
+            })
+        );
         const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
         const { unmount } = renderHook(() => useSettings(), { wrapper });
         await waitFor(() => expect(lifecycle.closeHandler).toBeDefined());
@@ -115,9 +117,7 @@ describe('SettingsContext', () => {
 
         expect(lifecycle.exit).toHaveBeenCalledOnce();
         expect(lifecycle.exit).toHaveBeenCalledWith(0);
-        expect(store.flushSettings.mock.invocationCallOrder[0]).toBeLessThan(
-            lifecycle.exit.mock.invocationCallOrder[0]
-        );
+        expect(store.flushSettings.mock.invocationCallOrder[0]).toBeLessThan(lifecycle.exit.mock.invocationCallOrder[0]);
         expect(lifecycle.unlisten).not.toHaveBeenCalled();
         unmount();
         expect(lifecycle.unlisten).toHaveBeenCalledOnce();
@@ -141,9 +141,7 @@ describe('SettingsContext', () => {
             ['settings-flush-completed'],
             ['exit-invoked'],
         ]);
-        expect(store.flushSettings.mock.invocationCallOrder[0]).toBeLessThan(
-            lifecycle.exit.mock.invocationCallOrder[0]
-        );
+        expect(store.flushSettings.mock.invocationCallOrder[0]).toBeLessThan(lifecycle.exit.mock.invocationCallOrder[0]);
     });
 
     it('does not delay close when lifecycle diagnostic requests never settle', async () => {
@@ -176,10 +174,7 @@ describe('SettingsContext', () => {
 
         expect(preventDefault).toHaveBeenCalledOnce();
         expect(store.flushSettings).toHaveBeenCalledOnce();
-        expect(error).toHaveBeenCalledWith(
-            '[SettingsStore] Failed to flush settings before close',
-            expect.any(Error)
-        );
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to flush settings before close', expect.any(Error));
         expect(lifecycle.exit).toHaveBeenCalledOnce();
         expect(lifecycle.unlisten).not.toHaveBeenCalled();
         unmount();
@@ -218,9 +213,11 @@ describe('SettingsContext', () => {
     it('coalesces overlapping close requests into one flush and guarded close', async () => {
         lifecycle.tauriRuntime = true;
         let resolveFlush: () => void = () => undefined;
-        store.flushSettings.mockReturnValue(new Promise<void>((resolve) => {
-            resolveFlush = resolve;
-        }));
+        store.flushSettings.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolveFlush = resolve;
+            })
+        );
         const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
         const { unmount } = renderHook(() => useSettings(), { wrapper });
         await waitFor(() => expect(lifecycle.closeHandler).toBeDefined());
@@ -252,7 +249,7 @@ describe('SettingsContext', () => {
             rejectSave = reject;
         });
         let resolveRollback!: () => void;
-        const rollback = new Promise<void>(resolve => {
+        const rollback = new Promise<void>((resolve) => {
             resolveRollback = resolve;
         });
         const rollbackStarted = vi.fn();
@@ -284,10 +281,7 @@ describe('SettingsContext', () => {
         await expect(transaction).rejects.toThrow('disk full');
         await act(async () => closeRequest);
 
-        expect(error).toHaveBeenCalledWith(
-            '[SettingsStore] Settings transaction drain failed before close',
-            expect.any(AggregateError)
-        );
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Settings transaction drain failed before close', expect.any(AggregateError));
         expect(startupLifecycle.record.mock.calls).toEqual([
             ['close-requested'],
             ['settings-drain-started'],
@@ -304,7 +298,7 @@ describe('SettingsContext', () => {
     it('waits for an admitted pre-marker purge before the final close flush', async () => {
         lifecycle.tauriRuntime = true;
         let releasePurge!: () => void;
-        const purgeAtPreMarker = new Promise<void>(resolve => {
+        const purgeAtPreMarker = new Promise<void>((resolve) => {
             releasePurge = resolve;
         });
         const purgeTransaction = settingsPersistenceCoordinator.runExclusive(() => purgeAtPreMarker);
@@ -353,11 +347,12 @@ describe('SettingsContext', () => {
         lifecycle.tauriRuntime = true;
         lifecycle.exit.mockRejectedValueOnce(new Error('exit cancelled'));
         let releaseExclusive!: () => void;
-        const exclusiveWork = settingsPersistenceCoordinator.runExclusive(() => (
-            new Promise<void>(resolve => {
-                releaseExclusive = resolve;
-            })
-        ));
+        const exclusiveWork = settingsPersistenceCoordinator.runExclusive(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseExclusive = resolve;
+                })
+        );
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
         renderHook(() => useSettings(), { wrapper });
@@ -369,9 +364,7 @@ describe('SettingsContext', () => {
         await act(async () => closeRequest);
 
         const rejectedWork = vi.fn(async () => undefined);
-        await expect(settingsPersistenceCoordinator.run(rejectedWork)).rejects.toBeInstanceOf(
-            SettingsPersistencePausedError
-        );
+        await expect(settingsPersistenceCoordinator.run(rejectedWork)).rejects.toBeInstanceOf(SettingsPersistencePausedError);
         expect(rejectedWork).not.toHaveBeenCalled();
         error.mockRestore();
     });

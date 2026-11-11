@@ -11,13 +11,9 @@ vi.mock('framer-motion', () => {
         whileHover?: unknown;
     };
 
-    const MotionDiv = React.forwardRef<HTMLDivElement, MotionDivProps>(({
-        initial: _initial,
-        animate: _animate,
-        exit: _exit,
-        whileHover: _whileHover,
-        ...props
-    }, ref) => <div ref={ref} {...props} />);
+    const MotionDiv = React.forwardRef<HTMLDivElement, MotionDivProps>(
+        ({ initial: _initial, animate: _animate, exit: _exit, whileHover: _whileHover, ...props }, ref) => <div ref={ref} {...props} />
+    );
 
     MotionDiv.displayName = 'MotionDiv';
 
@@ -154,15 +150,7 @@ describe('ImportModal', () => {
     });
 
     it('renders nothing while closed', () => {
-        render(
-            <ImportModal
-                isOpen={false}
-                onClose={vi.fn()}
-                onOpenSettings={vi.fn()}
-                onImportFiles={vi.fn()}
-                onImportVideos={vi.fn()}
-            />
-        );
+        render(<ImportModal isOpen={false} onClose={vi.fn()} onOpenSettings={vi.fn()} onImportFiles={vi.fn()} onImportVideos={vi.fn()} />);
         expect(screen.queryByRole('dialog')).toBeNull();
     });
 });

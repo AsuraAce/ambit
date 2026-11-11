@@ -5,23 +5,77 @@ import { GeneratorTool, type AIImage } from '../../../../types';
 import { MetadataSidebar } from '../MetadataSidebar';
 
 const captures = vi.hoisted(() => ({ details: vi.fn(), metadata: vi.fn(), workflow: vi.fn() }));
-vi.mock('../metadata/ImageDetailsTab', () => ({ ImageDetailsTab: (props: Record<string, unknown>) => { captures.details(props); return <div>details-content</div>; } }));
-vi.mock('../metadata/MetadataInfoTab', () => ({ MetadataInfoTab: (props: Record<string, unknown>) => { captures.metadata(props); return <div>metadata-content</div>; } }));
-vi.mock('../WorkflowInspector', () => ({ WorkflowInspector: (props: Record<string, unknown>) => { captures.workflow(props); return <div>workflow-content</div>; } }));
+vi.mock('../metadata/ImageDetailsTab', () => ({
+    ImageDetailsTab: (props: Record<string, unknown>) => {
+        captures.details(props);
+        return <div>details-content</div>;
+    },
+}));
+vi.mock('../metadata/MetadataInfoTab', () => ({
+    MetadataInfoTab: (props: Record<string, unknown>) => {
+        captures.metadata(props);
+        return <div>metadata-content</div>;
+    },
+}));
+vi.mock('../WorkflowInspector', () => ({
+    WorkflowInspector: (props: Record<string, unknown>) => {
+        captures.workflow(props);
+        return <div>workflow-content</div>;
+    },
+}));
 
 const image = (metadata: Partial<AIImage['metadata']> = {}): AIImage => ({
-    id: 'a', url: 'a.png', thumbnailUrl: 'thumb.png', filename: 'C:/images/portrait.final.png', timestamp: 1,
-    width: 100, height: 200, isFavorite: false, isPinned: false,
-    metadata: { tool: GeneratorTool.COMFYUI, model: 'flux_dev', seed: 1, steps: 1, cfg: 1, sampler: '', positivePrompt: '', negativePrompt: '', ...metadata },
+    id: 'a',
+    url: 'a.png',
+    thumbnailUrl: 'thumb.png',
+    filename: 'C:/images/portrait.final.png',
+    timestamp: 1,
+    width: 100,
+    height: 200,
+    isFavorite: false,
+    isPinned: false,
+    metadata: {
+        tool: GeneratorTool.COMFYUI,
+        model: 'flux_dev',
+        seed: 1,
+        steps: 1,
+        cfg: 1,
+        sampler: '',
+        positivePrompt: '',
+        negativePrompt: '',
+        ...metadata,
+    },
 });
 
 const setup = (activeTab: 'details' | 'metadata' | 'workflow', target = image()) => {
     const props: React.ComponentProps<typeof MetadataSidebar> = {
-        image: target, activeTab, setActiveTab: vi.fn(), collections: [], availableTags: [], notes: '', setNotes: vi.fn(),
-        promptValue: 'prompt', setPromptValue: vi.fn(), negativePromptValue: 'negative', setNegativePromptValue: vi.fn(),
-        onUpdateNotes: vi.fn(), onUpdatePrompt: vi.fn(), onUpdateNegativePrompt: vi.fn(), onUpdateModel: vi.fn(), onUpdateTool: vi.fn(),
-        onSetCollectionMembership: vi.fn().mockResolvedValue(true), onSearch: vi.fn(), onClose: vi.fn(), onRecoverMetadata: vi.fn(), onRevertMetadata: vi.fn(),
-        onAIAnalysis: vi.fn(), onGenerateVariations: vi.fn(), isAnalyzing: false, onOpenAIResult: vi.fn(), palette: ['#fff'], isPaletteLoading: false,
+        image: target,
+        activeTab,
+        setActiveTab: vi.fn(),
+        collections: [],
+        availableTags: [],
+        notes: '',
+        setNotes: vi.fn(),
+        promptValue: 'prompt',
+        setPromptValue: vi.fn(),
+        negativePromptValue: 'negative',
+        setNegativePromptValue: vi.fn(),
+        onUpdateNotes: vi.fn(),
+        onUpdatePrompt: vi.fn(),
+        onUpdateNegativePrompt: vi.fn(),
+        onUpdateModel: vi.fn(),
+        onUpdateTool: vi.fn(),
+        onSetCollectionMembership: vi.fn().mockResolvedValue(true),
+        onSearch: vi.fn(),
+        onClose: vi.fn(),
+        onRecoverMetadata: vi.fn(),
+        onRevertMetadata: vi.fn(),
+        onAIAnalysis: vi.fn(),
+        onGenerateVariations: vi.fn(),
+        isAnalyzing: false,
+        onOpenAIResult: vi.fn(),
+        palette: ['#fff'],
+        isPaletteLoading: false,
     };
     return { ...render(<MetadataSidebar {...props} />), props };
 };
@@ -34,12 +88,28 @@ describe('MetadataSidebar', () => {
         ['Canon', 'EOS R6', 'Canon EOS R6'],
         ['Canon', 'Canonical Camera', 'Canon Canonical Camera'],
     ])('shows make %s and model %s without repeating an included manufacturer', (cameraMake, cameraModel, label) => {
-        setup('metadata', { ...image(), sourceKind: 'photograph', photoMetadata: {
-            cameraMake, cameraModel, capturedAt: null, captureTimeRaw: null,
-            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
-            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: null,
-            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
-        } });
+        setup('metadata', {
+            ...image(),
+            sourceKind: 'photograph',
+            photoMetadata: {
+                cameraMake,
+                cameraModel,
+                capturedAt: null,
+                captureTimeRaw: null,
+                lensMake: null,
+                lensModel: null,
+                focalLengthMm: null,
+                focalLength35Mm: null,
+                apertureFNumber: null,
+                exposureTimeSeconds: null,
+                iso: null,
+                orientation: null,
+                artist: null,
+                copyright: null,
+                gpsLatitude: null,
+                gpsLongitude: null,
+            },
+        });
         expect(screen.getByText(label)).toBeTruthy();
     });
 
@@ -49,12 +119,33 @@ describe('MetadataSidebar', () => {
         rerender(<MetadataSidebar {...props} isLoading />);
         expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
         expect(screen.queryByText('No supported metadata found')).toBeNull();
-        rerender(<MetadataSidebar {...props} isLoading={false} image={{ ...target, photoMetadata: {
-            cameraModel: 'Loaded camera', cameraMake: null, capturedAt: null, captureTimeRaw: null,
-            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
-            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: null,
-            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
-        } }} />);
+        rerender(
+            <MetadataSidebar
+                {...props}
+                isLoading={false}
+                image={{
+                    ...target,
+                    photoMetadata: {
+                        cameraModel: 'Loaded camera',
+                        cameraMake: null,
+                        capturedAt: null,
+                        captureTimeRaw: null,
+                        lensMake: null,
+                        lensModel: null,
+                        focalLengthMm: null,
+                        focalLength35Mm: null,
+                        apertureFNumber: null,
+                        exposureTimeSeconds: null,
+                        iso: null,
+                        orientation: null,
+                        artist: null,
+                        copyright: null,
+                        gpsLatitude: null,
+                        gpsLongitude: null,
+                    },
+                }}
+            />
+        );
         expect(screen.getByText('Loaded camera')).toBeTruthy();
         expect(screen.queryByText('No supported metadata found')).toBeNull();
         rerender(<MetadataSidebar {...props} isLoading={false} />);
@@ -89,7 +180,9 @@ describe('MetadataSidebar', () => {
         expect(screen.getByText('metadata-content')).toBeTruthy();
         expect(screen.getByText('metadata-content').parentElement?.className).toContain('flex-col');
         expect(screen.queryByRole('tab', { name: 'Workflow' })).toBeNull();
-        expect(captures.metadata).toHaveBeenCalledWith(expect.objectContaining({ promptValue: 'prompt', onUpdatePrompt: metadata.props.onUpdatePrompt }));
+        expect(captures.metadata).toHaveBeenCalledWith(
+            expect.objectContaining({ promptValue: 'prompt', onUpdatePrompt: metadata.props.onUpdatePrompt })
+        );
         metadata.unmount();
 
         const workflow = setup('workflow', image({ hasWorkflowHint: true }));
@@ -122,12 +215,21 @@ describe('MetadataSidebar', () => {
             photoMetadata: {
                 capturedAt: { local: '2026:07:29 14:15:16', offset: '+02:00', subsecond: null },
                 captureTimeRaw: '2026:07:29 14:15:16',
-                cameraMake: 'Test Camera Co', cameraModel: 'Camera One',
-                lensMake: null, lensModel: 'Prime 50', focalLengthMm: 50,
-                focalLength35Mm: 50, apertureFNumber: 2.8, exposureTimeSeconds: 0.008,
-                iso: 200, orientation: 6, artist: null, copyright: null,
-                gpsLatitude: 51.5, gpsLongitude: -0.12
-            }
+                cameraMake: 'Test Camera Co',
+                cameraModel: 'Camera One',
+                lensMake: null,
+                lensModel: 'Prime 50',
+                focalLengthMm: 50,
+                focalLength35Mm: 50,
+                apertureFNumber: 2.8,
+                exposureTimeSeconds: 0.008,
+                iso: 200,
+                orientation: 6,
+                artist: null,
+                copyright: null,
+                gpsLatitude: 51.5,
+                gpsLongitude: -0.12,
+            },
         });
 
         expect(screen.getByText('Test Camera Co Camera One')).toBeTruthy();

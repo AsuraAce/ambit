@@ -21,9 +21,7 @@ const createProps = () => ({
 describe('CollectionContextMenu quick actions', () => {
     it('uses shared tooltips and exposes current pin and archive state', () => {
         const props = createProps();
-        const { rerender } = render(
-            <CollectionContextMenu {...props} isPinned={true} isArchived={true} />
-        );
+        const { rerender } = render(<CollectionContextMenu {...props} isPinned={true} isArchived={true} />);
 
         const slideshowButton = screen.getByRole('button', { name: 'Play Slideshow' });
         const pinButton = screen.getByRole('button', { name: 'Unpin collection' });

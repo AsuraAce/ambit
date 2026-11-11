@@ -1,4 +1,3 @@
-
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useFiltering } from '../useFiltering';
@@ -20,9 +19,9 @@ describe('useFiltering', () => {
                 steps: 20,
                 cfg: 7,
                 sampler: 'Euler a',
-                model: 'Stable Diffusion XL'
-            } as any
-        }
+                model: 'Stable Diffusion XL',
+            } as any,
+        },
     ];
 
     it('should initialize with default filters', () => {
@@ -37,7 +36,7 @@ describe('useFiltering', () => {
         const { result } = renderHook(() => useFiltering(mockImages, [], false, 'blur', []));
 
         act(() => {
-            result.current.setFilters(prev => ({ ...prev, searchQuery: 'cat' }));
+            result.current.setFilters((prev) => ({ ...prev, searchQuery: 'cat' }));
         });
 
         expect(result.current.filters.searchQuery).toBe('cat');
@@ -47,7 +46,7 @@ describe('useFiltering', () => {
         const { result } = renderHook(() => useFiltering(mockImages, [], false, 'blur', []));
 
         act(() => {
-            result.current.setFilters(prev => ({ ...prev, searchQuery: 'cat', favoritesOnly: true }));
+            result.current.setFilters((prev) => ({ ...prev, searchQuery: 'cat', favoritesOnly: true }));
             result.current.clearAllFilters();
         });
 
@@ -66,7 +65,14 @@ describe('useFiltering', () => {
     it('ignores non-string, short, and oversized prompt tags', () => {
         const variants = [
             { ...mockImages[0], metadata: { ...mockImages[0].metadata, positivePrompt: 42 as unknown as string } },
-            { ...mockImages[0], id: '2', metadata: { ...mockImages[0].metadata, positivePrompt: 'a, this prompt token is deliberately much longer than forty characters' } },
+            {
+                ...mockImages[0],
+                id: '2',
+                metadata: {
+                    ...mockImages[0].metadata,
+                    positivePrompt: 'a, this prompt token is deliberately much longer than forty characters',
+                },
+            },
         ];
         const { result } = renderHook(() => useFiltering(variants, [], false, 'blur', []));
 
@@ -74,15 +80,14 @@ describe('useFiltering', () => {
     });
 
     it('should reflect SQL where clause changes when filters change', () => {
-        const { result, rerender } = renderHook(
-            ({ privacy }) => useFiltering(mockImages, [], privacy, 'blur', []),
-            { initialProps: { privacy: false } }
-        );
+        const { result, rerender } = renderHook(({ privacy }) => useFiltering(mockImages, [], privacy, 'blur', []), {
+            initialProps: { privacy: false },
+        });
 
         const initialClause = result.current.activeSqlWhere;
 
         act(() => {
-            result.current.setFilters(prev => ({ ...prev, favoritesOnly: true }));
+            result.current.setFilters((prev) => ({ ...prev, favoritesOnly: true }));
         });
 
         expect(result.current.activeSqlWhere).not.toBe(initialClause);

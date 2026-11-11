@@ -9,20 +9,20 @@ vi.mock('../../../hooks/useLibraryContext', () => ({
         settings: { thumbnailSize: 200 },
         setSettings: vi.fn(),
         recentSearches: [],
-        setRecentSearches: vi.fn()
-    })
+        setRecentSearches: vi.fn(),
+    }),
 }));
 
 vi.mock('../../../features/filters/components/SearchBar', () => ({
-    SearchBar: () => <div data-testid="search-bar" />
+    SearchBar: () => <div data-testid="search-bar" />,
 }));
 
 vi.mock('../../../features/library/components/ViewControls', () => ({
-    ViewControls: () => <div data-testid="view-controls" />
+    ViewControls: () => <div data-testid="view-controls" />,
 }));
 
 vi.mock('../../../features/filters/components/ActiveFilters', () => ({
-    ActiveFilters: () => <div data-testid="active-filters" />
+    ActiveFilters: () => <div data-testid="active-filters" />,
 }));
 
 const resetLibraryStore = () => {
@@ -38,7 +38,7 @@ const resetLibraryStore = () => {
         isScanningDiscovery: false,
         discoveryScanProgress: null,
         isBackgroundHealingActive: false,
-        backgroundHealingProgress: null
+        backgroundHealingProgress: null,
     });
 };
 
@@ -59,7 +59,7 @@ const defaultProps = {
         favoritesOnly: false,
         collectionId: null,
         showIntermediates: false,
-        showGrids: false
+        showGrids: false,
     },
     setFilters: vi.fn(),
     searchProps: {
@@ -71,7 +71,7 @@ const defaultProps = {
         isFocused: false,
         onFocus: vi.fn(),
         onBlur: vi.fn(),
-        onOpenSearchHelp: vi.fn()
+        onOpenSearchHelp: vi.fn(),
     },
     layoutMode: 'masonry' as const,
     setLayoutMode: vi.fn(),

@@ -39,7 +39,7 @@ vi.mock('../../library/components/VirtualGrid', () => ({
             <span>ratio:{props.getItemRatio()}</span>
             <button onClick={() => props.onRangeSelection?.([1], true)}>range</button>
             <button onClick={props.onBackgroundClick}>background</button>
-            {props.items.map(item => props.renderItem(item, { height: 300 }))}
+            {props.items.map((item) => props.renderItem(item, { height: 300 }))}
         </div>
     ),
 }));
@@ -131,12 +131,14 @@ describe('DuplicateFinder', () => {
         const onRefresh = vi.fn();
         const onRangeSelection = vi.fn();
         const onBackgroundClick = vi.fn();
-        render(<DuplicateFinder
-            {...baseProps()}
-            onRefresh={onRefresh}
-            onRangeSelection={onRangeSelection}
-            onBackgroundClick={onBackgroundClick}
-        />);
+        render(
+            <DuplicateFinder
+                {...baseProps()}
+                onRefresh={onRefresh}
+                onRangeSelection={onRangeSelection}
+                onBackgroundClick={onBackgroundClick}
+            />
+        );
 
         expect(screen.getByText(/Found 1 exact groups/)).toBeTruthy();
         expect(screen.getByText('Global Scan')).toBeTruthy();
@@ -178,14 +180,14 @@ describe('DuplicateFinder', () => {
     });
 
     it('keeps comparison unavailable for exact duplicate videos', () => {
-        const videos = exact().images.map(item => ({ ...item, mediaType: 'video' as const }));
+        const videos = exact().images.map((item) => ({ ...item, mediaType: 'video' as const }));
         mocks.groups = [{ id: 'video-group', images: videos, latestModifiedId: videos[1].id }];
         mocks.totalRedundantCount = 1;
 
         const { container } = render(<DuplicateFinder {...baseProps()} onCompareImages={vi.fn()} />);
 
         const compareButtons = screen.getAllByRole('button', { name: 'Compare with Another Copy' }) as HTMLButtonElement[];
-        expect(compareButtons.every(button => button.disabled)).toBe(true);
+        expect(compareButtons.every((button) => button.disabled)).toBe(true);
         expect(container.querySelectorAll('img')).toHaveLength(0);
     });
 

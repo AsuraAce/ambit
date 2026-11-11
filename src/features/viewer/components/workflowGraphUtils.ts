@@ -83,23 +83,15 @@ interface SelectWorkflowGraphSourceArgs {
     originalChunks?: Record<string, string>;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
 const isWorkflowRawNode = (value: unknown): value is WorkflowRawNode => isRecord(value);
 
 const isNodeLikeRecord = (value: unknown): value is WorkflowRawNode =>
-    isWorkflowRawNode(value) && Boolean(
-        value.class_type ||
-        value.type ||
-        value.node_type ||
-        value.inputs ||
-        value.widgets_values ||
-        value.data
-    );
+    isWorkflowRawNode(value) &&
+    Boolean(value.class_type || value.type || value.node_type || value.inputs || value.widgets_values || value.data);
 
-const asStringValue = (value: unknown, fallback: string): string =>
-    typeof value === 'string' && value.length > 0 ? value : fallback;
+const asStringValue = (value: unknown, fallback: string): string => (typeof value === 'string' && value.length > 0 ? value : fallback);
 
 const extractJsonTarget = (jsonStr: string): string => {
     const trimmed = jsonStr.trim();
@@ -107,9 +99,7 @@ const extractJsonTarget = (jsonStr: string): string => {
 
     const start = jsonStr.indexOf('{');
     const end = jsonStr.lastIndexOf('}');
-    return start !== -1 && end !== -1 && end > start
-        ? jsonStr.substring(start, end + 1)
-        : jsonStr;
+    return start !== -1 && end !== -1 && end > start ? jsonStr.substring(start, end + 1) : jsonStr;
 };
 
 const getNodePriority = (node: WorkflowDisplayNode) => {
@@ -130,7 +120,10 @@ const toWorkflowDisplayNodes = (nodeList: WorkflowRawNode[]): WorkflowDisplayNod
         const incomingInputs: WorkflowInputs = node.widgets_values || node.inputs || node.data || {};
         const inputRecord = Array.isArray(incomingInputs) ? {} : incomingInputs;
 
-        let type = asStringValue(node.type || node.class_type || node._type || node.node_type || inputRecord.type || inputRecord.node_type, 'Unknown');
+        let type = asStringValue(
+            node.type || node.class_type || node._type || node.node_type || inputRecord.type || inputRecord.node_type,
+            'Unknown'
+        );
         let title = asStringValue(node.title || node.label || node._meta?.title || inputRecord.label || inputRecord.title, type);
 
         if (type.toLowerCase() === 'invocation' && (node.node_type || inputRecord.type || inputRecord.node_type)) {
@@ -147,7 +140,7 @@ const toWorkflowDisplayNodes = (nodeList: WorkflowRawNode[]): WorkflowDisplayNod
             id: node.id ?? `${type}-${nodes.length}`,
             title,
             type,
-            inputs: incomingInputs
+            inputs: incomingInputs,
         });
     });
 
@@ -177,11 +170,11 @@ export const parseWorkflowNodes = (jsonStr?: string): WorkflowDisplayNode[] => {
             const entries = Object.entries(json);
             const nodeLikeEntries = entries.filter((entry): entry is [string, WorkflowRawNode] => isNodeLikeRecord(entry[1]));
 
-            if (nodeLikeEntries.length === 0 || (nodeLikeEntries.length / entries.length) <= 0.5) return [];
+            if (nodeLikeEntries.length === 0 || nodeLikeEntries.length / entries.length <= 0.5) return [];
 
             nodeList = nodeLikeEntries.map(([id, node]) => ({
                 ...node,
-                id: node.id || id
+                id: node.id || id,
             }));
         }
 
@@ -196,7 +189,7 @@ export const isWorkflowGraph = (jsonStr: string): boolean => parseWorkflowNodes(
 export const selectWorkflowJsonForActions = ({
     localWorkflowJson,
     workflowJson,
-    originalChunks
+    originalChunks,
 }: SelectWorkflowGraphSourceArgs): string | undefined =>
     localWorkflowJson || workflowJson || originalChunks?.workflow || originalChunks?.prompt;
 
@@ -204,13 +197,11 @@ export const selectWorkflowGraphSource = ({
     tool,
     localWorkflowJson,
     workflowJson,
-    originalChunks
+    originalChunks,
 }: SelectWorkflowGraphSourceArgs): WorkflowGraphSource | undefined => {
     const preservedWorkflow = localWorkflowJson || workflowJson || originalChunks?.workflow;
     const workflowNodes = parseWorkflowNodes(preservedWorkflow);
-    const promptNodes = tool === 'ComfyUI'
-        ? parseWorkflowNodes(originalChunks?.prompt)
-        : [];
+    const promptNodes = tool === 'ComfyUI' ? parseWorkflowNodes(originalChunks?.prompt) : [];
 
     if (originalChunks?.prompt && promptNodes.length > 0 && (!preservedWorkflow || promptNodes.length > workflowNodes.length)) {
         return {
@@ -221,7 +212,7 @@ export const selectWorkflowGraphSource = ({
             selectedOutputNodeIds: [],
             rootSamplerNodeIds: [],
             selectedBranchNodeIds: [],
-            outputAmbiguous: false
+            outputAmbiguous: false,
         };
     }
 
@@ -234,7 +225,7 @@ export const selectWorkflowGraphSource = ({
             selectedOutputNodeIds: [],
             rootSamplerNodeIds: [],
             selectedBranchNodeIds: [],
-            outputAmbiguous: false
+            outputAmbiguous: false,
         };
     }
 
@@ -267,8 +258,8 @@ export const workflowGraphSourceFromBackend = (
             title: node.title,
             type: node.nodeType,
             inputs: node.inputs,
-            subgraphPath: node.subgraphPath
-        }))
+            subgraphPath: node.subgraphPath,
+        })),
     };
 };
 

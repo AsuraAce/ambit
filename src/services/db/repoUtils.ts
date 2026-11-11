@@ -1,20 +1,24 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
-import { AIImage, GeneratorTool, ImageMetadata, OriginalState, VideoAsset, type PhotoMetadata, type SourceKind, type VideoGenerationMode } from '../../types';
+import {
+    AIImage,
+    GeneratorTool,
+    ImageMetadata,
+    OriginalState,
+    VideoAsset,
+    type PhotoMetadata,
+    type SourceKind,
+    type VideoGenerationMode,
+} from '../../types';
 
-const INVOKE_IMAGE_SOURCE_COLUMNS = [
-    'invoke_image_name',
-    'invoke_image_category',
-    'invoke_image_origin',
-    'invoke_owner_id',
-] as const;
+const INVOKE_IMAGE_SOURCE_COLUMNS = ['invoke_image_name', 'invoke_image_category', 'invoke_image_origin', 'invoke_owner_id'] as const;
 export const INVOKE_IMAGE_SOURCE_FIELDS = INVOKE_IMAGE_SOURCE_COLUMNS.join(', ');
 
 // Lightweight column set for grid/listing views. Keep this scalar-only: large
 // JSON blobs are loaded by detail/viewer flows on demand.
 export const getImageFieldsLight = (alias = 'images'): string => {
     const prefix = alias ? `${alias}.` : '';
-    const invokeSourceFields = INVOKE_IMAGE_SOURCE_COLUMNS.map(field => `${prefix}${field}`).join(', ');
+    const invokeSourceFields = INVOKE_IMAGE_SOURCE_COLUMNS.map((field) => `${prefix}${field}`).join(', ');
     return `
         ${prefix}id, ${prefix}path, ${prefix}width, ${prefix}height, ${prefix}file_size, ${prefix}timestamp,
         ${prefix}thumbnail_path, ${prefix}micro_thumbnail, ${prefix}thumbnail_source, ${prefix}thumbnail_version,
@@ -79,16 +83,16 @@ export const REMOVED_IMAGE_FIELDS = `
 
 export type ImageRow = Record<string, unknown>;
 
-const asString = (value: unknown): string | undefined =>
-    typeof value === 'string' && value.length > 0 ? value : undefined;
+const asString = (value: unknown): string | undefined => (typeof value === 'string' && value.length > 0 ? value : undefined);
 
 const asNumber = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isFinite(value)
         ? value
-        : (typeof value === 'string' && value !== '' && Number.isFinite(Number(value)) ? Number(value) : undefined);
+        : typeof value === 'string' && value !== '' && Number.isFinite(Number(value))
+          ? Number(value)
+          : undefined;
 
-const asBoolean = (value: unknown): boolean =>
-    value === true || value === 1 || value === '1';
+const asBoolean = (value: unknown): boolean => value === true || value === 1 || value === '1';
 
 const asSourceKind = (value: unknown): SourceKind | undefined =>
     value === 'generated' || value === 'photograph' || value === 'other' ? value : undefined;
@@ -126,11 +130,9 @@ const buildLightMetadata = (row: ImageRow): ImageMetadata => {
         negativePrompt: asString(row.negative_prompt) || '',
         modelHash: asString(row.model_hash),
         generationType,
-        generationMode: asString(row.media_type) === 'video'
-            ? asVideoGenerationMode(generationType)
-            : undefined,
+        generationMode: asString(row.media_type) === 'video' ? asVideoGenerationMode(generationType) : undefined,
         isGrid: asBoolean(row.is_grid_gen),
-        isIntermediate: asBoolean(row.is_intermediate_gen)
+        isIntermediate: asBoolean(row.is_intermediate_gen),
     };
 };
 
@@ -139,9 +141,9 @@ export function mapRowToImage(row: ImageRow): AIImage {
     const normalizedPath = normalizePath(asString(row.path) || asString(row.id) || '');
     const thumbValue = asString(row.thumbnail_path);
     const thumbPath = thumbValue
-        ? (thumbValue.startsWith('http') || thumbValue.startsWith('data:') || thumbValue.startsWith('blob:')
+        ? thumbValue.startsWith('http') || thumbValue.startsWith('data:') || thumbValue.startsWith('blob:')
             ? thumbValue
-            : normalizePath(thumbValue))
+            : normalizePath(thumbValue)
         : null;
 
     let metadata = parseJson<ImageMetadata>(row.metadata_json) || buildLightMetadata(row);
@@ -153,9 +155,9 @@ export function mapRowToImage(row: ImageRow): AIImage {
         seed: asNumber(metadata.seed) ?? asNumber(row.seed),
         model: asString(row.resolved_model_name) || metadata.model || asString(row.model_name) || 'Unknown',
         modelHash: metadata.modelHash || asString(row.model_hash),
-        tool: (metadata.tool || asString(row.tool) || GeneratorTool.UNKNOWN),
+        tool: metadata.tool || asString(row.tool) || GeneratorTool.UNKNOWN,
         positivePrompt: metadata.positivePrompt || asString(row.positive_prompt) || '',
-        negativePrompt: metadata.negativePrompt || asString(row.negative_prompt) || ''
+        negativePrompt: metadata.negativePrompt || asString(row.negative_prompt) || '',
     };
     const originalMetadata = parseJson<ImageMetadata>(row.original_parsed_json);
 
@@ -163,7 +165,11 @@ export function mapRowToImage(row: ImageRow): AIImage {
         mediaType: asString(row.media_type) === 'video' ? 'video' : 'image',
         id: asString(row.id) || normalizedPath,
         url: convertFileSrc(normalizedPath),
-        thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
+        thumbnailUrl: thumbPath
+            ? thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:')
+                ? thumbPath
+                : convertFileSrc(thumbPath)
+            : convertFileSrc(normalizedPath),
         microThumbnail: asString(row.micro_thumbnail),
         thumbnailSource: asString(row.thumbnail_source),
         thumbnailVersion: asNumber(row.thumbnail_version),
@@ -184,7 +190,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
         isDeleted: asBoolean(row.is_deleted),
         isMissing: asBoolean(row.is_missing),
         isCorrupt: asBoolean(row.is_corrupt),
-        userMasked: row.user_masked === 1 ? true : (row.user_masked === 0 ? false : undefined),
+        userMasked: row.user_masked === 1 ? true : row.user_masked === 0 ? false : undefined,
         groupId: asString(row.group_id),
         boardId: asString(row.board_id),
         invokeImageName: asString(row.invoke_image_name),
@@ -195,10 +201,8 @@ export function mapRowToImage(row: ImageRow): AIImage {
         isIntermediate: asBoolean(row.is_intermediate_gen),
         metadata,
         originalChunks: parseJson<Record<string, string>>(row.original_metadata_json),
-        originalMetadata: originalMetadata
-            ? { ...originalMetadata, seed: asNumber(originalMetadata.seed) }
-            : undefined,
-        originalState: parseJson<OriginalState>(row.original_state_json)
+        originalMetadata: originalMetadata ? { ...originalMetadata, seed: asNumber(originalMetadata.seed) } : undefined,
+        originalState: parseJson<OriginalState>(row.original_state_json),
     };
 
     if (result.mediaType === 'video') {
@@ -214,16 +218,17 @@ export function mapRowToImage(row: ImageRow): AIImage {
             frameRateDen: asNumber(row.frame_rate_den),
             rotationDegrees: (asNumber(row.rotation_degrees) ?? 0) as VideoAsset['rotationDegrees'],
             probeStatus: asString(row.probe_status) === 'invalid' ? 'invalid' : 'ready',
-            playbackStatus: (asString(row.playback_status) || 'unknown') as VideoAsset['playbackStatus']
+            playbackStatus: (asString(row.playback_status) || 'unknown') as VideoAsset['playbackStatus'],
         } satisfies Partial<VideoAsset>);
     }
 
     // FALLBACK: If metadata is very sparse (missing props from json_extract usually)
     // and we have originalMetadata, use it as a base.
     // We check if it only contains the 'light' load fields (model, tool, hash).
-    const isSparse = !result.metadata.positivePrompt
-        && (!result.metadata.sampler || result.metadata.sampler === 'Unknown')
-        && (!result.metadata.steps || result.metadata.steps === 0);
+    const isSparse =
+        !result.metadata.positivePrompt &&
+        (!result.metadata.sampler || result.metadata.sampler === 'Unknown') &&
+        (!result.metadata.steps || result.metadata.steps === 0);
     if (isSparse && result.originalMetadata) {
         const current = result.metadata;
         result.metadata = {
@@ -234,7 +239,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
             sampler: result.originalMetadata.sampler,
             steps: current.steps || result.originalMetadata.steps,
             cfg: current.cfg || result.originalMetadata.cfg,
-            seed: current.seed ?? result.originalMetadata.seed
+            seed: current.seed ?? result.originalMetadata.seed,
         };
     }
 

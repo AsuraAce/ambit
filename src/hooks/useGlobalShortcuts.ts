@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useEffect } from 'react';
 import { AIImage, ViewMode } from '../types';
@@ -61,7 +60,6 @@ export const useGlobalShortcuts = ({
     toggleShortcuts,
     toggleCommandPalette,
 }: GlobalShortcutsProps) => {
-
     useEffect(() => {
         if (disabled) return;
 
@@ -135,7 +133,7 @@ export const useGlobalShortcuts = ({
                 let targetId = lastSelectedId;
                 if (!targetId && selectedIds.size > 0) targetId = Array.from(selectedIds)[0];
                 if (targetId) {
-                    const index = filteredImages.findIndex(img => img.id === targetId);
+                    const index = filteredImages.findIndex((img) => img.id === targetId);
                     if (index !== -1) setSelectedImageIndex(index);
                 }
                 return;
@@ -172,15 +170,13 @@ export const useGlobalShortcuts = ({
                 return;
             }
 
-
-
             // 7. Selection Shortcuts
             if (hasPrimaryModifier && key === 'a') {
                 e.preventDefault();
                 // Prevent bleed into Maintenance Mode or Dashboard which have their own context
                 if (viewMode === 'maintenance' || viewMode === 'dashboard') return;
 
-                const allIds = filteredImages.map(img => img.id);
+                const allIds = filteredImages.map((img) => img.id);
                 setSelectedIds(new Set(allIds));
                 return;
             }
@@ -196,8 +192,8 @@ export const useGlobalShortcuts = ({
                 const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
                 if (isArrow || e.key === 'Enter') {
                     let activeIndex = -1;
-                    if (lastSelectedId) activeIndex = filteredImages.findIndex(img => img.id === lastSelectedId);
-                    else if (selectedIds.size > 0) activeIndex = filteredImages.findIndex(img => selectedIds.has(img.id));
+                    if (lastSelectedId) activeIndex = filteredImages.findIndex((img) => img.id === lastSelectedId);
+                    else if (selectedIds.size > 0) activeIndex = filteredImages.findIndex((img) => selectedIds.has(img.id));
 
                     if (e.key === 'Enter') {
                         if (activeIndex !== -1) {
@@ -256,6 +252,6 @@ export const useGlobalShortcuts = ({
         openImport,
         closeAllModals,
         gridRef,
-        searchInputRef
+        searchInputRef,
     ]);
 };

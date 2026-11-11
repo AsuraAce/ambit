@@ -36,8 +36,10 @@ vi.mock('../../../../services/importService', () => ({
 }));
 
 vi.mock('../../../../services/db/imageRepo', () => ({
-    refreshFacetCacheForResourcesStrict: (...args: Parameters<typeof refreshFacetCacheForResourcesStrictMock>) => refreshFacetCacheForResourcesStrictMock(...args),
-    rebuildFacetCacheIncremental: (...args: Parameters<typeof rebuildFacetCacheIncrementalMock>) => rebuildFacetCacheIncrementalMock(...args),
+    refreshFacetCacheForResourcesStrict: (...args: Parameters<typeof refreshFacetCacheForResourcesStrictMock>) =>
+        refreshFacetCacheForResourcesStrictMock(...args),
+    rebuildFacetCacheIncremental: (...args: Parameters<typeof rebuildFacetCacheIncrementalMock>) =>
+        rebuildFacetCacheIncrementalMock(...args),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -63,7 +65,7 @@ const emptyResources = {
     hypernetworks: [],
     controlNets: [],
     ipAdapters: [],
-    tools: []
+    tools: [],
 };
 
 const baseSettings: AppSettings = {
@@ -87,8 +89,8 @@ const scanResult: ThumbnailScanResult = {
     registeredModels: 1,
     resources: {
         ...emptyResources,
-        loras: ['CinematicDetail']
-    }
+        loras: ['CinematicDetail'],
+    },
 };
 
 const resolutionResult: ResolutionResult = {
@@ -96,15 +98,17 @@ const resolutionResult: ResolutionResult = {
     harvestedCount: 0,
     failedCount: 0,
     namedFallbackCount: 0,
-    unknownCount: 0
+    unknownCount: 0,
 };
 
 const renderResourcesHook = (settings: AppSettings = baseSettings) => {
     const setSettings = vi.fn();
-    const rendered = renderHook(() => useResourcesTabLogic({
-        settings,
-        setSettings,
-    }));
+    const rendered = renderHook(() =>
+        useResourcesTabLogic({
+            settings,
+            setSettings,
+        })
+    );
 
     return { ...rendered, setSettings };
 };
@@ -116,7 +120,7 @@ const finishResourceScanTimer = async (promise: Promise<void>) => {
 
 const createDeferred = <T,>() => {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>(promiseResolve => {
+    const promise = new Promise<T>((promiseResolve) => {
         resolve = promiseResolve;
     });
     return { promise, resolve };
@@ -137,8 +141,8 @@ describe('useResourcesTabLogic', () => {
                 preservedModels: 0,
                 removedScannedFiles: 0,
                 refreshedFacets: 0,
-                resources: emptyResources
-            }
+                resources: emptyResources,
+            },
         });
         libraryContextState.isResolvingModels = false;
         libraryContextState.modelResolutionProgress = null;
@@ -202,7 +206,7 @@ describe('useResourcesTabLogic', () => {
             expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AmbitFixtures/Models']);
             expect(refreshFacetCacheForResourcesStrictMock).toHaveBeenCalledWith({
                 ...emptyResources,
-                loras: ['CinematicDetail']
+                loras: ['CinematicDetail'],
             });
             expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
             expect(addToastMock).toHaveBeenCalledWith('Resource scan complete: 2 LoRA files found, 2 indexed', 'success');
@@ -230,7 +234,7 @@ describe('useResourcesTabLogic', () => {
             expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AmbitFixtures/Checkpoints', 'D:/AmbitFixtures/Loras']);
             expect(refreshFacetCacheForResourcesStrictMock).toHaveBeenCalledWith({
                 ...emptyResources,
-                loras: ['CinematicDetail']
+                loras: ['CinematicDetail'],
             });
             expect(useLibraryStore.getState().discoveryScanProgress).toBeNull();
         } finally {
@@ -247,7 +251,7 @@ describe('useResourcesTabLogic', () => {
                 cachedFiles: 0,
                 newOrChangedFiles: 2,
                 registeredModels: 0,
-                resources: emptyResources
+                resources: emptyResources,
             } satisfies ThumbnailScanResult);
             const { result } = renderResourcesHook();
 
@@ -307,9 +311,9 @@ describe('useResourcesTabLogic', () => {
                 refreshedFacets: 2,
                 resources: {
                     ...emptyResources,
-                    checkpoints: ['FalsePositive']
-                }
-            }
+                    checkpoints: ['FalsePositive'],
+                },
+            },
         });
         const { result, setSettings } = renderResourcesHook(settings);
 
@@ -317,10 +321,7 @@ describe('useResourcesTabLogic', () => {
             await result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
         });
 
-        expect(commands.purgeResourceFolderAssets).toHaveBeenCalledWith(
-            'D:/AmbitFixtures/Models',
-            ['D:/AmbitFixtures/Models/loras']
-        );
+        expect(commands.purgeResourceFolderAssets).toHaveBeenCalledWith('D:/AmbitFixtures/Models', ['D:/AmbitFixtures/Models/loras']);
         expect(refreshFacetCacheForResourcesStrictMock).not.toHaveBeenCalled();
         const updateSettings = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         expect(updateSettings(settings).resourceFolders).toEqual(['D:/AmbitFixtures/Models/loras']);
@@ -338,7 +339,7 @@ describe('useResourcesTabLogic', () => {
         };
         vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
             status: 'error',
-            error: 'facet refresh failed'
+            error: 'facet refresh failed',
         });
         const { result, setSettings } = renderResourcesHook(settings);
 
@@ -395,8 +396,8 @@ describe('useResourcesTabLogic', () => {
                     preservedModels: 0,
                     removedScannedFiles: 1,
                     refreshedFacets: 1,
-                    resources: emptyResources
-                }
+                    resources: emptyResources,
+                },
             });
             await removalPromise;
         });
@@ -438,10 +439,12 @@ describe('useResourcesTabLogic', () => {
 
         expect(commands.resolveHashesOnline).toHaveBeenCalledWith(false);
         expect(rebuildFacetCacheIncrementalMock).toHaveBeenCalledWith('checkpoints');
-        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(expect.objectContaining({
-            success: true,
-            message: expect.stringContaining('2 verified online')
-        }));
+        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(
+            expect.objectContaining({
+                success: true,
+                message: expect.stringContaining('2 verified online'),
+            })
+        );
     });
 
     it('blocks Resolve Online while library tasks are busy', () => {
@@ -504,7 +507,7 @@ describe('useResourcesTabLogic', () => {
                 ...scanResult,
                 cachedFiles: 0,
                 newOrChangedFiles: 0,
-                resources: { ...emptyResources, checkpoints: ['one'], loras: ['two'] }
+                resources: { ...emptyResources, checkpoints: ['one'], loras: ['two'] },
             });
             refreshFacetCacheForResourcesStrictMock.mockResolvedValueOnce(0);
             const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
@@ -545,10 +548,7 @@ describe('useResourcesTabLogic', () => {
     it('formats a native purge with no indexed cleanup', async () => {
         const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
         await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
-        expect(addToastMock).toHaveBeenCalledWith(
-            'Removed resource folder; no indexed local assets needed cleanup',
-            'success'
-        );
+        expect(addToastMock).toHaveBeenCalledWith('Removed resource folder; no indexed local assets needed cleanup', 'success');
     });
 
     it('removes safely when current and previous settings omit resource folders', async () => {
@@ -565,7 +565,7 @@ describe('useResourcesTabLogic', () => {
     ])('formats resource purge result counts', async (counts, expected) => {
         vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
             status: 'ok',
-            data: { ...counts, removedScannedFiles: 0, refreshedFacets: 0, resources: emptyResources }
+            data: { ...counts, removedScannedFiles: 0, refreshedFacets: 0, resources: emptyResources },
         });
         const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
         await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
@@ -613,7 +613,7 @@ describe('useResourcesTabLogic', () => {
     it('reports partial hash resolution', async () => {
         vi.mocked(commands.resolveHashesOnline).mockResolvedValueOnce({
             status: 'ok',
-            data: { ...resolutionResult, failedCount: 2, unknownCount: 1 }
+            data: { ...resolutionResult, failedCount: 2, unknownCount: 1 },
         });
         const { result } = renderResourcesHook();
         await act(async () => result.current.confirmResolveOnline());
@@ -629,9 +629,11 @@ describe('useResourcesTabLogic', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { result } = renderResourcesHook();
         await act(async () => result.current.confirmResolveOnline());
-        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(expect.objectContaining({
-            message: expect.stringContaining(expected)
-        }));
+        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: expect.stringContaining(expected),
+            })
+        );
         expect(addToastMock).toHaveBeenCalledWith('Lookup finished, but the UI refresh needs another pass', 'warning');
         consoleError.mockRestore();
     });

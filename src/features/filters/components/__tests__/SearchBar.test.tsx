@@ -40,9 +40,7 @@ interface SearchHarnessOptions {
 const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), options: SearchHarnessOptions = {}) => {
     let currentFilters = initialFilters;
     const setFilters = vi.fn((update: React.SetStateAction<FilterState>) => {
-        currentFilters = typeof update === 'function'
-            ? update(currentFilters)
-            : update;
+        currentFilters = typeof update === 'function' ? update(currentFilters) : update;
     });
     const searchProps = createSearchProps(options.searchProps);
     const setRecentSearches = options.setRecentSearches ?? vi.fn();
@@ -75,16 +73,15 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
         setFilters,
         setRecentSearches,
         onDraftPendingChange,
-        setExternalFilters: (filters: FilterState) => { currentFilters = filters; },
+        setExternalFilters: (filters: FilterState) => {
+            currentFilters = filters;
+        },
     };
 };
 
 const flushSearchPopover = async () => {
     await act(async () => {
-        await Promise.all([
-            import('../SearchBarPopover'),
-            import('../../../../constants/searchOperators'),
-        ]);
+        await Promise.all([import('../SearchBarPopover'), import('../../../../constants/searchOperators')]);
     });
 };
 

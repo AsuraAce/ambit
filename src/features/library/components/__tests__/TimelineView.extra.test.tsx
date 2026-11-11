@@ -20,40 +20,79 @@ const mocks = vi.hoisted(() => ({
     imageCardProps: [] as Array<Record<string, unknown>>,
     masked: false,
     disconnect: vi.fn(),
-    resizeCallback: null as ResizeObserverCallback | null
+    resizeCallback: null as ResizeObserverCallback | null,
 }));
 
 vi.mock('../../../../hooks/useTimeline', () => ({ useTimeline: () => ({ groups: mocks.groups }) }));
 vi.mock('../../hooks/useTimelineLayout', () => ({
     useTimelineLayout: (args: Record<string, unknown>) => {
         mocks.layoutArgs = args;
-        return { totalHeight: mocks.totalHeight, headers: mocks.headers, visibleItems: mocks.visibleItems, activeHeaderData: mocks.activeHeaderData, setActiveHeaderData: mocks.setActiveHeaderData, activeHeaderIdRef: { current: null } };
-    }
+        return {
+            totalHeight: mocks.totalHeight,
+            headers: mocks.headers,
+            visibleItems: mocks.visibleItems,
+            activeHeaderData: mocks.activeHeaderData,
+            setActiveHeaderData: mocks.setActiveHeaderData,
+            activeHeaderIdRef: { current: null },
+        };
+    },
 }));
 vi.mock('../../hooks/useTimelineSelection', () => ({
-    useTimelineSelection: (args: Record<string, unknown>) => { mocks.selectionArgs = args; return { dragBox: mocks.dragBox, handleMouseDown: mocks.handleMouseDown }; }
+    useTimelineSelection: (args: Record<string, unknown>) => {
+        mocks.selectionArgs = args;
+        return { dragBox: mocks.dragBox, handleMouseDown: mocks.handleMouseDown };
+    },
 }));
 vi.mock('../../hooks/useTimelineScroll', () => ({
-    useTimelineScroll: (args: Record<string, unknown>) => { mocks.scrollArgs = args; return mocks.handleScroll; }
+    useTimelineScroll: (args: Record<string, unknown>) => {
+        mocks.scrollArgs = args;
+        return mocks.handleScroll;
+    },
 }));
 vi.mock('../../../../utils/maskingUtils', () => ({ isImageMasked: () => mocks.masked }));
-vi.mock('../../../../stores/settingsStore', () => ({ useSettingsStore: (selector: (state: { privacyEnabled: boolean }) => unknown) => selector({ privacyEnabled: true }) }));
+vi.mock('../../../../stores/settingsStore', () => ({
+    useSettingsStore: (selector: (state: { privacyEnabled: boolean }) => unknown) => selector({ privacyEnabled: true }),
+}));
 vi.mock('../ImageCard', () => ({
     ImageCard: (props: Record<string, unknown>) => {
         mocks.imageCardProps.push(props);
         const image = props.image as AIImage;
-        return <div data-testid={`card-${image.id}`}><button onClick={props.onClick as React.MouseEventHandler}>open-{image.id}</button><button onClick={props.onToggleSelection as React.MouseEventHandler}>select-{image.id}</button><button onClick={props.onToggleFavorite as React.MouseEventHandler}>favorite-{image.id}</button><button onClick={props.onTogglePin as React.MouseEventHandler | undefined}>pin-{image.id}</button><button onContextMenu={props.onContextMenu as React.MouseEventHandler}>menu-{image.id}</button></div>;
-    }
+        return (
+            <div data-testid={`card-${image.id}`}>
+                <button onClick={props.onClick as React.MouseEventHandler}>open-{image.id}</button>
+                <button onClick={props.onToggleSelection as React.MouseEventHandler}>select-{image.id}</button>
+                <button onClick={props.onToggleFavorite as React.MouseEventHandler}>favorite-{image.id}</button>
+                <button onClick={props.onTogglePin as React.MouseEventHandler | undefined}>pin-{image.id}</button>
+                <button onContextMenu={props.onContextMenu as React.MouseEventHandler}>menu-{image.id}</button>
+            </div>
+        );
+    },
 }));
 
 const image = (id: string): AIImage => ({
-    id, url: `${id}.png`, thumbnailUrl: `${id}-thumb.png`, filename: `${id}.png`, timestamp: 1, width: 100, height: 100,
-    isFavorite: false, isPinned: false, metadata: { tool: GeneratorTool.COMFYUI, model: '', seed: 1, steps: 1, cfg: 1, sampler: '', positivePrompt: '', negativePrompt: '' }
+    id,
+    url: `${id}.png`,
+    thumbnailUrl: `${id}-thumb.png`,
+    filename: `${id}.png`,
+    timestamp: 1,
+    width: 100,
+    height: 100,
+    isFavorite: false,
+    isPinned: false,
+    metadata: { tool: GeneratorTool.COMFYUI, model: '', seed: 1, steps: 1, cfg: 1, sampler: '', positivePrompt: '', negativePrompt: '' },
 });
 const setup = (images: AIImage[], overrides: Partial<React.ComponentProps<typeof TimelineView>> = {}) => {
     const props: React.ComponentProps<typeof TimelineView> = {
-        images, selectedIds: new Set<string>(), sortOption: 'date_desc', onImageClick: vi.fn(), onSelectionToggle: vi.fn(),
-        onToggleFavorite: vi.fn(), onTogglePin: vi.fn(), onContextMenu: vi.fn(), maskedKeywords: [], ...overrides
+        images,
+        selectedIds: new Set<string>(),
+        sortOption: 'date_desc',
+        onImageClick: vi.fn(),
+        onSelectionToggle: vi.fn(),
+        onToggleFavorite: vi.fn(),
+        onTogglePin: vi.fn(),
+        onContextMenu: vi.fn(),
+        maskedKeywords: [],
+        ...overrides,
     };
     const result = render(<TimelineView {...props} />);
     return { ...result, props };
@@ -71,13 +110,25 @@ describe('TimelineView component routing', () => {
         mocks.masked = false;
         mocks.imageCardProps.length = 0;
         mocks.resizeCallback = null;
-        vi.stubGlobal('ResizeObserver', class ResizeObserver {
-            private readonly callback: ResizeObserverCallback;
-            constructor(callback: ResizeObserverCallback) { this.callback = callback; mocks.resizeCallback = callback; }
-            observe(target: Element) { this.callback([{ target, contentRect: { width: 640 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
-            unobserve() { return undefined; }
-            disconnect() { mocks.disconnect(); }
-        });
+        vi.stubGlobal(
+            'ResizeObserver',
+            class ResizeObserver {
+                private readonly callback: ResizeObserverCallback;
+                constructor(callback: ResizeObserverCallback) {
+                    this.callback = callback;
+                    mocks.resizeCallback = callback;
+                }
+                observe(target: Element) {
+                    this.callback([{ target, contentRect: { width: 640 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+                }
+                unobserve() {
+                    return undefined;
+                }
+                disconnect() {
+                    mocks.disconnect();
+                }
+            }
+        );
     });
 
     it('renders headers, rows, loading state, and routes every card action', () => {
@@ -87,10 +138,15 @@ describe('TimelineView component routing', () => {
         mocks.visibleItems = [
             { type: 'header', id: 'day', date: 'Today', count: 2, y: 0, height: 50 },
             { type: 'row', y: 45, height: 1, items: [] },
-            { type: 'row', y: 50, height: 100, items: [
-                { image: b, x: 0, width: 100, height: 100, globalIndex: 0 },
-                { image: a, x: 110, width: 100, height: 100, globalIndex: 1 }
-            ] }
+            {
+                type: 'row',
+                y: 50,
+                height: 100,
+                items: [
+                    { image: b, x: 0, width: 100, height: 100, globalIndex: 0 },
+                    { image: a, x: 110, width: 100, height: 100, globalIndex: 1 },
+                ],
+            },
         ];
         mocks.masked = true;
         const onRangeSelection = vi.fn();
@@ -114,7 +170,7 @@ describe('TimelineView component routing', () => {
         expect(mocks.handleScroll).toHaveBeenCalled();
         expect(mocks.handleMouseDown).toHaveBeenCalled();
 
-        const selection = (mocks.selectionArgs?.onRangeSelection as (indexes: number[], additive: boolean) => void);
+        const selection = mocks.selectionArgs?.onRangeSelection as (indexes: number[], additive: boolean) => void;
         selection([0, 1, 4], true);
         expect(onRangeSelection).toHaveBeenCalledWith([1, 0], true);
     });
@@ -131,7 +187,13 @@ describe('TimelineView component routing', () => {
         expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-ambit-image-ids', JSON.stringify(['selected-1', 'selected-2']));
 
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        drag({ dataTransfer: { set effectAllowed(_value: string) { throw new Error('blocked'); } } } as unknown as React.DragEvent);
+        drag({
+            dataTransfer: {
+                set effectAllowed(_value: string) {
+                    throw new Error('blocked');
+                },
+            },
+        } as unknown as React.DragEvent);
         expect(error).toHaveBeenCalled();
 
         mocks.imageCardProps.length = 0;
@@ -146,7 +208,9 @@ describe('TimelineView component routing', () => {
         const source = image('source');
         const ghost = image('ghost');
         mocks.groups = [{ id: 'day', images: [ghost, source] }];
-        mocks.visibleItems = [{ type: 'row', y: 0, height: 100, items: [{ image: source, x: 0, width: 100, height: 100, globalIndex: 99 }] }];
+        mocks.visibleItems = [
+            { type: 'row', y: 0, height: 100, items: [{ image: source, x: 0, width: 100, height: 100, globalIndex: 99 }] },
+        ];
         const { props } = setup([source]);
         fireEvent.click(screen.getByText('open-source'));
         expect(props.onImageClick).toHaveBeenCalledWith(expect.anything(), 'source', 99, undefined);
@@ -154,7 +218,13 @@ describe('TimelineView component routing', () => {
 
     it('renders empty and drag-box states and handles optional callbacks', () => {
         mocks.dragBox = { x: 1, y: 2, w: 3, h: 4 };
-        const { container } = setup([], { onTogglePin: undefined, onRangeSelection: undefined, onBackgroundClick: vi.fn(), hasMoreImages: true, onLoadMore: vi.fn() });
+        const { container } = setup([], {
+            onTogglePin: undefined,
+            onRangeSelection: undefined,
+            onBackgroundClick: vi.fn(),
+            hasMoreImages: true,
+            onLoadMore: vi.fn(),
+        });
         expect(screen.getByText('No images found in this timeframe.')).toBeTruthy();
         const box = container.querySelector('.border-sage-400') as HTMLElement;
         expect(box.style.width).toBe('3px');

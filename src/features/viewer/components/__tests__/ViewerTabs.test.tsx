@@ -12,14 +12,7 @@ const tabs = [
 describe('ViewerTabs', () => {
     it('renders consistent text-only selected states and routes clicks', () => {
         const onTabChange = vi.fn();
-        render(
-            <ViewerTabs
-                tabs={tabs}
-                activeTab="details"
-                onTabChange={onTabChange}
-                ariaLabel="Viewer sections"
-            />
-        );
+        render(<ViewerTabs tabs={tabs} activeTab="details" onTabChange={onTabChange} ariaLabel="Viewer sections" />);
 
         expect(screen.getByRole('tablist', { name: 'Viewer sections' })).toBeTruthy();
         expect(screen.getByRole('tab', { name: 'Details' }).getAttribute('aria-selected')).toBe('true');
@@ -38,12 +31,7 @@ describe('ViewerTabs', () => {
         const onKeyDown = vi.fn();
         render(
             <div onKeyDown={onKeyDown}>
-                <ViewerTabs
-                    tabs={tabs}
-                    activeTab="details"
-                    onTabChange={onTabChange}
-                    ariaLabel="Viewer sections"
-                />
+                <ViewerTabs tabs={tabs} activeTab="details" onTabChange={onTabChange} ariaLabel="Viewer sections" />
             </div>
         );
 

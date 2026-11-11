@@ -5,10 +5,8 @@ import { inspectInvokeConnection, resolveInvokePaths } from '../../../services/i
 import { getInvokePathIdentity } from '../../../services/invoke/pathIdentity';
 import { isSameInvokeConnectionSource } from '../../../services/invoke/connectionDraft';
 
-const getQueryKey = (rootPath: string) => [
-    'invoke-owner-discovery',
-    getInvokePathIdentity(resolveInvokePaths(rootPath.trim()).dbPath),
-] as const;
+const getQueryKey = (rootPath: string) =>
+    ['invoke-owner-discovery', getInvokePathIdentity(resolveInvokePaths(rootPath.trim()).dbPath)] as const;
 
 export interface InvokeOwnerDiscoverySession {
     discovery?: InvokeOwnerDiscovery;
@@ -47,47 +45,52 @@ export const useInvokeOwnerDiscovery = (rootPath: string): InvokeOwnerDiscoveryS
         rootRef.current = root;
     }, [root]);
 
-    const invalidate = React.useCallback((nextRoot?: string) => {
-        requestGenerationRef.current += 1;
-        rootRef.current = nextRoot?.trim() ?? root;
-        setTestedSource(null);
-        setFailedSource(null);
-        setCanUseAppliedDiscovery(false);
-        void queryClient.invalidateQueries({ queryKey: ['invoke-owner-discovery'] });
-    }, [queryClient, root]);
+    const invalidate = React.useCallback(
+        (nextRoot?: string) => {
+            requestGenerationRef.current += 1;
+            rootRef.current = nextRoot?.trim() ?? root;
+            setTestedSource(null);
+            setFailedSource(null);
+            setCanUseAppliedDiscovery(false);
+            void queryClient.invalidateQueries({ queryKey: ['invoke-owner-discovery'] });
+        },
+        [queryClient, root]
+    );
 
     const reset = React.useCallback(() => {
         invalidate();
         setCanUseAppliedDiscovery(true);
     }, [invalidate]);
 
-    const inspect = React.useCallback(async (candidate = root): Promise<InvokeOwnerDiscovery> => {
-        const requestGeneration = ++requestGenerationRef.current;
-        rootRef.current = candidate.trim();
-        setCanUseAppliedDiscovery(false);
-        let discovery: InvokeOwnerDiscovery;
-        try {
-            discovery = await queryClient.fetchQuery({
-                queryKey: getQueryKey(candidate),
-                queryFn: () => inspectInvokeConnection(candidate),
-                staleTime: 0,
-            });
-        } catch (error) {
-            if (requestGeneration !== requestGenerationRef.current) throw new StaleInvokeOwnerDiscoveryRequestError();
-            if (isSameInvokeConnectionSource(rootRef.current, candidate)) {
-                setTestedSource(null);
-                setFailedSource(candidate);
+    const inspect = React.useCallback(
+        async (candidate = root): Promise<InvokeOwnerDiscovery> => {
+            const requestGeneration = ++requestGenerationRef.current;
+            rootRef.current = candidate.trim();
+            setCanUseAppliedDiscovery(false);
+            let discovery: InvokeOwnerDiscovery;
+            try {
+                discovery = await queryClient.fetchQuery({
+                    queryKey: getQueryKey(candidate),
+                    queryFn: () => inspectInvokeConnection(candidate),
+                    staleTime: 0,
+                });
+            } catch (error) {
+                if (requestGeneration !== requestGenerationRef.current) throw new StaleInvokeOwnerDiscoveryRequestError();
+                if (isSameInvokeConnectionSource(rootRef.current, candidate)) {
+                    setTestedSource(null);
+                    setFailedSource(candidate);
+                }
+                throw error;
             }
-            throw error;
-        }
-        if (requestGeneration !== requestGenerationRef.current
-            || !isSameInvokeConnectionSource(rootRef.current, candidate)) {
-            throw new StaleInvokeOwnerDiscoveryRequestError();
-        }
-        setTestedSource(candidate);
-        setFailedSource(null);
-        return discovery;
-    }, [queryClient, root]);
+            if (requestGeneration !== requestGenerationRef.current || !isSameInvokeConnectionSource(rootRef.current, candidate)) {
+                throw new StaleInvokeOwnerDiscoveryRequestError();
+            }
+            setTestedSource(candidate);
+            setFailedSource(null);
+            return discovery;
+        },
+        [queryClient, root]
+    );
 
     const hasFailedCurrentSource = !!failedSource && isSameInvokeConnectionSource(failedSource, root);
 

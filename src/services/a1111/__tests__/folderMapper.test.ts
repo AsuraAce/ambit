@@ -4,7 +4,9 @@ import { A1111FolderType } from '../types';
 
 describe('A1111 folderMapper', () => {
     it('should detect txt2img from standard paths', () => {
-        expect(getGenerationTypeFromPath('C:/stable-diffusion-webui/outputs/txt2img-images/2023-10-27/00001.png')).toBe(A1111FolderType.TXT2IMG);
+        expect(getGenerationTypeFromPath('C:/stable-diffusion-webui/outputs/txt2img-images/2023-10-27/00001.png')).toBe(
+            A1111FolderType.TXT2IMG
+        );
         expect(getGenerationTypeFromPath('/home/user/sd/outputs/txt2img-images/image.png')).toBe(A1111FolderType.TXT2IMG);
     });
 

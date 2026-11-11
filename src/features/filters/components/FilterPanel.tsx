@@ -1,5 +1,17 @@
 import * as React from 'react';
-import { Filter, ExternalLink, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
+import {
+    Filter,
+    ExternalLink,
+    FolderOpen,
+    Sliders,
+    Puzzle,
+    Save,
+    FolderSearch,
+    Images,
+    HardDrive,
+    Layers3,
+    type LucideIcon,
+} from 'lucide-react';
 import { AIImage, FilterState, type SmartCollection } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
@@ -64,7 +76,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     onUpdateCollectionFilters,
     onOpenResourceFolders,
     isVisible = true,
-    className
+    className,
 }) => {
     const appVersion = useAppVersion();
 
@@ -77,7 +89,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         validFacetNames,
         assetScope,
         setAssetScope,
-        setFacetDrilldownActive
+        setFacetDrilldownActive,
     } = useSearch();
 
     // Contexts
@@ -112,21 +124,23 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         controlNets: false,
         ipAdapters: false,
         guidance: true,
-        date: true
+        date: true,
     });
     const toggleSection = (section: string) => {
-        setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
+        setExpanded((prev) => ({ ...prev, [section]: !prev[section] }));
         // All facet data is loaded upfront, no lazy loading needed
     };
 
     // Quick Update Logic
     const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
-    const activeSmartCol = React.useMemo(() =>
-        filters.collectionId
-            ? allCols.find((collection): collection is SmartCollection =>
-                collection.id === filters.collectionId && collection.filters !== undefined
-            ) ?? null
-            : null,
+    const activeSmartCol = React.useMemo(
+        () =>
+            filters.collectionId
+                ? (allCols.find(
+                      (collection): collection is SmartCollection =>
+                          collection.id === filters.collectionId && collection.filters !== undefined
+                  ) ?? null)
+                : null,
         [filters.collectionId, allCols]
     );
     // Check for Manual Edits (ignoring the collection ID itself)
@@ -136,15 +150,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const showUpdateButton = activeSmartCol && hasManualEdits;
     const savedScope = activeSmartCol ? normalizeCollectionScope(activeSmartCol.filters) : null;
     const manualScope = normalizeCollectionScope(filters);
-    const scopeConflicts = !!savedScope && (
-        (savedScope.mediaType !== 'all' && manualScope.mediaType !== 'all' && savedScope.mediaType !== manualScope.mediaType)
-        || (savedScope.sourceKind !== 'all' && manualScope.sourceKind !== 'all' && savedScope.sourceKind !== manualScope.sourceKind)
-    );
+    const scopeConflicts =
+        !!savedScope &&
+        ((savedScope.mediaType !== 'all' && manualScope.mediaType !== 'all' && savedScope.mediaType !== manualScope.mediaType) ||
+            (savedScope.sourceKind !== 'all' && manualScope.sourceKind !== 'all' && savedScope.sourceKind !== manualScope.sourceKind));
 
     const handleQuickUpdate = () => {
         if (!activeSmartCol || !savedScope || scopeConflicts) return;
         if (activeSmartCol && onUpdateCollectionFilters) {
-            // MERGE Logic: 
+            // MERGE Logic:
             // We want to ADD manual filters to the existing smart rules.
             // For lists (models, etc.), we UNION them.
             // For scalars (searchQuery), we OVERWRITE if manual is set (user intent to change).
@@ -179,21 +193,21 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 ipAdapters: Array.from(new Set([...saved.ipAdapters, ...manual.ipAdapters])),
 
                 // Keep Collection ID? Usually filters object for a collection definition doesn't contain its own ID or 'collectionId'.
-                // But FilterState might. Let's explicitly NOT include collectionId in the saved rule "payload" if possible, 
-                // but types might require it. 
+                // But FilterState might. Let's explicitly NOT include collectionId in the saved rule "payload" if possible,
+                // but types might require it.
                 // However, onUpdateCollectionFilters generally treats this as the "rules blob".
                 // We'll pass it as is, strict type compliance.
                 collectionId: null, // Don't save circular self-ref
                 showGrids: saved.showGrids, // Preserve
                 showIntermediates: saved.showIntermediates, // Preserve
-                showInvokeImageAssets: saved.showInvokeImageAssets // Preserve
+                showInvokeImageAssets: saved.showInvokeImageAssets, // Preserve
             };
 
             onUpdateCollectionFilters(activeSmartCol.id, mergedFilters);
 
             // Clear manual edits immediately so the UI reflects "Saved" state
             // and the Update button disappears.
-            setFilters(prev => ({
+            setFilters((prev) => ({
                 ...prev,
                 searchQuery: '',
                 models: [],
@@ -213,7 +227,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 minCfg: undefined,
                 maxCfg: undefined,
                 controlNets: [],
-                ipAdapters: []
+                ipAdapters: [],
                 // Preserve collectionId and view options
             }));
         } else {
@@ -228,42 +242,58 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Tab-Specific Dirty Checks (for dot indicators)
     // Note: dateRange is NOT included in isOrganizeDirty because Date Range is a global section in the footer, not part of Organize tab
     const isOrganizeDirty = !!(filters.collectionId || filters.favoritesOnly || filters.pinnedOnly);
-    const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg || (filters.samplers && filters.samplers.length > 0) || (filters.generationTypes && filters.generationTypes.length > 0) || filters.controlNets.length > 0 || filters.ipAdapters.length > 0);
-    const isResourcesDirty = !!(filters.models.length > 0 || filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0) || filters.controlNets.length > 0 || filters.ipAdapters.length > 0);
-
-    const allResourceItems = React.useMemo(() => [
-        ...facets.checkpoints,
-        ...facets.loras,
-        ...facets.embeddings,
-        ...facets.hypernetworks,
-        ...facets.controlNets,
-        ...facets.ipAdapters
-    ], [facets]);
-
-    const hasLocalDiskAssets = React.useMemo(
-        () => allResourceItems.some(item => item.isLocalDisk),
-        [allResourceItems]
+    const isGenerateDirty = !!(
+        filters.tools.length > 0 ||
+        filters.minSteps ||
+        filters.maxSteps ||
+        filters.minCfg ||
+        filters.maxCfg ||
+        (filters.samplers && filters.samplers.length > 0) ||
+        (filters.generationTypes && filters.generationTypes.length > 0) ||
+        filters.controlNets.length > 0 ||
+        filters.ipAdapters.length > 0
+    );
+    const isResourcesDirty = !!(
+        filters.models.length > 0 ||
+        filters.loras.length > 0 ||
+        (filters.embeddings && filters.embeddings.length > 0) ||
+        (filters.hypernetworks && filters.hypernetworks.length > 0) ||
+        filters.controlNets.length > 0 ||
+        filters.ipAdapters.length > 0
     );
 
-    const hasScopedResourceItems = React.useCallback((items: FacetItem[]) => {
-        if (assetScope === 'used') return items.some(item => item.count > 0);
-        if (assetScope === 'local') return items.some(item => item.isLocalDisk);
-        return items.some(item => item.count > 0 || item.isLocalDisk);
-    }, [assetScope]);
+    const allResourceItems = React.useMemo(
+        () => [
+            ...facets.checkpoints,
+            ...facets.loras,
+            ...facets.embeddings,
+            ...facets.hypernetworks,
+            ...facets.controlNets,
+            ...facets.ipAdapters,
+        ],
+        [facets]
+    );
 
-    const validNamesForScope = React.useCallback(
-        (names: string[] | undefined) => assetScope === 'used' ? names : null,
+    const hasLocalDiskAssets = React.useMemo(() => allResourceItems.some((item) => item.isLocalDisk), [allResourceItems]);
+
+    const hasScopedResourceItems = React.useCallback(
+        (items: FacetItem[]) => {
+            if (assetScope === 'used') return items.some((item) => item.count > 0);
+            if (assetScope === 'local') return items.some((item) => item.isLocalDisk);
+            return items.some((item) => item.count > 0 || item.isLocalDisk);
+        },
         [assetScope]
     );
+
+    const validNamesForScope = React.useCallback((names: string[] | undefined) => (assetScope === 'used' ? names : null), [assetScope]);
 
     const assetScopeOptions: { id: AssetScope; label: string; icon: LucideIcon }[] = [
         { id: 'used', label: 'Used in Library', icon: Images },
         { id: 'local', label: 'Local on Disk', icon: HardDrive },
-        { id: 'all', label: 'All Assets', icon: Layers3 }
+        { id: 'all', label: 'All Assets', icon: Layers3 },
     ];
     const showLocalEmptyState = assetScope === 'local' && !isFacetsLoading && !hasLocalDiskAssets;
     const showResourceLists = assetScope !== 'local' || hasLocalDiskAssets || isFacetsLoading;
-
 
     return (
         <div
@@ -282,9 +312,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {showUpdateButton && (
                         <TooltipButton
                             label="Update"
-                            content={scopeConflicts
-                                ? 'This scope conflicts with the collection rules. Use Edit Filters to change them.'
-                                : `Update ${activeSmartCol.name} with new filters`}
+                            content={
+                                scopeConflicts
+                                    ? 'This scope conflicts with the collection rules. Use Edit Filters to change them.'
+                                    : `Update ${activeSmartCol.name} with new filters`
+                            }
                             aria-disabled={scopeConflicts}
                             onClick={handleQuickUpdate}
                             className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-sage-500 hover:bg-sage-600 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 transition-all shadow-lg shadow-sage-500/20 px-3 py-1.5 rounded-full animate-in zoom-in duration-300"
@@ -309,10 +341,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 <div className="flex items-center gap-1 bg-gray-100/50 dark:bg-black/20 p-1 rounded-xl">
                     <button
                         onClick={() => setActiveTab('organize')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'organize'
-                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                            }`}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
+                            activeTab === 'organize'
+                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                        }`}
                     >
                         <FolderOpen className="w-3.5 h-3.5" />
                         Organize
@@ -320,10 +353,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </button>
                     <button
                         onClick={() => setActiveTab('resources')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'resources'
-                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                            }`}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
+                            activeTab === 'resources'
+                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                        }`}
                     >
                         <Puzzle className="w-3.5 h-3.5" />
                         Assets
@@ -331,10 +365,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </button>
                     <button
                         onClick={() => setActiveTab('generate')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'generate'
-                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                            }`}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
+                            activeTab === 'generate'
+                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                        }`}
                     >
                         <Sliders className="w-3.5 h-3.5" />
                         Filters
@@ -346,15 +381,16 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 flex flex-col min-w-[18rem]">
                 <div className="space-y-6">
-
                     {/* ORGANIZE TAB */}
                     {activeTab === 'organize' && (
                         <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300 ease-spring">
                             <CollectionsSection
                                 isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
                                 collections={[...collections, ...smartCollections]}
-                                filters={filters} setFilters={setFilters}
-                                isOpen={expanded.collections} onToggle={() => toggleSection('collections')}
+                                filters={filters}
+                                setFilters={setFilters}
+                                isOpen={expanded.collections}
+                                onToggle={() => toggleSection('collections')}
                                 onCreateCollection={onCreateCollection}
                                 onDropOnCollection={onDropOnCollection}
                                 onRenameCollection={onRenameCollection}
@@ -376,7 +412,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
                             <div className="space-y-3">
                                 <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100/60 dark:bg-black/20 p-1">
-                                    {assetScopeOptions.map(option => {
+                                    {assetScopeOptions.map((option) => {
                                         const ScopeIcon = option.icon;
                                         const isSelected = assetScope === option.id;
 
@@ -387,10 +423,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                                 content={option.label}
                                                 onClick={() => setAssetScope(option.id)}
                                                 aria-pressed={isSelected}
-                                                className={`flex h-9 items-center justify-center rounded-lg transition-all ${isSelected
-                                                    ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
-                                                    : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
-                                                    }`}
+                                                className={`flex h-9 items-center justify-center rounded-lg transition-all ${
+                                                    isSelected
+                                                        ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
+                                                        : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
+                                                }`}
                                             >
                                                 <ScopeIcon className="h-4 w-4" aria-hidden="true" />
                                             </TooltipButton>
@@ -401,7 +438,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 {showLocalEmptyState && (
                                     <div className="rounded-xl border border-dashed border-harbor-200 bg-harbor-50/70 p-4 text-center dark:border-harbor-500/30 dark:bg-harbor-500/10">
                                         <FolderSearch className="mx-auto mb-2 h-5 w-5 text-harbor-600 dark:text-harbor-300" />
-                                        <p className="text-xs font-semibold text-harbor-600 dark:text-harbor-300">No local resource folders scanned yet.</p>
+                                        <p className="text-xs font-semibold text-harbor-600 dark:text-harbor-300">
+                                            No local resource folders scanned yet.
+                                        </p>
                                         <p className="mt-1 text-[11px] leading-relaxed text-harbor-600 dark:text-harbor-300">
                                             Add model, LoRA, embedding, ControlNet, or IP-Adapter folders to build a local asset inventory.
                                         </p>
@@ -424,9 +463,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     <ResourceSection
                                         title="Checkpoints"
                                         type="checkpoints"
-                                        filters={filters} setFilters={setFilters}
+                                        filters={filters}
+                                        setFilters={setFilters}
                                         data={facets.checkpoints}
-                                        isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}
+                                        isOpen={expanded.checkpoints}
+                                        onToggle={() => toggleSection('checkpoints')}
                                         isLoading={isFacetsLoading}
                                         validNames={validNamesForScope(validFacetNames?.checkpoints)}
                                         assetScope={assetScope}
@@ -434,9 +475,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     <ResourceSection
                                         title="Resources (LoRA)"
                                         type="loras"
-                                        filters={filters} setFilters={setFilters}
+                                        filters={filters}
+                                        setFilters={setFilters}
                                         data={facets.loras}
-                                        isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
+                                        isOpen={expanded.resources}
+                                        onToggle={() => toggleSection('resources')}
                                         isLoading={isFacetsLoading}
                                         validNames={validNamesForScope(validFacetNames?.loras)}
                                         assetScope={assetScope}
@@ -445,9 +488,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         <ResourceSection
                                             title="Resources (Embedding)"
                                             type="embeddings"
-                                            filters={filters} setFilters={setFilters}
+                                            filters={filters}
+                                            setFilters={setFilters}
                                             data={facets.embeddings}
-                                            isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
+                                            isOpen={expanded.embeddings}
+                                            onToggle={() => toggleSection('embeddings')}
                                             isLoading={isFacetsLoading}
                                             validNames={validNamesForScope(validFacetNames?.embeddings)}
                                             assetScope={assetScope}
@@ -457,9 +502,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         <ResourceSection
                                             title="Resources (Hypernet)"
                                             type="hypernetworks"
-                                            filters={filters} setFilters={setFilters}
+                                            filters={filters}
+                                            setFilters={setFilters}
                                             data={facets.hypernetworks}
-                                            isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
+                                            isOpen={expanded.hypernetworks}
+                                            onToggle={() => toggleSection('hypernetworks')}
                                             isLoading={isFacetsLoading}
                                             validNames={validNamesForScope(validFacetNames?.hypernetworks)}
                                             assetScope={assetScope}
@@ -469,9 +516,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         <ResourceSection
                                             title="Resources (ControlNet)"
                                             type="controlNets"
-                                            filters={filters} setFilters={setFilters}
+                                            filters={filters}
+                                            setFilters={setFilters}
                                             data={facets.controlNets}
-                                            isOpen={expanded.controlNets} onToggle={() => toggleSection('controlNets')}
+                                            isOpen={expanded.controlNets}
+                                            onToggle={() => toggleSection('controlNets')}
                                             isLoading={isFacetsLoading}
                                             validNames={validNamesForScope(validFacetNames?.controlNets)}
                                             assetScope={assetScope}
@@ -481,9 +530,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         <ResourceSection
                                             title="Resources (IP-Adapter)"
                                             type="ipAdapters"
-                                            filters={filters} setFilters={setFilters}
+                                            filters={filters}
+                                            setFilters={setFilters}
                                             data={facets.ipAdapters}
-                                            isOpen={expanded.ipAdapters} onToggle={() => toggleSection('ipAdapters')}
+                                            isOpen={expanded.ipAdapters}
+                                            onToggle={() => toggleSection('ipAdapters')}
                                             isLoading={isFacetsLoading}
                                             validNames={validNamesForScope(validFacetNames?.ipAdapters)}
                                             assetScope={assetScope}
@@ -498,25 +549,30 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {activeTab === 'generate' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
                             <GeneratorSection
-                                filters={filters} setFilters={setFilters}
+                                filters={filters}
+                                setFilters={setFilters}
                                 tools={facets.tools}
-                                isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
+                                isOpen={expanded.generator}
+                                onToggle={() => toggleSection('generator')}
                                 isLoading={isFacetsLoading}
                                 validNames={validFacetNames?.tools}
                             />
 
                             <ParameterSection
-                                filters={filters} setFilters={setFilters}
-                                isOpen={expanded.params} onToggle={() => toggleSection('params')}
+                                filters={filters}
+                                setFilters={setFilters}
+                                isOpen={expanded.params}
+                                onToggle={() => toggleSection('params')}
                             />
 
                             <GuidanceSection
-                                filters={filters} setFilters={setFilters}
-                                isOpen={expanded.guidance} onToggle={() => toggleSection('guidance')}
+                                filters={filters}
+                                setFilters={setFilters}
+                                isOpen={expanded.guidance}
+                                onToggle={() => toggleSection('guidance')}
                             />
                         </div>
                     )}
-
                 </div>
             </div>
 
@@ -528,7 +584,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             {/* Footer / Status */}
             <div className="p-4 border-t border-gray-200 dark:border-white/5 text-[10px] text-gray-600 dark:text-zinc-400 flex items-center justify-between min-w-[18rem]">
                 <div className="flex items-center gap-2">
-                    <span className="font-medium hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">{APP_NAME}</span>
+                    <span className="font-medium hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">
+                        {APP_NAME}
+                    </span>
                 </div>
                 <div className="flex items-center gap-3">
                     <TooltipButton
@@ -539,7 +597,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     >
                         <ExternalLink className="w-3 h-3" />
                     </TooltipButton>
-                    <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{appVersion ?? '...'}</span>
+                    <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">
+                        v{appVersion ?? '...'}
+                    </span>
                 </div>
             </div>
         </div>

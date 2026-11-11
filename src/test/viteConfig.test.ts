@@ -17,8 +17,6 @@ describe('Vite development configuration', () => {
         });
         const ignored = config.server?.watch?.ignored;
 
-        expect(ignored).toEqual(
-            expect.arrayContaining(['**/src-tauri/target/**'])
-        );
+        expect(ignored).toEqual(expect.arrayContaining(['**/src-tauri/target/**']));
     });
 });

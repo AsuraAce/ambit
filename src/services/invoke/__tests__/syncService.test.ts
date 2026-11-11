@@ -11,7 +11,7 @@ import {
     getRemovedInvokeImageNames,
     moveImagePathIdentities,
     moveImagePathIdentity,
-    syncCollectionImages
+    syncCollectionImages,
 } from '../../db/imageRepo';
 import { syncImages as syncImagesImpl, type InvokePathCheckProgress, type InvokeSyncOptions } from '../syncService';
 import { reconcileInvokeSourceFacts } from '../sourceReconciliation';
@@ -48,12 +48,12 @@ const syncImages = (
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
-        load: vi.fn()
-    }
+        load: vi.fn(),
+    },
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-    convertFileSrc: vi.fn((path: string) => `asset://${path}`)
+    convertFileSrc: vi.fn((path: string) => `asset://${path}`),
 }));
 
 vi.mock('../../../bindings', () => ({
@@ -62,8 +62,8 @@ vi.mock('../../../bindings', () => ({
         listInvokeaiImages: vi.fn(),
         probeFileMetadataBulk: vi.fn(),
         replaceInvokeImageReferences: vi.fn(),
-        verifyImagePaths: vi.fn()
-    }
+        verifyImagePaths: vi.fn(),
+    },
 }));
 
 vi.mock('../metadataMapper', () => ({
@@ -80,8 +80,8 @@ vi.mock('../metadataMapper', () => ({
         loras: ['DetailBoost'],
         embeddings: ['EasyNegative'],
         controlNets: ['Depth Control'],
-        ipAdapters: ['Face Adapter']
-    }))
+        ipAdapters: ['Face Adapter'],
+    })),
 }));
 
 vi.mock('../connection', () => ({
@@ -96,15 +96,15 @@ vi.mock('../connection', () => ({
             dbPath: isFile ? rootPath.replace(/\\/g, '/') : `${imagesRoot}/databases/invokeai.db`,
             imagesRoot,
         };
-    })
+    }),
 }));
 
 vi.mock('../sourceReconciliation', () => ({
-    reconcileInvokeSourceFacts: vi.fn()
+    reconcileInvokeSourceFacts: vi.fn(),
 }));
 
 vi.mock('../../db', () => ({
-    insertImagesBatch: vi.fn()
+    insertImagesBatch: vi.fn(),
 }));
 
 vi.mock('../../db/imageRepo', () => ({
@@ -114,16 +114,16 @@ vi.mock('../../db/imageRepo', () => ({
     getRemovedInvokeImageNames: vi.fn(),
     moveImagePathIdentities: vi.fn(),
     moveImagePathIdentity: vi.fn(),
-    syncCollectionImages: vi.fn()
+    syncCollectionImages: vi.fn(),
 }));
 
 vi.mock('../../db/collectionRepo', () => ({
     upsertInvokeBoardCollection: vi.fn(),
-    reconcileInvokeBoardSnapshot: vi.fn()
+    reconcileInvokeBoardSnapshot: vi.fn(),
 }));
 
 const createInvokeDb = (selectMock: ReturnType<typeof vi.fn>) => ({
-    select: selectMock
+    select: selectMock,
 });
 
 const makeExistingInvokeImage = (filename: string, overrides: Partial<AIImage> = {}): AIImage => {
@@ -135,7 +135,7 @@ const makeExistingInvokeImage = (filename: string, overrides: Partial<AIImage> =
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: 'raw',
-        negativePrompt: ''
+        negativePrompt: '',
     };
     return {
         id,
@@ -211,7 +211,7 @@ const arrangeManualRepair = async ({
         image_subfolder: subfolder || null,
         thumbnail_name: thumbnailName,
         metadata_blob: {},
-        created_at: '2026-04-18 12:00:00'
+        created_at: '2026-04-18 12:00:00',
     };
     const selectMock = vi.fn(async (query: string, params?: unknown[]) => {
         if (query.includes('PRAGMA table_info(images)')) {
@@ -226,9 +226,7 @@ const arrangeManualRepair = async ({
         if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 0 }];
         if (query.includes('SELECT i.image_name')) {
             onRepairRows?.(query, params);
-            return includeUnmatchedRow
-                ? [repairRow, { ...repairRow, image_name: 'not-stale.png' }]
-                : [repairRow];
+            return includeUnmatchedRow ? [repairRow, { ...repairRow, image_name: 'not-stale.png' }] : [repairRow];
         }
         return [];
     });
@@ -236,27 +234,29 @@ const arrangeManualRepair = async ({
     vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([stalePath]);
     vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
         status: 'ok',
-        data: [subfolder ? `outputs/images/${subfolder}/${name}` : `outputs/images/${name}`]
+        data: [subfolder ? `outputs/images/${subfolder}/${name}` : `outputs/images/${name}`],
     } as never);
     if (rejectSize) vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
     else vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [size] } as never);
-    vi.mocked(getImagesByIds).mockResolvedValue(existingPaths.map(path => makeExistingInvokeImage(name, { id: path })));
+    vi.mocked(getImagesByIds).mockResolvedValue(existingPaths.map((path) => makeExistingInvokeImage(name, { id: path })));
 
     const result = ownerId
         ? await syncImagesImpl(root, vi.fn(), signal, {
-            scope: {
-                mode: 'owner',
-                ownerId,
-                dbPath: `${root}/databases/invokeai.db`,
-                imagesRoot: root,
-            },
-            mode: 'manual',
-            syncBoards: false,
-            syncFavorites: false,
-        })
+              scope: {
+                  mode: 'owner',
+                  ownerId,
+                  dbPath: `${root}/databases/invokeai.db`,
+                  imagesRoot: root,
+              },
+              mode: 'manual',
+              syncBoards: false,
+              syncFavorites: false,
+          })
         : await syncImages(root, vi.fn(), signal, {
-            mode: 'manual', syncBoards: false, syncFavorites: false
-        });
+              mode: 'manual',
+              syncBoards: false,
+              syncFavorites: false,
+          });
     return { result, stalePath, targetPath };
 };
 
@@ -269,28 +269,29 @@ const arrangeManualPathCheck = ({
     rows: Array<{ image_name: string; image_subfolder?: string }>;
     relativeRows?: Array<{ image_name: string; image_subfolder?: string }>;
 }) => {
-    const images = names.map(name => makeExistingInvokeImage(name, { invokeImageName: undefined }));
+    const images = names.map((name) => makeExistingInvokeImage(name, { invokeImageName: undefined }));
     const selectMock = vi.fn(async (query: string, params?: unknown[]): Promise<unknown[]> => {
         if (query.includes('PRAGMA table_info(images)')) {
-            return ['metadata_json', 'image_subfolder', 'thumbnail_name', 'is_intermediate', 'user_id', 'updated_at']
-                .map(name => ({ name }));
+            return ['metadata_json', 'image_subfolder', 'thumbnail_name', 'is_intermediate', 'user_id', 'updated_at'].map((name) => ({
+                name,
+            }));
         }
         if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
         if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 0 }];
         if (query.includes('SELECT i.image_name')) {
             if (query.includes('instr(REPLACE(i.image_name')) return relativeRows;
-            const queryNames = query.includes('json_each(?)')
-                ? JSON.parse(params?.[0] as string) as string[]
-                : params;
-            return rows.filter(row => queryNames?.includes(row.image_name.toLowerCase()));
+            const queryNames = query.includes('json_each(?)') ? (JSON.parse(params?.[0] as string) as string[]) : params;
+            return rows.filter((row) => queryNames?.includes(row.image_name.toLowerCase()));
         }
         return [];
     });
     vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-    vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue(images.map(image => image.id));
-    vi.mocked(getImagesByIds).mockImplementation(async ids => images.filter(image => ids.includes(image.id)));
-    vi.mocked(moveImagePathIdentities).mockImplementation(async moves => ({
-        moved: moves.length, skippedTargetExists: 0, skippedSourceMissing: 0,
+    vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue(images.map((image) => image.id));
+    vi.mocked(getImagesByIds).mockImplementation(async (ids) => images.filter((image) => ids.includes(image.id)));
+    vi.mocked(moveImagePathIdentities).mockImplementation(async (moves) => ({
+        moved: moves.length,
+        skippedTargetExists: 0,
+        skippedSourceMissing: 0,
     }));
     return selectMock;
 };
@@ -299,14 +300,20 @@ describe('syncImages live mode', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         invokeSourceDatabaseMock.mockImplementation((path: string) => Database.load(`sqlite:${path}`));
-        vi.mocked(commands.getFileSizesBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(() => 123)
-        }) as never);
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(() => ({ status: 'present', size: 123, isFile: true }))
-        }) as never);
+        vi.mocked(commands.getFileSizesBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map(() => 123),
+                }) as never
+        );
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map(() => ({ status: 'present', size: 123, isFile: true })),
+                }) as never
+        );
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: [] } as never);
         vi.mocked(commands.replaceInvokeImageReferences).mockResolvedValue({
             status: 'ok',
@@ -321,7 +328,7 @@ describe('syncImages live mode', () => {
         vi.mocked(moveImagePathIdentities).mockResolvedValue({
             moved: 0,
             skippedTargetExists: 0,
-            skippedSourceMissing: 0
+            skippedSourceMissing: 0,
         });
         vi.mocked(moveImagePathIdentity).mockResolvedValue(false);
         vi.mocked(syncCollectionImages).mockResolvedValue(undefined as never);
@@ -368,11 +375,10 @@ describe('syncImages live mode', () => {
             syncFavorites: false,
         });
 
-        const scopedQueries = queries.filter(({ sql }) => (
-            sql.includes('SELECT 1 as found')
-            || sql.includes('SELECT count(*) as count')
-            || sql.includes('SELECT i.image_name')
-        ));
+        const scopedQueries = queries.filter(
+            ({ sql }) =>
+                sql.includes('SELECT 1 as found') || sql.includes('SELECT count(*) as count') || sql.includes('SELECT i.image_name')
+        );
         expect(scopedQueries).toHaveLength(3);
         scopedQueries.forEach(({ sql, params }) => {
             expect(sql).toContain('i.user_id = ?');
@@ -388,15 +394,17 @@ describe('syncImages live mode', () => {
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
-        await expect(syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
-            scope: {
-                mode: 'owner',
-                ownerId: 'owner-a',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-            },
-            mode: 'live',
-        })).rejects.toThrow('images.user_id is missing');
+        await expect(
+            syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
+                scope: {
+                    mode: 'owner',
+                    ownerId: 'owner-a',
+                    dbPath: 'D:/Invoke/databases/invokeai.db',
+                    imagesRoot: 'D:/Invoke',
+                },
+                mode: 'live',
+            })
+        ).rejects.toThrow('images.user_id is missing');
         expect(selectMock.mock.calls.some(([sql]) => String(sql).includes('SELECT 1 as found'))).toBe(false);
     });
 
@@ -412,14 +420,16 @@ describe('syncImages live mode', () => {
             if (sql.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (sql.includes("name='boards'")) return [{ name: 'boards' }];
             if (sql.includes('FROM images i') && sql.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'owned.png',
-                    metadata_blob: { positive_prompt: 'raw' },
-                    created_at: '2026-04-18T12:00:00Z',
-                    width: 512,
-                    height: 512,
-                    user_id: 'owner-a',
-                }];
+                return [
+                    {
+                        image_name: 'owned.png',
+                        metadata_blob: { positive_prompt: 'raw' },
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                        user_id: 'owner-a',
+                    },
+                ];
             }
             return [];
         });
@@ -474,13 +484,16 @@ describe('syncImages live mode', () => {
 
     it('checks more than 500 flat names with one JSON query without replaying image history or advancing its cursor', async () => {
         const names = Array.from({ length: 1001 }, (_, index) => `flat-${index}.png`);
-        const selectMock = arrangeManualPathCheck({ names, rows: names.map(image_name => ({ image_name })) });
+        const selectMock = arrangeManualPathCheck({ names, rows: names.map((image_name) => ({ image_name })) });
         const afterTimestamp = Date.parse('2026-10-01T12:00:00Z');
         const onProgress = vi.fn();
         const onPathCheckProgress = vi.fn();
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', onProgress, undefined, {
-            mode: 'manual', afterTimestamp, syncBoards: false, onPathCheckProgress,
+            mode: 'manual',
+            afterTimestamp,
+            syncBoards: false,
+            onPathCheckProgress,
         });
 
         const repairQueries = selectMock.mock.calls.filter(([query]) => query.includes('SELECT i.image_name'));
@@ -502,7 +515,8 @@ describe('syncImages live mode', () => {
         arrangeManualPathCheck({ names: ['unchanged.png'], rows: [{ image_name: 'unchanged.png' }] });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false,
+            mode: 'manual',
+            syncBoards: false,
         });
 
         expect(result).toMatchObject({ updated: 0, pathsRepaired: 0 });
@@ -514,23 +528,28 @@ describe('syncImages live mode', () => {
         expect(moveImagePathIdentities).not.toHaveBeenCalled();
     });
 
-    it.each([false, true])('preserves owner and intermediate scope in both repair lookups (intermediates: %s)', async importIntermediates => {
-        const selectMock = arrangeManualPathCheck({ names: ['owned.png'], rows: [] });
+    it.each([false, true])(
+        'preserves owner and intermediate scope in both repair lookups (intermediates: %s)',
+        async (importIntermediates) => {
+            const selectMock = arrangeManualPathCheck({ names: ['owned.png'], rows: [] });
 
-        await syncImagesImpl('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            scope: { ...legacyScope, mode: 'owner', ownerId: 'owner-a' },
-            mode: 'manual', syncBoards: false, importIntermediates,
-        });
+            await syncImagesImpl('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+                scope: { ...legacyScope, mode: 'owner', ownerId: 'owner-a' },
+                mode: 'manual',
+                syncBoards: false,
+                importIntermediates,
+            });
 
-        const repairQueries = selectMock.mock.calls.filter(([query]) => query.includes('SELECT i.image_name'));
-        expect(repairQueries).toHaveLength(2);
-        expect(repairQueries[0][1]).toEqual([JSON.stringify(['owned.png']), 'owner-a']);
-        expect(repairQueries[1][1]).toEqual(['owner-a']);
-        for (const [query] of repairQueries) {
-            expect(query).toContain('i.user_id = ?');
-            expect(query.includes('i.is_intermediate = 0')).toBe(!importIntermediates);
+            const repairQueries = selectMock.mock.calls.filter(([query]) => query.includes('SELECT i.image_name'));
+            expect(repairQueries).toHaveLength(2);
+            expect(repairQueries[0][1]).toEqual([JSON.stringify(['owned.png']), 'owner-a']);
+            expect(repairQueries[1][1]).toEqual(['owner-a']);
+            for (const [query] of repairQueries) {
+                expect(query).toContain('i.user_id = ?');
+                expect(query.includes('i.is_intermediate = 0')).toBe(!importIntermediates);
+            }
         }
-    });
+    );
 
     it('rejects ambiguous relative basenames even when their source rows span the 250-row boundary', async () => {
         const names = Array.from({ length: 249 }, (_, index) => `unique-${index}.png`);
@@ -539,18 +558,19 @@ describe('syncImages live mode', () => {
             rows: [],
             relativeRows: [
                 { image_name: 'first/duplicate.png' },
-                ...names.map(name => ({ image_name: `nested/${name}` })),
+                ...names.map((name) => ({ image_name: `nested/${name}` })),
                 { image_name: 'last/duplicate.png' },
             ],
         });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false,
+            mode: 'manual',
+            syncBoards: false,
         });
 
         const moves = vi.mocked(moveImagePathIdentities).mock.calls.flatMap(([batch]) => batch);
         expect(moves).toHaveLength(249);
-        expect(moves.some(move => move.oldId.endsWith('/duplicate.png'))).toBe(false);
+        expect(moves.some((move) => move.oldId.endsWith('/duplicate.png'))).toBe(false);
         expect(result).toMatchObject({ updated: 249, pathsRepaired: 249 });
     });
 
@@ -562,7 +582,8 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false,
+            mode: 'manual',
+            syncBoards: false,
         });
 
         expect(result).toMatchObject({ updated: 0, pathsRepaired: 0 });
@@ -582,19 +603,25 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: relativeRows.length }];
             if (query.includes('OFFSET')) {
                 const offset = Number(query.match(/OFFSET (\d+)/)?.[1]);
-                return relativeRows.slice(offset, offset + 500).map(row => ({
-                    ...row, metadata_blob: {}, created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
+                return relativeRows.slice(offset, offset + 500).map((row) => ({
+                    ...row,
+                    metadata_blob: {},
+                    created_at: '2026-04-18T12:00:00Z',
+                    width: 512,
+                    height: 512,
                 }));
             }
             return originalSelect(query, params);
         });
         const legacy = makeExistingInvokeImage('duplicate.png', {
-            invokeImageName: 'first/duplicate.png', isFavorite: true, notes: 'Preserve the original record',
+            invokeImageName: 'first/duplicate.png',
+            isFavorite: true,
+            notes: 'Preserve the original record',
         });
         const catalog = new Map([[legacy.id, legacy]]);
-        vi.mocked(getImagesByIds).mockImplementation(async ids => ids.flatMap(id => catalog.get(id) ?? []));
-        vi.mocked(insertImagesBatch).mockImplementation(async images => {
-            images.forEach(image => catalog.set(image.id, image));
+        vi.mocked(getImagesByIds).mockImplementation(async (ids) => ids.flatMap((id) => catalog.get(id) ?? []));
+        vi.mocked(insertImagesBatch).mockImplementation(async (images) => {
+            images.forEach((image) => catalog.set(image.id, image));
         });
         vi.mocked(moveImagePathIdentity).mockImplementation(async (oldId, newId) => {
             const image = catalog.get(oldId);
@@ -605,7 +632,8 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false,
+            mode: 'manual',
+            syncBoards: false,
         });
 
         expect(result).toMatchObject({ imported: 501, updated: 0, pathsRepaired: 0 });
@@ -614,18 +642,21 @@ describe('syncImages live mode', () => {
         expect(vi.mocked(insertImagesBatch).mock.calls.map(([images]) => images.length)).toEqual([500, 1]);
         expect(catalog.get(legacy.id)).toBe(legacy);
         expect(catalog.get('D:/AmbitFixtures/InvokeAI/outputs/images/first/duplicate.png')).toMatchObject({
-            isFavorite: false, notes: undefined,
+            isFavorite: false,
+            notes: undefined,
         });
     });
 
     it.each([
         {
-            label: 'unsafe', rows: [],
+            label: 'unsafe',
+            rows: [],
             relativeRows: [{ image_name: '../duplicate.png' }, { image_name: 'known/duplicate.png' }],
             diskPaths: [],
         },
         {
-            label: 'ambiguous on disk', rows: [{ image_name: 'duplicate.png' }],
+            label: 'ambiguous on disk',
+            rows: [{ image_name: 'duplicate.png' }],
             relativeRows: [{ image_name: 'known/duplicate.png' }],
             diskPaths: ['outputs/images/known/duplicate.png', 'outputs/images/other/duplicate.png'],
         },
@@ -635,7 +666,8 @@ describe('syncImages live mode', () => {
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('duplicate.png', { invokeImageName: 'known/duplicate.png' })]);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false,
+            mode: 'manual',
+            syncBoards: false,
         });
 
         expect(result).toMatchObject({ updated: 0, pathsRepaired: 0 });
@@ -643,20 +675,28 @@ describe('syncImages live mode', () => {
         expect(moveImagePathIdentities).not.toHaveBeenCalled();
     });
 
-    it.each([
-        { label: 'a different known source', storedName: 'other/asset.png', expectedMoved: false },
-        { label: 'the same source with legacy separators', storedName: 'nested\\asset.png', expectedMoved: true },
-        { label: 'a legacy unknown source name', storedName: undefined, expectedMoved: true },
-    ].flatMap(testCase => (['manual', 'live'] as const).map(mode => ({ ...testCase, mode }))))('guards $mode repair identity for $label', async ({ storedName, expectedMoved, mode }) => {
+    it.each(
+        [
+            { label: 'a different known source', storedName: 'other/asset.png', expectedMoved: false },
+            { label: 'the same source with legacy separators', storedName: 'nested\\asset.png', expectedMoved: true },
+            { label: 'a legacy unknown source name', storedName: undefined, expectedMoved: true },
+        ].flatMap((testCase) => (['manual', 'live'] as const).map((mode) => ({ ...testCase, mode })))
+    )('guards $mode repair identity for $label', async ({ storedName, expectedMoved, mode }) => {
         const selectMock = arrangeManualPathCheck({ names: ['asset.png'], rows: [], relativeRows: [{ image_name: 'nested/asset.png' }] });
         const originalSelect = selectMock.getMockImplementation()!;
         selectMock.mockImplementation(async (query, params) => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: mode === 'manual' ? 0 : 1 }];
-            if (query.includes('OFFSET 0')) return [{
-                image_name: 'nested/asset.png', metadata_blob: {},
-                created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-            }];
+            if (query.includes('OFFSET 0'))
+                return [
+                    {
+                        image_name: 'nested/asset.png',
+                        metadata_blob: {},
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             if (query.includes('OFFSET')) return [];
             return originalSelect(query, params);
         });
@@ -664,7 +704,8 @@ describe('syncImages live mode', () => {
         vi.mocked(moveImagePathIdentity).mockResolvedValue(true);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode, syncBoards: false,
+            mode,
+            syncBoards: false,
         });
 
         expect(result).toMatchObject({
@@ -681,25 +722,34 @@ describe('syncImages live mode', () => {
     // made the import skip the legacy move and insert a second row for the same image.
     it.each([
         { label: 'fails', arrangeProbe: () => vi.mocked(commands.getFileSizesBulk).mockRejectedValueOnce(new Error('probe failed')) },
-        { label: 'reports size 0', arrangeProbe: () => vi.mocked(commands.getFileSizesBulk).mockResolvedValueOnce({ status: 'ok', data: [0] } as never) },
+        {
+            label: 'reports size 0',
+            arrangeProbe: () => vi.mocked(commands.getFileSizesBulk).mockResolvedValueOnce({ status: 'ok', data: [0] } as never),
+        },
     ])('keeps the legacy import fallback when the repair size probe $label', async ({ arrangeProbe }) => {
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const selectMock = arrangeManualPathCheck({ names: ['asset.png'], rows: [], relativeRows: [{ image_name: 'nested/asset.png' }] });
         const originalSelect = selectMock.getMockImplementation()!;
         selectMock.mockImplementation(async (query, params) => {
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
-            if (query.includes('OFFSET 0')) return [{
-                image_name: 'nested/asset.png', metadata_blob: {},
-                created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-            }];
+            if (query.includes('OFFSET 0'))
+                return [
+                    {
+                        image_name: 'nested/asset.png',
+                        metadata_blob: {},
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             if (query.includes('OFFSET')) return [];
             return originalSelect(query, params);
         });
         const legacy = makeExistingInvokeImage('asset.png', { invokeImageName: 'nested/asset.png' });
         const catalog = new Map([[legacy.id, legacy]]);
-        vi.mocked(getImagesByIds).mockImplementation(async ids => ids.flatMap(id => catalog.get(id) ?? []));
-        vi.mocked(insertImagesBatch).mockImplementation(async images => {
-            images.forEach(image => catalog.set(image.id, image));
+        vi.mocked(getImagesByIds).mockImplementation(async (ids) => ids.flatMap((id) => catalog.get(id) ?? []));
+        vi.mocked(insertImagesBatch).mockImplementation(async (images) => {
+            images.forEach((image) => catalog.set(image.id, image));
         });
         vi.mocked(moveImagePathIdentity).mockImplementation(async (oldId, newId) => {
             const image = catalog.get(oldId);
@@ -711,7 +761,8 @@ describe('syncImages live mode', () => {
         arrangeProbe();
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false,
+            mode: 'manual',
+            syncBoards: false,
         });
 
         expect(moveImagePathIdentities).not.toHaveBeenCalled();
@@ -723,9 +774,11 @@ describe('syncImages live mode', () => {
 
     it('bounds atomic reference corrections to 250 and reports actual native corrections', async () => {
         const names = Array.from({ length: 501 }, (_, index) => `moved-${index}.png`);
-        arrangeManualPathCheck({ names, rows: names.map(image_name => ({ image_name, image_subfolder: 'nested' })) });
+        arrangeManualPathCheck({ names, rows: names.map((image_name) => ({ image_name, image_subfolder: 'nested' })) });
         vi.mocked(moveImagePathIdentities).mockResolvedValueOnce({
-            moved: 248, skippedTargetExists: 1, skippedSourceMissing: 1,
+            moved: 248,
+            skippedTargetExists: 1,
+            skippedSourceMissing: 1,
         });
         const callbackSequence: string[] = [];
         const onProgress = vi.fn((current: number, total: number, message?: string) => {
@@ -735,10 +788,15 @@ describe('syncImages live mode', () => {
             const message = progress.phase === 'checking' ? 'Checking image locations…' : 'Updating image references…';
             callbackSequence.push(`typed:${message}:${progress.current}/${progress.total}`);
         });
-        const onBatchCommitted = vi.fn(() => { callbackSequence.push('committed'); });
+        const onBatchCommitted = vi.fn(() => {
+            callbackSequence.push('committed');
+        });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', onProgress, undefined, {
-            mode: 'manual', syncBoards: false, onPathCheckProgress, onBatchCommitted,
+            mode: 'manual',
+            syncBoards: false,
+            onPathCheckProgress,
+            onBatchCommitted,
         });
 
         expect(vi.mocked(moveImagePathIdentities).mock.calls.map(([moves]) => moves.length)).toEqual([250, 250, 1]);
@@ -753,10 +811,12 @@ describe('syncImages live mode', () => {
 
     it('waits for native repair settlement and reports committed corrections before rejecting cancellation', async () => {
         const names = Array.from({ length: 251 }, (_, index) => `cancel-${index}.png`);
-        arrangeManualPathCheck({ names, rows: names.map(image_name => ({ image_name, image_subfolder: 'nested' })) });
+        arrangeManualPathCheck({ names, rows: names.map((image_name) => ({ image_name, image_subfolder: 'nested' })) });
         const controller = new AbortController();
         let releaseMove!: () => void;
-        const pendingMove = new Promise<void>(resolve => { releaseMove = resolve; });
+        const pendingMove = new Promise<void>((resolve) => {
+            releaseMove = resolve;
+        });
         vi.mocked(moveImagePathIdentities).mockImplementationOnce(async () => {
             await pendingMove;
             return { moved: 248, skippedTargetExists: 1, skippedSourceMissing: 1 };
@@ -765,7 +825,10 @@ describe('syncImages live mode', () => {
         const onBatchCommitted = vi.fn();
         const settled = vi.fn();
         const operation = syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
-            mode: 'manual', syncBoards: false, onPathCheckProgress, onBatchCommitted,
+            mode: 'manual',
+            syncBoards: false,
+            onPathCheckProgress,
+            onBatchCommitted,
         }).finally(settled);
         const rejection = expect(operation).rejects.toThrow('Aborted');
         await vi.waitFor(() => expect(moveImagePathIdentities).toHaveBeenCalledOnce());
@@ -791,21 +854,31 @@ describe('syncImages live mode', () => {
         const originalSelect = selectMock.getMockImplementation()!;
         selectMock.mockImplementation(async (query, params) => {
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
-            if (query.includes('OFFSET 0')) return [{
-                image_name: 'inline.png', image_subfolder: 'nested', metadata_blob: {},
-                created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-            }];
+            if (query.includes('OFFSET 0'))
+                return [
+                    {
+                        image_name: 'inline.png',
+                        image_subfolder: 'nested',
+                        metadata_blob: {},
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             if (query.includes('OFFSET')) return [];
             return originalSelect(query, params);
         });
         const images = [makeExistingInvokeImage('broad.png'), makeExistingInvokeImage('inline.png', { invokeImageCategory: 'outdated' })];
-        vi.mocked(getImagesByIds).mockImplementation(async ids => images.filter(image => ids.includes(image.id)));
+        vi.mocked(getImagesByIds).mockImplementation(async (ids) => images.filter((image) => ids.includes(image.id)));
         vi.mocked(moveImagePathIdentity).mockResolvedValueOnce(true);
         const onPathCheckProgress = vi.fn();
         const onBatchCommitted = vi.fn();
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, onPathCheckProgress, onBatchCommitted,
+            mode: 'manual',
+            syncBoards: false,
+            onPathCheckProgress,
+            onBatchCommitted,
         });
 
         expect(result).toMatchObject({ imported: 0, updated: 2, pathsRepaired: 2 });
@@ -818,13 +891,16 @@ describe('syncImages live mode', () => {
 
     it('reports an inline correction after cancellation without claiming preceding uncommitted image rows', async () => {
         arrangeImportBatches(2);
-        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: [
-            'outputs/images/image-0.png', 'outputs/images/nested/image-1.png',
-        ] });
+        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
+            status: 'ok',
+            data: ['outputs/images/image-0.png', 'outputs/images/nested/image-1.png'],
+        });
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('image-1.png')]);
         const controller = new AbortController();
         let releaseMove!: () => void;
-        const pendingMove = new Promise<void>(resolve => { releaseMove = resolve; });
+        const pendingMove = new Promise<void>((resolve) => {
+            releaseMove = resolve;
+        });
         vi.mocked(moveImagePathIdentity).mockImplementationOnce(async () => {
             await pendingMove;
             return true;
@@ -833,7 +909,10 @@ describe('syncImages live mode', () => {
         const onBatchCommitted = vi.fn();
         const settled = vi.fn();
         const operation = syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
-            mode: 'live', syncBoards: false, onPathCheckProgress, onBatchCommitted,
+            mode: 'live',
+            syncBoards: false,
+            onPathCheckProgress,
+            onBatchCommitted,
         }).finally(settled);
         const rejection = expect(operation).rejects.toThrow('Aborted');
         await vi.waitFor(() => expect(moveImagePathIdentity).toHaveBeenCalledOnce());
@@ -865,15 +944,24 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(fetchBoardMappings).mockResolvedValueOnce({
             imageToBoardId: new Map([['owned.png', 'board-a']]),
-            boards: new Map([['board-a', {
-                name: 'Owned board',
-                createdAt: 10,
-                ownerId: 'owner-a',
-            }], ['empty-board', {
-                name: 'Empty board',
-                createdAt: 20,
-                ownerId: 'owner-a',
-            }]]),
+            boards: new Map([
+                [
+                    'board-a',
+                    {
+                        name: 'Owned board',
+                        createdAt: 10,
+                        ownerId: 'owner-a',
+                    },
+                ],
+                [
+                    'empty-board',
+                    {
+                        name: 'Empty board',
+                        createdAt: 20,
+                        ownerId: 'owner-a',
+                    },
+                ],
+            ]),
             isAuthoritative: true,
         });
         vi.mocked(reconcileInvokeBoardSnapshot).mockResolvedValueOnce({
@@ -900,27 +988,31 @@ describe('syncImages live mode', () => {
             dbPath: 'D:/Invoke/databases/invokeai.db',
             mode: 'owner',
             ownerId: 'owner-a',
-            boards: [{
-                id: 'board-a',
-                name: 'Owned board',
-                createdAt: 10,
-                ownerId: 'owner-a',
-            },
-            {
-                id: 'empty-board',
-                name: 'Empty board',
-                createdAt: 20,
-                ownerId: 'owner-a',
-            }],
+            boards: [
+                {
+                    id: 'board-a',
+                    name: 'Owned board',
+                    createdAt: 10,
+                    ownerId: 'owner-a',
+                },
+                {
+                    id: 'empty-board',
+                    name: 'Empty board',
+                    createdAt: 20,
+                    ownerId: 'owner-a',
+                },
+            ],
             memberships: [{ imageName: 'owned.png', boardId: 'board-a' }],
             reconcileMemberships: true,
             deleteMissingCollections: true,
         });
         expect(syncCollectionImages).not.toHaveBeenCalled();
-        expect(result.boardMapping).toEqual(new Map([
-            ['board-a', { name: 'Owned board', createdAt: 10, ownerId: 'owner-a' }],
-            ['empty-board', { name: 'Empty board', createdAt: 20, ownerId: 'owner-a' }],
-        ]));
+        expect(result.boardMapping).toEqual(
+            new Map([
+                ['board-a', { name: 'Owned board', createdAt: 10, ownerId: 'owner-a' }],
+                ['empty-board', { name: 'Empty board', createdAt: 20, ownerId: 'owner-a' }],
+            ])
+        );
         expect(result.updated).toBe(0);
         expect(result.boardsChanged).toBe(true);
     });
@@ -932,7 +1024,7 @@ describe('syncImages live mode', () => {
             imported: 0,
             updated: 0,
             maxTimestamp: null,
-            touchedFacetTypes: []
+            touchedFacetTypes: [],
         });
         expect(result.syncedIds).toEqual(new Set());
         expect(result.boardMapping).toEqual(new Map());
@@ -979,17 +1071,12 @@ describe('syncImages live mode', () => {
 
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'live',
-                syncBoards: true,
-                syncFavorites: true,
-                starredAs: 'favorite'
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: true,
+            syncFavorites: true,
+            starredAs: 'favorite',
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);
@@ -1001,7 +1088,7 @@ describe('syncImages live mode', () => {
             hypernetworks: [],
             controlNets: [],
             ipAdapters: [],
-            tools: []
+            tools: [],
         });
         expect(fetchBoardMappings).not.toHaveBeenCalled();
         expect(getImagesByIds).not.toHaveBeenCalled();
@@ -1028,18 +1115,13 @@ describe('syncImages live mode', () => {
 
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'startup',
-                afterTimestamp: 100,
-                syncBoards: true,
-                syncFavorites: true,
-                starredAs: 'favorite'
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'startup',
+            afterTimestamp: 100,
+            syncBoards: true,
+            syncFavorites: true,
+            starredAs: 'favorite',
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);
@@ -1050,7 +1132,7 @@ describe('syncImages live mode', () => {
         expect(infoSpy).toHaveBeenCalledWith(
             '[Startup Catch-up] Invoke sync skipped; no candidates after saved cursor.',
             expect.objectContaining({
-                afterTimestamp: 100
+                afterTimestamp: 100,
             })
         );
         infoSpy.mockRestore();
@@ -1076,30 +1158,21 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(reconcileInvokeSourceFacts).mockResolvedValueOnce(3);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'startup',
-                afterTimestamp: 100,
-                importIntermediates: false,
-                syncBoards: false,
-                syncFavorites: false,
-                reconcileSourceFacts: true,
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'startup',
+            afterTimestamp: 100,
+            importIntermediates: false,
+            syncBoards: false,
+            syncFavorites: false,
+            reconcileSourceFacts: true,
+        });
 
-        expect(reconcileInvokeSourceFacts).toHaveBeenCalledWith(expect.objectContaining({
-            columns: new Set([
-                'metadata_json',
-                'updated_at',
-                'is_intermediate',
-                'image_category',
-                'image_origin',
-            ]),
-            signal: undefined,
-        }));
+        expect(reconcileInvokeSourceFacts).toHaveBeenCalledWith(
+            expect.objectContaining({
+                columns: new Set(['metadata_json', 'updated_at', 'is_intermediate', 'image_category', 'image_origin']),
+                signal: undefined,
+            })
+        );
         expect(result).toMatchObject({ imported: 0, updated: 3 });
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
@@ -1115,7 +1188,7 @@ describe('syncImages live mode', () => {
                     { name: 'thumbnail_name' },
                     { name: 'has_workflow' },
                     { name: 'image_category' },
-                    { name: 'image_origin' }
+                    { name: 'image_origin' },
                 ];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
@@ -1144,8 +1217,8 @@ describe('syncImages live mode', () => {
                         has_workflow: 1,
                         is_intermediate: 0,
                         image_category: 'control',
-                        image_origin: 'external'
-                    }
+                        image_origin: 'external',
+                    },
                 ];
             }
             return [];
@@ -1158,47 +1231,37 @@ describe('syncImages live mode', () => {
             isAuthoritative: true,
         });
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'live',
-                syncBoards: true,
-                syncFavorites: true,
-                starredAs: 'favorite'
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: true,
+            syncFavorites: true,
+            starredAs: 'favorite',
+        });
 
         expect(result.imported).toBe(1);
-        expect(result.touchedFacetTypes).toEqual([
-            'checkpoints',
-            'loras',
-            'embeddings',
-            'controlNets',
-            'ipAdapters',
-            'tools'
-        ]);
+        expect(result.touchedFacetTypes).toEqual(['checkpoints', 'loras', 'embeddings', 'controlNets', 'ipAdapters', 'tools']);
         expect(result.touchedFacetResources.checkpoints).toEqual(['Test Model']);
         expect(result.touchedFacetResources.loras).toEqual(['DetailBoost']);
         expect(result.touchedFacetResources.tools).toEqual(['invokeai']);
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
-            thumbnailSource: 'invokeai',
-            thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/new-image.webp',
-            invokeImageName: 'new-image.png',
-            invokeImageCategory: 'control',
-            invokeImageOrigin: 'external'
-        }));
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(
+            expect.objectContaining({
+                thumbnailSource: 'invokeai',
+                thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/new-image.webp',
+                invokeImageName: 'new-image.png',
+                invokeImageCategory: 'control',
+                invokeImageOrigin: 'external',
+            })
+        );
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
-        expect(syncCollectionImages).toHaveBeenCalledWith([
-            'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
-        ]);
+        expect(syncCollectionImages).toHaveBeenCalledWith(['D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png']);
         expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledTimes(1);
-        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
-            sourceImageId: 'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png',
-            references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
-        }]);
+        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([
+            {
+                sourceImageId: 'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png',
+                references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
+            },
+        ]);
         expect(vi.mocked(insertImagesBatch).mock.invocationCallOrder[0]).toBeLessThan(
             vi.mocked(commands.replaceInvokeImageReferences).mock.invocationCallOrder[0]
         );
@@ -1214,11 +1277,17 @@ describe('syncImages live mode', () => {
             }
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'manual-image.png', metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
-                    created_at: '2026-04-18 12:00:00', width: 512, height: 512,
-                    starred: 0, thumbnail_name: 'manual-image.webp'
-                }];
+                return [
+                    {
+                        image_name: 'manual-image.png',
+                        metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                        starred: 0,
+                        thumbnail_name: 'manual-image.webp',
+                    },
+                ];
             }
             return [];
         });
@@ -1230,16 +1299,21 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: true, syncFavorites: true, starredAs: 'favorite'
+            mode: 'manual',
+            syncBoards: true,
+            syncFavorites: true,
+            starredAs: 'favorite',
         });
 
         expect(result.imported).toBe(1);
         expect(syncCollectionImages).toHaveBeenCalledOnce();
-        expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-            boards: [expect.objectContaining({ id: 'board-1', name: 'Board One' })],
-            memberships: [{ imageName: 'manual-image.png', boardId: 'board-1' }],
-            reconcileMemberships: true,
-        }));
+        expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                boards: [expect.objectContaining({ id: 'board-1', name: 'Board One' })],
+                memberships: [{ imageName: 'manual-image.png', boardId: 'board-1' }],
+                reconcileMemberships: true,
+            })
+        );
     });
 
     it.each([
@@ -1251,13 +1325,15 @@ describe('syncImages live mode', () => {
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: imageName,
-                    metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
-                    created_at: '2026-04-18 12:00:00',
-                    width: 512,
-                    height: 512,
-                }];
+                return [
+                    {
+                        image_name: imageName,
+                        metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
@@ -1266,12 +1342,17 @@ describe('syncImages live mode', () => {
             vi.mocked(getRemovedImagesByIds).mockResolvedValue([makeExistingInvokeImage(imageName, { isDeleted: true })]);
         }
         if (missing) {
-            vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-                status: 'ok',
-                data: paths.map(path => path.endsWith(`/outputs/images/${imageName}`)
-                    ? { status: 'missing' }
-                    : { status: 'present', size: 0, isFile: false }),
-            }) as never);
+            vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+                async (paths: string[]) =>
+                    ({
+                        status: 'ok',
+                        data: paths.map((path) =>
+                            path.endsWith(`/outputs/images/${imageName}`)
+                                ? { status: 'missing' }
+                                : { status: 'present', size: 0, isFile: false }
+                        ),
+                    }) as never
+            );
         }
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
@@ -1295,14 +1376,16 @@ describe('syncImages live mode', () => {
             }
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'relocated.png',
-                    image_subfolder: 'new/location',
-                    metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
-                    created_at: '2026-04-18 12:00:00',
-                    width: 512,
-                    height: 512,
-                }];
+                return [
+                    {
+                        image_name: 'relocated.png',
+                        image_subfolder: 'new/location',
+                        metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
@@ -1315,10 +1398,7 @@ describe('syncImages live mode', () => {
             syncFavorites: false,
         });
 
-        expect(getRemovedInvokeImageNames).toHaveBeenCalledWith(
-            legacyScope.dbPath,
-            ['relocated.png']
-        );
+        expect(getRemovedInvokeImageNames).toHaveBeenCalledWith(legacyScope.dbPath, ['relocated.png']);
         expect(result.imported).toBe(0);
         expect(insertImagesBatch).not.toHaveBeenCalled();
         expect(syncCollectionImages).not.toHaveBeenCalled();
@@ -1332,49 +1412,82 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'unchanged.png',
-                    metadata_blob: { positive_prompt: 'raw', init_image: { image_name: 'source.png' } },
-                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512
-                }];
+                return [
+                    {
+                        image_name: 'unchanged.png',
+                        metadata_blob: { positive_prompt: 'raw', init_image: { image_name: 'source.png' } },
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: fullPath, url: `asset://${fullPath}`, thumbnailUrl: `asset://${fullPath}`,
-            filename: 'unchanged.png', fileSize: 123, timestamp: 100, width: 512, height: 512,
-            isFavorite: false, isPinned: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI, model: 'Test Model', steps: 20, cfg: 7,
-                sampler: 'Euler', positivePrompt: 'raw', negativePrompt: ''
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            {
+                id: fullPath,
+                url: `asset://${fullPath}`,
+                thumbnailUrl: `asset://${fullPath}`,
+                filename: 'unchanged.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: false,
+                isPinned: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'raw',
+                    negativePrompt: '',
+                },
+                originalMetadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'raw',
+                    negativePrompt: '',
+                },
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+                originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) },
+                invokeImageName: 'unchanged.png',
             },
-            originalMetadata: {
-                tool: GeneratorTool.INVOKEAI, model: 'Test Model', steps: 20, cfg: 7,
-                sampler: 'Euler', positivePrompt: 'raw', negativePrompt: ''
-            },
-            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) },
-            invokeImageName: 'unchanged.png'
-        }]);
+        ]);
 
         const onBatchCommitted = vi.fn();
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false, onBatchCommitted,
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+            onBatchCommitted,
         });
 
         expect(result).toMatchObject({ imported: 0, updated: 0 });
         expect(result.syncedIds).toContain('unchanged.png');
         expect(insertImagesBatch).not.toHaveBeenCalled();
-        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
-            sourceImageId: fullPath,
-            references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
-        }]);
-        expect(onBatchCommitted).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-            processed: 1, imported: 0, updated: 0,
-        }));
-        expect(onBatchCommitted.mock.invocationCallOrder[0])
-            .toBeGreaterThan(vi.mocked(commands.replaceInvokeImageReferences).mock.invocationCallOrder[0]);
+        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([
+            {
+                sourceImageId: fullPath,
+                references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
+            },
+        ]);
+        expect(onBatchCommitted).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                processed: 1,
+                imported: 0,
+                updated: 0,
+            })
+        );
+        expect(onBatchCommitted.mock.invocationCallOrder[0]).toBeGreaterThan(
+            vi.mocked(commands.replaceInvokeImageReferences).mock.invocationCallOrder[0]
+        );
     });
 
     it('still snapshots current references when an unchanged image has a malformed stored raw chunk', async () => {
@@ -1385,29 +1498,39 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'unchanged.png',
-                    metadata_blob: { init_image: 'source.png' },
-                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-                }];
+                return [
+                    {
+                        image_name: 'unchanged.png',
+                        metadata_blob: { init_image: 'source.png' },
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
-            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-            originalChunks: { invokeai_metadata: '{bad json' },
-        })]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('unchanged.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+                originalChunks: { invokeai_metadata: '{bad json' },
+            }),
+        ]);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false,
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
         });
 
         expect(result.syncedIds).toContain('unchanged.png');
-        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
-            sourceImageId: fullPath,
-            references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
-        }]);
+        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([
+            {
+                sourceImageId: fullPath,
+                references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
+            },
+        ]);
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
@@ -1419,21 +1542,26 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'unchanged.png', metadata_blob: '',
-                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-                }];
+                return [
+                    {
+                        image_name: 'unchanged.png',
+                        metadata_blob: '',
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
-            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-        })]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('unchanged.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+            }),
+        ]);
         vi.mocked(commands.replaceInvokeImageReferences).mockImplementation(async (referenceSets) => {
-            storedReferenceNames = referenceSets.flatMap(set =>
-                set.references.map(reference => reference.targetInvokeImageName)
-            );
+            storedReferenceNames = referenceSets.flatMap((set) => set.references.map((reference) => reference.targetInvokeImageName));
             return {
                 status: 'ok',
                 data: { sourcesReplaced: 1, referencesWritten: 0, skippedMissingSources: 0 },
@@ -1441,7 +1569,9 @@ describe('syncImages live mode', () => {
         });
 
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false,
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
         });
 
         expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
@@ -1457,21 +1587,26 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'unchanged.png', metadata_blob: { controlnets: false },
-                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-                }];
+                return [
+                    {
+                        image_name: 'unchanged.png',
+                        metadata_blob: { controlnets: false },
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
-            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-        })]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('unchanged.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+            }),
+        ]);
         vi.mocked(commands.replaceInvokeImageReferences).mockImplementation(async (referenceSets) => {
-            storedReferenceNames = referenceSets.flatMap(set =>
-                set.references.map(reference => reference.targetInvokeImageName)
-            );
+            storedReferenceNames = referenceSets.flatMap((set) => set.references.map((reference) => reference.targetInvokeImageName));
             return {
                 status: 'ok',
                 data: { sourcesReplaced: 1, referencesWritten: 0, skippedMissingSources: 0 },
@@ -1479,7 +1614,9 @@ describe('syncImages live mode', () => {
         });
 
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false,
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
         });
 
         expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
@@ -1487,42 +1624,53 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
-    it.each(['manual', 'startup', 'live'] as const)('fails %s sync on a row error and retries it without duplicating earlier committed batches', async mode => {
-        arrangeImportBatches(501);
-        const mapper = vi.mocked(mapInvokeMetadata);
-        const originalMapper = mapper.getMockImplementation()!;
-        mapper.mockImplementation((...args) => {
-            const row = args[0];
-            if (row && typeof row === 'object' && 'image_name' in row && row.image_name === 'image-500.png') {
-                throw new Error('metadata mapping failed');
+    it.each(['manual', 'startup', 'live'] as const)(
+        'fails %s sync on a row error and retries it without duplicating earlier committed batches',
+        async (mode) => {
+            arrangeImportBatches(501);
+            const mapper = vi.mocked(mapInvokeMetadata);
+            const originalMapper = mapper.getMockImplementation()!;
+            mapper.mockImplementation((...args) => {
+                const row = args[0];
+                if (row && typeof row === 'object' && 'image_name' in row && row.image_name === 'image-500.png') {
+                    throw new Error('metadata mapping failed');
+                }
+                return originalMapper(...args);
+            });
+            const onBatchCommitted = vi.fn();
+            const progress = vi.fn();
+            try {
+                await expect(
+                    syncImages('D:/AmbitFixtures/InvokeAI', progress, undefined, {
+                        mode,
+                        syncBoards: false,
+                        syncFavorites: false,
+                        afterTimestamp: 0,
+                        onBatchCommitted,
+                    })
+                ).rejects.toThrow('Failed to process InvokeAI image image-500.png: metadata mapping failed');
+                expect(insertImagesBatch).toHaveBeenCalledOnce();
+                expect(onBatchCommitted).toHaveBeenCalledOnce();
+                expect(onBatchCommitted).toHaveBeenLastCalledWith(expect.objectContaining({ processed: 500, imported: 500 }));
+                expect(progress).toHaveBeenLastCalledWith(500, 501, 'Processing images: 500 / 501');
+            } finally {
+                mapper.mockImplementation(originalMapper);
             }
-            return originalMapper(...args);
-        });
-        const onBatchCommitted = vi.fn();
-        const progress = vi.fn();
-        try {
-            await expect(syncImages('D:/AmbitFixtures/InvokeAI', progress, undefined, {
-                mode, syncBoards: false, syncFavorites: false, afterTimestamp: 0, onBatchCommitted,
-            })).rejects.toThrow('Failed to process InvokeAI image image-500.png: metadata mapping failed');
-            expect(insertImagesBatch).toHaveBeenCalledOnce();
-            expect(onBatchCommitted).toHaveBeenCalledOnce();
-            expect(onBatchCommitted).toHaveBeenLastCalledWith(expect.objectContaining({ processed: 500, imported: 500 }));
-            expect(progress).toHaveBeenLastCalledWith(500, 501, 'Processing images: 500 / 501');
-        } finally {
-            mapper.mockImplementation(originalMapper);
-        }
 
-        vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(getImagesByIds).mockResolvedValue(Array.from({ length: 500 }, (_, index) =>
-            makeExistingInvokeImage(`image-${index}.png`)));
-        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode, syncBoards: false, syncFavorites: false, afterTimestamp: 0,
-        });
-        expect(result).toMatchObject({ imported: 1, updated: 0 });
-        expect(insertImagesBatch).toHaveBeenCalledExactlyOnceWith([
-            expect.objectContaining({ filename: 'image-500.png' }),
-        ]);
-    });
+            vi.mocked(insertImagesBatch).mockClear();
+            vi.mocked(getImagesByIds).mockResolvedValue(
+                Array.from({ length: 500 }, (_, index) => makeExistingInvokeImage(`image-${index}.png`))
+            );
+            const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+                mode,
+                syncBoards: false,
+                syncFavorites: false,
+                afterTimestamp: 0,
+            });
+            expect(result).toMatchObject({ imported: 1, updated: 0 });
+            expect(insertImagesBatch).toHaveBeenCalledExactlyOnceWith([expect.objectContaining({ filename: 'image-500.png' })]);
+        }
+    );
 
     it('fails the sync batch when transactional reference replacement fails', async () => {
         const selectMock = vi.fn(async (query: string) => {
@@ -1531,21 +1679,31 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'new.png', metadata_blob: { init_image: 'source.png' },
-                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
-                }];
+                return [
+                    {
+                        image_name: 'new.png',
+                        metadata_blob: { init_image: 'source.png' },
+                        created_at: '2026-04-18T12:00:00Z',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.replaceInvokeImageReferences).mockResolvedValueOnce({
-            status: 'error', error: 'reference transaction failed',
+            status: 'error',
+            error: 'reference transaction failed',
         } as never);
 
-        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false,
-        })).rejects.toBe('reference transaction failed');
+        await expect(
+            syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+                mode: 'live',
+                syncBoards: false,
+                syncFavorites: false,
+            })
+        ).rejects.toBe('reference transaction failed');
         expect(insertImagesBatch).toHaveBeenCalledOnce();
     });
 
@@ -1557,10 +1715,15 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'mapped.png', metadata_blob: { positive_prompt: 'raw' },
-                    created_at: '2026-04-18 12:00:00', width: 512, height: 512
-                }];
+                return [
+                    {
+                        image_name: 'mapped.png',
+                        metadata_blob: { positive_prompt: 'raw' },
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
@@ -1568,18 +1731,18 @@ describe('syncImages live mode', () => {
         vi.mocked(getImagesByIds).mockResolvedValue([
             makeExistingInvokeImage('mapped.png', {
                 originalMetadata: undefined,
-                originalChunks: { invokeai_metadata: JSON.stringify({ positivePrompt: 'already mapped' }) }
-            })
+                originalChunks: { invokeai_metadata: JSON.stringify({ positivePrompt: 'already mapped' }) },
+            }),
         ]);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
         });
 
         expect(result.updated).toBe(1);
-        expect(insertImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({ id: fullPath, filename: 'mapped.png' })
-        ]);
+        expect(insertImagesBatch).toHaveBeenCalledWith([expect.objectContaining({ id: fullPath, filename: 'mapped.png' })]);
     });
 
     it('stops before querying the first batch when a live sync is already aborted', async () => {
@@ -1595,9 +1758,13 @@ describe('syncImages live mode', () => {
         const controller = new AbortController();
         controller.abort();
 
-        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
-            mode: 'live', syncBoards: false, syncFavorites: false
-        })).rejects.toThrow('Aborted');
+        await expect(
+            syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
+                mode: 'live',
+                syncBoards: false,
+                syncFavorites: false,
+            })
+        ).rejects.toThrow('Aborted');
         expect(Database.load).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
@@ -1608,25 +1775,30 @@ describe('syncImages live mode', () => {
             makeExistingInvokeImage('image-0.png'),
             makeExistingInvokeImage('image-1.png', { invokeImageCategory: 'outdated' }),
         ];
-        vi.mocked(getImagesByIds).mockImplementation(async ids => existing.filter(image => ids.includes(image.id)));
+        vi.mocked(getImagesByIds).mockImplementation(async (ids) => existing.filter((image) => ids.includes(image.id)));
         const onBatchCommitted = vi.fn();
         const onProgress = vi.fn();
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', onProgress, undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false, onBatchCommitted,
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+            onBatchCommitted,
         });
 
         expect(result).toMatchObject({ imported: 499, updated: 1 });
-        expect(onBatchCommitted.mock.calls.map(([batch]) => ({
-            processed: batch.processed, imported: batch.imported, updated: batch.updated,
-        }))).toEqual([
+        expect(
+            onBatchCommitted.mock.calls.map(([batch]) => ({
+                processed: batch.processed,
+                imported: batch.imported,
+                updated: batch.updated,
+            }))
+        ).toEqual([
             { processed: 500, imported: 498, updated: 1 },
             { processed: 501, imported: 499, updated: 1 },
         ]);
-        expect(onBatchCommitted.mock.invocationCallOrder[0])
-            .toBeGreaterThan(vi.mocked(insertImagesBatch).mock.invocationCallOrder[0]);
-        expect(onBatchCommitted.mock.invocationCallOrder[1])
-            .toBeGreaterThan(vi.mocked(insertImagesBatch).mock.invocationCallOrder[1]);
+        expect(onBatchCommitted.mock.invocationCallOrder[0]).toBeGreaterThan(vi.mocked(insertImagesBatch).mock.invocationCallOrder[0]);
+        expect(onBatchCommitted.mock.invocationCallOrder[1]).toBeGreaterThan(vi.mocked(insertImagesBatch).mock.invocationCallOrder[1]);
         expect(onProgress).toHaveBeenLastCalledWith(501, 501, 'Processing images: 501 / 501');
     });
 
@@ -1639,9 +1811,13 @@ describe('syncImages live mode', () => {
         });
         const onBatchCommitted = vi.fn();
 
-        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
-            mode: 'live', syncBoards: false, onBatchCommitted,
-        })).rejects.toThrow('Aborted');
+        await expect(
+            syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
+                mode: 'live',
+                syncBoards: false,
+                onBatchCommitted,
+            })
+        ).rejects.toThrow('Aborted');
 
         expect(insertImagesBatch).not.toHaveBeenCalled();
         expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
@@ -1654,14 +1830,18 @@ describe('syncImages live mode', () => {
             makeExistingInvokeImage('image-0.png'),
             makeExistingInvokeImage('image-1.png', { invokeImageCategory: 'outdated' }),
         ];
-        vi.mocked(getImagesByIds).mockImplementation(async ids => existing.filter(image => ids.includes(image.id)));
+        vi.mocked(getImagesByIds).mockImplementation(async (ids) => existing.filter((image) => ids.includes(image.id)));
         const controller = new AbortController();
         let releaseWrite!: () => void;
         let markWriteStarted!: () => void;
-        const pendingWrite = new Promise<void>(resolve => { releaseWrite = resolve; });
-        const writeStarted = new Promise<void>(resolve => { markWriteStarted = resolve; });
+        const pendingWrite = new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+        });
+        const writeStarted = new Promise<void>((resolve) => {
+            markWriteStarted = resolve;
+        });
         const durableImages: AIImage[] = [];
-        vi.mocked(insertImagesBatch).mockImplementation(async images => {
+        vi.mocked(insertImagesBatch).mockImplementation(async (images) => {
             markWriteStarted();
             await pendingWrite;
             durableImages.push(...images);
@@ -1669,7 +1849,10 @@ describe('syncImages live mode', () => {
         const onBatchCommitted = vi.fn();
         const onProgress = vi.fn();
         const operation = syncImages('D:/AmbitFixtures/InvokeAI', onProgress, controller.signal, {
-            mode: 'manual', syncBoards: true, syncFavorites: false, onBatchCommitted,
+            mode: 'manual',
+            syncBoards: true,
+            syncFavorites: false,
+            onBatchCommitted,
         });
 
         await writeStarted;
@@ -1685,9 +1868,13 @@ describe('syncImages live mode', () => {
         expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
         const batchReads = selectMock.mock.calls.filter(([sql]) => sql.includes('FROM images i') && sql.includes('OFFSET'));
         expect(batchReads).toHaveLength(1);
-        expect(onBatchCommitted).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-            processed: 500, imported: 498, updated: 1,
-        }));
+        expect(onBatchCommitted).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                processed: 500,
+                imported: 498,
+                updated: 1,
+            })
+        );
     });
 
     it('does not report image writes when the batch insert rejects', async () => {
@@ -1695,9 +1882,13 @@ describe('syncImages live mode', () => {
         vi.mocked(insertImagesBatch).mockRejectedValueOnce(new Error('native insert failed'));
         const onBatchCommitted = vi.fn();
 
-        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, onBatchCommitted,
-        })).rejects.toThrow('native insert failed');
+        await expect(
+            syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+                mode: 'live',
+                syncBoards: false,
+                onBatchCommitted,
+            })
+        ).rejects.toThrow('native insert failed');
 
         expect(insertImagesBatch).toHaveBeenCalledOnce();
         expect(onBatchCommitted).not.toHaveBeenCalled();
@@ -1706,34 +1897,37 @@ describe('syncImages live mode', () => {
         expect(batchReads).toHaveLength(1);
     });
 
-    it.each(['link', 'references'] as const)(
-        'reports image writes once before a subsequent %s failure',
-        async stage => {
-            const selectMock = arrangeImportBatches(501);
-            if (stage === 'link') {
-                vi.mocked(syncCollectionImages).mockRejectedValueOnce(new Error('link failed'));
-            } else {
-                vi.mocked(commands.replaceInvokeImageReferences).mockRejectedValueOnce(new Error('references failed'));
-            }
-            const onBatchCommitted = vi.fn();
-
-            await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-                mode: 'live', syncBoards: stage === 'link', onBatchCommitted,
-            })).rejects.toThrow(stage === 'link' ? 'link failed' : 'references failed');
-
-            expect(insertImagesBatch).toHaveBeenCalledOnce();
-            expect(onBatchCommitted).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-                processed: 500, imported: 500, updated: 0,
-            }));
-            expect(onBatchCommitted.mock.invocationCallOrder[0])
-                .toBeGreaterThan(vi.mocked(insertImagesBatch).mock.invocationCallOrder[0]);
-            const failedFollowup = stage === 'link' ? syncCollectionImages : commands.replaceInvokeImageReferences;
-            expect(onBatchCommitted.mock.invocationCallOrder[0])
-                .toBeLessThan(vi.mocked(failedFollowup).mock.invocationCallOrder[0]);
-            const batchReads = selectMock.mock.calls.filter(([sql]) => sql.includes('FROM images i') && sql.includes('OFFSET'));
-            expect(batchReads).toHaveLength(1);
+    it.each(['link', 'references'] as const)('reports image writes once before a subsequent %s failure', async (stage) => {
+        const selectMock = arrangeImportBatches(501);
+        if (stage === 'link') {
+            vi.mocked(syncCollectionImages).mockRejectedValueOnce(new Error('link failed'));
+        } else {
+            vi.mocked(commands.replaceInvokeImageReferences).mockRejectedValueOnce(new Error('references failed'));
         }
-    );
+        const onBatchCommitted = vi.fn();
+
+        await expect(
+            syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+                mode: 'live',
+                syncBoards: stage === 'link',
+                onBatchCommitted,
+            })
+        ).rejects.toThrow(stage === 'link' ? 'link failed' : 'references failed');
+
+        expect(insertImagesBatch).toHaveBeenCalledOnce();
+        expect(onBatchCommitted).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                processed: 500,
+                imported: 500,
+                updated: 0,
+            })
+        );
+        expect(onBatchCommitted.mock.invocationCallOrder[0]).toBeGreaterThan(vi.mocked(insertImagesBatch).mock.invocationCallOrder[0]);
+        const failedFollowup = stage === 'link' ? syncCollectionImages : commands.replaceInvokeImageReferences;
+        expect(onBatchCommitted.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(failedFollowup).mock.invocationCallOrder[0]);
+        const batchReads = selectMock.mock.calls.filter(([sql]) => sql.includes('FROM images i') && sql.includes('OFFSET'));
+        expect(batchReads).toHaveLength(1);
+    });
 
     it.each([
         { stage: 'insert', rowCount: 501, withoutReferences: false },
@@ -1747,17 +1941,22 @@ describe('syncImages live mode', () => {
             const selectMock = arrangeImportBatches(rowCount, withoutReferences ? [] : {});
             const controller = new AbortController();
             let releaseWrite!: () => void;
-            const pendingWrite = new Promise<void>(resolve => { releaseWrite = resolve; });
+            const pendingWrite = new Promise<void>((resolve) => {
+                releaseWrite = resolve;
+            });
             const writeStarted = vi.fn();
             const committedIds: string[] = [];
-            const waitForRelease = async () => { writeStarted(); await pendingWrite; };
-            vi.mocked(insertImagesBatch).mockImplementation(async images => {
+            const waitForRelease = async () => {
+                writeStarted();
+                await pendingWrite;
+            };
+            vi.mocked(insertImagesBatch).mockImplementation(async (images) => {
                 if (stage === 'insert') await waitForRelease();
-                committedIds.push(...images.map(image => image.id));
+                committedIds.push(...images.map((image) => image.id));
             });
             if (stage === 'link') vi.mocked(syncCollectionImages).mockImplementationOnce(waitForRelease);
             if (stage === 'references') {
-                vi.mocked(commands.replaceInvokeImageReferences).mockImplementationOnce(async references => {
+                vi.mocked(commands.replaceInvokeImageReferences).mockImplementationOnce(async (references) => {
                     await waitForRelease();
                     return { status: 'ok', data: { sourcesReplaced: references.length, referencesWritten: 0, skippedMissingSources: 0 } };
                 });
@@ -1765,7 +1964,9 @@ describe('syncImages live mode', () => {
             const onBatchCommitted = vi.fn();
             const settled = vi.fn();
             const operation = syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
-                mode: 'live', syncBoards: stage === 'link', onBatchCommitted,
+                mode: 'live',
+                syncBoards: stage === 'link',
+                onBatchCommitted,
             }).finally(settled);
             const rejection = expect(operation).rejects.toThrow('Aborted');
             await vi.waitFor(() => expect(writeStarted).toHaveBeenCalledOnce());
@@ -1781,9 +1982,13 @@ describe('syncImages live mode', () => {
             expect(insertImagesBatch).toHaveBeenCalledOnce();
             if (stage !== 'references') expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
             expect(onBatchCommitted).toHaveBeenCalledOnce();
-            expect(onBatchCommitted).toHaveBeenCalledWith(expect.objectContaining({
-                processed: Math.min(500, rowCount), imported: Math.min(500, rowCount), updated: 0,
-            }));
+            expect(onBatchCommitted).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    processed: Math.min(500, rowCount),
+                    imported: Math.min(500, rowCount),
+                    updated: 0,
+                })
+            );
             const batchReads = selectMock.mock.calls.filter(([sql]) => sql.includes('FROM images i') && sql.includes('OFFSET'));
             expect(batchReads).toHaveLength(1);
         }
@@ -1799,10 +2004,16 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'unreadable.png', thumbnail_name: 'unreadable.webp', metadata_blob: {},
-                    created_at: '2026-04-18 12:00:00', width: 512, height: 512
-                }];
+                return [
+                    {
+                        image_name: 'unreadable.png',
+                        thumbnail_name: 'unreadable.webp',
+                        metadata_blob: {},
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
@@ -1810,9 +2021,13 @@ describe('syncImages live mode', () => {
         vi.mocked(commands.verifyImagePaths).mockRejectedValue(new Error('verify failed'));
         vi.mocked(commands.probeFileMetadataBulk).mockRejectedValue(new Error('probe failed'));
 
-        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: false, syncFavorites: false
-        })).rejects.toThrow('Failed to verify InvokeAI source image paths');
+        await expect(
+            syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+                mode: 'live',
+                syncBoards: false,
+                syncFavorites: false,
+            })
+        ).rejects.toThrow('Failed to verify InvokeAI source image paths');
 
         expect(insertImagesBatch).not.toHaveBeenCalled();
         expect(syncCollectionImages).not.toHaveBeenCalled();
@@ -1832,14 +2047,14 @@ describe('syncImages live mode', () => {
         const root = 'D:/AmbitFixtures/InvokeAI';
         const stalePath = `${root}/outputs/images/${name}`;
         const targetPath = subfolder === '' ? stalePath : `${root}/outputs/images/nested/${name}`;
-        const existingPaths = paths.map(path => path === 'stale' ? stalePath : targetPath);
+        const existingPaths = paths.map((path) => (path === 'stale' ? stalePath : targetPath));
 
         const { result } = await arrangeManualRepair({
             name,
             size,
             existingPaths,
             subfolder: subfolder ?? 'nested',
-            includeUnmatchedRow: name === 'missing-target.png'
+            includeUnmatchedRow: name === 'missing-target.png',
         });
 
         expect(result.updated).toBe(0);
@@ -1854,14 +2069,11 @@ describe('syncImages live mode', () => {
         const { result } = await arrangeManualRepair({
             name,
             existingPaths: [`${root}/outputs/images/${name}`],
-            rejectSize: true
+            rejectSize: true,
         });
 
         expect(result.updated).toBe(0);
-        expect(warnSpy).toHaveBeenCalledWith(
-            '[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.',
-            expect.any(Error)
-        );
+        expect(warnSpy).toHaveBeenCalledWith('[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.', expect.any(Error));
         warnSpy.mockRestore();
     });
 
@@ -1869,21 +2081,23 @@ describe('syncImages live mode', () => {
         const root = 'D:/AmbitFixtures/InvokeAI';
         const name = 'thumbnail-repair.png';
         vi.mocked(moveImagePathIdentities).mockResolvedValue({
-            moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0
+            moved: 1,
+            skippedTargetExists: 0,
+            skippedSourceMissing: 0,
         });
 
         const { result } = await arrangeManualRepair({
             name,
             thumbnailName: 'thumbnail-repair.webp',
-            existingPaths: [`${root}/outputs/images/${name}`]
+            existingPaths: [`${root}/outputs/images/${name}`],
         });
 
         expect(result.updated).toBe(1);
         expect(moveImagePathIdentities).toHaveBeenCalledWith([
             expect.objectContaining({
                 thumbnailPath: expect.stringContaining('thumbnail-repair.webp'),
-                thumbnailSource: 'invokeai'
-            })
+                thumbnailSource: 'invokeai',
+            }),
         ]);
     });
 
@@ -1898,7 +2112,9 @@ describe('syncImages live mode', () => {
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue(['']);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
 
         expect(result.updated).toBe(0);
@@ -1912,7 +2128,7 @@ describe('syncImages live mode', () => {
         const { result } = await arrangeManualRepair({
             name,
             rowImageName: `../${name}`,
-            existingPaths: [`${root}/outputs/images/${name}`]
+            existingPaths: [`${root}/outputs/images/${name}`],
         });
 
         expect(result.updated).toBe(0);
@@ -1923,22 +2139,26 @@ describe('syncImages live mode', () => {
         const controller = new AbortController();
         controller.abort();
 
-        await expect(arrangeManualRepair({
-            name: 'pre-aborted.png',
-            existingPaths: [],
-            signal: controller.signal
-        })).rejects.toThrow('Aborted');
+        await expect(
+            arrangeManualRepair({
+                name: 'pre-aborted.png',
+                existingPaths: [],
+                signal: controller.signal,
+            })
+        ).rejects.toThrow('Aborted');
     });
 
     it('aborts before moving repair candidates when cancelled after their query', async () => {
         const controller = new AbortController();
 
-        await expect(arrangeManualRepair({
-            name: 'mid-repair-abort.png',
-            existingPaths: [],
-            signal: controller.signal,
-            onRepairRows: () => controller.abort()
-        })).rejects.toThrow('Aborted');
+        await expect(
+            arrangeManualRepair({
+                name: 'mid-repair-abort.png',
+                existingPaths: [],
+                signal: controller.signal,
+                onRepairRows: () => controller.abort(),
+            })
+        ).rejects.toThrow('Aborted');
     });
 
     it('preserves legacy and user-modified state while applying Invoke state to untouched images', async () => {
@@ -1961,13 +2181,13 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: rows.length }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return rows.map(row => ({
+                return rows.map((row) => ({
                     image_name: row.name,
                     metadata_blob: { positive_prompt: 'raw' },
                     created_at: '2026-04-18 12:00:00',
                     width: 512,
                     height: 512,
-                    starred: row.starred
+                    starred: row.starred,
                 }));
             }
             return [];
@@ -1990,59 +2210,67 @@ describe('syncImages live mode', () => {
             makeExistingInvokeImage('legacy.png', {
                 isFavorite: true,
                 isPinned: undefined,
-                boardId: 'ambit-legacy'
+                boardId: 'ambit-legacy',
             }),
             makeExistingInvokeImage('modified.png', {
                 isFavorite: true,
                 isPinned: undefined,
                 boardId: 'ambit-modified',
-                originalState: { isFavorite: false, isPinned: true, boardId: 'original-modified' }
+                originalState: { isFavorite: false, isPinned: true, boardId: 'original-modified' },
             }),
             makeExistingInvokeImage('untouched.png', {
                 boardId: 'original-untouched',
-                originalState: { isFavorite: false, isPinned: false, boardId: 'original-untouched' }
+                originalState: { isFavorite: false, isPinned: false, boardId: 'original-untouched' },
             }),
             makeExistingInvokeImage('unstarred.png', {
-                originalState: { isFavorite: false, isPinned: false, boardId: undefined }
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
             }),
             makeExistingInvokeImage('no-raw-key.png', {
                 originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-                originalChunks: {}
+                originalChunks: {},
             }),
             makeExistingInvokeImage('object-raw.png', {
                 originalState: { isFavorite: false, isPinned: false, boardId: undefined },
                 originalChunks: {
-                    invokeai_metadata: { negativePrompt: 'already mapped' }
-                } as unknown as Record<string, string>
+                    invokeai_metadata: { negativePrompt: 'already mapped' },
+                } as unknown as Record<string, string>,
             }),
             makeExistingInvokeImage('primitive-raw.png', {
                 originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-                originalChunks: { invokeai_metadata: 1 } as unknown as Record<string, string>
+                originalChunks: { invokeai_metadata: 1 } as unknown as Record<string, string>,
             }),
         ]);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'live', syncBoards: true, syncFavorites: true, starredAs: 'both'
+            mode: 'live',
+            syncBoards: true,
+            syncFavorites: true,
+            starredAs: 'both',
         });
 
         expect(result).toMatchObject({ imported: 0, updated: 2 });
-        expect(insertImagesBatch).toHaveBeenCalledWith(expect.arrayContaining([
-            expect.objectContaining({
-                filename: 'untouched.png',
-                isFavorite: true,
-                isPinned: true,
-                boardId: 'invoke-untouched'
-            }),
-            expect.objectContaining({ filename: 'object-raw.png' })
-        ]));
+        expect(insertImagesBatch).toHaveBeenCalledWith(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    filename: 'untouched.png',
+                    isFavorite: true,
+                    isPinned: true,
+                    boardId: 'invoke-untouched',
+                }),
+                expect.objectContaining({ filename: 'object-raw.png' }),
+            ])
+        );
     });
 
     it('imports a legacy Invoke schema with string metadata and conservative fallbacks', async () => {
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [
-                    { name: 'metadata' }, { name: 'is_starred' }, { name: 'updated_at' },
-                    { name: 'has_workflow' }, { name: 'is_intermediate' }
+                    { name: 'metadata' },
+                    { name: 'is_starred' },
+                    { name: 'updated_at' },
+                    { name: 'has_workflow' },
+                    { name: 'is_intermediate' },
                 ];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
@@ -2050,17 +2278,19 @@ describe('syncImages live mode', () => {
             }
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'legacy-schema.png',
-                    metadata_blob: null,
-                    created_at: 'invalid-date',
-                    updated_at: '2026-04-18T12:00:05Z',
-                    width: null,
-                    height: null,
-                    is_starred: true,
-                    has_workflow: undefined,
-                    is_intermediate: 1
-                }];
+                return [
+                    {
+                        image_name: 'legacy-schema.png',
+                        metadata_blob: null,
+                        created_at: 'invalid-date',
+                        updated_at: '2026-04-18T12:00:05Z',
+                        width: null,
+                        height: null,
+                        is_starred: true,
+                        has_workflow: undefined,
+                        is_intermediate: 1,
+                    },
+                ];
             }
             return [];
         });
@@ -2075,7 +2305,7 @@ describe('syncImages live mode', () => {
             syncBoards: true,
             syncFavorites: true,
             importIntermediates: true,
-            starredAs: 'pin'
+            starredAs: 'pin',
         });
 
         expect(result.imported).toBe(1);
@@ -2090,12 +2320,12 @@ describe('syncImages live mode', () => {
                 originalChunks: { invokeai_metadata: {} },
                 invokeImageName: 'legacy-schema.png',
                 invokeImageCategory: undefined,
-                invokeImageOrigin: undefined
-            })
+                invokeImageOrigin: undefined,
+            }),
         ]);
         const batchQuery = selectMock.mock.calls
-            .map(call => call[0])
-            .find(query => query.includes('FROM images i') && query.includes('OFFSET 0'));
+            .map((call) => call[0])
+            .find((query) => query.includes('FROM images i') && query.includes('OFFSET 0'));
         expect(batchQuery).toContain('NULL AS image_category');
         expect(batchQuery).toContain('NULL AS image_origin');
         expect(upsertInvokeBoardCollection).not.toHaveBeenCalled();
@@ -2110,7 +2340,7 @@ describe('syncImages live mode', () => {
                     { name: 'is_intermediate' },
                     { name: 'starred' },
                     { name: 'thumbnail_name' },
-                    { name: 'has_workflow' }
+                    { name: 'has_workflow' },
                 ];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
@@ -2137,8 +2367,8 @@ describe('syncImages live mode', () => {
                         starred: 1,
                         thumbnail_name: 'startup-image.webp',
                         has_workflow: 1,
-                        is_intermediate: 0
-                    }
+                        is_intermediate: 0,
+                    },
                 ];
             }
             return [];
@@ -2151,29 +2381,24 @@ describe('syncImages live mode', () => {
             isAuthoritative: true,
         });
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'startup',
-                afterTimestamp: 100,
-                syncBoards: true,
-                syncFavorites: true,
-                starredAs: 'both'
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'startup',
+            afterTimestamp: 100,
+            syncBoards: true,
+            syncFavorites: true,
+            starredAs: 'both',
+        });
 
         expect(result.imported).toBe(1);
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
-            thumbnailSource: 'invokeai',
-            thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/startup-image.webp'
-        }));
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(
+            expect.objectContaining({
+                thumbnailSource: 'invokeai',
+                thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/startup-image.webp',
+            })
+        );
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
-        expect(syncCollectionImages).toHaveBeenCalledWith([
-            'D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png'
-        ]);
+        expect(syncCollectionImages).toHaveBeenCalledWith(['D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png']);
         expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledTimes(1);
     });
 
@@ -2185,7 +2410,7 @@ describe('syncImages live mode', () => {
             { image_name: 'odin-2.png', created_at: '2026-04-18 12:00:02', user_id: 'odin' },
             { image_name: 'odin-3.png', created_at: '2026-04-18 12:00:03', user_id: 'odin' },
             { image_name: 'odin-4.png', created_at: '2026-04-18 12:00:04', user_id: 'odin' },
-        ].map(row => ({
+        ].map((row) => ({
             ...row,
             metadata_blob: { positive_prompt: row.image_name },
             width: 512,
@@ -2232,17 +2457,17 @@ describe('syncImages live mode', () => {
             reconcileSourceFacts: false,
         });
 
-        const odinIds = odinRows.map(({ image_name }) => (
-            `D:/AmbitFixtures/InvokeAI/outputs/images/${image_name}`
-        ));
+        const odinIds = odinRows.map(({ image_name }) => `D:/AmbitFixtures/InvokeAI/outputs/images/${image_name}`);
         expect(result).toMatchObject({ imported: 4, updated: 0 });
         expect(getImagesByIds).toHaveBeenCalledWith(odinIds, { includeOwnerHidden: true });
-        expect(insertImagesBatch).toHaveBeenCalledWith(expect.arrayContaining([
-            expect.objectContaining({ id: odinIds[0], invokeImageName: 'odin-1.png', invokeOwnerId: 'odin' }),
-            expect.objectContaining({ id: odinIds[1], invokeImageName: 'odin-2.png', invokeOwnerId: 'odin' }),
-            expect.objectContaining({ id: odinIds[2], invokeImageName: 'odin-3.png', invokeOwnerId: 'odin' }),
-            expect.objectContaining({ id: odinIds[3], invokeImageName: 'odin-4.png', invokeOwnerId: 'odin' }),
-        ]));
+        expect(insertImagesBatch).toHaveBeenCalledWith(
+            expect.arrayContaining([
+                expect.objectContaining({ id: odinIds[0], invokeImageName: 'odin-1.png', invokeOwnerId: 'odin' }),
+                expect.objectContaining({ id: odinIds[1], invokeImageName: 'odin-2.png', invokeOwnerId: 'odin' }),
+                expect.objectContaining({ id: odinIds[2], invokeImageName: 'odin-3.png', invokeOwnerId: 'odin' }),
+                expect.objectContaining({ id: odinIds[3], invokeImageName: 'odin-4.png', invokeOwnerId: 'odin' }),
+            ])
+        );
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0]).toHaveLength(4);
         expect(reconcileInvokeSourceFacts).not.toHaveBeenCalled();
         expect(fetchBoardMappings).not.toHaveBeenCalled();
@@ -2252,11 +2477,46 @@ describe('syncImages live mode', () => {
     it('resolves flat, date, type, hash, custom, and relative InvokeAI subfolder paths during DB sync', async () => {
         const rows = [
             { image_name: 'flat.png', image_subfolder: '', metadata_blob: {}, created_at: '2026-04-18 12:00:00', width: 512, height: 512 },
-            { image_name: 'date.png', image_subfolder: '2026/04/18', metadata_blob: {}, created_at: '2026-04-18 12:00:01', width: 512, height: 512 },
-            { image_name: 'type.png', image_subfolder: 'txt2img', metadata_blob: {}, created_at: '2026-04-18 12:00:02', width: 512, height: 512 },
-            { image_name: 'hash.png', image_subfolder: 'ab', metadata_blob: {}, created_at: '2026-04-18 12:00:03', width: 512, height: 512 },
-            { image_name: 'custom.png', image_subfolder: 'custom/nested/path', metadata_blob: {}, created_at: '2026-04-18 12:00:04', width: 512, height: 512 },
-            { image_name: '2026/04/relative.png', image_subfolder: '', metadata_blob: {}, created_at: '2026-04-18 12:00:05', width: 512, height: 512 }
+            {
+                image_name: 'date.png',
+                image_subfolder: '2026/04/18',
+                metadata_blob: {},
+                created_at: '2026-04-18 12:00:01',
+                width: 512,
+                height: 512,
+            },
+            {
+                image_name: 'type.png',
+                image_subfolder: 'txt2img',
+                metadata_blob: {},
+                created_at: '2026-04-18 12:00:02',
+                width: 512,
+                height: 512,
+            },
+            {
+                image_name: 'hash.png',
+                image_subfolder: 'ab',
+                metadata_blob: {},
+                created_at: '2026-04-18 12:00:03',
+                width: 512,
+                height: 512,
+            },
+            {
+                image_name: 'custom.png',
+                image_subfolder: 'custom/nested/path',
+                metadata_blob: {},
+                created_at: '2026-04-18 12:00:04',
+                width: 512,
+                height: 512,
+            },
+            {
+                image_name: '2026/04/relative.png',
+                image_subfolder: '',
+                metadata_blob: {},
+                created_at: '2026-04-18 12:00:05',
+                width: 512,
+                height: 512,
+            },
         ];
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
@@ -2280,44 +2540,39 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: [
-                'outputs/images/flat.png',
-                'outputs/images/2026/04/relative.png'
-            ]
+            data: ['outputs/images/flat.png', 'outputs/images/2026/04/relative.png'],
         } as never);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'live',
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(6);
         expect(commands.listInvokeaiImages).toHaveBeenCalledTimes(1);
-        expect(getImagesByIds).toHaveBeenCalledWith(expect.arrayContaining([
-            'D:/AmbitFixtures/InvokeAI/outputs/images/flat.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/txt2img/type.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/ab/hash.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/custom/nested/path/custom.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/relative.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/date.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/type.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/hash.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/custom.png'
-        ]), { includeOwnerHidden: true });
+        expect(getImagesByIds).toHaveBeenCalledWith(
+            expect.arrayContaining([
+                'D:/AmbitFixtures/InvokeAI/outputs/images/flat.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/txt2img/type.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/ab/hash.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/custom/nested/path/custom.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/relative.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/date.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/type.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/hash.png',
+                'D:/AmbitFixtures/InvokeAI/outputs/images/custom.png',
+            ]),
+            { includeOwnerHidden: true }
+        );
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0].map((image) => image.id)).toEqual([
             'D:/AmbitFixtures/InvokeAI/outputs/images/flat.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/txt2img/type.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/ab/hash.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/custom/nested/path/custom.png',
-            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/relative.png'
+            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/relative.png',
         ]);
     });
 
@@ -2336,13 +2591,15 @@ describe('syncImages live mode', () => {
                 return [{ count: 1 }];
             }
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'duplicate.png',
-                    metadata_blob: {},
-                    created_at: '2026-04-18 12:00:00',
-                    width: 512,
-                    height: 512
-                }];
+                return [
+                    {
+                        image_name: 'duplicate.png',
+                        metadata_blob: {},
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
@@ -2350,22 +2607,14 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: [
-                'outputs/images/2026/04/18/duplicate.png',
-                'outputs/images/txt2img/duplicate.png'
-            ]
+            data: ['outputs/images/2026/04/18/duplicate.png', 'outputs/images/txt2img/duplicate.png'],
         } as never);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'live',
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(insertImagesBatch).not.toHaveBeenCalled();
@@ -2386,30 +2635,27 @@ describe('syncImages live mode', () => {
                 return [{ count: 1 }];
             }
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: '../outside.png',
-                    image_subfolder: '',
-                    metadata_blob: {},
-                    created_at: '2026-04-18 12:00:00',
-                    width: 512,
-                    height: 512
-                }];
+                return [
+                    {
+                        image_name: '../outside.png',
+                        image_subfolder: '',
+                        metadata_blob: {},
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             }
             return [];
         });
 
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'live',
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(commands.getFileSizesBulk).not.toHaveBeenCalled();
@@ -2422,105 +2668,140 @@ describe('syncImages live mode', () => {
             if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
-            if (query.includes('SELECT i.image_name') && query.includes('OFFSET 0')) return [{
-                image_name: 'missing.png',
-                metadata_blob: {},
-                created_at: '2026-04-18 12:00:00',
-                width: 512,
-                height: 512,
-            }];
+            if (query.includes('SELECT i.image_name') && query.includes('OFFSET 0'))
+                return [
+                    {
+                        image_name: 'missing.png',
+                        metadata_blob: {},
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                    },
+                ];
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(path => path.endsWith('/outputs/images')
-                ? { status: 'present', size: 0, isFile: false }
-                : { status: 'missing' })
-        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) =>
+                        path.endsWith('/outputs/images') ? { status: 'present', size: 0, isFile: false } : { status: 'missing' }
+                    ),
+                }) as never
+        );
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
 
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
 
-        expect(insertImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({ id: imagePath, isMissing: true }),
-        ]);
+        expect(insertImagesBatch).toHaveBeenCalledWith([expect.objectContaining({ id: imagePath, isMissing: true })]);
 
         vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(path => path.endsWith('/outputs/images')
-                ? { status: 'present', size: 0, isFile: false }
-                : { status: 'present', size: 0, isFile: true })
-        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) =>
+                        path.endsWith('/outputs/images')
+                            ? { status: 'present', size: 0, isFile: false }
+                            : { status: 'present', size: 0, isFile: true }
+                    ),
+                }) as never
+        );
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', { isMissing: true })]);
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
-        expect(insertImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({ id: imagePath, isMissing: false }),
-        ]);
+        expect(insertImagesBatch).toHaveBeenCalledWith([expect.objectContaining({ id: imagePath, isMissing: false })]);
 
         vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(path => path.endsWith('/outputs/images')
-                ? { status: 'present', size: 0, isFile: false }
-                : { status: 'error', message: 'access denied' })
-        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) =>
+                        path.endsWith('/outputs/images')
+                            ? { status: 'present', size: 0, isFile: false }
+                            : { status: 'error', message: 'access denied' }
+                    ),
+                }) as never
+        );
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
         expect(insertImagesBatch).not.toHaveBeenCalled();
 
-        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', {
-            fileSize: 4096,
-            isMissing: true,
-            originalMetadata: undefined,
-            originalChunks: undefined,
-        })]);
-        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
-        });
-        expect(insertImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({ id: imagePath, fileSize: 4096, isMissing: true }),
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('missing.png', {
+                fileSize: 4096,
+                isMissing: true,
+                originalMetadata: undefined,
+                originalChunks: undefined,
+            }),
         ]);
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
+        });
+        expect(insertImagesBatch).toHaveBeenCalledWith([expect.objectContaining({ id: imagePath, fileSize: 4096, isMissing: true })]);
 
         vi.mocked(insertImagesBatch).mockClear();
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(path => path.endsWith('/outputs/images')
-                ? { status: 'present', size: 0, isFile: true }
-                : { status: 'missing' })
-        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) =>
+                        path.endsWith('/outputs/images') ? { status: 'present', size: 0, isFile: true } : { status: 'missing' }
+                    ),
+                }) as never
+        );
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
         expect(insertImagesBatch).not.toHaveBeenCalled();
 
         vi.mocked(insertImagesBatch).mockClear();
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', { isMissing: true })]);
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(path => path.endsWith('/outputs/images')
-                ? { status: 'present', size: 0, isFile: false }
-                : { status: 'present', size: 0, isFile: false })
-        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) =>
+                        path.endsWith('/outputs/images')
+                            ? { status: 'present', size: 0, isFile: false }
+                            : { status: 'present', size: 0, isFile: false }
+                    ),
+                }) as never
+        );
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
         expect(insertImagesBatch).not.toHaveBeenCalled();
 
         vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths.map(path => path.endsWith('/outputs/images')
-                ? { status: 'present', size: 0, isFile: false }
-                : { status: 'missing' })
-        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths.map((path) =>
+                        path.endsWith('/outputs/images') ? { status: 'present', size: 0, isFile: false } : { status: 'missing' }
+                    ),
+                }) as never
+        );
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
         let rootChecks = 0;
         vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => {
@@ -2528,9 +2809,7 @@ describe('syncImages live mode', () => {
                 rootChecks++;
                 return {
                     status: 'ok',
-                    data: [rootChecks === 1
-                        ? { status: 'present', size: 0, isFile: false }
-                        : { status: 'missing' }],
+                    data: [rootChecks === 1 ? { status: 'present', size: 0, isFile: false } : { status: 'missing' }],
                 } as never;
             }
             return {
@@ -2539,7 +2818,9 @@ describe('syncImages live mode', () => {
             } as never;
         });
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
-            mode: 'manual', syncBoards: false, syncFavorites: false,
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
         });
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
@@ -2561,15 +2842,17 @@ describe('syncImages live mode', () => {
                 return [{ count: 1 }];
             }
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
-                return [{
-                    image_name: 'date.png',
-                    image_subfolder: '2026/04/18',
-                    metadata_blob: {},
-                    created_at: '2026-04-18 12:00:00',
-                    width: 512,
-                    height: 512,
-                    thumbnail_name: 'date.webp'
-                }];
+                return [
+                    {
+                        image_name: 'date.png',
+                        image_subfolder: '2026/04/18',
+                        metadata_blob: {},
+                        created_at: '2026-04-18 12:00:00',
+                        width: 512,
+                        height: 512,
+                        thumbnail_name: 'date.webp',
+                    },
+                ];
             }
             return [];
         });
@@ -2577,96 +2860,89 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/2026/04/18/date.png']
+            data: ['outputs/images/2026/04/18/date.png'],
         } as never);
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async () => ({
-            status: 'ok',
-            data: []
-        }) as never);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: staleFlatPath,
-            url: `asset://${staleFlatPath}`,
-            thumbnailUrl: `asset://${staleFlatPath}`,
-            filename: 'date.png',
-            fileSize: 123,
-            timestamp: 100,
-            width: 512,
-            height: 512,
-            isFavorite: true,
-            isPinned: false,
-            isDeleted: false,
-            isMissing: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            },
-            originalMetadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            },
-            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'test' }) },
-            invokeImageName: 'date.png'
-        }]);
-        vi.mocked(moveImagePathIdentity)
-            .mockResolvedValueOnce(true)
-            .mockResolvedValueOnce(false)
-            .mockResolvedValueOnce(true);
-
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'live',
-                syncBoards: false,
-                syncFavorites: false
-            }
+        vi.mocked(commands.verifyImagePaths).mockImplementation(
+            async () =>
+                ({
+                    status: 'ok',
+                    data: [],
+                }) as never
         );
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            {
+                id: staleFlatPath,
+                url: `asset://${staleFlatPath}`,
+                thumbnailUrl: `asset://${staleFlatPath}`,
+                filename: 'date.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: true,
+                isPinned: false,
+                isDeleted: false,
+                isMissing: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+                originalMetadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+                originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'test' }) },
+                invokeImageName: 'date.png',
+            },
+        ]);
+        vi.mocked(moveImagePathIdentity).mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.updated).toBe(1);
         expect(result.imported).toBe(0);
-        expect(moveImagePathIdentity).toHaveBeenCalledWith(
-            staleFlatPath,
-            resolvedPath,
-            expect.stringContaining('date.webp'),
-            'invokeai'
-        );
+        expect(moveImagePathIdentity).toHaveBeenCalledWith(staleFlatPath, resolvedPath, expect.stringContaining('date.webp'), 'invokeai');
         expect(insertImagesBatch).not.toHaveBeenCalled();
 
-        const declinedResult = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            { mode: 'live', syncBoards: false, syncFavorites: false }
-        );
+        const declinedResult = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
         expect(declinedResult.updated).toBe(0);
 
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths
-        }) as never);
-        const fallbackResult = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            { mode: 'live', syncBoards: false, syncFavorites: false }
+        vi.mocked(commands.verifyImagePaths).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths,
+                }) as never
         );
+        const fallbackResult = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
         expect(fallbackResult.updated).toBe(1);
     });
 
@@ -2675,12 +2951,7 @@ describe('syncImages live mode', () => {
         const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/old.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
-                return [
-                    { name: 'metadata_json' },
-                    { name: 'image_subfolder' },
-                    { name: 'thumbnail_name' },
-                    { name: 'is_intermediate' }
-                ];
+                return [{ name: 'metadata_json' }, { name: 'image_subfolder' }, { name: 'thumbnail_name' }, { name: 'is_intermediate' }];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
                 return [{ name: 'images' }];
@@ -2689,14 +2960,16 @@ describe('syncImages live mode', () => {
                 return [{ count: 0 }];
             }
             if (query.includes('SELECT i.image_name, i.image_subfolder')) {
-                return [{
-                    image_name: 'old.png',
-                    image_subfolder: '2026/04/18',
-                    thumbnail_name: 'old.webp',
-                    metadata_blob: null,
-                    created_at: '2026-04-18 12:00:00',
-                    is_intermediate: 0
-                }];
+                return [
+                    {
+                        image_name: 'old.png',
+                        image_subfolder: '2026/04/18',
+                        thumbnail_name: 'old.webp',
+                        metadata_blob: null,
+                        created_at: '2026-04-18 12:00:00',
+                        is_intermediate: 0,
+                    },
+                ];
             }
             return [];
         });
@@ -2704,65 +2977,67 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/wrong/old.png']
+            data: ['outputs/images/wrong/old.png'],
         } as never);
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths
-        }) as never);
+        vi.mocked(commands.verifyImagePaths).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths,
+                }) as never
+        );
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([staleFlatPath]);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: staleFlatPath,
-            url: `asset://${staleFlatPath}`,
-            thumbnailUrl: `asset://${staleFlatPath}`,
-            filename: 'old.png',
-            fileSize: 123,
-            timestamp: 100,
-            width: 512,
-            height: 512,
-            isFavorite: false,
-            isPinned: false,
-            isDeleted: false,
-            isMissing: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            }
-        }]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            {
+                id: staleFlatPath,
+                url: `asset://${staleFlatPath}`,
+                thumbnailUrl: `asset://${staleFlatPath}`,
+                filename: 'old.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: false,
+                isPinned: false,
+                isDeleted: false,
+                isMissing: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+            },
+        ]);
         vi.mocked(moveImagePathIdentities).mockResolvedValue({
             moved: 1,
             skippedTargetExists: 0,
-            skippedSourceMissing: 0
+            skippedSourceMissing: 0,
         });
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'manual',
-                afterTimestamp: Date.now(),
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'manual',
+            afterTimestamp: Date.now(),
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(1);
-        expect(moveImagePathIdentities).toHaveBeenCalledWith([{
-            oldId: staleFlatPath,
-            newId: resolvedPath,
-            thumbnailPath: resolvedPath,
-            thumbnailSource: null
-        }]);
+        expect(moveImagePathIdentities).toHaveBeenCalledWith([
+            {
+                oldId: staleFlatPath,
+                newId: resolvedPath,
+                thumbnailPath: resolvedPath,
+                thumbnailSource: null,
+            },
+        ]);
         expect(commands.listInvokeaiImages).not.toHaveBeenCalled();
         expect(moveImagePathIdentity).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
@@ -2771,12 +3046,7 @@ describe('syncImages live mode', () => {
     it('does not run broad stale-path repair during startup catch-up when there are no new InvokeAI rows', async () => {
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
-                return [
-                    { name: 'metadata_json' },
-                    { name: 'image_subfolder' },
-                    { name: 'is_intermediate' },
-                    { name: 'updated_at' }
-                ];
+                return [{ name: 'metadata_json' }, { name: 'image_subfolder' }, { name: 'is_intermediate' }, { name: 'updated_at' }];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
                 return [{ name: 'images' }];
@@ -2792,17 +3062,12 @@ describe('syncImages live mode', () => {
 
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'startup',
-                afterTimestamp: Date.now(),
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'startup',
+            afterTimestamp: Date.now(),
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);
@@ -2816,11 +3081,7 @@ describe('syncImages live mode', () => {
         const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/legacy.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
-                return [
-                    { name: 'metadata_json' },
-                    { name: 'thumbnail_name' },
-                    { name: 'is_intermediate' }
-                ];
+                return [{ name: 'metadata_json' }, { name: 'thumbnail_name' }, { name: 'is_intermediate' }];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
                 return [{ name: 'images' }];
@@ -2829,13 +3090,15 @@ describe('syncImages live mode', () => {
                 return [{ count: 0 }];
             }
             if (query.includes('SELECT i.image_name')) {
-                return [{
-                    image_name: 'legacy.png',
-                    thumbnail_name: 'legacy.webp',
-                    metadata_blob: null,
-                    created_at: '2026-04-18 12:00:00',
-                    is_intermediate: 0
-                }];
+                return [
+                    {
+                        image_name: 'legacy.png',
+                        thumbnail_name: 'legacy.webp',
+                        metadata_blob: null,
+                        created_at: '2026-04-18 12:00:00',
+                        is_intermediate: 0,
+                    },
+                ];
             }
             return [];
         });
@@ -2843,65 +3106,67 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: ['outputs/images/2026/04/18/legacy.png']
+            data: ['outputs/images/2026/04/18/legacy.png'],
         } as never);
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths
-        }) as never);
+        vi.mocked(commands.verifyImagePaths).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths,
+                }) as never
+        );
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([staleFlatPath]);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: staleFlatPath,
-            url: `asset://${staleFlatPath}`,
-            thumbnailUrl: `asset://${staleFlatPath}`,
-            filename: 'legacy.png',
-            fileSize: 123,
-            timestamp: 100,
-            width: 512,
-            height: 512,
-            isFavorite: false,
-            isPinned: false,
-            isDeleted: false,
-            isMissing: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            }
-        }]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            {
+                id: staleFlatPath,
+                url: `asset://${staleFlatPath}`,
+                thumbnailUrl: `asset://${staleFlatPath}`,
+                filename: 'legacy.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: false,
+                isPinned: false,
+                isDeleted: false,
+                isMissing: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+            },
+        ]);
         vi.mocked(moveImagePathIdentities).mockResolvedValue({
             moved: 1,
             skippedTargetExists: 0,
-            skippedSourceMissing: 0
+            skippedSourceMissing: 0,
         });
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'manual',
-                afterTimestamp: Date.now(),
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'manual',
+            afterTimestamp: Date.now(),
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(1);
-        expect(moveImagePathIdentities).toHaveBeenCalledWith([{
-            oldId: staleFlatPath,
-            newId: resolvedPath,
-            thumbnailPath: resolvedPath,
-            thumbnailSource: null
-        }]);
+        expect(moveImagePathIdentities).toHaveBeenCalledWith([
+            {
+                oldId: staleFlatPath,
+                newId: resolvedPath,
+                thumbnailPath: resolvedPath,
+                thumbnailSource: null,
+            },
+        ]);
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
@@ -2910,10 +3175,7 @@ describe('syncImages live mode', () => {
         const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/relative.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
-                return [
-                    { name: 'metadata_json' },
-                    { name: 'is_intermediate' }
-                ];
+                return [{ name: 'metadata_json' }, { name: 'is_intermediate' }];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
                 return [{ name: 'images' }];
@@ -2924,80 +3186,82 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT i.image_name') && query.includes(' IN (')) {
                 return [];
             }
-            if (query.includes('SELECT i.image_name') && query.includes("instr(REPLACE(i.image_name")) {
-                return [{
-                    image_name: '2026/04/18/relative.png',
-                    metadata_blob: null,
-                    created_at: '2026-04-18 12:00:00',
-                    is_intermediate: 0
-                }];
+            if (query.includes('SELECT i.image_name') && query.includes('instr(REPLACE(i.image_name')) {
+                return [
+                    {
+                        image_name: '2026/04/18/relative.png',
+                        metadata_blob: null,
+                        created_at: '2026-04-18 12:00:00',
+                        is_intermediate: 0,
+                    },
+                ];
             }
             return [];
         });
 
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths
-        }) as never);
+        vi.mocked(commands.verifyImagePaths).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths,
+                }) as never
+        );
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([staleFlatPath]);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: staleFlatPath,
-            url: `asset://${staleFlatPath}`,
-            thumbnailUrl: `asset://${staleFlatPath}`,
-            filename: 'relative.png',
-            fileSize: 123,
-            timestamp: 100,
-            width: 512,
-            height: 512,
-            isFavorite: false,
-            isPinned: false,
-            isDeleted: false,
-            isMissing: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            }
-        }]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            {
+                id: staleFlatPath,
+                url: `asset://${staleFlatPath}`,
+                thumbnailUrl: `asset://${staleFlatPath}`,
+                filename: 'relative.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: false,
+                isPinned: false,
+                isDeleted: false,
+                isMissing: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+            },
+        ]);
         vi.mocked(moveImagePathIdentities).mockResolvedValue({
             moved: 1,
             skippedTargetExists: 0,
-            skippedSourceMissing: 0
+            skippedSourceMissing: 0,
         });
 
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'manual',
-                afterTimestamp: Date.now(),
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'manual',
+            afterTimestamp: Date.now(),
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(1);
-        expect(moveImagePathIdentities).toHaveBeenCalledWith([{
-            oldId: staleFlatPath,
-            newId: resolvedPath,
-            thumbnailPath: resolvedPath,
-            thumbnailSource: null
-        }]);
-        const repairQueries = selectMock.mock.calls
-            .map(([query]) => query)
-            .filter(query => query.includes('SELECT i.image_name'));
-        expect(repairQueries.some(query => query.includes("instr(REPLACE(i.image_name"))).toBe(true);
-        expect(repairQueries.some(query => query.includes('LIKE ? ESCAPE'))).toBe(false);
+        expect(moveImagePathIdentities).toHaveBeenCalledWith([
+            {
+                oldId: staleFlatPath,
+                newId: resolvedPath,
+                thumbnailPath: resolvedPath,
+                thumbnailSource: null,
+            },
+        ]);
+        const repairQueries = selectMock.mock.calls.map(([query]) => query).filter((query) => query.includes('SELECT i.image_name'));
+        expect(repairQueries.some((query) => query.includes('instr(REPLACE(i.image_name'))).toBe(true);
+        expect(repairQueries.some((query) => query.includes('LIKE ? ESCAPE'))).toBe(false);
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
@@ -3005,10 +3269,7 @@ describe('syncImages live mode', () => {
         const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/duplicate.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
-                return [
-                    { name: 'metadata_json' },
-                    { name: 'is_intermediate' }
-                ];
+                return [{ name: 'metadata_json' }, { name: 'is_intermediate' }];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
                 return [{ name: 'images' }];
@@ -3019,69 +3280,69 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT i.image_name') && query.includes(' IN (')) {
                 return [];
             }
-            if (query.includes('SELECT i.image_name') && query.includes("instr(REPLACE(i.image_name")) {
+            if (query.includes('SELECT i.image_name') && query.includes('instr(REPLACE(i.image_name')) {
                 return [
                     {
                         image_name: '2026/04/18/duplicate.png',
                         metadata_blob: null,
                         created_at: '2026-04-18 12:00:00',
-                        is_intermediate: 0
+                        is_intermediate: 0,
                     },
                     {
                         image_name: 'txt2img/duplicate.png',
                         metadata_blob: null,
                         created_at: '2026-04-18 12:00:01',
-                        is_intermediate: 0
-                    }
+                        is_intermediate: 0,
+                    },
                 ];
             }
             return [];
         });
 
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
-            status: 'ok',
-            data: paths
-        }) as never);
-        vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([staleFlatPath]);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: staleFlatPath,
-            url: `asset://${staleFlatPath}`,
-            thumbnailUrl: `asset://${staleFlatPath}`,
-            filename: 'duplicate.png',
-            fileSize: 123,
-            timestamp: 100,
-            width: 512,
-            height: 512,
-            isFavorite: false,
-            isPinned: false,
-            isDeleted: false,
-            isMissing: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            }
-        }]);
-
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
-            {
-                mode: 'manual',
-                afterTimestamp: Date.now(),
-                syncBoards: false,
-                syncFavorites: false
-            }
+        vi.mocked(commands.verifyImagePaths).mockImplementation(
+            async (paths: string[]) =>
+                ({
+                    status: 'ok',
+                    data: paths,
+                }) as never
         );
+        vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([staleFlatPath]);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            {
+                id: staleFlatPath,
+                url: `asset://${staleFlatPath}`,
+                thumbnailUrl: `asset://${staleFlatPath}`,
+                filename: 'duplicate.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: false,
+                isPinned: false,
+                isDeleted: false,
+                isMissing: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+            },
+        ]);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'manual',
+            afterTimestamp: Date.now(),
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);
@@ -3093,10 +3354,7 @@ describe('syncImages live mode', () => {
         const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/duplicate.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
-                return [
-                    { name: 'metadata_json' },
-                    { name: 'is_intermediate' }
-                ];
+                return [{ name: 'metadata_json' }, { name: 'is_intermediate' }];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
                 return [{ name: 'images' }];
@@ -3105,12 +3363,14 @@ describe('syncImages live mode', () => {
                 return [{ count: 0 }];
             }
             if (query.includes('SELECT i.image_name')) {
-                return [{
-                    image_name: 'duplicate.png',
-                    metadata_blob: null,
-                    created_at: '2026-04-18 12:00:00',
-                    is_intermediate: 0
-                }];
+                return [
+                    {
+                        image_name: 'duplicate.png',
+                        metadata_blob: null,
+                        created_at: '2026-04-18 12:00:00',
+                        is_intermediate: 0,
+                    },
+                ];
             }
             return [];
         });
@@ -3118,50 +3378,44 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
-            data: [
-                'outputs/images/2026/04/18/duplicate.png',
-                'outputs/images/txt2img/duplicate.png'
-            ]
+            data: ['outputs/images/2026/04/18/duplicate.png', 'outputs/images/txt2img/duplicate.png'],
         } as never);
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([staleFlatPath]);
-        vi.mocked(getImagesByIds).mockResolvedValue([{
-            id: staleFlatPath,
-            url: `asset://${staleFlatPath}`,
-            thumbnailUrl: `asset://${staleFlatPath}`,
-            filename: 'duplicate.png',
-            fileSize: 123,
-            timestamp: 100,
-            width: 512,
-            height: 512,
-            isFavorite: false,
-            isPinned: false,
-            isDeleted: false,
-            isMissing: false,
-            metadata: {
-                tool: GeneratorTool.INVOKEAI,
-                model: 'Test Model',
-                seed: 1,
-                steps: 20,
-                cfg: 7,
-                sampler: 'Euler',
-                positivePrompt: 'test',
-                negativePrompt: '',
-                loras: [],
-                controlNets: []
-            }
-        }]);
-
-        const result = await syncImages(
-            'D:/AmbitFixtures/InvokeAI/databases',
-            vi.fn(),
-            undefined,
+        vi.mocked(getImagesByIds).mockResolvedValue([
             {
-                mode: 'manual',
-                afterTimestamp: Date.now(),
-                syncBoards: false,
-                syncFavorites: false
-            }
-        );
+                id: staleFlatPath,
+                url: `asset://${staleFlatPath}`,
+                thumbnailUrl: `asset://${staleFlatPath}`,
+                filename: 'duplicate.png',
+                fileSize: 123,
+                timestamp: 100,
+                width: 512,
+                height: 512,
+                isFavorite: false,
+                isPinned: false,
+                isDeleted: false,
+                isMissing: false,
+                metadata: {
+                    tool: GeneratorTool.INVOKEAI,
+                    model: 'Test Model',
+                    seed: 1,
+                    steps: 20,
+                    cfg: 7,
+                    sampler: 'Euler',
+                    positivePrompt: 'test',
+                    negativePrompt: '',
+                    loras: [],
+                    controlNets: [],
+                },
+            },
+        ]);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI/databases', vi.fn(), undefined, {
+            mode: 'manual',
+            afterTimestamp: Date.now(),
+            syncBoards: false,
+            syncFavorites: false,
+        });
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);

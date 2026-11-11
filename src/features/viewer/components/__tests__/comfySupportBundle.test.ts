@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ComfyParserDiagnosticsReport } from '../../../../bindings';
-import {
-    buildComfySupportBundle,
-    buildDiagnosticsClipboardPayload
-} from '../comfySupportBundle';
+import { buildComfySupportBundle, buildDiagnosticsClipboardPayload } from '../comfySupportBundle';
 
 const diagnostics: ComfyParserDiagnosticsReport = {
     appVersion: '0.10.0',
@@ -20,12 +17,14 @@ const diagnostics: ComfyParserDiagnosticsReport = {
     attemptedLayers: ['workflow_chunk', 'sampler_traversal'],
     fieldSources: { model: 'sampler_traversal' },
     fieldSourceNodeIds: { model: ['3'] },
-    resourceSources: [{
-        field: 'loras',
-        value: 'detail_style',
-        layer: 'sampler_traversal',
-        nodeIds: ['7']
-    }],
+    resourceSources: [
+        {
+            field: 'loras',
+            value: 'detail_style',
+            layer: 'sampler_traversal',
+            nodeIds: ['7'],
+        },
+    ],
     metadata: {
         tool: 'ComfyUI',
         model: 'model',
@@ -42,30 +41,25 @@ const diagnostics: ComfyParserDiagnosticsReport = {
         hypernetworks: [],
         generationType: 'txt2img',
         hasWorkflowHint: true,
-        hasWorkflowJson: true
-    }
+        hasWorkflowJson: true,
+    },
 };
 
 const image = {
     filename: 'private-name.WEBP',
     width: 1024,
-    height: 768
+    height: 768,
 };
 
 const chunks = {
     workflow: '{"local_filename":"D:/models/private.safetensors"}',
     parameters: 'private prompt',
-    prompt: '{"1":{"class_type":"SaveImage"}}'
+    prompt: '{"1":{"class_type":"SaveImage"}}',
 };
 
 describe('ComfyUI support bundle', () => {
     it('builds a deterministic full bundle with exact sorted chunks', () => {
-        const bundle = buildComfySupportBundle(
-            image,
-            chunks,
-            diagnostics,
-            '2026-08-08T12:00:00.000Z'
-        );
+        const bundle = buildComfySupportBundle(image, chunks, diagnostics, '2026-08-08T12:00:00.000Z');
 
         expect(bundle).toEqual({
             schemaVersion: 1,
@@ -77,13 +71,13 @@ describe('ComfyUI support bundle', () => {
             chunkLengths: {
                 parameters: chunks.parameters.length,
                 prompt: chunks.prompt.length,
-                workflow: chunks.workflow.length
+                workflow: chunks.workflow.length,
             },
             chunks: {
                 parameters: chunks.parameters,
                 prompt: chunks.prompt,
-                workflow: chunks.workflow
-            }
+                workflow: chunks.workflow,
+            },
         });
         expect(Object.keys(bundle.chunks)).toEqual(['parameters', 'prompt', 'workflow']);
     });
@@ -97,7 +91,7 @@ describe('ComfyUI support bundle', () => {
         expect(payload.chunkLengths).toEqual({
             parameters: chunks.parameters.length,
             prompt: chunks.prompt.length,
-            workflow: chunks.workflow.length
+            workflow: chunks.workflow.length,
         });
         expect(payload.fieldSourceNodeIds).toEqual({ model: ['3'] });
         expect(payload.resourceSources).toEqual(diagnostics.resourceSources);

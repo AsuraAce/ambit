@@ -39,9 +39,19 @@ describe('CollectionContext', () => {
         const smart: SmartCollection = {
             ...baseCollection('smart'),
             filters: {
-                searchQuery: '', models: [], tools: [GeneratorTool.UNKNOWN], loras: [], embeddings: [],
-                hypernetworks: [], samplers: [], generationTypes: [], controlNets: [], ipAdapters: [],
-                dateRange: 'all', favoritesOnly: false, collectionId: null,
+                searchQuery: '',
+                models: [],
+                tools: [GeneratorTool.UNKNOWN],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                samplers: [],
+                generationTypes: [],
+                controlNets: [],
+                ipAdapters: [],
+                dateRange: 'all',
+                favoritesOnly: false,
+                collectionId: null,
             },
         };
         store.collections = [baseCollection('regular'), smart];
@@ -49,8 +59,8 @@ describe('CollectionContext', () => {
         const { result } = renderHook(() => useCollections(), { wrapper });
 
         expect(store.initialize).not.toHaveBeenCalled();
-        expect(result.current.collections.map(item => item.id)).toEqual(['regular']);
-        expect(result.current.smartCollections.map(item => item.id)).toEqual(['smart']);
+        expect(result.current.collections.map((item) => item.id)).toEqual(['regular']);
+        expect(result.current.smartCollections.map((item) => item.id)).toEqual(['smart']);
         await act(() => result.current.refreshCollections(true));
         await act(() => result.current.refreshCollectionThumbnails(false));
         expect(store.refreshCollections).toHaveBeenCalledWith(true);

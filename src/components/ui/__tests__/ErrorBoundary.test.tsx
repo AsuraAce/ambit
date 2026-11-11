@@ -18,13 +18,21 @@ describe('ui ErrorBoundary', () => {
     });
 
     it('passes through children when rendering succeeds', () => {
-        render(<ErrorBoundary><UnstableChild /></ErrorBoundary>);
+        render(
+            <ErrorBoundary>
+                <UnstableChild />
+            </ErrorBoundary>
+        );
         expect(screen.getByText('Recovered content')).toBeTruthy();
     });
 
     it('shows the error and retries the failed child', () => {
         shouldThrow = true;
-        render(<ErrorBoundary><UnstableChild /></ErrorBoundary>);
+        render(
+            <ErrorBoundary>
+                <UnstableChild />
+            </ErrorBoundary>
+        );
 
         expect(screen.getByText('render failed')).toBeTruthy();
         expect(console.error).toHaveBeenCalledWith('Uncaught error:', expect.any(Error), expect.any(Object));
@@ -37,13 +45,19 @@ describe('ui ErrorBoundary', () => {
     it('uses custom and generic fallbacks when requested', () => {
         shouldThrow = true;
         const { unmount } = render(
-            <ErrorBoundary fallback={<div>Custom fallback</div>}><UnstableChild /></ErrorBoundary>
+            <ErrorBoundary fallback={<div>Custom fallback</div>}>
+                <UnstableChild />
+            </ErrorBoundary>
         );
         expect(screen.getByText('Custom fallback')).toBeTruthy();
         unmount();
 
         errorMessage = '';
-        render(<ErrorBoundary><UnstableChild /></ErrorBoundary>);
+        render(
+            <ErrorBoundary>
+                <UnstableChild />
+            </ErrorBoundary>
+        );
         expect(screen.getByText('An unexpected error occurred while rendering this view.')).toBeTruthy();
     });
 });
