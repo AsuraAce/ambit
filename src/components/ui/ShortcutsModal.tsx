@@ -151,7 +151,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
             onClick={onClose}
         >
             <div
-                className="w-full max-w-lg bg-white dark:bg-[#09090b] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transform scale-100 animate-in zoom-in-95 duration-300 ease-spring"
+                className="w-full max-w-lg bg-white dark:bg-slate-950 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transform scale-100 animate-in zoom-in-95 duration-300 ease-spring"
                 onClick={e => e.stopPropagation()}
             >
 
@@ -167,21 +167,21 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 <div className="flex border-b border-gray-100 dark:border-white/5">
                     <button
                         onClick={() => setActiveTab('shortcuts')}
-                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'shortcuts' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-[#09090b]' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'shortcuts' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-slate-950' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                     >
                         <Keyboard className="w-4 h-4" /> Shortcuts
                         {activeTab === 'shortcuts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500" />}
                     </button>
                     <button
                         onClick={() => setActiveTab('search')}
-                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'search' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-[#09090b]' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'search' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-slate-950' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                     >
                         <Search className="w-4 h-4" /> Search Syntax
                         {activeTab === 'search' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500" />}
                     </button>
                     <button
                         onClick={() => setActiveTab('setup')}
-                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'setup' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-[#09090b]' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'setup' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-slate-950' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                     >
                         <ListChecks className="w-4 h-4" /> Setup Guide
                         {activeTab === 'setup' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500" />}
@@ -335,7 +335,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                             <button
                                 type="button"
                                 onClick={onOpenSetupGuide}
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sage-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-sage-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#09090b]"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sage-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-sage-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
                             >
                                 <ListChecks className="h-4 w-4" /> Open setup guide
                             </button>

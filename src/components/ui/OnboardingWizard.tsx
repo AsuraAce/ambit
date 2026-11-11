@@ -237,7 +237,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 onKeyDown={handleDialogKeyDown}
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="flex h-[calc(100dvh-1rem)] max-h-[680px] min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0c0c0e] sm:h-[calc(100dvh-2rem)] md:flex-row"
+                className="flex h-[calc(100dvh-1rem)] max-h-[680px] min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-surface-modal sm:h-[calc(100dvh-2rem)] md:flex-row"
             >
                 <aside className="relative hidden w-1/3 flex-col justify-between overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-900 to-sage-900/40 p-8 text-white md:flex lg:p-10">
                     <div className="pointer-events-none absolute inset-0 bg-[url('/branding/noise.svg')] opacity-20 mix-blend-overlay" />
