@@ -160,7 +160,16 @@ pub fn scope_check_path(
             break;
         }
         if let Ok(base) = canonicalize(ancestor) {
-            return Some(base.join(path.strip_prefix(ancestor).ok()?));
+            let rest = path.strip_prefix(ancestor).ok()?;
+            // `join` replaces the base with an absolute or prefixed remainder, such
+            // as the `C:\allowed\x.png` in `D:\outside\C:\allowed\x.png`.
+            if !rest
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+            {
+                return None;
+            }
+            return Some(base.join(rest));
         }
     }
     Some(path.to_path_buf())
@@ -976,6 +985,21 @@ mod tests {
             scope_check_path(
                 &link.join("gone").join("..").join("..").join("secret.png"),
                 canonicalize
+            ),
+            None
+        );
+        // A drive-letter component after the existing folder would make `join` return
+        // the attacker's own absolute path instead of one under that folder.
+        #[cfg(windows)]
+        {
+            let injected = PathBuf::from(format!("{}\\C:\\allowed\\x.png", root.display()));
+            assert_eq!(scope_check_path(&injected, canonicalize), None);
+        }
+        // With no existing ancestor the spelling is matched literally, so `..` is refused there too.
+        assert_eq!(
+            scope_check_path(
+                &PathBuf::from("unplugged").join("..").join("secret.png"),
+                |_| Err(std::io::ErrorKind::NotFound.into())
             ),
             None
         );

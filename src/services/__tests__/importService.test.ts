@@ -655,7 +655,9 @@ describe('processTargetedFiles', () => {
     });
 
     // Review of #402: a drive root cannot be registered, so its scan is refused. It
-    // must be reported, not dropped silently and marked complete.
+    // must be reported, not dropped silently. It must not be marked complete either:
+    // the folder monitor would set its scan cursor, and every later launch would take
+    // the incremental scan, which fails with no warning.
     it.each(['D:\\', 'D:/', 'E:', '/', '\\\\server\\share'])('reports the filesystem root %s instead of scanning it', async (root) => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         mocks.scanDirectoryWithStats.mockResolvedValue({ status: 'ok', data: [] });
@@ -663,7 +665,7 @@ describe('processTargetedFiles', () => {
         const result = await processFoldersUnified([{ path: root }, { path: 'C:/folder' }], {});
 
         expect(result.unscannableRootPaths).toEqual([normalizePath(root)]);
-        expect(result.completedSourcePaths).toContain(normalizePath(root));
+        expect(result.completedSourcePaths).toEqual(['C:/folder']);
         expect(mocks.ensureFolderAccessible).not.toHaveBeenCalledWith(root);
         expect(mocks.scanDirectoryWithStats.mock.calls.map(([path]) => path)).toEqual(['C:/folder']);
         warn.mockRestore();

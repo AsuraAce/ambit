@@ -802,10 +802,11 @@ export async function processFoldersUnified(
             }
 
             // Ambit never adds a filesystem root to its scope, so the scan would refuse it.
+            // It is not marked completed: a completed folder gets a scan cursor, and later
+            // launches would then take the incremental scan, which fails without a warning.
             if (isFilesystemRoot(folder.path)) {
                 console.warn(`[ImportUnified] Skipping ${folder.path}: a filesystem root cannot be scanned`);
                 result.unscannableRootPaths = [...(result.unscannableRootPaths ?? []), sourcePath];
-                pushUniquePath(result.completedSourcePaths, sourcePath);
                 continue;
             }
 
