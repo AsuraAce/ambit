@@ -319,6 +319,22 @@ describe('useImportOps', () => {
         expect(mocks.addToast).not.toHaveBeenCalledWith('Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s)', 'success');
     });
 
+    // Review of #402: a drive root cannot be registered, so every scan skips it. The
+    // user must be told, even in a background import that imports nothing.
+    it('warns about a skipped drive root even when nothing was imported', async () => {
+        mocks.processFoldersUnified.mockResolvedValueOnce({ ...emptyImportResult(), unscannableRootPaths: ['D:/'] });
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportFolders([{ path: 'D:\\' }], { mode: 'background' });
+        });
+
+        expect(mocks.addToast).toHaveBeenCalledWith(
+            "Ambit can't scan a whole drive (D:/). In Settings → Connections → Folders, replace it with a subfolder.",
+            'warning'
+        );
+    });
+
     it('shows success when a manual folder import has images and no failures', async () => {
         mocks.processFoldersUnified.mockResolvedValueOnce(importResult({
             images: [importedImage('C:/watch/imported.png')],

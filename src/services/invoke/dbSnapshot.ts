@@ -3,6 +3,9 @@ import type { AppSettings, InvokeDbSnapshotFile, InvokeDbSnapshotState, InvokeSo
 import { unwrap } from '../../utils/spectaUtils';
 import type { InvokeSyncScope } from './syncScope';
 import { isSameInvokePath } from './pathIdentity';
+import { ensureFolderAccessible } from '../assetScope';
+import { normalizeInvokeRoot } from '../../utils/pathUtils';
+import { resolveInvokePaths } from './connection';
 
 interface InvokeDbSnapshotCommandResult {
     dbPath: string;
@@ -144,10 +147,26 @@ export const isInvokeDbSnapshotScopeCurrent = (
     return (saved.scopeOwnerId ?? null) === ownerId;
 };
 
+/** The snapshot the backend reports for a database that does not exist. */
+const missingDatabaseSnapshot = (rootPath: string): InvokeDbSnapshotCommandResult => {
+    const { dbPath } = resolveInvokePaths(rootPath);
+    return {
+        dbPath,
+        files: [dbPath, `${dbPath}-wal`, `${dbPath}-shm`].map(path => ({
+            path, exists: false, size: 0, modifiedMs: null,
+        })),
+    };
+};
+
 export const readInvokeDbSnapshotState = async (
     rootPath: string,
     config: InvokeDbSnapshotConfig
 ): Promise<InvokeDbSnapshotState> => {
-    const snapshot = await unwrap(commands.getInvokeDbSnapshot(rootPath));
+    // The snapshot refuses a database outside the scope; register the root first.
+    // A configured root that cannot be registered does not exist, so report its
+    // database missing rather than asking the backend about an unscoped path.
+    const snapshot = await ensureFolderAccessible(normalizeInvokeRoot(rootPath))
+        ? await unwrap(commands.getInvokeDbSnapshot(rootPath))
+        : missingDatabaseSnapshot(rootPath);
     return buildInvokeDbSnapshotState(snapshot, config);
 };

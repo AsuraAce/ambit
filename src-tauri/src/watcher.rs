@@ -241,6 +241,13 @@ pub fn start_native_folder_watcher(
         return Ok(());
     }
 
+    // Refuse before the running watcher is replaced, so a refused call leaves it as it was.
+    crate::scanner::utils::validate_scoped_roots(
+        &paths,
+        |path| crate::scanner::utils::fs_scope_allows(&app, path),
+        "Watched folder",
+    )?;
+
     let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
 
     if watcher_guard.is_some() {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvokeSourceDatabase as Database } from '../sourceDatabase';
 import { startupDiagnostics } from '../../../utils/startupDiagnostics';
 import { commands } from '../../../bindings';
-import { ensureAssetPathAccessible } from '../../assetScope';
+import { ensureFolderAccessible } from '../../assetScope';
 import { inspectInvokeConnection } from '../connection';
 import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, getInvokeSourceDatabase, invalidateInvokeSourceDatabase, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
 
@@ -21,7 +21,7 @@ vi.mock('../sourceDatabase', () => ({
 }));
 
 vi.mock('../../assetScope', () => ({
-    ensureAssetPathAccessible: vi.fn().mockResolvedValue(undefined)
+    ensureFolderAccessible: vi.fn(async () => true)
 }));
 
 const createDb = (select: (sql: string) => Promise<unknown[]>) => ({
@@ -38,7 +38,7 @@ describe('InvokeAI connection helpers', () => {
     });
 
     it('inspects an existing candidate without importing or changing its database', async () => {
-        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
+        const snapshot = vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
             dbPath: 'D:/Invoke/databases/invokeai.db',
             files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
         } });
@@ -46,8 +46,22 @@ describe('InvokeAI connection helpers', () => {
         sqlMock.load.mockResolvedValue(db);
         await expect(inspectInvokeConnection(' D:/Invoke ')).resolves.toMatchObject({ schemaMode: 'legacy' });
         expect(db.select).toHaveBeenCalledExactlyOnceWith('PRAGMA table_info(images)');
-        // A typed candidate enters the filesystem scope before the read-only source reader opens it.
-        expect(ensureAssetPathAccessible).toHaveBeenCalledWith('D:/Invoke', { assumeDirectory: true });
+        // #384: a typed candidate enters the filesystem scope before the snapshot,
+        // which refuses a database outside it, and before the source reader opens it.
+        expect(ensureFolderAccessible).toHaveBeenCalledWith('D:/Invoke');
+        expect(vi.mocked(ensureFolderAccessible).mock.invocationCallOrder.at(-1))
+            .toBeLessThan(snapshot.mock.invocationCallOrder.at(-1)!);
+    });
+
+    it('rejects a candidate folder that cannot be registered without asking for a snapshot', async () => {
+        vi.mocked(ensureFolderAccessible).mockResolvedValueOnce(false);
+        const snapshot = vi.spyOn(commands, 'getInvokeDbSnapshot');
+        snapshot.mockClear();
+        sqlMock.load.mockClear();
+
+        await expect(inspectInvokeConnection('D:/Typo')).rejects.toThrow('Could not find an existing InvokeAI database at this path.');
+        expect(snapshot).not.toHaveBeenCalled();
+        expect(sqlMock.load).not.toHaveBeenCalled();
     });
 
     it('rejects a non-Invoke database rather than treating missing tables as legacy ownership', async () => {

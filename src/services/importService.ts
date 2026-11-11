@@ -5,7 +5,8 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { exists } from '@tauri-apps/plugin-fs';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
-import { normalizePath } from '../utils/pathUtils';
+import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
+import { ensureFolderAccessible, filterAccessibleFolders } from './assetScope';
 import { useLibraryStore } from '../stores/libraryStore';
 import { getDb } from './db/connection';
 import {
@@ -73,6 +74,8 @@ export interface ImportResult {
     completedSourcePaths: string[];
     cancelledSourcePaths: string[];
     videoSummary?: VideoImportSummary;
+    /** Folders skipped because they are a filesystem root such as `D:\`. */
+    unscannableRootPaths?: string[];
 }
 
 export interface ImportProgressMeta {
@@ -794,8 +797,22 @@ export async function processFoldersUnified(
                 });
             }
 
+            // Ambit never adds a filesystem root to its scope, so the scan would refuse it.
+            // It is not marked completed: a completed folder gets a scan cursor, and later
+            // launches would then take the incremental scan, which fails without a warning.
+            if (isFilesystemRoot(folder.path)) {
+                console.warn(`[ImportUnified] Skipping ${folder.path}: a filesystem root cannot be scanned`);
+                result.unscannableRootPaths = [...(result.unscannableRootPaths ?? []), sourcePath];
+                continue;
+            }
+
             // Attempt to scan as directory first.
             // Note: scanDirectoryWithStats should be recursive on backend.
+            // The scan refuses folders outside the scope. A picked file is already in
+            // scope through the dialog, and registration accepts only folders.
+            if (!candidateMediaType({ path: folder.path, modified: 0, size: 0 })) {
+                await ensureFolderAccessible(folder.path);
+            }
             const files = await unwrap(commands.scanDirectoryWithStats(folder.path));
             if (abortSignal?.aborted) {
                 result.wasCancelled = true;
@@ -1143,7 +1160,10 @@ export const processTargetedFiles = async (
 
 export const scanResourceThumbnails = async (paths: string[]): Promise<ThumbnailScanResult> => {
     try {
-        const result = await unwrap(commands.scanModelThumbnails(paths));
+        // The scan refuses folders outside the scope. A folder that cannot be
+        // registered is missing, and the scan skipped missing folders anyway.
+        const accessiblePaths = await filterAccessibleFolders(paths);
+        const result = await unwrap(commands.scanModelThumbnails(accessiblePaths));
         return result;
     } catch (e) {
         console.error('Failed to scan resource thumbnails', e);

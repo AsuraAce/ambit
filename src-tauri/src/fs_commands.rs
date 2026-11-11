@@ -226,8 +226,31 @@ fn resolve_eligible_thumbnail_file(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub fn get_invoke_db_snapshot(root_path: String) -> Result<InvokeDbSnapshot, String> {
-    let db_path = resolve_invoke_db_path(&root_path);
+pub fn get_invoke_db_snapshot(
+    app: tauri::AppHandle<Wry>,
+    root_path: String,
+) -> Result<InvokeDbSnapshot, String> {
+    invoke_db_snapshot_in_scope(&root_path, |path| {
+        crate::scanner::utils::fs_scope_allows(&app, path)
+    })
+}
+
+/// Reports InvokeAI's database files only when the resolved `invokeai.db` is
+/// inside the registered filesystem scope, as `select_invoke_source` requires.
+fn invoke_db_snapshot_in_scope<F>(
+    root_path: &str,
+    mut is_allowed: F,
+) -> Result<InvokeDbSnapshot, String>
+where
+    F: FnMut(&Path) -> bool,
+{
+    let db_path = resolve_invoke_db_path(root_path);
+    if root_path.trim().is_empty() || !db_path.is_absolute() || !is_allowed(&db_path) {
+        return Err(format!(
+            "InvokeAI database is outside the allowed filesystem scope: {}",
+            db_path.to_string_lossy()
+        ));
+    }
     let db_name = db_path
         .file_name()
         .ok_or_else(|| "Invalid InvokeAI database path".to_string())?
@@ -487,7 +510,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_removed_images_with, get_invoke_db_snapshot, path_is_known_media_file,
+        delete_removed_images_with, invoke_db_snapshot_in_scope, path_is_known_media_file,
         resolve_eligible_thumbnail_file, resolve_invoke_db_path, validate_library_scope_directory,
     };
     use rusqlite::Connection;
@@ -525,7 +548,7 @@ mod tests {
         fs::create_dir_all(&databases_dir).unwrap();
         fs::write(databases_dir.join("invokeai.db"), b"test").unwrap();
 
-        let snapshot = get_invoke_db_snapshot(temp_root.to_string_lossy().to_string()).unwrap();
+        let snapshot = invoke_db_snapshot_in_scope(&temp_root.to_string_lossy(), |_| true).unwrap();
 
         assert_eq!(snapshot.files.len(), 3);
         assert!(snapshot.files[0].exists);
@@ -537,6 +560,31 @@ mod tests {
         assert!(snapshot.files[2].path.ends_with("invokeai.db-shm"));
         assert!(!snapshot.files[2].exists);
 
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    // #384: the snapshot reports a database's size and modification time, so it
+    // must not describe a database the user never put in scope.
+    #[test]
+    fn snapshot_refuses_a_database_outside_the_registered_scope() {
+        let temp_root = temp_dir("invoke_snapshot_scope");
+        let databases_dir = temp_root.join("databases");
+        fs::create_dir_all(&databases_dir).unwrap();
+        let db_path = databases_dir.join("invokeai.db");
+        fs::write(&db_path, b"test").unwrap();
+        let mut checked = Vec::new();
+
+        let refused = invoke_db_snapshot_in_scope(&temp_root.to_string_lossy(), |path| {
+            checked.push(path.to_path_buf());
+            false
+        });
+
+        assert!(refused
+            .unwrap_err()
+            .starts_with("InvokeAI database is outside the allowed filesystem scope"));
+        assert_eq!(checked, vec![db_path]);
+        assert!(invoke_db_snapshot_in_scope("  ", |_| true).is_err());
+        assert!(invoke_db_snapshot_in_scope("relative/invoke", |_| true).is_err());
         let _ = fs::remove_dir_all(temp_root);
     }
 

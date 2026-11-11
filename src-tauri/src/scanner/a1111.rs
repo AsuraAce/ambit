@@ -53,10 +53,28 @@ struct DirectoryListing {
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn discover_a1111_folders(root_path: String) -> Result<A1111DiscoveryResult, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(discover_a1111_folders_impl(&root_path)))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn discover_a1111_folders(
+    app: tauri::AppHandle,
+    root_path: String,
+) -> Result<A1111DiscoveryResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        discover_a1111_folders_in_scope(&root_path, |path| {
+            super::utils::fs_scope_allows(&app, path)
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn discover_a1111_folders_in_scope<F>(
+    root_path: &str,
+    is_allowed: F,
+) -> Result<A1111DiscoveryResult, String>
+where
+    F: FnMut(&Path) -> bool,
+{
+    super::utils::validate_scoped_roots(&[root_path.to_string()], is_allowed, "A1111 folder")?;
+    Ok(discover_a1111_folders_impl(root_path))
 }
 
 fn discover_a1111_folders_impl(root_path: &str) -> A1111DiscoveryResult {
@@ -592,6 +610,44 @@ mod tests {
     fn write_file(path: &Path) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"image").unwrap();
+    }
+
+    // #384: discovery walks the whole tree under the root the webview names.
+    #[test]
+    fn discovery_refuses_a_root_outside_the_registered_scope() {
+        let root = temp_discovery_dir("outside_scope");
+        write_file(&root.join("outputs/txt2img-images/00001.png"));
+        let mut checked = Vec::new();
+
+        let result = discover_a1111_folders_in_scope(&root.to_string_lossy(), |path| {
+            checked.push(path.to_path_buf());
+            false
+        });
+
+        assert!(result
+            .unwrap_err()
+            .starts_with("A1111 folder is outside the allowed filesystem scope"));
+        assert_eq!(checked, vec![root.clone()]);
+        assert!(
+            discover_a1111_folders_in_scope(&root.to_string_lossy(), |_| true)
+                .unwrap()
+                .candidates
+                .iter()
+                .any(|candidate| candidate.image_count == 1)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // A typed root that does not exist cannot be registered, so it stays out of
+    // scope and discovery refuses it instead of reporting an empty install.
+    #[test]
+    fn discovery_refuses_a_missing_root_that_was_never_registered() {
+        let missing = temp_discovery_dir("missing_root").join("not-there");
+
+        let result =
+            discover_a1111_folders_in_scope(&missing.to_string_lossy(), |path| path.exists());
+
+        assert!(result.is_err());
     }
 
     #[test]

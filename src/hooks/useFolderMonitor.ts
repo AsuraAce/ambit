@@ -11,11 +11,13 @@ import {
     orderFacetTypes
 } from '../utils/touchedFacetTypes';
 import { formatStableImportProgress } from '../utils/importProgress';
-import { isImportSourceCancelled, isImportSourceCompleted } from '../utils/importSourceStatus';
+import { formatUnscannableRootsWarning, isImportSourceCancelled, isImportSourceCompleted } from '../utils/importSourceStatus';
+import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
+import { ensureFolderAccessible } from '../services/assetScope';
 import type { ImportProgressCallback, ImportResult } from '../services/importService';
 import type { InvokeSyncOutcome } from '../contexts/SyncContext';
 
@@ -40,7 +42,7 @@ interface UseFolderMonitorProps {
     monitoredFolders: MonitoredFolder[];
     onScan: (folders: { path: string, variant?: string }[], options?: FolderScanOptions) => Promise<ImportResult | void>;
     handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<ImportResult | void>;
-    addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
+    addToast: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
     refreshMetadata: () => Promise<void>;
     invokeAiPath?: string;
     startInvokeSync?: (options?: { mode?: 'startup' }) => Promise<InvokeSyncOutcome | void>;
@@ -69,6 +71,15 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
     const warnCursorHeld = (source: string, folderId: string, result: ImportResult | void) => {
         const failedCount = result ? result.failedPaths.length : null;
         console.warn(`[FolderMonitor] ${source}: Keeping folder cursor unchanged for ${folderId}; ${failedCount ?? 'unknown'} path(s) were not fully handled.`);
+    };
+
+    // A filesystem root cannot be registered, so its incremental scan would be refused and only
+    // logged. A root scanned before #384 keeps its cursor, so it reaches this path on every launch.
+    const skipUnscannableRoot = (folder: MonitoredFolder): boolean => {
+        if (!isFilesystemRoot(folder.path)) return false;
+        console.warn(`[FolderMonitor] Skipping ${folder.path}: a filesystem root cannot be scanned`);
+        addToast(formatUnscannableRootsWarning([normalizePath(folder.path)]), 'warning');
+        return true;
     };
 
     useEffect(() => {
@@ -111,8 +122,10 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     // Phase 1: Aggregation - Collect all new files from all valid folders
                     for (const folder of activeFolders) {
                         if (folder.lastScanned) {
+                            if (skipUnscannableRoot(folder)) continue;
                             try {
                                 console.log(`[FolderMonitor] Smart Scan for ${folder.path}`);
+                                await ensureFolderAccessible(folder.path);
                                 const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
 
                                 if (newFiles && newFiles.length > 0) {
@@ -393,6 +406,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         for (const folder of folders) {
             try {
                 if (folder.lastScanned) {
+                    if (skipUnscannableRoot(folder)) continue;
+                    await ensureFolderAccessible(folder.path);
                     const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
                     if (newFiles.length > 0) {
                         tasks.push({ paths: newFiles.map(f => f.path), variant: folder.variant, folderId: folder.id });

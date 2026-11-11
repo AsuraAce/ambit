@@ -4,8 +4,10 @@ import { measureStartupPhase } from '../../utils/startupDiagnostics';
 import { getInvokePathIdentity, isSameInvokePath } from './pathIdentity';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { ensureAssetPathAccessible } from '../assetScope';
+import { ensureFolderAccessible } from '../assetScope';
 import { openInvokeSourceDatabase, type InvokeSourceDatabase } from './sourceDatabase';
+
+const INVOKE_DATABASE_NOT_FOUND = 'Could not find an existing InvokeAI database at this path.';
 
 interface BoardRow {
     board_id: string;
@@ -109,15 +111,18 @@ export const invalidateInvokeSourceDatabase = (rootPath?: string): void => {
 export const inspectInvokeConnection = async (rootPath: string): Promise<InvokeOwnerDiscovery> => {
     const path = rootPath.trim();
     if (!path) throw new Error('Choose an InvokeAI folder first.');
-    const { dbPath } = resolveInvokePaths(path);
+    const { dbPath, imagesRoot } = resolveInvokePaths(path);
+    // A typed candidate may not be in the filesystem scope yet; the snapshot and the
+    // source reader both require it. A folder that cannot be registered does not exist.
+    if (!(await ensureFolderAccessible(imagesRoot))) {
+        throw new Error(INVOKE_DATABASE_NOT_FOUND);
+    }
     const snapshot = await unwrap(commands.getInvokeDbSnapshot(path));
     if (!snapshot.files.some(file => isSameInvokePath(file.path, dbPath) && file.exists)) {
-        throw new Error('Could not find an existing InvokeAI database at this path.');
+        throw new Error(INVOKE_DATABASE_NOT_FOUND);
     }
     // Do not let SQLite create an empty database when checking a mistyped path.
     invalidateInvokeSourceDatabase(path);
-    // A typed candidate may not be in the filesystem scope yet; the source reader requires it.
-    await ensureAssetPathAccessible(resolveInvokePaths(path).imagesRoot, { assumeDirectory: true });
     return discoverInvokeOwners(path);
 };
 

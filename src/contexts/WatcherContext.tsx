@@ -7,6 +7,7 @@ import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
 import { markImagePathIdentitiesMissing, moveImagePathIdentities } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
+import { filterAccessibleFolders } from '../services/assetScope';
 import { useSearch } from './SearchContext';
 import type { FolderChange } from '../bindings';
 import {
@@ -215,6 +216,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
             invokeActivationCatchupRootRef.current = null;
         }
         const activationCancellationGeneration = useLibraryStore.getState().invokeSyncCancellationGeneration;
+        let initCancelled = false;
 
         const initWatcher = async () => {
             if (!isLiveWatching) {
@@ -238,12 +240,18 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 invokeActivationCatchupRootRef.current = null;
             }
 
-            if (pathsToWatch.length === 0) {
+            // The watcher refuses paths outside the scope. A path that cannot be
+            // registered is missing, and the watcher skipped missing paths anyway.
+            const watchablePaths = await filterAccessibleFolders(pathsToWatch);
+            // A newer run of this effect owns the watcher once this one is cleaned up.
+            if (initCancelled) return;
+
+            if (watchablePaths.length === 0) {
                 await watcherService.stopWatching();
                 return;
             }
 
-            await watcherService.startWatching(pathsToWatch, async (changes?: FolderChange[]) => {
+            await watcherService.startWatching(watchablePaths, async (changes?: FolderChange[]) => {
                 if (!changes || changes.length === 0) return;
                 const eventCancellationGeneration = useLibraryStore.getState().invokeSyncCancellationGeneration;
                 const eventReceivedAt = liveWatchNow();
@@ -449,6 +457,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
             initWatcher().catch(error => console.error('[Watcher] Failed to start live watch', error));
         }, WATCHER_INIT_DEBOUNCE_MS);
         return () => {
+            initCancelled = true;
             clearTimeout(timer);
             if (invokeSyncTimeoutRef.current) {
                 const shouldDrainPendingInvoke = (

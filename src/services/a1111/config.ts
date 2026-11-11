@@ -1,5 +1,6 @@
 import { commands, type A1111DiscoveryCandidate as BackendDiscoveryCandidate } from '../../bindings';
 import { normalizePath } from '../../utils/pathUtils';
+import { ensureFolderAccessible } from '../assetScope';
 import { unwrap } from '../../utils/spectaUtils';
 import { A1111FolderType, type DiscoveryCandidate, type DiscoveryResult, WebUIVariant } from './types';
 
@@ -52,6 +53,7 @@ export const getUnlinkedPriorityCandidatePaths = (candidates: DiscoveryCandidate
  * limited by the frontend fs plugin scope.
  */
 export const detectWebUIVariation = async (rootPath: string): Promise<WebUIVariant> => {
+    await ensureFolderAccessible(rootPath);
     const result = await unwrap(commands.discoverA1111Folders(rootPath));
     return toWebUIVariant(result.detectedVariant);
 };
@@ -66,6 +68,9 @@ export const discoverA1111Candidates = async (
     existingPaths: Set<string>,
     forcedVariant: WebUIVariant | 'Auto' = 'Auto'
 ): Promise<DiscoveryResult> => {
+    // Discovery refuses a root outside the scope. Registration accepts only an
+    // existing directory, so a mistyped root stays out of scope and is refused.
+    await ensureFolderAccessible(rootPath);
     const result = await unwrap(commands.discoverA1111Folders(rootPath));
     const normalizedExistingPaths = normalizeExistingPaths(existingPaths);
     const logs = [...result.logs];

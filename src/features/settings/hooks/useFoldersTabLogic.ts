@@ -6,6 +6,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { commands } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
+import { ensureFolderAccessible } from '../../../services/assetScope';
 import { unwrap } from '../../../utils/spectaUtils';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { formatStableImportProgress } from '../../../utils/importProgress';
@@ -142,6 +143,8 @@ export const useFoldersTabLogic = ({
             } else if (onScanFolder) {
                 const folder = settings.monitoredFolders.find(f => f.id === id);
                 const lastScanned = folder?.lastScanned;
+                // The scans below refuse a folder outside the scope; a just-added folder may not be registered yet.
+                await ensureFolderAccessible(path);
 
                 if (lastScanned && lastScanned > 0) {
                     console.log(`[Resync] Incremental scan for ${path} since ${new Date(lastScanned).toISOString()}`);

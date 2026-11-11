@@ -1,6 +1,7 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { processFoldersUnified, processNativePaths, processTargetedFiles, processWebFiles, scanResourceThumbnails } from '../importService';
 import { GeneratorTool } from '../../types';
+import { normalizePath } from '../../utils/pathUtils';
 
 const mocks = vi.hoisted(() => ({
     listen: vi.fn(),
@@ -16,7 +17,14 @@ const mocks = vi.hoisted(() => ({
     fileExists: vi.fn(),
     incrementFacetCacheVersion: vi.fn(),
     importVideoPaths: vi.fn(),
-    cancelVideoImport: vi.fn()
+    cancelVideoImport: vi.fn(),
+    ensureFolderAccessible: vi.fn(async (_path: string) => true),
+    filterAccessibleFolders: vi.fn(async (paths: string[]) => paths)
+}));
+
+vi.mock('../assetScope', () => ({
+    ensureFolderAccessible: mocks.ensureFolderAccessible,
+    filterAccessibleFolders: mocks.filterAccessibleFolders
 }));
 
 const abortSignalOnRead = (abortOnRead: number): AbortSignal => {
@@ -622,6 +630,47 @@ describe('processTargetedFiles', () => {
         infoSpy.mockRestore();
     });
 
+    // #384: the folder scan refuses a folder outside the scope, and a typed folder
+    // may not be registered yet when the import starts.
+    it('registers each folder before scanning it', async () => {
+        mocks.scanDirectoryWithStats.mockResolvedValue({ status: 'ok', data: [] });
+
+        await processFoldersUnified([{ path: 'C:/new-folder' }, { path: 'D:/second' }], {});
+
+        expect(mocks.ensureFolderAccessible.mock.calls.map(([path]) => path)).toEqual(['C:/new-folder', 'D:/second']);
+        expect(mocks.scanDirectoryWithStats.mock.calls.map(([path]) => path)).toEqual(['C:/new-folder', 'D:/second']);
+        mocks.ensureFolderAccessible.mock.invocationCallOrder.forEach((registeredAt, index) => {
+            expect(registeredAt).toBeLessThan(mocks.scanDirectoryWithStats.mock.invocationCallOrder[index]);
+        });
+    });
+
+    // Review of #402: registration accepts only folders and does not cache a failure,
+    // so registering each picked file cost one failed call and one logged error per file.
+    it('does not register picked files, which the dialog already granted', async () => {
+        mocks.scanDirectoryWithStats.mockResolvedValue({ status: 'ok', data: [] });
+
+        await processFoldersUnified([{ path: 'C:/picked/a.png' }, { path: 'C:/picked/b.mp4' }, { path: 'C:/folder' }], {});
+
+        expect(mocks.ensureFolderAccessible.mock.calls.map(([path]) => path)).toEqual(['C:/folder']);
+    });
+
+    // Review of #402: a drive root cannot be registered, so its scan is refused. It
+    // must be reported, not dropped silently. It must not be marked complete either:
+    // the folder monitor would set its scan cursor, and every later launch would take
+    // the incremental scan, which fails with no warning.
+    it.each(['D:\\', 'D:/', 'E:', '/', '\\\\server\\share'])('reports the filesystem root %s instead of scanning it', async (root) => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        mocks.scanDirectoryWithStats.mockResolvedValue({ status: 'ok', data: [] });
+
+        const result = await processFoldersUnified([{ path: root }, { path: 'C:/folder' }], {});
+
+        expect(result.unscannableRootPaths).toEqual([normalizePath(root)]);
+        expect(result.completedSourcePaths).toEqual(['C:/folder']);
+        expect(mocks.ensureFolderAccessible).not.toHaveBeenCalledWith(root);
+        expect(mocks.scanDirectoryWithStats.mock.calls.map(([path]) => path)).toEqual(['C:/folder']);
+        warn.mockRestore();
+    });
+
     it('returns a cancelled result and skips work when aborted before discovery', async () => {
         const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const abortCtrl = new AbortController();
@@ -1177,6 +1226,21 @@ describe('processTargetedFiles', () => {
             URL.createObjectURL = originalCreateObjectUrl;
             vi.stubGlobal('Image', originalImage);
         }
+    });
+
+    // #384: the scan refuses resource folders outside the scope, and a folder that
+    // cannot be registered is missing, which the scan used to skip.
+    it('scans only the resource folders that could be registered', async () => {
+        mocks.filterAccessibleFolders.mockResolvedValueOnce(['C:/models']);
+        mocks.scanModelThumbnails.mockResolvedValueOnce({
+            status: 'ok',
+            data: { scanned: 0, matched: 0, updated: 0, missing: [] }
+        });
+
+        await scanResourceThumbnails(['C:/models', 'D:/unplugged']);
+
+        expect(mocks.filterAccessibleFolders).toHaveBeenCalledWith(['C:/models', 'D:/unplugged']);
+        expect(mocks.scanModelThumbnails).toHaveBeenCalledWith(['C:/models']);
     });
 
     it('delegates resource thumbnail scans through the generated command wrapper', async () => {

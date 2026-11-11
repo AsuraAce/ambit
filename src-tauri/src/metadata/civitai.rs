@@ -350,13 +350,28 @@ fn extract_a1111_cache_entries(
     (entries, debug_info, skipped_malformed_hashes)
 }
 
+/// Reads A1111's cache file only when it is inside the registered filesystem scope.
+fn read_a1111_cache_in_scope<F>(cache_path: &str, is_allowed: F) -> Result<String, String>
+where
+    F: FnMut(&std::path::Path) -> bool,
+{
+    crate::scanner::utils::validate_scoped_roots(
+        &[cache_path.to_string()],
+        is_allowed,
+        "A1111 cache file",
+    )?;
+    std::fs::read_to_string(cache_path).map_err(|e| e.to_string())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn import_a1111_cache(
     app: tauri::AppHandle,
     cache_path: String,
 ) -> Result<ImportResult, String> {
-    let content = std::fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
+    let content = read_a1111_cache_in_scope(&cache_path, |path| {
+        crate::scanner::utils::fs_scope_allows(&app, path)
+    })?;
 
     let json: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
@@ -824,6 +839,35 @@ mod tests {
             conn.execute_batch(&migration.sql).expect("apply migration");
         }
         conn
+    }
+
+    // #384: the cache import reads a whole file the webview names.
+    #[test]
+    fn a1111_cache_is_not_read_outside_the_registered_scope() {
+        let cache = std::env::temp_dir().join(format!(
+            "ambit_a1111_cache_scope_{}_{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&cache, b"{\"hashes\":{}}").expect("write cache");
+        let cache_path = cache.to_string_lossy().to_string();
+
+        let refused = read_a1111_cache_in_scope(&cache_path, |_| false);
+
+        assert_eq!(
+            refused,
+            Err(format!(
+                "A1111 cache file is outside the allowed filesystem scope: {cache_path}"
+            ))
+        );
+        assert_eq!(
+            read_a1111_cache_in_scope(&cache_path, |_| true).as_deref(),
+            Ok("{\"hashes\":{}}")
+        );
+        let _ = std::fs::remove_file(cache);
     }
 
     fn insert_image(

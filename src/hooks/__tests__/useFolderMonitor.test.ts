@@ -916,6 +916,56 @@ describe('useFolderMonitor', () => {
         expect(mockOnScan).toHaveBeenCalledWith([{ path: 'C:/full', variant: undefined }], { mode: 'startup' });
     });
 
+    // Review of #402: a drive root scanned before #384 keeps its scan cursor, so every
+    // launch takes the incremental scan, which the scope check refuses and only logs.
+    const rootWarning = "Ambit can't scan a whole drive (D:/). In Settings → Connections → Folders, replace it with a subfolder.";
+
+    it('warns instead of incrementally scanning a monitored drive root at startup', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const startInvokeSync = vi.fn().mockResolvedValue({ status: 'completed' });
+
+        renderHook(() => useFolderMonitor({
+            isLoaded: true,
+            monitoredFolders: [
+                { id: 'root', path: 'D:\\', isActive: true, imageCount: 0, lastScanned: 1 },
+                { id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }
+            ],
+            onScan: mockOnScan,
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn(),
+            invokeAiPath: 'C:/invokeai',
+            startInvokeSync
+        }));
+
+        await waitFor(() => expect(startInvokeSync).toHaveBeenCalled());
+        expect(mockAddToast).toHaveBeenCalledWith(rootWarning, 'warning');
+        expect(mocks.scanDirectorySince.mock.calls.map(([path]) => path)).toEqual(['C:/watch']);
+        warn.mockRestore();
+    });
+
+    it('warns instead of incrementally scanning a monitored drive root during Live Watch catch-up', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
+            isLoaded: true,
+            monitoredFolders: folders,
+            onScan: mockOnScan,
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn(),
+            invokeAiPath: 'C:/invokeai'
+        }), { initialProps: { folders: [] as MonitoredFolder[] } });
+
+        await new Promise(resolve => setTimeout(resolve, 0));
+        vi.clearAllMocks();
+        rerender({ folders: [{ id: 'root', path: 'D:/', isActive: true, imageCount: 0, lastScanned: 10 }] });
+        useLibraryStore.setState({ isLiveWatching: true });
+
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(rootWarning, 'warning'));
+        expect(mocks.scanDirectorySince).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
     it.each([
         ['blocked', { status: 'blocked', message: 'private user path' }],
         ['queued', { status: 'queued' }],

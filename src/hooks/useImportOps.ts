@@ -8,7 +8,9 @@ import { processWebFiles, processNativePaths, processFoldersUnified, ImportResul
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { formatStableImportProgress } from '../utils/importProgress';
+import { formatUnscannableRootsWarning } from '../utils/importSourceStatus';
 import { getThumbnailDir } from '../services/thumbnailService';
+import { ensureFolderAccessible } from '../services/assetScope';
 import { rebuildFacetCache } from '../services/db/imageRepo';
 
 interface ImportOptions {
@@ -111,6 +113,13 @@ export const useImportOps = ({
             }
         }
     }, [images, setImages, addToast, refreshCollections, refreshMetadata, refreshHiddenAvailability]);
+
+    // A filesystem root is skipped on every scan until the user replaces it, so say so in every mode.
+    const reportUnscannableRoots = useCallback((result: ImportResult) => {
+        const roots = result.unscannableRootPaths ?? [];
+        if (roots.length === 0) return;
+        addToast(formatUnscannableRootsWarning(roots), 'warning');
+    }, [addToast]);
 
     const importImages = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
@@ -248,6 +257,7 @@ export const useImportOps = ({
                 shouldWaitForStableFiles,
                 deferFacetCacheRefresh
             );
+            reportUnscannableRoots(result);
             if (result.wasCancelled) {
                 if (isManual) addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                 return result;
@@ -264,7 +274,7 @@ export const useImportOps = ({
                 finishImportRun(importRunId);
             }
         }
-    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast, reportUnscannableRoots]);
 
     const handleImportFolders = useCallback(async (folders: { path: string, variant?: string }[], options: { mode?: ImportMode } = {}) => {
         const mode = options.mode ?? 'manual';
@@ -313,6 +323,7 @@ export const useImportOps = ({
                 isStartup,
                 forceRescan: false
             });
+            reportUnscannableRoots(result);
 
             if (result.images.length > 0) {
                 setImportProgressForRun(importRunId, formatStableImportProgress({
@@ -355,7 +366,7 @@ export const useImportOps = ({
         } finally {
             finishImportRun(importRunId);
         }
-    }, [beginImportRun, setImportProgressForRun, finishImportRun, addToast, commitImportResult]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, addToast, commitImportResult, reportUnscannableRoots]);
 
     const scanDirectory = useCallback(async (dirPath: string) => {
         const abortCtrl = new AbortController();
@@ -373,6 +384,7 @@ export const useImportOps = ({
             const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
                 setImportProgressForRun(importRunId, { current, total, message });
             }, undefined, abortCtrl.signal, false);
+            reportUnscannableRoots(result);
             if (!result.wasCancelled && result.images.length > 0) {
                 await commitImportResult(result, { toastMode: 'compact' });
             }
@@ -381,7 +393,7 @@ export const useImportOps = ({
         } finally {
             finishImportRun(importRunId);
         }
-    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast, reportUnscannableRoots]);
 
     const resyncFolder = useCallback(async (
         folder: MonitoredFolder,
@@ -402,6 +414,8 @@ export const useImportOps = ({
         try {
             let filesToScan: string[] = [];
             let isIncremental = false;
+            // The scans below refuse a folder outside the scope; a just-added folder may not be registered yet.
+            await ensureFolderAccessible(path);
 
             if (lastScanned && lastScanned > 0) {
                 console.log(`[Resync] Incremental scan for ${path} since ${new Date(lastScanned).toISOString()}`);
