@@ -78,13 +78,13 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             } : undefined}
             onCopyPrompt={isGenerated ? () => {
                 if (activeImage?.metadata.positivePrompt) {
-                    navigator.clipboard.writeText(activeImage.metadata.positivePrompt);
+                    navigator.clipboard.writeText(activeImage.metadata.positivePrompt).catch(error => console.error('[Clipboard] Copy failed', error));
                     addToast('Prompt copied', 'success');
                 }
                 onClose();
             } : undefined}
             onCopySeed={isGenerated && activeImage?.metadata.seed !== undefined ? () => {
-                navigator.clipboard.writeText(String(activeImage.metadata.seed));
+                navigator.clipboard.writeText(String(activeImage.metadata.seed)).catch(error => console.error('[Clipboard] Copy failed', error));
                 addToast('Seed copied', 'success');
                 onClose();
             } : undefined}
@@ -101,7 +101,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 ].filter(Boolean);
 
                 const text = infoLines.join('\n');
-                navigator.clipboard.writeText(text);
+                navigator.clipboard.writeText(text).catch(error => console.error('[Clipboard] Copy failed', error));
                 addToast('Generation info copied', 'success');
                 onClose();
             } : undefined}
@@ -116,7 +116,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                         addToast('Image copied to clipboard', 'success');
                     } catch (e) {
                         // Fallback to path if blob copy fails (e.g. browser security)
-                        navigator.clipboard.writeText(activeImage.url);
+                        navigator.clipboard.writeText(activeImage.url).catch(error => console.error('[Clipboard] Copy failed', error));
                         addToast('Image path copied (fallback)', 'info');
                     }
                 }
@@ -124,7 +124,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             }}
             onCopyFilePath={() => {
                 if (activeImage?.id) {
-                    navigator.clipboard.writeText(activeImage.id);
+                    navigator.clipboard.writeText(activeImage.id).catch(error => console.error('[Clipboard] Copy failed', error));
                     addToast('File path copied', 'success');
                 }
                 onClose();
@@ -138,7 +138,8 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             onMoveToCollection={onMoveToCollection}
             onRemoveFromCollection={() => {
                 if (filters.collectionId && contextMenu.imageId) {
-                    colOps.removeImagesFromCollection([contextMenu.imageId], filters.collectionId);
+                    // Toasts its own failure and keeps the grid unchanged until persistence succeeds.
+                    void colOps.removeImagesFromCollection([contextMenu.imageId], filters.collectionId);
                     onClose();
                 }
             }}
@@ -157,7 +158,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onToggleMask={(val) => {
-                actions.handleBulkMask(contextMenu.imageId, val);
+                actions.handleBulkMask(contextMenu.imageId, val).catch(error => console.error('[Mask] Mask toggle failed', error));
                 onClose();
             }}
             onToggleIntermediate={isGenerated ? async () => {

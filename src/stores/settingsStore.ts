@@ -117,7 +117,8 @@ export const useSettingsStore = create<SettingsState>()(
                     // Never persist defaults before initialization has loaded the user's state.
                     if (state.initializationStatus === 'ready') {
                         if (saveTimeout) clearTimeout(saveTimeout);
-                        saveTimeout = setTimeout(async () => {
+                        // The async body catches and logs its own failures.
+                        saveTimeout = setTimeout(() => void (async () => {
                             saveTimeout = null;
                             if (get().initializationStatus !== 'ready') return;
                             try {
@@ -125,7 +126,7 @@ export const useSettingsStore = create<SettingsState>()(
                             } catch (e) {
                                 console.error('[SettingsStore] Failed to auto-save settings', e);
                             }
-                        }, 1000);
+                        })(), 1000);
                     }
 
                     const privacyKeywordsChanged = normalizePrivacyKeywords(getEffectiveMaskedKeywords(state.settings))

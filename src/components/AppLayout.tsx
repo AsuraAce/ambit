@@ -451,7 +451,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onUpdateTool={handlers.handleUpdateTool}
                                         onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
                                         onSetImageKind={onSetImageKind}
-                                        onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
+                                        onUpdateNotes={(id, n) => { void handlers.handleUpdateNotes(id, n); /* rolls back and toasts on failure */ }}
                                         onRevertMetadata={handlers.handleRevertMetadata}
                                         onSearch={(term) => {
                                             onViewerSearch(term);
@@ -487,7 +487,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             maskedKeywords={effectiveMaskedKeywords}
                                             onImageClick={(e, id, index, revealGranted) => handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)}
                                             onSelectionToggle={handleSelectionToggle}
-                                            onToggleFavorite={(e, id) => { toggleFavorite(id); }}
+                                            onToggleFavorite={(e, id) => { void Promise.resolve(toggleFavorite(id)).catch(error => console.error('[Favorite] Toggle failed', error)); }}
                                             onTogglePin={(e, id) => {
                                                 const img = images.find(i => i.id === id);
                                                 if (img) actions.handlePinImage(id, !img.isPinned);

@@ -926,7 +926,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     setIsLoading(false);
                 }
             };
-            loadWorkflow();
+            void loadWorkflow(); // catches and logs its own failures
         }
     }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading, workflowJsonForActions]);
 
@@ -936,7 +936,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(workflowJsonForActions!);
+        navigator.clipboard.writeText(workflowJsonForActions!).catch(error => console.error('[Clipboard] Copy failed', error));
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };

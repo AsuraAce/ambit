@@ -437,7 +437,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     const handleShare = () => {
         if (navigator.share) {
-            navigator.share({ title: displayImage.filename, url: displayImage.url });
+            navigator.share({ title: displayImage.filename, url: displayImage.url }).catch((error: unknown) => {
+                if (error instanceof DOMException && error.name === 'AbortError') return;
+                console.error('[Share] Failed to share image', error);
+            });
         }
     };
 

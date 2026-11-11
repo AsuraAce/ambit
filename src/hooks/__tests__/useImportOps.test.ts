@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
     processFoldersUnified: vi.fn(),
     getThumbnailDir: vi.fn(),
     addToast: vi.fn(),
-    refreshHiddenAvailability: vi.fn(),
+    refreshHiddenAvailability: vi.fn().mockResolvedValue(undefined),
     refreshMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
     syncCollectionImages: vi.fn()
