@@ -7,6 +7,7 @@ mod media;
 mod metadata;
 mod scanner;
 mod security;
+mod sql_guard;
 mod startup;
 mod startup_log;
 #[cfg(windows)]
@@ -235,7 +236,10 @@ pub fn run() {
                 .level(log_level)
                 .build(),
         )
-        .plugin(sql_builder.build())
+        .plugin(sql_guard::SqlLoadGuard::new(
+            sql_builder.build(),
+            db::resolve_main_database_url,
+        ))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -370,12 +374,33 @@ mod startup_order_tests {
             .find("tauri_plugin_single_instance::init")
             .expect("same-profile process guard should be registered");
         let sql = source
-            .find(".plugin(sql_builder.build())")
+            .find(".plugin(sql_guard::SqlLoadGuard::new(")
             .expect("SQL plugin should be registered");
 
         assert!(
             single_instance < sql,
             "same-profile process exclusion must be active before SQLite opens"
+        );
+    }
+
+    #[test]
+    fn sql_plugin_is_registered_only_through_the_load_guard() {
+        let source = include_str!("lib.rs");
+        // Built with concat! so this test's own text does not match.
+        let built_plugin = concat!("sql_builder", ".build()");
+        assert_eq!(
+            source.matches(built_plugin).count(),
+            1,
+            "the SQL plugin must be built exactly once"
+        );
+        let guard = concat!(".plugin(sql_guard::SqlLoadGuard", "::new(");
+        let guarded = source
+            .find(guard)
+            .map(|start| source[start + guard.len()..].trim_start())
+            .expect("SQL plugin must be wrapped in SqlLoadGuard");
+        assert!(
+            guarded.starts_with(built_plugin),
+            "SqlLoadGuard must wrap the built SQL plugin"
         );
     }
 

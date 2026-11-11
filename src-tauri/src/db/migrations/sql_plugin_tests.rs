@@ -39,6 +39,14 @@ impl MockSql {
         builder: tauri_plugin_sql::Builder,
         preload: &[String],
     ) -> Self {
+        Self::with_plugin(directory, builder.build(), preload)
+    }
+
+    fn with_plugin(
+        directory: &Path,
+        plugin: impl tauri::plugin::Plugin<MockRuntime> + 'static,
+        preload: &[String],
+    ) -> Self {
         let mut context = tauri::test::mock_context(tauri::test::noop_assets());
         // Mock-only absolute identifier confines even the plugin's app-config mkdir to this fixture.
         let identifier = directory.to_str().unwrap();
@@ -57,7 +65,7 @@ impl MockSql {
             );
         }
         let app = tauri::test::mock_builder()
-            .plugin(builder.build())
+            .plugin(plugin)
             .build(context)
             .unwrap();
         assert_eq!(
@@ -181,6 +189,109 @@ fn sql_plugin_ipc_uses_only_the_generated_database() {
     );
     assert!(sql.pool(&db).size() >= 1);
     assert!(path.is_file());
+}
+
+fn guarded_sql(directory: &Path, allowed: Result<String, String>) -> MockSql {
+    let guard = crate::sql_guard::SqlLoadGuard::new(
+        tauri_plugin_sql::Builder::default().build(),
+        move |_: &tauri::AppHandle<MockRuntime>| allowed.clone(),
+    );
+    MockSql::with_plugin(directory, guard, &[])
+}
+
+#[test]
+fn sql_load_guard_opens_the_library_database_and_forwards_queries() {
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("library.db");
+    let sql = guarded_sql(&directory.path, Ok(fixture_url(&path)));
+
+    let db = sql.load(&path);
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":"CREATE TABLE t (v INTEGER)","values":[]}),
+    );
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":"INSERT INTO t VALUES (?)","values":[7]}),
+    );
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":"SELECT v FROM t","values":[]})
+        ),
+        json!([{"v":7}])
+    );
+    assert!(path.is_file());
+}
+
+#[test]
+fn sql_load_guard_refuses_other_paths_without_creating_them() {
+    // A compromised renderer must not be able to create or open another SQLite
+    // file through the plugin, and the refusal must not reveal the library URL.
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let sql = guarded_sql(&directory.path, Ok(fixture_url(&library)));
+
+    let other = directory.path.join("other.db");
+    let refusal = ipc_result(&sql.webview, "load", json!({"db":fixture_url(&other)}))
+        .expect_err("a path other than the library database must be refused");
+    assert_eq!(
+        refusal,
+        json!("The SQL plugin may open only Ambit's library database.")
+    );
+    assert!(!refusal.to_string().contains("library.db"));
+    assert!(!other.exists(), "the refused database must not be created");
+    assert!(
+        !library.exists(),
+        "a refused load must not open the library either"
+    );
+}
+
+#[test]
+fn sql_load_guard_refuses_an_existing_foreign_database_and_leaves_it_untouched() {
+    let directory = GeneratedBenchmarkDir::new();
+    let foreign = directory.path.join("invokeai.db");
+    {
+        let conn = rusqlite::Connection::open(&foreign).unwrap();
+        conn.execute_batch("CREATE TABLE images (name TEXT); INSERT INTO images VALUES ('a.png');")
+            .unwrap();
+    }
+    let sql = guarded_sql(
+        &directory.path,
+        Ok(fixture_url(&directory.path.join("library.db"))),
+    );
+
+    let foreign_url = fixture_url(&foreign);
+    assert!(ipc_result(&sql.webview, "load", json!({"db":foreign_url})).is_err());
+    assert!(
+        ipc_result(
+            &sql.webview,
+            "execute",
+            json!({"db":foreign_url,"query":"DELETE FROM images","values":[]})
+        )
+        .is_err(),
+        "a refused database must never become a loaded pool"
+    );
+    let conn = rusqlite::Connection::open(&foreign).unwrap();
+    let rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(rows, 1);
+}
+
+#[test]
+fn sql_load_guard_refuses_every_load_when_the_library_url_cannot_be_resolved() {
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("library.db");
+    let sql = guarded_sql(&directory.path, Err("no app data dir".into()));
+
+    let refusal = ipc_result(&sql.webview, "load", json!({"db":fixture_url(&path)}))
+        .expect_err("an unresolved library URL must refuse the load");
+    assert!(!refusal.to_string().contains("no app data dir"));
+    assert!(!path.exists());
 }
 
 #[test]
