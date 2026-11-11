@@ -835,6 +835,14 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async selectInvokeSource(rootPath: string, sql: string, params: (InvokeSourceValue | null)[]) : Promise<Result<InvokeSourceRows, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("select_invoke_source", { rootPath, sql, params }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -925,6 +933,11 @@ export type InvokeScopeCacheAction = "restored" | "selective" | "full"
 export type InvokeScopeCacheBuildClaim = { scopeKey: string; generation: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
 export type InvokeScopeCacheBuildTicket = { scopeKey: string; generation: number }
 export type InvokeScopeCacheRepairPlan = { action: InvokeScopeCacheAction; resources: FacetResourceTouches; facetTypes: string[]; collectionsDirty: boolean }
+export type InvokeSourceRows = { columns: string[]; rows: ((InvokeSourceValue | null)[])[] }
+/**
+ * A value read from, or bound into, an InvokeAI query.
+ */
+export type InvokeSourceValue = number | string
 export type LegacyCollectionMigrationInput = { importKey: string; collections: LegacyCollectionMigrationItem[] }
 export type LegacyCollectionMigrationItem = { id: string; name: string; color: string | null; isArchived: boolean; isPinned: boolean; createdAt: number; updatedAt: number | null; filterState: string | null; manualExclusions: string | null; customThumbnail: string | null; imageIds: string[] }
 export type LegacyCollectionMigrationResult = { alreadyApplied: boolean; collectionsUpserted: number; membershipsInserted: number }

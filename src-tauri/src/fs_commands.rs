@@ -247,7 +247,7 @@ pub fn get_invoke_db_snapshot(root_path: String) -> Result<InvokeDbSnapshot, Str
     })
 }
 
-fn resolve_invoke_db_path(root_path: &str) -> PathBuf {
+pub(crate) fn resolve_invoke_db_path(root_path: &str) -> PathBuf {
     let trimmed = root_path.trim().trim_end_matches(['\\', '/']);
     let path = PathBuf::from(trimmed);
 

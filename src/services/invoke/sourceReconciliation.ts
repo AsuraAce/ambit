@@ -1,4 +1,4 @@
-import Database from '@tauri-apps/plugin-sql';
+import type { InvokeSourceDatabase } from './sourceDatabase';
 import {
     commands,
     type InvokeImageReferenceSet,
@@ -27,7 +27,7 @@ interface InvokeSourceFactRow extends InvokeSourceIdentityRow {
 }
 
 interface ReconcileInvokeSourceFactsOptions {
-    db: Database;
+    db: InvokeSourceDatabase;
     columns: ReadonlySet<string>;
     pathResolver: ReturnType<typeof createInvokeImagePathResolver>;
     scope: InvokeSyncScope;
@@ -78,7 +78,7 @@ const claimLegacyTarget = (
     }
 };
 
-const supportsImageRowId = async (db: Database): Promise<boolean> => {
+const supportsImageRowId = async (db: InvokeSourceDatabase): Promise<boolean> => {
     try {
         await db.select('SELECT rowid AS source_rowid FROM images LIMIT 1');
         return true;
