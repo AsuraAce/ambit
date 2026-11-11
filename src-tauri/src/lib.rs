@@ -236,9 +236,9 @@ pub fn run() {
                 .level(log_level)
                 .build(),
         )
-        .plugin(sql_guard::SqlLoadGuard::new(
+        .plugin(sql_guard::SqlPluginGuard::new(
             sql_builder.build(),
-            db::resolve_main_database_url,
+            sql_guard::library_db,
         ))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -374,7 +374,7 @@ mod startup_order_tests {
             .find("tauri_plugin_single_instance::init")
             .expect("same-profile process guard should be registered");
         let sql = source
-            .find(".plugin(sql_guard::SqlLoadGuard::new(")
+            .find(".plugin(sql_guard::SqlPluginGuard::new(")
             .expect("SQL plugin should be registered");
 
         assert!(
@@ -384,7 +384,7 @@ mod startup_order_tests {
     }
 
     #[test]
-    fn sql_plugin_is_registered_only_through_the_load_guard() {
+    fn sql_plugin_is_registered_only_through_the_guard() {
         let source = include_str!("lib.rs");
         // Built with concat! so this test's own text does not match.
         let built_plugin = concat!("sql_builder", ".build()");
@@ -393,14 +393,14 @@ mod startup_order_tests {
             1,
             "the SQL plugin must be built exactly once"
         );
-        let guard = concat!(".plugin(sql_guard::SqlLoadGuard", "::new(");
+        let guard = concat!(".plugin(sql_guard::SqlPluginGuard", "::new(");
         let guarded = source
             .find(guard)
             .map(|start| source[start + guard.len()..].trim_start())
-            .expect("SQL plugin must be wrapped in SqlLoadGuard");
+            .expect("SQL plugin must be wrapped in SqlPluginGuard");
         assert!(
             guarded.starts_with(built_plugin),
-            "SqlLoadGuard must wrap the built SQL plugin"
+            "SqlPluginGuard must wrap the built SQL plugin"
         );
     }
 

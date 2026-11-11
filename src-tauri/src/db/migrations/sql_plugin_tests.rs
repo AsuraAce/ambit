@@ -191,10 +191,19 @@ fn sql_plugin_ipc_uses_only_the_generated_database() {
     assert!(path.is_file());
 }
 
-fn guarded_sql(directory: &Path, allowed: Result<String, String>) -> MockSql {
-    let guard = crate::sql_guard::SqlLoadGuard::new(
+fn guarded_sql(directory: &Path, library: &Path) -> MockSql {
+    guarded_sql_with(directory, Ok(library.to_path_buf()))
+}
+
+fn guarded_sql_with(directory: &Path, library: Result<std::path::PathBuf, String>) -> MockSql {
+    let guard = crate::sql_guard::SqlPluginGuard::new(
         tauri_plugin_sql::Builder::default().build(),
-        move |_: &tauri::AppHandle<MockRuntime>| allowed.clone(),
+        move |_: &tauri::AppHandle<MockRuntime>| {
+            library.clone().map(|path| crate::sql_guard::LibraryDb {
+                url: fixture_url(&path),
+                path,
+            })
+        },
     );
     MockSql::with_plugin(directory, guard, &[])
 }
@@ -203,7 +212,7 @@ fn guarded_sql(directory: &Path, allowed: Result<String, String>) -> MockSql {
 fn sql_load_guard_opens_the_library_database_and_forwards_queries() {
     let directory = GeneratedBenchmarkDir::new();
     let path = directory.path.join("library.db");
-    let sql = guarded_sql(&directory.path, Ok(fixture_url(&path)));
+    let sql = guarded_sql(&directory.path, &path);
 
     let db = sql.load(&path);
     ipc(
@@ -233,7 +242,7 @@ fn sql_load_guard_refuses_other_paths_without_creating_them() {
     // file through the plugin, and the refusal must not reveal the library URL.
     let directory = GeneratedBenchmarkDir::new();
     let library = directory.path.join("library.db");
-    let sql = guarded_sql(&directory.path, Ok(fixture_url(&library)));
+    let sql = guarded_sql(&directory.path, &library);
 
     let other = directory.path.join("other.db");
     let refusal = ipc_result(&sql.webview, "load", json!({"db":fixture_url(&other)}))
@@ -259,10 +268,7 @@ fn sql_load_guard_refuses_an_existing_foreign_database_and_leaves_it_untouched()
         conn.execute_batch("CREATE TABLE images (name TEXT); INSERT INTO images VALUES ('a.png');")
             .unwrap();
     }
-    let sql = guarded_sql(
-        &directory.path,
-        Ok(fixture_url(&directory.path.join("library.db"))),
-    );
+    let sql = guarded_sql(&directory.path, &directory.path.join("library.db"));
 
     let foreign_url = fixture_url(&foreign);
     assert!(ipc_result(&sql.webview, "load", json!({"db":foreign_url})).is_err());
@@ -286,12 +292,425 @@ fn sql_load_guard_refuses_an_existing_foreign_database_and_leaves_it_untouched()
 fn sql_load_guard_refuses_every_load_when_the_library_url_cannot_be_resolved() {
     let directory = GeneratedBenchmarkDir::new();
     let path = directory.path.join("library.db");
-    let sql = guarded_sql(&directory.path, Err("no app data dir".into()));
+    let sql = guarded_sql_with(&directory.path, Err("no app data dir".into()));
 
     let refusal = ipc_result(&sql.webview, "load", json!({"db":fixture_url(&path)}))
         .expect_err("an unresolved library URL must refuse the load");
     assert!(!refusal.to_string().contains("no app data dir"));
     assert!(!path.exists());
+}
+
+const STATEMENT_REFUSED: &str = "The SQL plugin refused this statement.";
+
+/// The path as SQL text, the way a renderer would write it into a statement.
+fn sql_path(path: &Path) -> String {
+    fixture_url(path)["sqlite:".len()..].to_owned()
+}
+
+fn foreign_database(path: &Path) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch("CREATE TABLE images (name TEXT); INSERT INTO images VALUES ('a.png');")
+        .unwrap();
+}
+
+fn foreign_rows(path: &Path) -> i64 {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+        .unwrap()
+}
+
+/// Statements that reach a file other than the library through the loaded pool.
+fn foreign_write_attacks(foreign: &Path) -> Vec<String> {
+    let foreign = sql_path(foreign);
+    vec![
+        format!("ATTACH DATABASE '{foreign}' AS inv; DELETE FROM inv.images; DETACH DATABASE inv;"),
+        format!("SELECT 1; /*x*/ aTtAcH '{foreign}' AS inv; DELETE FROM inv.images; DETACH inv;"),
+        // The ATTACH filename comes from a TEMP table that exists only on the pool connection.
+        format!(
+            "CREATE TEMP TABLE paths AS SELECT '{foreign}' AS p; \
+             ATTACH (SELECT p FROM paths) AS inv; DELETE FROM inv.images; DETACH inv;"
+        ),
+    ]
+}
+
+fn vacuum_attacks(target: &Path) -> Vec<String> {
+    let target = sql_path(target);
+    vec![
+        format!("VACUUM INTO '{target}'"),
+        format!("/*x*/vAcUuM/**/INTO '{target}'"),
+        format!("SELECT 1; VACUUM INTO '{target}'"),
+        format!("VACUUM main INTO (SELECT '{target}')"),
+    ]
+}
+
+#[test]
+fn sql_guard_refuses_attach_through_execute_and_select() {
+    let directory = GeneratedBenchmarkDir::new();
+    let foreign = directory.path.join("invokeai.db");
+    foreign_database(&foreign);
+    let sql = guarded_sql(&directory.path, &directory.path.join("library.db"));
+    let db = sql.load(&directory.path.join("library.db"));
+
+    for command in ["execute", "select"] {
+        for query in foreign_write_attacks(&foreign) {
+            let refusal = ipc_result(
+                &sql.webview,
+                command,
+                json!({"db":db,"query":query,"values":[]}),
+            )
+            .expect_err("ATTACH must be refused");
+            // The TEMP-table form fails to compile on the guard ("no such
+            // table"), which refuses it with SQLite's message instead.
+            assert!(
+                refusal == json!(STATEMENT_REFUSED)
+                    || refusal
+                        .as_str()
+                        .is_some_and(|text| text.starts_with("SQL refused before execution:")),
+                "{command} {query}: {refusal}"
+            );
+            assert_eq!(foreign_rows(&foreign), 1, "{command} {query}");
+        }
+    }
+    assert_eq!(
+        ipc_result(
+            &sql.webview,
+            "execute",
+            json!({"db":db,"query":"DETACH DATABASE main","values":[]})
+        ),
+        Err(json!(STATEMENT_REFUSED))
+    );
+}
+
+#[test]
+fn bare_sql_plugin_lets_the_same_attach_rewrite_a_foreign_database() {
+    // Negative proof for the test above: without the guard, the pool runs it.
+    let directory = GeneratedBenchmarkDir::new();
+    let foreign = directory.path.join("invokeai.db");
+    foreign_database(&foreign);
+    let sql = MockSql::new(&directory.path);
+    let db = sql.load(&directory.path.join("library.db"));
+    let query = &foreign_write_attacks(&foreign)[0];
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":query,"values":[]}),
+    );
+    assert_eq!(foreign_rows(&foreign), 0);
+}
+
+#[test]
+fn sql_guard_refuses_vacuum_into_through_execute_and_select() {
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let sql = guarded_sql(&directory.path, &library);
+    let db = sql.load(&library);
+    let target = directory.path.join("copy.db");
+
+    for command in ["execute", "select"] {
+        for query in vacuum_attacks(&target) {
+            assert_eq!(
+                ipc_result(
+                    &sql.webview,
+                    command,
+                    json!({"db":db,"query":query,"values":[]})
+                ),
+                Err(json!(STATEMENT_REFUSED)),
+                "{command} {query}"
+            );
+            assert!(!target.exists(), "{command} {query} created the file");
+        }
+    }
+}
+
+#[test]
+fn bare_sql_plugin_lets_the_same_vacuum_into_create_a_file() {
+    // Negative proof for the test above.
+    let directory = GeneratedBenchmarkDir::new();
+    let sql = MockSql::new(&directory.path);
+    let db = sql.load(&directory.path.join("library.db"));
+    let target = directory.path.join("copy.db");
+    let query = &vacuum_attacks(&target)[0];
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":query,"values":[]}),
+    );
+    assert!(target.is_file());
+}
+
+#[test]
+fn sql_guard_refuses_load_extension_and_nul_before_the_plugin() {
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let target = directory.path.join("copy.db");
+    let extension = sql_path(&directory.path.join("evil.dll"));
+    let load_extension = format!("SELECT load_extension('{extension}')");
+
+    // The bare plugin refuses it too (sqlx never enables extension loading),
+    // so this proves only that the guard answers first, with its own message.
+    let bare = MockSql::new(&directory.path);
+    let db = bare.load(&library);
+    let bare_error = ipc_result(
+        &bare.webview,
+        "select",
+        json!({"db":db,"query":load_extension,"values":[]}),
+    )
+    .expect_err("sqlx keeps extension loading off");
+    assert_ne!(bare_error, json!(STATEMENT_REFUSED));
+    drop(bare);
+
+    let sql = guarded_sql(&directory.path, &library);
+    let db = sql.load(&library);
+    for query in [
+        load_extension,
+        format!("SELECT 1\u{0}; VACUUM INTO '{}'", sql_path(&target)),
+    ] {
+        assert_eq!(
+            ipc_result(
+                &sql.webview,
+                "select",
+                json!({"db":db,"query":query,"values":[]})
+            ),
+            Err(json!(STATEMENT_REFUSED)),
+            "{query:?}"
+        );
+    }
+    assert!(!target.exists());
+    for body in [json!({"db":db,"values":[]}), json!({"db":db,"query":7})] {
+        assert_eq!(
+            ipc_result(&sql.webview, "execute", body),
+            Err(json!(STATEMENT_REFUSED))
+        );
+    }
+}
+
+#[test]
+fn sql_guard_allows_the_frontends_statement_shapes() {
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let sql = guarded_sql(&directory.path, &library);
+    let db = sql.load(&library);
+    let run = |command: &str, query: &str, values: Value| {
+        ipc_result(
+            &sql.webview,
+            command,
+            json!({"db":db,"query":query,"values":values}),
+        )
+        .unwrap_or_else(|error| panic!("{query}: {error}"))
+    };
+
+    run("execute", "PRAGMA journal_mode=WAL", json!([]));
+    run("execute", "PRAGMA busy_timeout=60000", json!([]));
+    // One statement per call, as the frontend sends them: a later statement in
+    // the same string that needs an earlier one's DDL fails on the guard.
+    run(
+        "execute",
+        "CREATE TABLE images (id TEXT PRIMARY KEY, path TEXT)",
+        json!([]),
+    );
+    run("execute", "CREATE TABLE image_log (id TEXT)", json!([]));
+    run(
+        "execute",
+        "CREATE TRIGGER images_ai AFTER INSERT ON images BEGIN \
+           INSERT INTO image_log VALUES (new.id); END;",
+        json!([]),
+    );
+    run(
+        "execute",
+        "CREATE INDEX IF NOT EXISTS idx_images_path ON images(path)",
+        json!([]),
+    );
+    run(
+        "execute",
+        "INSERT INTO images (id, path) VALUES (?, ?)",
+        json!(["a", "a.png"]),
+    );
+    assert_eq!(
+        run(
+            "select",
+            "SELECT i.id, l.id AS logged FROM images i JOIN image_log l ON l.id = i.id \
+             WHERE i.id IN (SELECT value FROM json_each(?))",
+            json!([r#"["a","b"]"#]),
+        ),
+        json!([{"id":"a","logged":"a"}])
+    );
+
+    // Schema changed through execute must be visible to the guard's next check.
+    run(
+        "execute",
+        "ALTER TABLE images ADD COLUMN is_pinned INTEGER DEFAULT 0",
+        json!([]),
+    );
+    run(
+        "execute",
+        "CREATE INDEX idx_images_pinned ON images(is_pinned)",
+        json!([]),
+    );
+    assert_eq!(
+        run(
+            "select",
+            "SELECT is_pinned FROM images WHERE id = ?",
+            json!(["a"])
+        ),
+        json!([{"is_pinned":0}])
+    );
+    run("execute", "DROP TABLE image_log", json!([]));
+}
+
+#[test]
+fn sql_guard_passes_on_sqlites_compile_errors_that_the_frontend_matches() {
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let sql = guarded_sql(&directory.path, &library);
+    let db = sql.load(&library);
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":"CREATE TABLE images (id TEXT, is_pinned INTEGER);             CREATE TABLE keyed (k TEXT PRIMARY KEY) WITHOUT ROWID","values":[]}),
+    );
+    // collectionRepo.ts matches "duplicate column"; sourceReconciliation.ts matches
+    // /no such column:\s*rowid/.
+    for (query, expected) in [
+        (
+            "ALTER TABLE images ADD COLUMN is_pinned INTEGER",
+            "duplicate column",
+        ),
+        ("SELECT rowid FROM keyed", "no such column: rowid"),
+        ("SELECT missing FROM images", "no such column: missing"),
+    ] {
+        let error = ipc_result(
+            &sql.webview,
+            "execute",
+            json!({"db":db,"query":query,"values":[]}),
+        )
+        .expect_err(query);
+        assert!(
+            error.as_str().is_some_and(|text| text.contains(expected)),
+            "{query}: {error}"
+        );
+    }
+}
+
+fn percentile(sorted: &[f64], fraction: f64) -> f64 {
+    sorted[((sorted.len() - 1) as f64 * fraction).round() as usize]
+}
+
+#[test]
+#[ignore = "opt-in measurement of the SQL guard's per-call cost on a generated 50k-row library"]
+fn measure_sql_guard_overhead_on_a_50k_library() {
+    const ROWS: usize = 50_000;
+    const SAMPLES: usize = 300;
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let db = fixture_url(&library);
+    {
+        let migrated = MockSql::with_builder(
+            &directory.path,
+            tauri_plugin_sql::Builder::new()
+                .add_migrations(&db, crate::db::migrations::get_migrations()),
+            &[],
+        );
+        migrated.load(&library);
+        configure_via_ipc(&migrated, &db);
+        ipc(&migrated.webview, "close", json!({"db":db}));
+    }
+    {
+        let mut conn = rusqlite::Connection::open(&library).unwrap();
+        let tx = conn.transaction().unwrap();
+        {
+            let mut insert = tx
+                .prepare(
+                    "INSERT INTO images (id, path, timestamp, positive_prompt) VALUES (?1, ?2, ?3, ?4)",
+                )
+                .unwrap();
+            for index in 0..ROWS {
+                insert
+                    .execute(rusqlite::params![
+                        format!("generated-{index:06}"),
+                        format!("C:/library/generated-{index:06}.png"),
+                        index as i64,
+                        format!("generated prompt {index}"),
+                    ])
+                    .unwrap();
+            }
+        }
+        tx.commit().unwrap();
+    }
+
+    // imageRepo.ts getAllImages: the grid page query with default filters.
+    let fields = "images.id, images.path, images.width, images.height, images.file_size, images.timestamp,
+        images.thumbnail_path, images.micro_thumbnail, images.thumbnail_source, images.thumbnail_version,
+        images.detected_source_kind, images.source_kind_override, images.source_kind,
+        images.capture_wall_time_ms, images.display_timestamp,
+        images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.is_corrupt,
+        images.user_masked, images.group_id, images.board_id, images.notes,
+        images.invoke_image_name, images.invoke_image_category, images.invoke_image_origin, images.invoke_owner_id,
+        images.is_intermediate_gen, images.is_grid_gen,
+        images.model_name, images.model_hash, images.tool, images.resolved_model_name, images.file_hash,
+        images.steps, images.seed, images.cfg, images.sampler, images.generation_type,
+        images.positive_prompt, images.negative_prompt
+        , images.media_type, images.media_container, images.media_mime_type,
+        images.duration_ms, images.video_codec, images.video_profile,
+        images.audio_present, images.audio_codec, images.frame_rate_num, images.frame_rate_den,
+        images.rotation_degrees, images.probe_status, images.playback_status";
+    let query = format!(
+        "SELECT {fields} FROM scoped_images AS images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 \
+         AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 \
+         AND IFNULL(is_invoke_asset_gen, 0) = 0 ORDER BY timestamp DESC LIMIT 100 OFFSET 25000"
+    );
+
+    let opened = Instant::now();
+    let guard = crate::sql_guard::StatementGuard::open(&library).unwrap();
+    guard.check(&query).unwrap();
+    let first_check_ms = opened.elapsed().as_secs_f64() * 1000.0;
+    let mut check_ms: Vec<f64> = (0..SAMPLES)
+        .map(|_| {
+            let started = Instant::now();
+            guard.check(&query).unwrap();
+            started.elapsed().as_secs_f64() * 1000.0
+        })
+        .collect();
+    drop(guard);
+
+    let measure_selects = |sql: &MockSql| -> Vec<f64> {
+        let body = json!({"db":db,"query":query,"values":[]});
+        let rows = ipc(&sql.webview, "select", body.clone());
+        assert_eq!(rows.as_array().unwrap().len(), 100);
+        let mut samples: Vec<f64> = (0..SAMPLES)
+            .map(|_| {
+                let started = Instant::now();
+                ipc(&sql.webview, "select", body.clone());
+                started.elapsed().as_secs_f64() * 1000.0
+            })
+            .collect();
+        samples.sort_by(f64::total_cmp);
+        samples
+    };
+    let bare_ms = {
+        let bare = MockSql::new(&directory.path);
+        bare.load(&library);
+        configure_via_ipc(&bare, &db);
+        measure_selects(&bare)
+    };
+    let guarded_ms = {
+        let guarded = guarded_sql(&directory.path, &library);
+        guarded.load(&library);
+        configure_via_ipc(&guarded, &db);
+        measure_selects(&guarded)
+    };
+    check_ms.sort_by(f64::total_cmp);
+    println!(
+        "SQL_GUARD_OVERHEAD {}",
+        json!({
+            "rows": ROWS, "samples": SAMPLES, "debug_assertions": cfg!(debug_assertions),
+            "query": "imageRepo getAllImages grid page, LIMIT 100 OFFSET 25000",
+            "first_check_including_open_ms": first_check_ms,
+            "guard_check_ms": {"median": percentile(&check_ms, 0.5), "p95": percentile(&check_ms, 0.95)},
+            "bare_select_ipc_ms": {"median": percentile(&bare_ms, 0.5), "p95": percentile(&bare_ms, 0.95)},
+            "guarded_select_ipc_ms": {"median": percentile(&guarded_ms, 0.5), "p95": percentile(&guarded_ms, 0.95)},
+        })
+    );
 }
 
 #[test]
