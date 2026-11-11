@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { measureStartupPhase } from '../utils/startupDiagnostics';
-import { FilterState, SortOption, AppSettings, AIImage, Collection, PaginationCursor } from '../types';
+import { FilterState, SortOption, AppSettings, Collection, PaginationCursor } from '../types';
 import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
@@ -91,7 +91,7 @@ export const useImagesQuery = ({
         queryKey: imagesQueryKey,
         queryFn: async ({ pageParam }) => {
             if (useBrowserMocks) {
-                const cursor = pageParam as PaginationCursor | undefined;
+                const cursor = pageParam;
                 return searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id, { privacyEnabled, settings });
             }
 
@@ -130,7 +130,7 @@ export const useImagesQuery = ({
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
                 return { images, totalCount, globalCount };
             } else {
-                const cursor = pageParam as PaginationCursor;
+                const cursor = pageParam;
                 const startedAt = performance.now();
                 const images = await searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, cursor);
                 const elapsedMs = Math.round(performance.now() - startedAt);
@@ -145,7 +145,7 @@ export const useImagesQuery = ({
 
             // Determine sort value based on current sort
             // This needs access to 'sortOption' which is in closure scope
-            let val: string | number = lastImage.displayTimestamp ?? lastImage.timestamp;
+            let val: string | number;
 
             // Map sort options to field values
             if (sortOption === 'name_asc' || sortOption === 'name_desc') val = lastImage.filename;

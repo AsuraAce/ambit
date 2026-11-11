@@ -7,14 +7,13 @@ import {
     Type,
     type ThinkingConfig
 } from "@google/genai";
-import { FilterState, RecoveryStyle, ImageMetadata, GeneratorTool, type AiThinkingMode } from "../types";
+import { FilterState, RecoveryStyle, ImageMetadata, type AiThinkingMode } from "../types";
 import { AI_PROMPTS, AIPromptKey, RECOVERY_STYLES } from "../constants/aiPrompts";
 import {
     GeminiFilterResponseSchema,
     GeminiMetadataResponseSchema,
     PromptVariationsSchema,
-    safeParse,
-    isValidGeneratorTool
+    safeParse
 } from "../utils/validation";
 
 import {
@@ -76,7 +75,7 @@ export const verifyApiKey = async (apiKey: string, modelId: string = DEFAULT_AI_
         // Log error but be selective about what we expose to UI
         console.error("Gemini Verification Error:", error);
 
-        let message = "Verification failed";
+        let message: string;
         const errorStr = String(error).toLowerCase();
 
         if (errorStr.includes("api_key_invalid") || errorStr.includes("invalid api key")) {
@@ -193,7 +192,7 @@ export const generateTitleFromPrompt = async (
             config: thinkingConfig ? { thinkingConfig } : undefined
         });
         return response.text?.trim() || "Untitled Creation";
-    } catch (error) {
+    } catch {
         return "Untitled";
     }
 };
@@ -311,7 +310,7 @@ export const recoverImageMetadata = async (
     });
 
     if (response.text) {
-        const rawData = JSON.parse(response.text);
+        const rawData = JSON.parse(response.text) as unknown;
         const validated = safeParse(GeminiMetadataResponseSchema, rawData);
 
         if (!validated) {

@@ -38,6 +38,7 @@ export const useSelection = (filteredImages: AIImage[]) => {
       setLastSelectedId(id);
       setSelectedViewerIndex(index);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- kept so consumers get a new callback identity when the selection changes, as before
   }, [filteredImages, lastSelectedId, selectedIds]);
 
   const handleSelectionToggle = useCallback((e: React.MouseEvent | undefined, id: string) => {
@@ -52,7 +53,7 @@ export const useSelection = (filteredImages: AIImage[]) => {
   }, []);
 
   const handleRangeSelection = useCallback((selectedIndexes: number[], isAdditive: boolean) => {
-    const idsToSelect = selectedIndexes.map(idx => filteredImages[idx]?.id).filter(Boolean) as string[];
+    const idsToSelect = selectedIndexes.map(idx => filteredImages[idx]?.id).filter(Boolean);
     setSelectedIds(prev => {
       const next = isAdditive ? new Set(prev) : new Set<string>();
       idsToSelect.forEach(id => next.add(id));

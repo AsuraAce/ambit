@@ -254,6 +254,8 @@ export const useGlobalShortcuts = ({
         openCollection,
         openSettings,
         openImport,
-        closeAllModals
+        closeAllModals,
+        gridRef,
+        searchInputRef
     ]);
 };

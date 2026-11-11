@@ -1,6 +1,6 @@
 ﻿import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../types';
-import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
-import { getExistingMetadata, insertImage, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
+import { parseImageFile, scanImagesBulk } from './metadataParser';
+import { getExistingMetadata, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { exists } from '@tauri-apps/plugin-fs';
 import { commands, type ThumbnailScanResult } from '../bindings';
@@ -991,7 +991,7 @@ export async function processFoldersUnified(
 
 export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
-    let skipped = 0;
+    const skipped = 0;
     let errors = 0;
 
     for (let i = 0; i < files.length; i++) {

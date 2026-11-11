@@ -3,7 +3,7 @@ import { commands, type DeleteRemovedImagesResult, type ImageRecord, type Remove
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, FacetType, GeneratorTool, ImageMetadata, getDetectedSourceKind, type PhotoMetadata, type SourceKind, type VideoMetadataField } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
@@ -41,14 +41,6 @@ interface OriginalParsedMetadataRow {
 interface MetadataJsonRow {
     metadata_json: string | null;
 }
-
-type RemovedImageRow = ImageRow & {
-    id: string;
-    path: string;
-    thumbnail_path?: string | null;
-    collection_ids_json?: string | null;
-    photo_refresh_version?: number | null;
-};
 
 const SQLITE_PARAM_CHUNK_SIZE = 900;
 

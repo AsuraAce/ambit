@@ -328,7 +328,7 @@ const SubMenu = ({ label, icon, children, side }: { label: string, icon: React.R
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
           setIsHovered(false);
           setIsClickOpen(false);
         }

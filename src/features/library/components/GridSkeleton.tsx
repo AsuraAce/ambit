@@ -27,6 +27,7 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }
             }
             return {}; // Grid uses aspect-square
         }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- items is a new array every render; adding it would re-randomise the sizes this memo keeps stable
         [layout]);
 
     if (layout === 'masonry') {

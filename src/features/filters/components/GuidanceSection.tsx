@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { FilterState } from '../../../types';
-import { SectionHeader, SearchInput, IconButtonSelect } from './FilterPrimitives';
+import { SectionHeader, IconButtonSelect } from './FilterPrimitives';
 import { useParameterRangesQuery } from '../../../hooks/useParameterRangesQuery';
 import {
     ChevronRight,
@@ -88,7 +88,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
      */
     const resolveDescriptiveName = (name: string): string => {
         const genericNames = new Set(['diffusion_pytorch_model', 'ip-adapter', 'controlnet', 'model', 'adapter', 'clip_vision', 'insightface', 'point_embedded']);
-        let pathParts = name.split(/[\\/]/).map(p => p.trim()).filter(Boolean);
+        const pathParts = name.split(/[\\/]/).map(p => p.trim()).filter(Boolean);
         let filename = pathParts.pop()?.replace(/\.(safetensors|ckpt|pth|bin|pt)$/i, '') || '';
 
         while (genericNames.has(filename.toLowerCase()) && pathParts.length > 0) {
@@ -182,6 +182,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return mapping;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [ranges?.controlNets, ranges?.guidanceSubtypes]);
 
     const activeControlNetTypes = React.useMemo(() => {
@@ -196,6 +197,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return Array.from(activeTypes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [filters.controlNets, controlNetModelsByType.other, ranges?.guidanceSubtypes]);
 
 
@@ -230,6 +232,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return mapping;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [ranges?.ipAdapters, ranges?.guidanceSubtypes]);
 
     const activeIpAdapterTypes = React.useMemo(() => {
@@ -244,6 +247,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return Array.from(activeTypes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getModelType is recreated every render and reads only ranges.guidanceSubtypes, which is listed
     }, [filters.ipAdapters, ipAdapterModelsByType.other, ranges?.guidanceSubtypes]);
 
     const availableIpAdapterOptions = React.useMemo(() => {

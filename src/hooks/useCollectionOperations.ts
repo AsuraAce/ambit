@@ -109,7 +109,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection(newCol);
-    } catch (e) {
+    } catch {
       // Rollback
       setAllCollections(prev => prev.filter(c => c.id !== id));
       addToast("Failed to create collection", "error");
@@ -158,7 +158,7 @@ export const useCollectionOperations = ({
           includePromptSearch: true
         });
       }
-    } catch (e) {
+    } catch {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
       addToast("Failed to update filters", "error");
@@ -205,7 +205,7 @@ export const useCollectionOperations = ({
 
     try {
       await deleteCollectionFromDb(id);
-    } catch (e) {
+    } catch {
       addToast(original.source === 'invoke' ? "Failed to hide collection" : "Failed to delete collection", "error");
       return false;
     }
@@ -255,7 +255,7 @@ export const useCollectionOperations = ({
       await renameCollectionInDb(id, newName);
       addToast("Collection renamed", "success");
       await refreshCollections();
-    } catch (e) {
+    } catch {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
       addToast("Failed to rename collection", "error");
@@ -272,7 +272,7 @@ export const useCollectionOperations = ({
     try {
       await upsertCollection({ ...col, color });
       refreshCollections(true).catch(error => console.error('[Collections] Refresh failed', error));
-    } catch (e) {
+    } catch {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
     }
@@ -294,7 +294,7 @@ export const useCollectionOperations = ({
       await upsertCollection({ ...col, isArchived: newState });
       addToast(newState ? "Collection archived" : "Collection unarchived", "info");
       refreshCollections(true).catch(error => console.error('[Collections] Refresh failed', error));
-    } catch (e) {
+    } catch {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
       addToast("Failed to update archive status", "error");
@@ -313,7 +313,7 @@ export const useCollectionOperations = ({
     try {
       await upsertCollection({ ...col, isPinned: newState });
       refreshCollections(true).catch(error => console.error('[Collections] Refresh failed', error));
-    } catch (e) {
+    } catch {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
     }
@@ -326,7 +326,7 @@ export const useCollectionOperations = ({
     return serializeCollectionMembershipMutation(collectionId, async () => {
       try {
         await addImgsToCol(collectionId, imageIds);
-      } catch (e) {
+      } catch {
         addToast("Failed to add to collection", "error");
         return false;
       }
@@ -358,7 +358,7 @@ export const useCollectionOperations = ({
     return serializeCollectionMembershipMutation(collectionId, async () => {
       try {
         await removeImgsFromCol(collectionId, imageIds);
-      } catch (e) {
+      } catch {
         addToast("Failed to remove from collection", "error");
         return false;
       }
@@ -399,7 +399,7 @@ export const useCollectionOperations = ({
 
     try {
       await moveImgsBetweenCols(sourceId, targetId, imageIds);
-    } catch (e) {
+    } catch {
       addToast("Failed to move images", "error");
       return false;
     }

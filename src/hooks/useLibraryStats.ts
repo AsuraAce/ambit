@@ -14,7 +14,7 @@ export const useLibraryStats = (images: AIImage[]) => {
         return {
           name: modelName.split(' ')[0], // Shorten name for axis
           fullName: modelName,
-          count: images.filter(img => (img.metadata.overrideModel || img.metadata.model) === modelName).length
+          count: images.filter(img => (img.metadata.overrideModel || img.metadata.model) === (modelName as string)).length
         };
     });
 

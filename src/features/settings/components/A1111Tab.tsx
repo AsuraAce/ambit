@@ -353,9 +353,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     {!showAllFolders && hiddenCount > 0 && (
                                         <span className="text-[9px] text-gray-500 font-medium">Showing standard output folders ({displayedCandidates.length} of {candidates.length})</span>
                                     )}
-                                    {candidates.some(c => c.variant && c.variant !== 'Unknown') ? (
+                                    {candidates.some(c => c.variant && c.variant !== WebUIVariant.UNKNOWN) ? (
                                         <span className="text-[10px] bg-harbor-500/10 text-harbor-600 dark:text-harbor-300 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit">
-                                            Detected: {candidates.find(c => c.variant && c.variant !== 'Unknown')?.variant}
+                                            Detected: {candidates.find(c => c.variant && c.variant !== WebUIVariant.UNKNOWN)?.variant}
                                         </span>
                                     ) : (
                                         forceVariant === 'Auto' && (

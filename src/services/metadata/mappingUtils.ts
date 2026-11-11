@@ -59,7 +59,7 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
 
         if (trimmed.startsWith('{') || trimmed.startsWith('"')) {
             try {
-                const parsed = JSON.parse(trimmed);
+                const parsed = JSON.parse(trimmed) as unknown;
                 // If it parsed as a string (was a JSON-escaped string), 
                 // we recurse to handle the unescaped content.
                 // If it parsed as an object, we recurse to use object mapping.
@@ -157,7 +157,7 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     };
 
     const lines = text.split('\n').map(l => l.trim());
-    let positiveParts: string[] = [];
+    const positiveParts: string[] = [];
     let negativePrompt = "";
     let paramsLine = "";
     let state = 0; // 0: positive, 1: negative, 2: params
@@ -180,7 +180,7 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     metadata.negativePrompt = negativePrompt.trim();
 
     // --- Extract LoRAs from Prompts ---
-    const loraRegex = /<lora:([^:>]+)(?::([0-9\.]+))?>/gi;
+    const loraRegex = /<lora:([^:>]+)(?::([0-9.]+))?>/gi;
     const loras = new Set<string>();
     const prompts = [metadata.positivePrompt, metadata.negativePrompt];
     for (const p of prompts) {
@@ -203,7 +203,7 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     if (loras.size > 0) metadata.loras = Array.from(loras);
 
     // --- Extract Hypernetworks from Prompts ---
-    const hypernetRegex = /<hypernet:([^:>]+)(?::([0-9\.]+))?>/gi;
+    const hypernetRegex = /<hypernet:([^:>]+)(?::([0-9.]+))?>/gi;
     const hypernets = new Set<string>();
     for (const p of prompts) {
         if (!p) continue;
@@ -224,7 +224,7 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     if (hypernets.size > 0) metadata.hypernetworks = Array.from(hypernets);
 
     // --- Extract Embeddings from Prompts ---
-    const embeddingRegex = /(embedding:|<embedding:|<)([a-zA-Z0-9_\-\.]+)([:>])?/gi;
+    const embeddingRegex = /(embedding:|<embedding:|<)([a-zA-Z0-9_\-.]+)([:>])?/gi;
     const embeddings = new Set<string>();
     for (const p of prompts) {
         if (!p) continue;

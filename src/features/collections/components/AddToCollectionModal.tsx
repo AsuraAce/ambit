@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive, Sparkles } from 'lucide-react';
+import { Folder, ArrowUpDown, Check, X, Plus, Archive, Sparkles } from 'lucide-react';
 import { Collection } from '../../../types';
 import { SearchInput } from '../../filters/components/FilterPrimitives';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';

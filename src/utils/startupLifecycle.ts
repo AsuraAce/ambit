@@ -41,6 +41,7 @@ export const createStartupLifecycleDiagnostics = ({
 };
 
 export const startupLifecycle = createStartupLifecycleDiagnostics({
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- subscribe is an object-literal method that does not use this
     subscribe: startupDiagnostics.subscribe,
     transport: (launchId, stage) => commands.recordStartupLifecycle(launchId, stage),
 });

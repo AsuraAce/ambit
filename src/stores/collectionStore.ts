@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { Collection, SmartCollection } from '../types';
+import { Collection } from '../types';
 import { appRepository } from '../services/repository';
 import { shouldAutoRefreshSmartCollectionSummary } from '../utils/smartCollectionRefresh';
 import {
@@ -236,6 +236,7 @@ const scheduleSupersedingDebounce = (
                 await task();
                 resolve();
             } catch (error) {
+                // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- forwards whatever the scheduled task threw so the caller sees the original failure
                 reject(error);
             } finally {
                 if (state.timer === timer) {
@@ -435,7 +436,7 @@ export const useCollectionStore = create<CollectionState>()(
                                 thumbnailHydrationPendingIds: Object.fromEntries(
                                     Object.entries(state.thumbnailHydrationPendingIds)
                                         .filter(([collectionId]) => !collectionBatch.some(collection => collection.id === collectionId))
-                                ) as Record<string, true>
+                                )
                             }));
 
                             await delay(COLLECTION_THUMBNAIL_YIELD_MS);

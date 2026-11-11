@@ -66,7 +66,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
     const requestIdRef = React.useRef(0);
     const thumbnailHydrationPendingIds = useCollectionStore(state => state.thumbnailHydrationPendingIds) ?? {};
 
-    const memberships = membershipsByAsset.get(assetId) ?? [];
+    const memberships = React.useMemo(() => membershipsByAsset.get(assetId) ?? [], [membershipsByAsset, assetId]);
     const isLoading = loadState.assetId !== assetId || loadState.status === 'loading';
     const hasError = loadState.assetId === assetId && loadState.status === 'error';
     const isReady = loadState.assetId === assetId && loadState.status === 'ready';
@@ -167,7 +167,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
             return next;
         });
 
-        let didPersist = false;
+        let didPersist: boolean;
         try {
             didPersist = await onSetCollectionMembership(requestedAssetId, collectionId, shouldBelong);
         } catch {

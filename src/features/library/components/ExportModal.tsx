@@ -42,7 +42,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             multiple: false,
             title: "Select Export Destination"
         });
-        if (selected) setFolder(selected as string);
+        if (selected) setFolder(selected);
     };
 
     return (

@@ -134,7 +134,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
     const filterKey: ResourceFilterKey = type === 'checkpoints' ? 'models' : type;
-    const selectedNames = useMemo(() => new Set((filters[filterKey] || []) as string[]), [filters, filterKey]);
+    const selectedNames = useMemo(() => new Set((filters[filterKey] || [])), [filters, filterKey]);
     const validNameSet = useMemo(() => validNames ? new Set(validNames) : null, [validNames]);
 
     const getItemAliases = useCallback((item: ResourceItem) => (
@@ -148,7 +148,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const toggleItem = (item: ResourceItem) => {
         if (item.count === 0 && item.isLocalDisk) return;
         setFilters(prev => {
-            const currentList = (prev[filterKey] as string[]) || [];
+            const currentList = (prev[filterKey]) || [];
             const itemAliases = getItemAliases(item);
             const itemAliasSet = new Set(itemAliases);
             const selected = currentList.some(value => itemAliasSet.has(value));

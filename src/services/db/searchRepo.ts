@@ -111,10 +111,6 @@ interface CountRow {
     count: number;
 }
 
-interface BasicStatsRow {
-    total: number;
-}
-
 interface AverageStepsRow {
     avg_steps: number | null;
 }
@@ -580,7 +576,7 @@ export const searchImages = async (
             // OR (is_pinned = cursor.pin AND sortField [op] cursor.val)
             // OR (is_pinned = cursor.pin AND sortField = cursor.val AND id [op] cursor.id)
 
-            const pinOp = '<='; // Pinned (1) comes before Unpinned (0) so DESC means 1 > 0. Next page is <= current.
+            // Pinned (1) comes before Unpinned (0) so DESC means 1 > 0. Next page is <= current.
             // Actually, for DESC sort: "Row A comes after Cursor B" means Row A < Cursor B.
             // So is_pinned can confirm to < cursor.isPinned
 
@@ -912,7 +908,6 @@ export const getLibraryStatsSummary = async (
     collectionId?: string,
     loraName?: string
 ): Promise<LibraryStatsSummary> => {
-    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
     if (!whereClause && !collectionId && !loraName && globalStatsSummaryCache) {
         return globalStatsSummaryCache;

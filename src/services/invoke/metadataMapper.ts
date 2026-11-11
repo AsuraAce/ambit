@@ -97,7 +97,7 @@ function extractEmbeddingsFromPrompt(text: string): string[] {
     // 1. embedding:name (Comfy/A1111)
     // 2. <embedding:name> (Comfy/A1111)
     // 3. <name> (InvokeAI) - must have closing >
-    const re = /(embedding:|<embedding:|<)([a-zA-Z0-9_\-\.]+)([:>])?/gi;
+    const re = /(embedding:|<embedding:|<)([a-zA-Z0-9_\-.]+)([:>])?/gi;
     const matches = Array.from(text.matchAll(re));
     const embeddings: string[] = [];
     for (const match of matches) {
@@ -124,7 +124,7 @@ function extractEmbeddingsFromPrompt(text: string): string[] {
 function extractLorasFromPrompt(text: string): string[] {
     if (!text) return [];
     // Format: <lora:name:weight>
-    const re = /<lora:([^:>]+)(?::([0-9\.]+))?>/gi;
+    const re = /<lora:([^:>]+)(?::([0-9.]+))?>/gi;
     const matches = Array.from(text.matchAll(re));
     const loras: string[] = [];
     for (const match of matches) {
@@ -147,7 +147,7 @@ function extractLorasFromPrompt(text: string): string[] {
 function extractHypernetsFromPrompt(text: string): string[] {
     if (!text) return [];
     // Format: <hypernet:name:weight>
-    const re = /<hypernet:([^:>]+)(?::([0-9\.]+))?>/gi;
+    const re = /<hypernet:([^:>]+)(?::([0-9.]+))?>/gi;
     const matches = Array.from(text.matchAll(re));
     const hypernets: string[] = [];
     for (const match of matches) {
@@ -211,7 +211,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
             const items = Array.isArray(cns) ? cns : [cns];
             items.forEach((c) => {
                 if (!c) return;
-                let name = '';
+                let name: string;
                 if (typeof c === 'string') name = c;
                 else {
                     const item = asRecord(c);
@@ -239,7 +239,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
         const items = Array.isArray(adapters) ? adapters : [adapters];
         items.forEach(item => {
             if (!item) return;
-            let name = '';
+            let name: string;
             if (typeof item === 'string') {
                 name = item;
             } else {
@@ -264,7 +264,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
             const items = Array.isArray(ips) ? ips : [ips];
             items.forEach((i) => {
                 if (!i) return;
-                let name = '';
+                let name: string;
                 if (typeof i === 'string') name = i;
                 else {
                     const item = asRecord(i);
@@ -290,7 +290,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
             const items = Array.isArray(embs) ? embs : [embs];
             items.forEach((e) => {
                 if (!e) return;
-                const name = typeof e === 'string' ? e : readResourceName(e);
+                const name = typeof e === 'string' ? e : readResourceName(e as MetadataRecord);
 
                 if (name && typeof name === 'string') {
                     const cleaned = cleanModelName(name);
@@ -308,7 +308,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
             const items = Array.isArray(hn) ? hn : [hn];
             items.forEach((h) => {
                 if (!h) return;
-                const name = typeof h === 'string' ? h : readResourceName(h);
+                const name = typeof h === 'string' ? h : readResourceName(h as MetadataRecord);
 
                 if (name && typeof name === 'string') {
                     const cleaned = cleanModelName(name);
@@ -330,7 +330,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
 }
 
 // Helper to map InvokeAI metadata to Ambit's format using a database row
-export function mapInvokeMetadata(row: unknown, metaCol: string, processedIndex: number): InvokeImageMetadata {
+export function mapInvokeMetadata(row: unknown, metaCol: string, _processedIndex: number): InvokeImageMetadata {
     const rowRecord = asRecord(row);
     const rawVal = rowRecord[metaCol];
 
@@ -356,12 +356,12 @@ export function mapInvokeMetadata(row: unknown, metaCol: string, processedIndex:
     if (!rawVal) return baseMetadata;
 
     try {
-        const meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        const meta = typeof rawVal === 'string' ? JSON.parse(rawVal) as unknown : rawVal;
         const mapped = mapRawInvokeMetadata(meta);
         // Overwrite hints from higher-level row if present
         if (rowRecord.has_workflow !== undefined) mapped.hasWorkflowHint = rowRecord.has_workflow === 1 || rowRecord.has_workflow === true;
         return { ...baseMetadata, ...mapped };
-    } catch (e) {
+    } catch {
         return baseMetadata;
     }
 }
@@ -396,7 +396,7 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
         if (typeof root === 'string') {
             try {
                 root = JSON.parse(root);
-            } catch (e) {
+            } catch {
                 root = metaRecord; // Fallback
             }
         }
@@ -443,7 +443,9 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     }
 
     // Hash extraction (v2.x uses model_hash at root, v3.5+ uses model.hash)
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
     if (rootRecord.model_hash) mapped.modelHash = String(rootRecord.model_hash);
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
     else if (metaRecord.model_hash) mapped.modelHash = String(metaRecord.model_hash);
     else if (asRecord(actualRoot.model).hash) {
         // Strip prefixes like "blake3:" if present
@@ -475,7 +477,7 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     }
 
     if (actualRoot.model) {
-        let modelFull = '';
+        let modelFull: string;
         if (typeof actualRoot.model === 'string') modelFull = actualRoot.model;
         else modelFull = readResourceName(asRecord(actualRoot.model));
 

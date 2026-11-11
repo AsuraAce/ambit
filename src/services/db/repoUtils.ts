@@ -153,7 +153,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
         seed: asNumber(metadata.seed) ?? asNumber(row.seed),
         model: asString(row.resolved_model_name) || metadata.model || asString(row.model_name) || 'Unknown',
         modelHash: metadata.modelHash || asString(row.model_hash),
-        tool: (metadata.tool || asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
+        tool: (metadata.tool || asString(row.tool) || GeneratorTool.UNKNOWN),
         positivePrompt: metadata.positivePrompt || asString(row.positive_prompt) || '',
         negativePrompt: metadata.negativePrompt || asString(row.negative_prompt) || ''
     };

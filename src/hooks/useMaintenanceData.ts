@@ -29,7 +29,7 @@ const FAILED_DUPLICATE_SCAN_RESULT: FileHashBackfillResult = {
     wasCancelled: false,
 };
 
-export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: 'global' | 'filtered') => {
+export const useMaintenanceData = (activeTab: MaintenanceTab, _thumbnailsScope: 'global' | 'filtered') => {
     const {
         activeSqlWhere,
         activeSqlParams

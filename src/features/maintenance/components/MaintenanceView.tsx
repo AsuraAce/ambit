@@ -124,7 +124,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Missing Scan Special State
-    const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
+    const [_scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
 
     useEffect(() => {
@@ -266,7 +266,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         handleImageClick,
         handleRangeSelection: selectionRangeHandler,
         clearSelection,
-        setLastSelectedId
+        setLastSelectedId: _setLastSelectedId
     } = useSelection(currentList);
 
     // --- Handlers ---
@@ -517,7 +517,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setLocalMissingImages,
         thumbnailsScope,
         untaggedScope,
-        viewingImageId
+        viewingImageId,
+        setLocalIntermediateImages,
+        setLocalUnoptimizedImages,
+        setLocalUntaggedImages
     ]);
 
     const handleRegenerate = async (ids?: string[]) => {
@@ -681,7 +684,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         thumbnailsScope={thumbnailsScope}
                                         onScopeChange={handleThumbnailsScopeChange}
                                         maskedKeywords={maskedKeywords}
-                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        scrollContainerRef={scrollContainerRef}
                                         onRangeSelection={handleRangeAdapter}
                                         onBackgroundClick={handleBackgroundClick}
                                         includeUpgradeable={includeUpgradeable}
@@ -718,7 +721,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         onRemoveFromLibrary={handleDeleteSelected}
                                         onViewImage={openViewer}
                                         maskedKeywords={maskedKeywords}
-                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        scrollContainerRef={scrollContainerRef}
                                         onRangeSelection={handleRangeAdapter}
                                         onBackgroundClick={handleBackgroundClick}
                                         untaggedScope={untaggedScope}
@@ -742,7 +745,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                             onPurgeMissing={handlePurgeMissing}
                                             onViewImage={openViewer}
                                             maskedKeywords={maskedKeywords}
-                                            scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                            scrollContainerRef={scrollContainerRef}
                                             onRangeSelection={handleRangeAdapter}
                                             onBackgroundClick={handleBackgroundClick}
                                         />
@@ -759,7 +762,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         onRestoreSelected={handleRestoreSelected}
                                         onDeleteSelected={handleDeleteSelected}
                                         maskedKeywords={maskedKeywords}
-                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        scrollContainerRef={scrollContainerRef}
                                         onRangeSelection={handleRangeAdapter}
                                         onBackgroundClick={handleBackgroundClick}
                                         busyAction={removedAction}
@@ -777,7 +780,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         onUnmarkSelected={handleUnmarkIntermediates}
                                         onViewImage={openViewer}
                                         maskedKeywords={maskedKeywords}
-                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        scrollContainerRef={scrollContainerRef}
                                         onRangeSelection={handleRangeAdapter}
                                         onBackgroundClick={handleBackgroundClick}
                                         scope={intermediatesScope}

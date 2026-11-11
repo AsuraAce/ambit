@@ -99,7 +99,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
             } else {
                 addToast('No orphan thumbnails found', 'info');
             }
-        } catch (e) {
+        } catch {
             addToast('Failed to clean up thumbnails', 'error');
         } finally {
             setMaintenanceOperation(null);
@@ -115,7 +115,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
             } else {
                 addToast('All thumbnails already synced to database', 'info');
             }
-        } catch (e) {
+        } catch {
             addToast('Failed to sync thumbnails', 'error');
         } finally {
             setMaintenanceOperation(null);

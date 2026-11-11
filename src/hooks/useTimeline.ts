@@ -23,9 +23,9 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
 
         // 1. Bucketize Images
         images.forEach(img => {
-            let label = '';
-            let id = '';
-            let groupTimestamp = 0; // Used for sorting the groups themselves
+            let label: string;
+            let id: string;
+            let groupTimestamp: number; // Used for sorting the groups themselves
 
             const calendar = getImageCalendarParts(img);
             const imgDate = new Date(calendar.year, calendar.monthIndex, calendar.day);

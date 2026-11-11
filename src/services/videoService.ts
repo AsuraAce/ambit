@@ -1,6 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, type VideoAssetRecord, type VideoImportOutcome } from '../bindings';
-import { GeneratorTool, type ImageMetadata, type VideoAsset } from '../types';
+import { type ImageMetadata, type VideoAsset } from '../types';
 import { getFilename, normalizePath } from '../utils/pathUtils';
 import { unwrap } from '../utils/spectaUtils';
 
@@ -163,6 +163,7 @@ const waitForVideoEvent = (
     timeoutMs = 15_000,
     shouldCancel?: () => boolean
 ): Promise<void> => new Promise((resolve, reject) => {
+    // eslint-disable-next-line prefer-const -- finish() can run (shouldCancel path) before the timer is created; a const would be in its temporal dead zone
     let timeout: number | undefined;
     let cancellationPoll: number | undefined;
     let settled = false;
@@ -173,7 +174,8 @@ const waitForVideoEvent = (
         if (cancellationPoll !== undefined) window.clearInterval(cancellationPoll);
         video.removeEventListener(successEvent, handleSuccess);
         video.removeEventListener('error', handleError);
-        error ? reject(error) : resolve();
+        if (error) reject(error);
+        else resolve();
     };
     const handleSuccess = () => finish();
     const handleError = () => finish(new Error('Browser could not decode the video for poster generation'));

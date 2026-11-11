@@ -77,7 +77,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       draggable={!isMissing}
       data-drag-source="true"
       onDragStart={(e) => {
-        onDragStart && onDragStart(e, image.id);
+        if (onDragStart) onDragStart(e, image.id);
       }}
       onDrag={onDrag}
       onDragEnd={onDragEnd}
@@ -226,6 +226,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                   const model = typeof modelValue === 'string'
                     ? modelValue
                     : modelValue && typeof modelValue === 'object' && 'name' in modelValue
+                      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
                       ? String((modelValue as { name?: unknown }).name || '')
                       : '';
                   if (image.metadata.overrideModel) return formatModelName(image.metadata.overrideModel);

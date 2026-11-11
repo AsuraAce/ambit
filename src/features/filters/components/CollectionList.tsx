@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Archive, ArrowUpDown, Search, Pin, Check, LayoutGrid, List as ListIcon, Calendar, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow, SortDesc, SortAsc } from 'lucide-react';
+import { Archive, Search, Pin, LayoutGrid, List as ListIcon, Calendar, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow, SortDesc, SortAsc } from 'lucide-react';
 import type { Collection, CollectionSortOption, FilterState } from '../../../types';
 import { SearchInput, SortDropdown } from './FilterPrimitives';
 import { CollectionContextMenu } from '../../collections/components/CollectionContextMenu';

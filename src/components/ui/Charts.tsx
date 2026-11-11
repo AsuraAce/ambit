@@ -36,7 +36,7 @@ const formatAnalysisTarget = (globalTotal: number) =>
         ? `Analyzing ${globalTotal.toLocaleString()} library images`
         : 'Analyzing library images';
 
-export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
+export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilter }) => {
     const setKeywordStatsEnabled = useLibraryStore(state => state.setKeywordStatsEnabled);
     // Use DB-backed global stats
     const {

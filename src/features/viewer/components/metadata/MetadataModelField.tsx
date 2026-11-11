@@ -35,6 +35,7 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
 }) => {
     const availableOptions = React.useMemo(
         () => normalizeOptions(options, presentation),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- normalizeOptions reads only presentation.isHashFallback and presentation.value, both listed
         [options, presentation.isHashFallback, presentation.value]
     );
     const [isEditing, setIsEditing] = React.useState(false);

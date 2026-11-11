@@ -48,9 +48,9 @@ export const calculateLayout = <T>(config: LayoutConfig<T>): LayoutResult => {
   }
 
   const positions: ItemPosition[] = [];
-  let finalHeight = 0;
-  let metaCols = 1;
-  let metaRowHeight = minItemWidth;
+  let finalHeight: number;
+  let metaCols: number;
+  let metaRowHeight: number;
 
   // --- GRID ---
   if (layoutMode === 'grid') {
@@ -78,7 +78,7 @@ export const calculateLayout = <T>(config: LayoutConfig<T>): LayoutResult => {
   else if (layoutMode === 'masonry') {
     const cols = Math.max(1, Math.floor((effectiveWidth + gap) / (minItemWidth + gap)));
     const itemWidth = Math.floor((effectiveWidth - (cols - 1) * gap) / cols);
-    const colHeights = new Array(cols).fill(padding); // Start at padding-top
+    const colHeights = new Array<number>(cols).fill(padding); // Start at padding-top
     
     items.forEach(item => {
       // Find shortest column

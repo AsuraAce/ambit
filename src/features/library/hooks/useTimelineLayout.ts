@@ -1,4 +1,4 @@
-import { useState, useMemo, useLayoutEffect, useRef } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { AIImage } from '../../../types';
 
 export interface TimelineGroup {

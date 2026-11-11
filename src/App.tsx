@@ -112,11 +112,11 @@ export default function App() {
         () => document.getElementById('static-loading') !== null
     );
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
-    const [showSupportPulse, setShowSupportPulse] = useState(true);
+    const [_showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [exportIds, setExportIds] = useState<Set<string>>(new Set());
-    const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
+    const [_gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
@@ -127,7 +127,7 @@ export default function App() {
     const settings = useSettingsStore(s => s.settings);
     const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
     const isStartupCatchupPending = useLibraryStore(s => s.isStartupCatchupPending);
-    const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
+    const _geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const setSettings = useSettingsStore(s => s.setSettings);
     const flushSettings = useSettingsStore(s => s.flushSettings);
 
@@ -147,7 +147,7 @@ export default function App() {
         isFiltering, privacyExposureBlocked, isLibraryReady,
         toggleFavorite,
         clearAllFilters,
-        recentSearches, setRecentSearches,
+        recentSearches: _recentSearches, setRecentSearches,
         refreshMetadata,
         refreshHiddenAvailability
     } = useSearch();
@@ -443,6 +443,7 @@ export default function App() {
     const openInvokeSettings = useCallback(() => {
         modals.setInitialSettingsTab('invokeai');
         modals.openModal('settings');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the two modal actions it calls; the modals object is new every render
     }, [modals.openModal, modals.setInitialSettingsTab]);
 
     const handleSelectFilesImport = useCallback(async () => {
@@ -503,6 +504,7 @@ export default function App() {
     const loadMoreImages = React.useCallback(() => {
         // useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]); 
         // Logic handled by active query refetch if needed
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- kept so consumers get a new callback identity when collections change, as before
     }, [collections, smartCollections]);
 
     const changeViewMode = useCallback((newMode: ViewMode) => {
@@ -584,7 +586,7 @@ export default function App() {
         viewingImageIdRef.current = null;
         setSelectedImageIndex(nextIndex);
         setViewingImageId(null);
-    }, []);
+    }, [setSelectedImageIndex, setViewingImageId]);
 
     const handleSetViewerCollectionMembership = useCallback((
         imageId: string,

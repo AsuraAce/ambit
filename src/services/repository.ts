@@ -74,7 +74,7 @@ export class LocalStorageRepository implements IRepository {
     try {
       const serializedState = localStorage.getItem(this.storageKey);
       if (serializedState) {
-        const saved = JSON.parse(serializedState);
+        const saved = JSON.parse(serializedState) as AppState;
         const savedSettings: Partial<AppSettings> = saved.settings ?? {};
         return {
           ...saved,

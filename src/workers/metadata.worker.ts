@@ -352,7 +352,6 @@ export const parseExifData = (data: Uint8Array): string | null => {
             if (entryOffset + 12 > data.length) break;
 
             const tag = getU16(entryOffset);
-            const type = getU16(entryOffset + 2);
             const count = getU32(entryOffset + 4);
             const valueOffsetOrData = getU32(entryOffset + 8); // This implies value fits in 4 bytes if < 4 bytes, else it's offset
 
@@ -376,7 +375,7 @@ export const parseExifData = (data: Uint8Array): string | null => {
                     // or \0\0\0\0\0\0\0\0 for undefined.
 
                     const encodingKey = textDecoder.decode(data.slice(dataOffset, dataOffset + 8));
-                    let start = dataOffset + 8;
+                    const start = dataOffset + 8;
 
                     if (encodingKey.startsWith('ASCII')) {
                         // It is ASCII (utf-8 compatible usually)
@@ -600,7 +599,7 @@ self.onmessage = async (e: MessageEvent) => {
     try {
         const metadata: Partial<ImageMetadata> = {};
         const extra: ParseResult['extra'] = {};
-        let isIntermediate = false;
+        const isIntermediate = false;
         if (chunks) {
             // 1. A1111 / SD.Next (Compatibility)
             if (chunks.parameters || chunks.Parameters || chunks.PARAMETERS) {
@@ -614,7 +613,9 @@ self.onmessage = async (e: MessageEvent) => {
             if (sdNextMetadata) {
                 try {
                     mergeMetadata(metadata, parseSdNextJsonMetadata(sdNextMetadata));
-                } catch { }
+                } catch {
+                    // Best-effort: ignore malformed SD.Next metadata
+                }
             }
 
             // 3. ComfyUI (Cumulative)
@@ -635,7 +636,9 @@ self.onmessage = async (e: MessageEvent) => {
                 try {
                     const json = JSON.parse(invokeMeta) as unknown;
                     mergeMetadata(metadata, mapRawInvokeMetadata(json));
-                } catch { }
+                } catch {
+                    // Best-effort: ignore malformed InvokeAI metadata
+                }
             }
 
             // 5. InvokeAI Workflow / Graph (Cumulative)

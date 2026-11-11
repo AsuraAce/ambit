@@ -2,14 +2,12 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench, RefreshCw, History } from 'lucide-react';
-import { APP_NAME } from '../../../constants/app';
 import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { commands } from '../../../bindings';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../../hooks/useToast';
-import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
 import { listenWithCleanup } from '../../../utils/tauriListener';
@@ -97,7 +95,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                 console.error(result.error);
                 addToast('Failed to optimize database', 'error');
             }
-        } catch (e) {
+        } catch {
             addToast('Error communicating with backend', 'error');
         } finally {
             setIsOptimizing(false);

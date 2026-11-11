@@ -42,7 +42,7 @@ export interface StartupFacetRefreshResult {
 
 export const countTouchedFacetResources = (resources?: TouchedFacetResources): number => {
     if (!resources) return 0;
-    return Object.values(resources).reduce((total, values) => total + values.length, 0);
+    return (Object.values(resources) as string[][]).reduce((total, values) => total + values.length, 0);
 };
 
 const formatErrorMessage = (error: unknown): string => {

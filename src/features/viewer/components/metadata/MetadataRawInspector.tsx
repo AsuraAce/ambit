@@ -18,9 +18,9 @@ export const MetadataRawInspector = ({ image }: MetadataRawInspectorProps) => {
         }
         if (rawViewMode === 'json' && image.metadata.workflowJson) {
             try {
-                const obj = JSON.parse(image.metadata.workflowJson);
+                const obj = JSON.parse(image.metadata.workflowJson) as unknown;
                 return JSON.stringify(obj, null, 2);
-            } catch (e) {
+            } catch {
                 return image.metadata.workflowJson;
             }
         }

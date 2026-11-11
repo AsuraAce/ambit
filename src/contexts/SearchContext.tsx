@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope, type ImageKindFilter, type MediaTypeFilter, type LibraryScopeCounts, type SourceKindCounts } from '../types';
+import { AIImage, AssetScope, FilterState, SortOption, MetadataRefreshScope, type ImageKindFilter, type MediaTypeFilter, type LibraryScopeCounts, type SourceKindCounts } from '../types';
 import { useSettings } from './SettingsContext';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { useCollections } from './CollectionContext';
@@ -133,6 +133,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             .map(keyword => keyword.trim().toLowerCase())
             .filter(Boolean)
             .sort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getEffectiveMaskedKeywords reads only promptMaskingEnabled and maskedKeywords, both listed
     ), [settings.maskedKeywords, settings.promptMaskingEnabled]);
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
     const privacyQueryScopeKey = `${privacyEnabled ? 'enabled' : 'disabled'}\u001e${settings.maskingMode}\u001e${privacyMaskKey}`;
@@ -312,7 +313,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [isLibraryReady]);
 
     // Flatten pages into a single image array
-    const queryImages = React.useMemo(() => {
+    const _queryImages = React.useMemo(() => {
         if (!queryData) return [];
         return queryData.pages.flatMap(p => p.images);
     }, [queryData]);
@@ -366,6 +367,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             scopeQuery.isError && !scopeQuery.isFetching ? scopeQuery.refetch() : undefined,
             availabilityQuery.isError && !availabilityQuery.isFetching ? availabilityQuery.refetch() : undefined,
         ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the query fields it reads; the query result objects change identity every render
     }, [hasCurrentSafePage, scopeQuery.isError, scopeQuery.isFetching, scopeQuery.refetch,
         availabilityQuery.isError, availabilityQuery.isFetching, availabilityQuery.refetch]);
 
@@ -686,10 +688,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             || normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind) !== mediaType) {
             setSettings({ librarySourceKind: sourceKind, libraryMediaType: mediaType });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getEffectiveImageKind reads only filters.mediaType and filters.sourceKind, both listed
     }, [filters.mediaType, filters.sourceKind, setSettings, settings.libraryMediaType, settings.librarySourceKind, sourceKindHydrated]);
 
     // Adapter for legacy fetchData calls
-    const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
+    const fetchData = useCallback(async (isLoadMore: boolean, _isSilent: boolean = false) => {
         if (privacyExposureBlocked) return;
         if (isLoadMore) {
             await fetchNextPage();

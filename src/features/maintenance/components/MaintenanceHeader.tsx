@@ -1,5 +1,4 @@
 import React from 'react';
-import { MaintenanceTab } from '../../../hooks/useMaintenanceData';
 
 interface MaintenanceHeaderProps {
     title: string;

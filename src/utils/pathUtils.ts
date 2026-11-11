@@ -86,7 +86,7 @@ export const urlToPath = (url: string | undefined): string => {
     // Decode URI components (fixes %3A -> :, %20 -> space etc)
     try {
         path = decodeURIComponent(path);
-    } catch (e) {
+    } catch {
         // Fallback if malformed
     }
 

@@ -28,7 +28,7 @@ const scopeFromSavedState = (
         || !isSameInvokePath(snapshot.dbPath, dbPath)) return null;
 
     const selection = settings.invokeOwnerSelection;
-    let scope: InvokeSyncScope | null = null;
+    let scope: InvokeSyncScope | null;
     if (snapshot.scopeMode === 'legacy') {
         if (selection) return null;
         scope = { dbPath, imagesRoot, mode: 'legacy' };
