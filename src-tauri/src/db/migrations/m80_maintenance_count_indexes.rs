@@ -65,7 +65,7 @@ mod tests {
             .into_iter()
             .filter(|m| m.version <= through)
         {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .unwrap_or_else(|e| panic!("migration {}: {e}", migration.version));
         }
     }
@@ -156,7 +156,7 @@ mod tests {
                 VALUES ('removed', 'removed.png', 1, 2, '{"workflow":"keep"}', '{"original":"keep"}');
         "#).unwrap();
         let before = counts_with(&conn, old_count_sql());
-        conn.execute_batch(&migration80().sql).unwrap();
+        conn.execute_batch(migration80().sql).unwrap();
         assert_eq!(before, (1, 0, 0, 1));
         assert_eq!(counts(&conn), before);
         assert_index_reads(&conn);
@@ -410,7 +410,7 @@ mod tests {
                 .query_row("PRAGMA freelist_count", [], |r| r.get(0))
                 .unwrap();
             let build = Instant::now();
-            conn.execute_batch(&migration80().sql).unwrap();
+            conn.execute_batch(migration80().sql).unwrap();
             let build_ms = build.elapsed().as_millis();
             let pages_after: i64 = conn
                 .query_row("PRAGMA page_count", [], |r| r.get(0))

@@ -39,8 +39,7 @@ mod tests {
         )
         .expect("base schema");
 
-        conn.execute_batch(&migration82().sql)
-            .expect("migration 82");
+        conn.execute_batch(migration82().sql).expect("migration 82");
 
         let version: i64 = conn
             .query_row(

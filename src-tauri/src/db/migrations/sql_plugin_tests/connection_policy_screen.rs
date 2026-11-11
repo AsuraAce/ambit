@@ -108,7 +108,7 @@ fn retained_screen(log: &str) -> Option<Vec<ScreenArm>> {
         .map(serde_json::from_str)
         .collect::<Result<_, _>>()
         .ok()?;
-    if records.len() < 14 || records.len() > 50 || (records.len() - 2) % 12 != 0 {
+    if records.len() < 14 || records.len() > 50 || !(records.len() - 2).is_multiple_of(12) {
         return None;
     }
     let h = &records[0];
@@ -219,6 +219,10 @@ fn connection_policy_screen_worker() {
     });
     let queries = [production_collection_stats_query(), maintenance_count_sql()];
     let mut reads_ms = [[0.; 6]; 2];
+    #[allow(
+        clippy::needless_range_loop,
+        reason = "read indexes the inner dimension of reads_ms"
+    )]
     for read in 0..6 {
         if cell % 2 == 1 {
             let values = pair(&sql, &db, queries);

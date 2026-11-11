@@ -354,9 +354,9 @@ fn normalize_workflow_with_limits(
     })
 }
 
-fn flatten_container<'a>(
+fn flatten_container(
     container: &Value,
-    definitions: &HashMap<String, &'a Value>,
+    definitions: &HashMap<String, &Value>,
     prefix: &str,
     boundary_ids: Option<(String, String)>,
     stack: &mut Vec<String>,

@@ -32,8 +32,10 @@ fn read_model_name(value: &serde_json::Value) -> Option<&str> {
 }
 
 pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
-    let mut meta = ImageMetadata::default();
-    meta.tool = "InvokeAI".to_string();
+    let mut meta = ImageMetadata {
+        tool: "InvokeAI".to_string(),
+        ..Default::default()
+    };
 
     // 1. Root-Aware Resolution: Unwrap specific InvokeAI metadata containers
     // This handles the "original_metadata_json" blob from DB which might be wrapped or escaped.
@@ -168,7 +170,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
             if meta.model_hash.is_none() {
                 if let Some(hash) = model.get("hash").and_then(|s| s.as_str()) {
                     // Strip blake3: or similar prefix if present
-                    let clean_hash = hash.split(':').last().unwrap_or(hash);
+                    let clean_hash = hash.split(':').next_back().unwrap_or(hash);
                     meta.model_hash = Some(clean_hash.to_string());
                 }
             }

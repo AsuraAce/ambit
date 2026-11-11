@@ -1832,6 +1832,10 @@ mod tests {
                 asset.timestamp
             )
         );
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let changed: (
             String,
             Option<String>,

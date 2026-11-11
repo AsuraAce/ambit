@@ -36,6 +36,7 @@ pub(crate) struct ReachablePrompt {
 /// - Branching (ConditioningCombine)
 /// - Pass-through nodes (ControlNet, SetArea)
 /// - Unknown custom nodes (by heuristically following 'conditioning' inputs)
+#[cfg(test)]
 pub fn find_reachable_prompts(
     graph: &ComfyGraph,
     start_node_id: &str,
@@ -55,6 +56,7 @@ pub fn find_reachable_prompts(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn find_reachable_prompts_with_role(
     graph: &ComfyGraph,
     start_node_id: &str,
@@ -1613,6 +1615,10 @@ fn trace_text_input_with_state(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "parameter-object refactor tracked in #405"
+)]
 fn evaluate_transform_input(
     graph: &ComfyGraph,
     node: &Value,

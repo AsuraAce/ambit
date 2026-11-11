@@ -482,6 +482,7 @@ mod tests {
         conn.execute_batch(migration60().sql)
             .expect("apply migration");
 
+        #[allow(clippy::type_complexity, reason = "the tuple mirrors the SELECT row it reads")]
         let rows: Vec<(String, Option<String>, Option<String>, Option<i64>)> = conn
             .prepare(
                 "SELECT hash, thumbnail_path, sidecar_thumbnail_path, thumbnail_sensitivity_override

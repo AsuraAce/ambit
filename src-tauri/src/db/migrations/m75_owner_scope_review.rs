@@ -512,6 +512,10 @@ mod tests {
             .expect("upgrade full repair marker");
         assert_eq!(full_repair, 1);
 
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let removed_scope: (
             Option<String>,
             Option<String>,

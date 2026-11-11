@@ -250,7 +250,7 @@ mod tests {
     fn removed_invoke_identity_lookup_uses_image_name_index() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         for migration in get_migrations() {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
         }
 
@@ -294,7 +294,7 @@ mod tests {
     fn migrated_collection_stats_query_scopes_collections_before_memberships() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         for migration in get_migrations() {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
         }
         conn.execute_batch(
@@ -384,7 +384,7 @@ mod tests {
     fn collection_stats_preserve_no_scope_all_users_and_selected_owner_counts() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         for migration in get_migrations() {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
         }
         conn.execute_batch(
@@ -549,7 +549,7 @@ mod tests {
             .into_iter()
             .filter(|migration| migration.version < 80)
         {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
         }
         conn.execute(
@@ -985,7 +985,7 @@ mod tests {
             .collect();
         values.sort_by(f64::total_cmp);
         let middle = values.len() / 2;
-        if values.len() % 2 == 0 {
+        if values.len().is_multiple_of(2) {
             (values[middle - 1] + values[middle]) / 2.0
         } else {
             values[middle]

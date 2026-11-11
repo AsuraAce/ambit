@@ -98,6 +98,16 @@ jobs:
       - name: verify generated bindings
         run: pnpm run bindings:check
 
+      # Clippy runs on the toolchain pinned in rust-toolchain.toml, the one the
+      # release gate uses, so a lint new in that version fails here first.
+      - name: lint rust on the pinned toolchain
+        shell: pwsh
+        run: |
+          Remove-Item Env:RUSTUP_TOOLCHAIN
+          rustup toolchain install
+          rustc --version
+          pnpm run lint:rust
+
       - name: run rust tests
         run: pnpm test:rust
 

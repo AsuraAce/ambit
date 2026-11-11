@@ -145,15 +145,15 @@ pub fn find_wireless_node(
             // 1. Explicitly Titled Prompt Node (Strongest Match)
             if (input_name == "positive" || input_name == "conditioning")
                 && title_lower.contains("positive")
+                && t.contains("CLIPTextEncode")
             {
-                if t.contains("CLIPTextEncode") {
-                    titled_matches.push(id.clone());
-                }
+                titled_matches.push(id.clone());
             }
-            if input_name == "negative" && title_lower.contains("negative") {
-                if t.contains("CLIPTextEncode") {
-                    titled_matches.push(id.clone());
-                }
+            if input_name == "negative"
+                && title_lower.contains("negative")
+                && t.contains("CLIPTextEncode")
+            {
+                titled_matches.push(id.clone());
             }
         }
         titled_matches.sort();

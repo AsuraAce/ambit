@@ -510,7 +510,7 @@ mod tests {
     }
 
     fn png_or_webp_with_exif(extension: &str, fields: &[Field]) -> Vec<u8> {
-        let pixels = [24_u8; 2 * 1 * 3];
+        let pixels = [24_u8; 2 * 3];
         let exif = raw_exif_fields_payload(fields);
         let mut encoded = Vec::new();
         match extension {

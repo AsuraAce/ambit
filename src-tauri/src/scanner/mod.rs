@@ -124,7 +124,8 @@ pub async fn scan_images_bulk(
 
                     let current =
                         parsed_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                    if progress_run_id.is_some() && (current % 10 == 0 || current == total) {
+                    if progress_run_id.is_some() && (current.is_multiple_of(10) || current == total)
+                    {
                         use tauri::Emitter;
                         let _ = app_clone.emit(
                             "import_progress",

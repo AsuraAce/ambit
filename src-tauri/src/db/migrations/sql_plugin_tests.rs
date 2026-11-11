@@ -1224,7 +1224,7 @@ fn preload_migrations_and_replacement_loading_keep_existing_pools_usable() {
             kind: tauri_plugin_sql::MigrationKind::Up,
         }],
     );
-    let sql = MockSql::with_builder(&directory.path, builder, &[db.clone()]);
+    let sql = MockSql::with_builder(&directory.path, builder, std::slice::from_ref(&db));
     let old_pool = sql.pool(&db);
     assert_eq!(
         ipc(

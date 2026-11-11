@@ -30,7 +30,7 @@ mod tests {
         )
         .unwrap();
 
-        conn.execute_batch(&migration67().sql).unwrap();
+        conn.execute_batch(migration67().sql).unwrap();
 
         let restored_state: (Option<String>, Option<i64>) = conn
             .query_row(

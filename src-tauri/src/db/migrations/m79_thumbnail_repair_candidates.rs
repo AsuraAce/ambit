@@ -107,7 +107,7 @@ mod tests {
             .into_iter()
             .filter(|migration| migration.version < 79)
         {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .expect("apply preceding migration");
         }
 

@@ -57,15 +57,11 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
         if m_type == 0xE1 {
             // APP1 - EXIF
             let mut app1_data = vec![0; len];
-            if file.read_exact(&mut app1_data).is_ok() {
-                if app1_data.starts_with(EXIF_HEADER) {
-                    merge_missing_chunks(&mut chunks, extract_exif_chunks(&app1_data[6..]));
-                }
+            if file.read_exact(&mut app1_data).is_ok() && app1_data.starts_with(EXIF_HEADER) {
+                merge_missing_chunks(&mut chunks, extract_exif_chunks(&app1_data[6..]));
             }
-        } else {
-            if file.seek(SeekFrom::Current(len as i64)).is_err() {
-                break;
-            }
+        } else if file.seek(SeekFrom::Current(len as i64)).is_err() {
+            break;
         }
     }
 
@@ -513,7 +509,7 @@ fn has_recognizable_metadata_shape(text: &str) -> bool {
 }
 
 fn decode_utf16_user_comment(payload: &[u8], endian: TiffEndian) -> Option<String> {
-    if payload.len() % 2 != 0 {
+    if !payload.len().is_multiple_of(2) {
         return None;
     }
 
@@ -570,7 +566,7 @@ fn decode_user_comment(raw: &[u8], endian: TiffEndian) -> Option<String> {
         let utf8_candidate = std::str::from_utf8(payload)
             .ok()
             .map(clean_user_comment_text);
-        if payload.len() % 2 != 0 {
+        if !payload.len().is_multiple_of(2) {
             return utf8_candidate;
         }
 
@@ -892,7 +888,7 @@ mod tests {
         let mut data = Vec::with_capacity(key.len() + 1 + value_len);
         data.extend_from_slice(key.as_bytes());
         data.push(0);
-        data.extend(std::iter::repeat(fill).take(value_len));
+        data.extend(std::iter::repeat_n(fill, value_len));
         data
     }
 
@@ -904,7 +900,7 @@ mod tests {
         data.push(0);
         data.push(0);
         data.push(0);
-        data.extend(std::iter::repeat(fill).take(value_len));
+        data.extend(std::iter::repeat_n(fill, value_len));
         data
     }
 
@@ -1588,7 +1584,7 @@ mod tests {
 
         png.extend_from_slice(&(oversized_len as u32).to_be_bytes());
         png.extend_from_slice(b"tEXt");
-        png.extend(std::iter::repeat(0u8).take(oversized_len as usize));
+        png.extend(std::iter::repeat_n(0u8, oversized_len as usize));
         png.extend_from_slice(&[0; 4]);
 
         png.extend_from_slice(&14u32.to_be_bytes());

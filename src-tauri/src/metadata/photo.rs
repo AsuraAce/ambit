@@ -71,14 +71,13 @@ impl PhotoMetadata {
         let milliseconds = captured_at
             .subsecond
             .as_deref()
-            .map(|value| {
+            .and_then(|value| {
                 let mut digits = value.chars().take(3).collect::<String>();
                 while digits.len() < 3 {
                     digits.push('0');
                 }
                 digits.parse::<i64>().ok()
             })
-            .flatten()
             .unwrap_or(0);
 
         Some(local.and_utc().timestamp_millis() + milliseconds)
@@ -948,7 +947,7 @@ mod tests {
     }
 
     fn tiff_with_photo_fields(fields: &[Field]) -> Vec<u8> {
-        let image_fields = vec![
+        let image_fields = [
             long(Tag::ImageWidth, 3),
             long(Tag::ImageLength, 2),
             Field {

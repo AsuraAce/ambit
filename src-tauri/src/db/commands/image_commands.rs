@@ -319,6 +319,10 @@ pub struct FacetScopeCacheStatus {
 
 #[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "variant names are the serde and Specta wire names"
+)]
 pub enum InvokeImageReferenceRole {
     InitImage,
     ControlnetImage,
@@ -3115,8 +3119,8 @@ pub async fn refresh_boards_native(
             for (id, path) in images_to_check {
                 let filename = path
                     .split('/')
-                    .last()
-                    .or_else(|| path.split('\\').last())
+                    .next_back()
+                    .or_else(|| path.split('\\').next_back())
                     .unwrap_or(&path);
                 if let Some(board_name) = board_mapping.get(filename) {
                     update_stmt
@@ -3355,8 +3359,7 @@ mod tests {
 
     fn apply_all_migrations(conn: &Connection) {
         for migration in init_db() {
-            conn.execute_batch(&migration.sql)
-                .expect("apply migrations");
+            conn.execute_batch(migration.sql).expect("apply migrations");
         }
     }
 
@@ -3708,7 +3711,7 @@ mod tests {
             .into_iter()
             .filter(|migration| migration.version <= 71)
         {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .expect("apply migrations through dirty ledger v71");
         }
         conn.execute(
@@ -3752,7 +3755,7 @@ mod tests {
             .expect("dirty entries before migration 72");
 
         conn.execute_batch(
-            &crate::db::migrations::m72_invoke_scope_dirty_conflicts::migration72().sql,
+            crate::db::migrations::m72_invoke_scope_dirty_conflicts::migration72().sql,
         )
         .expect("apply dirty-ledger conflict repair");
 
@@ -3957,6 +3960,10 @@ mod tests {
         assert_eq!(result.active_updated, 1);
         assert_eq!(result.removed_updated, 1);
 
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let active_state: (
             String,
             Option<String>,

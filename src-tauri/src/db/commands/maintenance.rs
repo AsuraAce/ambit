@@ -2229,11 +2229,14 @@ mod tests {
 
     fn apply_all_migrations(conn: &Connection) {
         for migration in init_db() {
-            conn.execute_batch(&migration.sql)
-                .expect("apply migrations");
+            conn.execute_batch(migration.sql).expect("apply migrations");
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "parameter-object refactor tracked in #405"
+    )]
     fn seed_image(
         conn: &Connection,
         id: &str,
@@ -2446,6 +2449,10 @@ mod tests {
         ] {
             assert_eq!(table_count(&conn, table), 1, "restored {table}");
         }
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let restored_state: (
             i64,
             i64,
@@ -3300,6 +3307,10 @@ mod tests {
             .unwrap();
         assert_eq!(custom_thumbnail, "keeper");
 
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let removed: (
             String,
             Option<String>,

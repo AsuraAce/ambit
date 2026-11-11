@@ -43,7 +43,7 @@ fn list_backups_internal(backup_dir: &PathBuf) -> Result<Vec<BackupInfo>, String
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "db") {
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "db") {
             let metadata = entry.metadata().map_err(|e| e.to_string())?;
             let created = metadata.created().unwrap_or(std::time::SystemTime::now());
             let created_datetime: DateTime<Local> = created.into();

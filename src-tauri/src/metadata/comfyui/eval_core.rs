@@ -865,6 +865,10 @@ struct ResolvedModel {
     node_id: String,
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "parameter-object refactor tracked in #405"
+)]
 fn trace_model_chain(
     graph: &ComfyGraph,
     start_node: &Value,

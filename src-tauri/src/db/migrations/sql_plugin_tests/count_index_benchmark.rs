@@ -167,7 +167,11 @@ fn sample(
         } else {
             // Counterbalance query ordering too, without changing query text.
             let mut results = [(Vec::new(), 0.), (Vec::new(), 0.)];
-            for q in if round % 2 == 0 { [0, 1] } else { [1, 0] } {
+            for q in if round.is_multiple_of(2) {
+                [0, 1]
+            } else {
+                [1, 0]
+            } {
                 results[q] = timed_select(&sql, &db, queries[q]);
             }
             results
@@ -223,7 +227,7 @@ fn count_index_primary_qualification() {
 fn qualify_scope(template: &Path, mode: &str, primary_gate: bool) {
     // One immutable, unindexed reference shared by every A/B sample in this scope.
     let expected = {
-        let conn = Connection::open(&template).unwrap();
+        let conn = Connection::open(template).unwrap();
         set_scope(&conn, mode, if mode == "owner" { "a" } else { "" }, true);
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
             .unwrap();
@@ -236,7 +240,7 @@ fn qualify_scope(template: &Path, mode: &str, primary_gate: bool) {
         for variant in if round % 2 == 0 { [0, 1] } else { [1, 0] } {
             for concurrent in [false, true] {
                 sample(
-                    &template,
+                    template,
                     mode,
                     variant == 1,
                     concurrent,

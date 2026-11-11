@@ -731,9 +731,9 @@ fn campaign_work(
             json!({"kind":"query-plan","query":LABELS[index],"classifications":plan_classes(plan)}),
             false,
         )?;
-        for arm in 0..2 {
-            timings[arm][index].sort_by(f64::total_cmp);
-            report.write(json!({"kind":"summary","query":LABELS[index],"arm":if arm == 0 {"sequential"} else {"concurrent"},"reads":3,"median_ms":timings[arm][index][1],"slowest_ms":timings[arm][index][2]}), false)?;
+        for (arm, arm_timings) in timings.iter_mut().enumerate() {
+            arm_timings[index].sort_by(f64::total_cmp);
+            report.write(json!({"kind":"summary","query":LABELS[index],"arm":if arm == 0 {"sequential"} else {"concurrent"},"reads":3,"median_ms":arm_timings[index][1],"slowest_ms":arm_timings[index][2]}), false)?;
         }
     }
     unchanged(path, &before_open, &connections, &versions)?;

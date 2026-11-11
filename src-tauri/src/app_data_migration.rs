@@ -218,7 +218,7 @@ fn existing_database_file_moves(
             }
 
             Some(DatabaseFileMove {
-                name: *name,
+                name,
                 source,
                 destination: local_dir.join(name),
             })
@@ -1235,14 +1235,6 @@ fn escape_sql_like(value: &str) -> String {
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
-}
-
-#[cfg(not(test))]
-pub(crate) fn app_identifier_dirs_to_check() -> Vec<std::path::PathBuf> {
-    profile_dirs_for_roots(&app_data_roots_to_check(), None)
-        .into_iter()
-        .map(|profile| profile.path)
-        .collect()
 }
 
 #[cfg(not(test))]

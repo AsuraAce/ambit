@@ -664,6 +664,10 @@ fn manual_thumbnail_image(
     Ok(None)
 }
 
+#[allow(
+    clippy::type_complexity,
+    reason = "named result struct tracked in #405"
+)]
 fn compute_thumbnail_fields(
     conn: &rusqlite::Connection,
     model: &FacetModelSource,
@@ -710,9 +714,9 @@ fn compute_thumbnail_fields(
 
     let sensitive = if model.thumbnail_sensitivity_override == Some(0) {
         0
-    } else if model.thumbnail_sensitivity_override == Some(1) {
-        1
-    } else if privacy_keyword_matches(conn, &model.name)? {
+    } else if model.thumbnail_sensitivity_override == Some(1)
+        || privacy_keyword_matches(conn, &model.name)?
+    {
         1
     } else if usable_manual_thumb.is_some() {
         manual_image.map(|(_, hidden, _)| hidden).unwrap_or(1)
@@ -1839,6 +1843,10 @@ fn get_valid_facet_names_for_query(
                     control_nets.push(name);
                 }
             }
+            #[allow(
+                clippy::collapsible_match,
+                reason = "a guard with a side effect would make this arm unlike its siblings"
+            )]
             "ip_adapters" => {
                 if ip_set.insert(name.clone()) {
                     ip_adapters.push(name);
@@ -2488,7 +2496,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         conn.execute(
@@ -2789,7 +2797,7 @@ mod tests {
 
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         println!("DEBUG: Migrations applied");
 
@@ -2971,7 +2979,7 @@ mod tests {
     fn default_facet_cache_excludes_invoke_assets() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3099,7 +3107,7 @@ mod tests {
     fn checkpoint_resource_refresh_matches_full_rebuild_when_only_asset_has_hash() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3161,7 +3169,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         // 1. Simulate a disk scan for a LoRA (clean name)
@@ -3213,7 +3221,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         conn.execute(
@@ -3259,7 +3267,7 @@ mod tests {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         let metadata = r#"{
@@ -3338,7 +3346,7 @@ mod tests {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         conn.execute(
@@ -3448,7 +3456,7 @@ mod tests {
     fn live_resource_refresh_matches_legacy_weighted_resource_names() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3520,7 +3528,7 @@ mod tests {
     fn internal_model_harvest_suppresses_only_the_active_build() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3633,7 +3641,7 @@ mod tests {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         conn.execute(
@@ -3679,7 +3687,7 @@ mod tests {
     fn bulk_facets_exclude_hidden_owner_metadata_but_keep_local_inventory() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3733,7 +3741,7 @@ mod tests {
     fn bulk_resource_facets_use_preaggregated_visible_matches_and_preserve_orphans() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3792,7 +3800,7 @@ mod tests {
     fn bulk_facet_rebuild_replaces_manual_thumbnails_from_hidden_owners() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).unwrap();
+            conn.execute_batch(migration.sql).unwrap();
         }
 
         conn.execute(
@@ -3836,7 +3844,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
-            conn.execute_batch(&m.sql).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
 
         conn.execute(

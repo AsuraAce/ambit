@@ -1,3 +1,14 @@
+// Test builds compile out the Tauri builder (`create_builder` and `run` are
+// `cfg(not(test))`), so every command and the state it uses looks unused there.
+// Dead code is still checked by the normal build, which Clippy also runs.
+#![cfg_attr(
+    test,
+    allow(
+        dead_code,
+        reason = "the cfg(not(test)) Tauri builder is the only caller of most commands"
+    )
+)]
+
 mod app_data_migration;
 mod comfy_support_replay;
 mod db;
@@ -1000,6 +1011,10 @@ mod migration_history_tests {
     fn rejects_mixed_unknown_failed_and_bad_checksum_histories_without_mutating_them() {
         let old_specs = old_invoke_specs();
         let current_specs = current_specs();
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let cases: Vec<Vec<(i64, String, i64, Vec<u8>)>> = vec![
             vec![
                 (
@@ -1457,6 +1472,10 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
     )];
     final_upper_history.extend(final_photo_history.iter().cloned());
 
+    #[allow(
+        clippy::type_complexity,
+        reason = "the tuple mirrors the SELECT row it reads"
+    )]
     let read_rows = |versions: &[i64]| -> Result<Vec<(i64, String, i64, Vec<u8>)>, String> {
         let placeholders = versions.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         conn.prepare(&format!(

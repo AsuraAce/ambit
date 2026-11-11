@@ -220,6 +220,10 @@ impl<'a> KnownMediaLookup<'a> {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "parameter-object refactor tracked in #405"
+)]
 pub fn scan_image_in_scope<F, K>(
     path: String,
     thumbnail_dir: Option<String>,

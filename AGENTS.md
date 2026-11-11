@@ -52,6 +52,7 @@ Start here for common tasks:
 - Frontend tests: `pnpm run test` for watch mode, `pnpm run test:run` for CI-style one-shot runs
 - Coverage: `pnpm run coverage`
 - Rust tests: `pnpm run test:rust`
+- Rust lint (Clippy, warnings fail): `pnpm run lint:rust`
 - Generate Specta bindings: `pnpm run bindings:generate`
 - Check generated binding drift: `pnpm run bindings:check`
 - Tauri compatibility build without packaging: `pnpm run tauri:check`

@@ -273,7 +273,7 @@ fn extract_a1111_cache_entries(
                 if let Some(inner_obj) = val.as_object() {
                     let mut used_flat_entry = false;
                     if let Some(sha256_value) = inner_obj.get("sha256") {
-                        let name = key.split(&['/', '\\'][..]).last().unwrap_or(key);
+                        let name = key.split(&['/', '\\'][..]).next_back().unwrap_or(key);
                         if let Some(sha256) = sha256_value.as_str() {
                             if push_sha256_cache_entries(
                                 &mut entries,
@@ -836,7 +836,7 @@ mod tests {
     fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory db");
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).expect("apply migration");
+            conn.execute_batch(migration.sql).expect("apply migration");
         }
         conn
     }
@@ -900,7 +900,7 @@ mod tests {
     }
 
     fn repeated_hash(byte: char) -> String {
-        std::iter::repeat(byte).take(64).collect()
+        std::iter::repeat_n(byte, 64).collect()
     }
 
     #[test]
