@@ -80,7 +80,6 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable action
         with:
           toolchain: 1.90.0
-          components: clippy
 
       - name: verify minimum supported rust
         shell: pwsh
@@ -99,8 +98,15 @@ jobs:
       - name: verify generated bindings
         run: pnpm run bindings:check
 
-      - name: lint rust
-        run: pnpm run lint:rust
+      # Clippy runs on the toolchain pinned in rust-toolchain.toml, the one the
+      # release gate uses, so a lint new in that version fails here first.
+      - name: lint rust on the pinned toolchain
+        shell: pwsh
+        run: |
+          Remove-Item Env:RUSTUP_TOOLCHAIN
+          rustup toolchain install
+          rustc --version
+          pnpm run lint:rust
 
       - name: run rust tests
         run: pnpm test:rust
