@@ -1402,7 +1402,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('scheduledIdleCancelRef');
         expect(content).toContain('cancelScheduledIdleCallback();');
         expect(content).toContain("scheduleIdleCallback('auto-start'");
-        expect(content).toContain("scheduleIdleCallback('resume'");
+        expect(content).toMatch(/scheduleIdleCallback\(\s*'resume'/);
         expect(content).toContain('mountedRef.current = false');
     });
 
