@@ -20,7 +20,9 @@
     "dev:qa": "vite --mode qa",
     "build": "vite build",
     "build:guard": "node ./scripts/check-build-output.mjs",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" vite.config.ts --max-warnings=0 && stylelint \"src/**/*.css\" --max-warnings=0",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" vite.config.ts --max-warnings=0 && stylelint \"src/**/*.css\" --max-warnings=0 && corepack pnpm run format:check",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,css}\" \"scripts/**/*.{js,mjs}\" \"*.{js,mjs,ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,css}\" \"scripts/**/*.{js,mjs}\" \"*.{js,mjs,ts,json}\"",
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev --config src-tauri/tauri.dev.json",
@@ -55,7 +57,7 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "test:rust": "node ./scripts/test-rust.mjs",
-    "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "lint:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "coverage": "vitest run --coverage --coverage.provider=istanbul --maxWorkers=1"
   },
   "dependencies": {
@@ -102,6 +104,7 @@
     "jsdom": "^29.1.1",
     "knip": "^6.44.2",
     "postcss": "^8.5.32",
+    "prettier": "^3.9.10",
     "stylelint": "^18.0.0",
     "tailwindcss": "^4.3.5",
     "typescript": "~6.0.3",
