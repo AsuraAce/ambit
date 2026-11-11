@@ -268,6 +268,7 @@ const commandCases: CommandCase[] = [
     { name: 'deleteThumbnail', invokeName: 'delete_thumbnail', args: ['C:/thumb.webp'], payload: { path: 'C:/thumb.webp' }, returnsResult: true },
     { name: 'registerLibraryPath', invokeName: 'register_library_path', args: ['C:/library'], payload: { path: 'C:/library' }, returnsResult: true },
     { name: 'getInvokeDbSnapshot', invokeName: 'get_invoke_db_snapshot', args: ['C:/invoke'], payload: { rootPath: 'C:/invoke' }, returnsResult: true },
+    { name: 'selectInvokeSource', invokeName: 'select_invoke_source', args: ['C:/invoke', 'SELECT 1', [1, 'a', null]], payload: { rootPath: 'C:/invoke', sql: 'SELECT 1', params: [1, 'a', null] }, returnsResult: true },
 ];
 
 describe('generated Tauri bindings', () => {

@@ -1,4 +1,4 @@
-import type Database from '@tauri-apps/plugin-sql';
+import type { InvokeSourceDatabase } from './sourceDatabase';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, type FileMetadataProbe, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
@@ -144,7 +144,7 @@ export const syncImages = async (
     const { dbPath, imagesRoot } = scope;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
-    let invokeDb: Database;
+    let invokeDb: InvokeSourceDatabase;
     const connectStartedAt = liveWatchNow();
     try {
         invokeDb = await getInvokeSourceDatabase(dbPath);

@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import Database from '@tauri-apps/plugin-sql';
 import { commands } from '../../../bindings';
 import { getDb } from '../../db/connection';
 import { insertImagesBatch } from '../../db/imageRepo';
 import { scanForOrphans } from '../orphanScanner';
 import { invalidateInvokeSourceDatabase } from '../connection';
+import { openInvokeSourceDatabase } from '../sourceDatabase';
 
-vi.mock('@tauri-apps/plugin-sql', () => ({
-    default: {
-        load: vi.fn()
-    }
+vi.mock('../sourceDatabase', () => ({
+    openInvokeSourceDatabase: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -47,7 +45,7 @@ describe('scanForOrphans', () => {
         vi.mocked(getDb).mockResolvedValue({
             select: vi.fn().mockResolvedValue([])
         } as never);
-        vi.mocked(Database.load).mockResolvedValue(createDb() as never);
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb() as never);
         vi.mocked(commands.scanImagesBulk).mockImplementation(async (paths: string[]) => ({
             status: 'ok',
             data: paths.map((path) => ({
@@ -78,7 +76,7 @@ describe('scanForOrphans', () => {
     });
 
     it('imports nested orphan files while skipping DB-synced and intermediate entries', async () => {
-        vi.mocked(Database.load).mockResolvedValue(createDb([
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([
             { image_name: 'intermediate.png' },
             { image_name: '' },
         ]) as never);
@@ -135,7 +133,7 @@ describe('scanForOrphans', () => {
     });
 
     it('matches intermediate rows by relative nested path', async () => {
-        vi.mocked(Database.load).mockResolvedValue(createDb([{ image_name: '2026/05/25/intermediate.png' }]) as never);
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: '2026/05/25/intermediate.png' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
             data: ['outputs/images/2026/05/25/intermediate.png']
@@ -149,7 +147,7 @@ describe('scanForOrphans', () => {
     });
 
     it('matches intermediate rows by InvokeAI image_subfolder plus basename', async () => {
-        vi.mocked(Database.load).mockResolvedValue(createDb(
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb(
             [{ image_name: 'intermediate.png', image_subfolder: '2026/05/25' }],
             ['image_subfolder']
         ) as never);
@@ -197,7 +195,7 @@ describe('scanForOrphans', () => {
     });
 
     it('does not suppress a different folder when the intermediate row has a path-specific nested name', async () => {
-        vi.mocked(Database.load).mockResolvedValue(createDb([{ image_name: '2026/05/25/foo.png' }]) as never);
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: '2026/05/25/foo.png' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
             data: [
@@ -220,7 +218,7 @@ describe('scanForOrphans', () => {
     });
 
     it('keeps basename-only matching for legacy intermediate rows without path truth', async () => {
-        vi.mocked(Database.load).mockResolvedValue(createDb([{ image_name: 'legacy-intermediate.png' }]) as never);
+        vi.mocked(openInvokeSourceDatabase).mockResolvedValue(createDb([{ image_name: 'legacy-intermediate.png' }]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
             data: ['outputs/images/txt2img/legacy-intermediate.png']
@@ -235,7 +233,7 @@ describe('scanForOrphans', () => {
 
     it('uses a database-file root and continues when intermediate lookup fails', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        vi.mocked(Database.load).mockRejectedValue(new Error('database locked'));
+        vi.mocked(openInvokeSourceDatabase).mockRejectedValue(new Error('database locked'));
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
             data: ['outputs/images/new.png']
@@ -249,7 +247,7 @@ describe('scanForOrphans', () => {
         );
 
         expect(imported).toBe(1);
-        expect(Database.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+        expect(openInvokeSourceDatabase).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
         expect(commands.listInvokeaiImages).toHaveBeenCalledWith('D:\\Invoke');
         expect(error).toHaveBeenCalledWith(
             '[Hybrid Sync] ERROR loading intermediates:',
@@ -282,7 +280,7 @@ describe('scanForOrphans', () => {
             { importIntermediates: true }
         );
 
-        expect(Database.load).not.toHaveBeenCalled();
+        expect(openInvokeSourceDatabase).not.toHaveBeenCalled();
         expect(commands.listInvokeaiImages).toHaveBeenCalledWith('D:/Invoke');
         expect(imported).toBe(1);
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toMatchObject({

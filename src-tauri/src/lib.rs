@@ -2,6 +2,7 @@ mod app_data_migration;
 mod comfy_support_replay;
 mod db;
 mod fs_commands;
+mod invoke_source;
 mod media;
 mod metadata;
 mod scanner;
@@ -160,6 +161,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             fs_commands::delete_thumbnail,
             fs_commands::register_library_path,
             fs_commands::get_invoke_db_snapshot,
+            invoke_source::select_invoke_source,
         ])
         .events(tauri_specta::collect_events![
             watcher::FolderChangeEvent,

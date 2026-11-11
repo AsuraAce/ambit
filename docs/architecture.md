@@ -119,6 +119,7 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - Rust-exposed command and type changes should flow through Specta into `src/bindings.ts`; do not hand-maintain Rust-backed TypeScript mirrors.
 - Generated binding updates are explicit: run `pnpm run bindings:generate`, then verify with `pnpm run bindings:check` or a broader gate that includes it.
 - Filesystem access must remain local-only and within Tauri-registered or scoped paths.
+- InvokeAI's own `invokeai.db` is read only through `select_invoke_source` (`src-tauri/src/invoke_source.rs`), never through the SQL plugin. Each query opens a fresh read-only connection that never writes the database, its `-wal`, or its `-shm`. A WAL database with no `-wal`, or an empty `-wal` and no `-shm`, is read as `immutable`; with `-wal` and `-shm` it is read with `readonly_shm`; a non-empty `-wal` without `-shm` is refused. One race remains: an InvokeAI shutdown between the mode check and a `readonly_shm` read leaves an empty `-wal` and fails that one query. The command accepts one statement that passes an authorizer allowing only reads, functions and `PRAGMA table_info`, with `ATTACH` disabled, and only for a file named `invokeai.db` inside the registered fs scope.
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.
 - Passive visual assets must be bundled locally. Network calls should be limited to the documented updater, Gemini, CivitAI, and user-clicked external-link paths.
 - Large library browsing paths must remain virtualized and performance-conscious.

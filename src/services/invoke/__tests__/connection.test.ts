@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type Database from '@tauri-apps/plugin-sql';
+import type { InvokeSourceDatabase as Database } from '../sourceDatabase';
 import { startupDiagnostics } from '../../../utils/startupDiagnostics';
 import { commands } from '../../../bindings';
+import { ensureAssetPathAccessible } from '../../assetScope';
 import { inspectInvokeConnection } from '../connection';
 import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, getInvokeSourceDatabase, invalidateInvokeSourceDatabase, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
 
@@ -15,10 +16,12 @@ const sqlMock = vi.hoisted(() => ({
     load: vi.fn()
 }));
 
-vi.mock('@tauri-apps/plugin-sql', () => ({
-    default: {
-        load: sqlMock.load
-    }
+vi.mock('../sourceDatabase', () => ({
+    openInvokeSourceDatabase: sqlMock.load
+}));
+
+vi.mock('../../assetScope', () => ({
+    ensureAssetPathAccessible: vi.fn().mockResolvedValue(undefined)
 }));
 
 const createDb = (select: (sql: string) => Promise<unknown[]>) => ({
@@ -43,6 +46,8 @@ describe('InvokeAI connection helpers', () => {
         sqlMock.load.mockResolvedValue(db);
         await expect(inspectInvokeConnection(' D:/Invoke ')).resolves.toMatchObject({ schemaMode: 'legacy' });
         expect(db.select).toHaveBeenCalledExactlyOnceWith('PRAGMA table_info(images)');
+        // A typed candidate enters the filesystem scope before the read-only source reader opens it.
+        expect(ensureAssetPathAccessible).toHaveBeenCalledWith('D:/Invoke', { assumeDirectory: true });
     });
 
     it('rejects a non-Invoke database rather than treating missing tables as legacy ownership', async () => {
@@ -95,7 +100,7 @@ describe('InvokeAI connection helpers', () => {
         ])).resolves.toEqual([db, db]);
 
         expect(sqlMock.load).toHaveBeenCalledOnce();
-        expect(sqlMock.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+        expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
 
     it('evicts a failed source open so the next caller retries', async () => {
@@ -466,7 +471,7 @@ describe('InvokeAI connection helpers', () => {
             count: 42,
             message: 'Connected! Found 42 images.'
         });
-        expect(sqlMock.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+        expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
 
     it('treats a missing connection count row as zero', async () => {
@@ -489,8 +494,8 @@ describe('InvokeAI connection helpers', () => {
             count: 7,
             message: 'Connected! Found 7 images.'
         });
-        expect(sqlMock.load).toHaveBeenNthCalledWith(1, 'sqlite:D:/Invoke/databases/invokeai.db');
-        expect(sqlMock.load).toHaveBeenNthCalledWith(2, 'sqlite:D:/Invoke/invokeai.db');
+        expect(sqlMock.load).toHaveBeenNthCalledWith(1, 'D:/Invoke/databases/invokeai.db');
+        expect(sqlMock.load).toHaveBeenNthCalledWith(2, 'D:/Invoke/invokeai.db');
         expect(console.warn).toHaveBeenCalledWith(
             '[InvokeAI] Failed to connect to D:/Invoke/databases/invokeai.db:',
             expect.any(Error)
@@ -552,7 +557,7 @@ describe('InvokeAI connection helpers', () => {
                 { name: 'broken_table', count: 'Error' }
             ]
         });
-        expect(sqlMock.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+        expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
 
     it('derives diagnostics paths from a databases directory root', async () => {
@@ -572,7 +577,7 @@ describe('InvokeAI connection helpers', () => {
             categories: [],
             origins: []
         });
-        expect(sqlMock.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+        expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
 
     it('returns stringified diagnostics load failures', async () => {

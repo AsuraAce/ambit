@@ -1,10 +1,11 @@
-import Database from '@tauri-apps/plugin-sql';
 import type { InvokeOwnerDiscovery, InvokeOwnerSummary, InvokeSourceFingerprint } from '../../types';
 import type { InvokeSyncScope } from './syncScope';
 import { measureStartupPhase } from '../../utils/startupDiagnostics';
 import { getInvokePathIdentity, isSameInvokePath } from './pathIdentity';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
+import { ensureAssetPathAccessible } from '../assetScope';
+import { openInvokeSourceDatabase, type InvokeSourceDatabase } from './sourceDatabase';
 
 interface BoardRow {
     board_id: string;
@@ -76,15 +77,15 @@ export const resolveInvokePaths = (rootPath: string): InvokePaths => {
         imagesRoot,
     };
 };
-const sourceDatabasePromises = new Map<string, Promise<Database>>();
+const sourceDatabasePromises = new Map<string, Promise<InvokeSourceDatabase>>();
 
-export const getInvokeSourceDatabase = (rootPath: string): Promise<Database> => {
+export const getInvokeSourceDatabase = (rootPath: string): Promise<InvokeSourceDatabase> => {
     const { dbPath } = resolveInvokePaths(rootPath);
     const identity = getInvokePathIdentity(dbPath);
     const existing = sourceDatabasePromises.get(identity);
     if (existing) return existing;
 
-    const opening = Database.load(`sqlite:${dbPath}`).catch((error) => {
+    const opening = openInvokeSourceDatabase(dbPath).catch((error) => {
         if (sourceDatabasePromises.get(identity) === opening) {
             sourceDatabasePromises.delete(identity);
         }
@@ -115,6 +116,8 @@ export const inspectInvokeConnection = async (rootPath: string): Promise<InvokeO
     }
     // Do not let SQLite create an empty database when checking a mistyped path.
     invalidateInvokeSourceDatabase(path);
+    // A typed candidate may not be in the filesystem scope yet; the source reader requires it.
+    await ensureAssetPathAccessible(resolveInvokePaths(path).imagesRoot, { assumeDirectory: true });
     return discoverInvokeOwners(path);
 };
 
@@ -237,7 +240,7 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
     };
 };
 
-const readColumns = async (db: Database, table: string): Promise<Set<string>> => new Set(
+const readColumns = async (db: InvokeSourceDatabase, table: string): Promise<Set<string>> => new Set(
     (await db.select<TableRow[]>(`PRAGMA table_info(${table})`)).map(column => column.name)
 );
 
@@ -324,7 +327,7 @@ export interface InvokeBoards {
 }
 
 export async function fetchBoards(
-    db: Database,
+    db: InvokeSourceDatabase,
     scope: InvokeSyncScope
 ): Promise<InvokeBoards> {
     const boards = new Map<string, InvokeBoardInfo>();
@@ -363,7 +366,7 @@ export async function fetchBoards(
 }
 
 export async function fetchBoardMappings(
-    db: Database,
+    db: InvokeSourceDatabase,
     scope: InvokeSyncScope
 ): Promise<InvokeBoardMappings> {
     const imageToBoardId = new Map<string, string>();
