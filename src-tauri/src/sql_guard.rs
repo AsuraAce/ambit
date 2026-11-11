@@ -10,17 +10,26 @@
 //! create a file. Before the plugin sees such a call, every statement in the
 //! query is compiled — never run — on a separate read-only guard connection to
 //! the library: SQLite's own parser splits the statements, an authorizer refuses
-//! `ATTACH`, `DETACH`, `load_extension()` and the directory pragmas, and a
-//! statement whose program contains the `Vacuum` opcode is refused (compiling
-//! `VACUUM` never reaches the authorizer). Any statement that fails to compile
-//! is refused too, so an `ATTACH` whose expression only resolves on the pool
-//! cannot slip past the authorizer.
+//! every `ATTACH` and `DETACH` (whatever form the filename takes), TEMP object
+//! creation, `load_extension()` and the directory pragmas, and a statement whose
+//! program contains the `Vacuum` opcode is refused (compiling `VACUUM` never
+//! reaches the authorizer). Any statement that fails to compile is refused too.
+//!
+//! So the pool never gains a second database or a TEMP object, the two kinds of
+//! per-connection state the guard could not see. Pragma and flag state can
+//! still differ between the pool and the guard, but none of it lets a statement
+//! reach another file: the refusals above depend only on the statement itself,
+//! triggers and views in `main` cannot name another database, and sqlx never
+//! enables extension loading.
 //!
 //! Compiling is not running, so a later statement in one query that depends on
-//! an earlier statement's schema change (or on a TEMP object, which lives only
-//! on a pool connection) is refused. The frontend sends one statement per call.
-//! A schema change made by an earlier call is seen: SQLite reloads the guard's
-//! schema when a statement fails against a stale copy.
+//! an earlier statement's schema change is refused; the frontend sends one
+//! statement per call. The guard's schema copy can also lag the pool's. SQLite
+//! reloads it when a statement names a table or column it does not know, but a
+//! statement that compiles differently against the old copy (for example an
+//! INSERT into a table that was dropped and recreated with other columns) can
+//! be refused while the copy is stale. Every such case fails closed, and no
+//! frontend call drops and recreates a table.
 
 use rusqlite::{
     ffi,
@@ -260,7 +269,7 @@ impl StatementGuard {
     pub(crate) fn from_connection(conn: Connection) -> Result<Self, String> {
         conn.busy_timeout(GUARD_BUSY_TIMEOUT)
             .map_err(|error| error.to_string())?;
-        // Set before the authorizer, which leaves PRAGMA allowed anyway.
+        // Set before the authorizer, which makes later pragmas no-ops here.
         conn.pragma_update(None, "query_only", true)
             .map_err(|error| error.to_string())?;
         conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0);
@@ -315,7 +324,7 @@ impl StatementGuard {
                 return Err(Refusal::Denied);
             }
             if !statement.0.is_null() {
-                reject_vacuum(&statement)?;
+                reject_program(&statement)?;
             }
             offset += consumed;
         }
@@ -347,11 +356,19 @@ fn compile_refusal(db: *mut ffi::sqlite3, rc: c_int) -> Refusal {
     Refusal::Sqlite(message)
 }
 
+/// Index of the TEMP database in every connection's schema list.
+const TEMP_DATABASE: c_int = 1;
+
 /// Lists the statement's compiled program (EXPLAIN mode, which never runs it)
-/// and refuses a `Vacuum` opcode.
-fn reject_vacuum(statement: &PreparedStatement) -> Result<(), Refusal> {
+/// and refuses two things the authorizer cannot see reliably:
+/// - the `Vacuum` opcode: compiling `VACUUM` never reaches the authorizer;
+/// - a write transaction on the TEMP database: every statement that creates or
+///   writes a TEMP object needs one. The authorizer's TEMP codes miss
+///   qualified names such as `CREATE TABLE temp.t`.
+fn reject_program(statement: &PreparedStatement) -> Result<(), Refusal> {
     // SAFETY: `statement.0` is a valid, unstepped statement. Stepping happens
-    // only after EXPLAIN mode is confirmed, so it yields the opcode listing.
+    // only after EXPLAIN mode is confirmed, so it yields the opcode listing,
+    // whose columns are addr, opcode, p1, p2, ...
     unsafe {
         if ffi::sqlite3_stmt_explain(statement.0, 1) != ffi::SQLITE_OK {
             return Err(Refusal::Denied);
@@ -360,7 +377,18 @@ fn reject_vacuum(statement: &PreparedStatement) -> Result<(), Refusal> {
             match ffi::sqlite3_step(statement.0) {
                 ffi::SQLITE_ROW => {
                     let opcode = ffi::sqlite3_column_text(statement.0, 1);
-                    if !opcode.is_null() && CStr::from_ptr(opcode.cast()).to_bytes() == b"Vacuum" {
+                    if opcode.is_null() {
+                        continue;
+                    }
+                    let refused = match CStr::from_ptr(opcode.cast()).to_bytes() {
+                        b"Vacuum" => true,
+                        b"Transaction" => {
+                            ffi::sqlite3_column_int(statement.0, 2) == TEMP_DATABASE
+                                && ffi::sqlite3_column_int(statement.0, 3) != 0
+                        }
+                        _ => false,
+                    };
+                    if refused {
                         return Err(Refusal::Denied);
                     }
                 }
@@ -373,7 +401,13 @@ fn reject_vacuum(statement: &PreparedStatement) -> Result<(), Refusal> {
 
 fn authorize(context: AuthContext<'_>) -> Authorization {
     match context.action {
-        AuthAction::Attach { .. } | AuthAction::Detach { .. } => Authorization::Deny,
+        // rusqlite reports an ATTACH or DETACH whose argument is not a plain
+        // string literal ('a' || 'b', a subquery, a function call) as Unknown:
+        // SQLite passes NULL for it. Every other action SQLite authorizes carries
+        // its names, so Unknown is denied rather than guessed at.
+        AuthAction::Attach { .. } | AuthAction::Detach { .. } | AuthAction::Unknown { .. } => {
+            Authorization::Deny
+        }
         AuthAction::Function { function_name }
             if function_name.eq_ignore_ascii_case("load_extension") =>
         {
@@ -385,6 +419,11 @@ fn authorize(context: AuthContext<'_>) -> Authorization {
         {
             Authorization::Deny
         }
+        // Many pragmas take effect while they compile (busy_timeout, query_only
+        // and the other flags), which would change the guard connection itself.
+        // Ignore makes SQLite skip them here without an error; the pool still
+        // runs them.
+        AuthAction::Pragma { .. } => Authorization::Ignore,
         _ => Authorization::Allow,
     }
 }
@@ -392,7 +431,10 @@ fn authorize(context: AuthContext<'_>) -> Authorization {
 #[cfg(test)]
 mod tests {
     use super::{sql_load_allowed, Refusal, StatementGuard};
-    use rusqlite::Connection;
+    use rusqlite::{
+        hooks::{AuthContext, Authorization},
+        Connection,
+    };
     use serde_json::json;
     use tauri::ipc::InvokeBody;
 
@@ -470,6 +512,82 @@ mod tests {
                 "{sql:?} must be refused"
             );
         }
+    }
+
+    #[test]
+    fn attach_and_detach_are_refused_whatever_form_the_name_takes() {
+        // SQLite hands the authorizer no filename unless it is a plain literal.
+        let guard = guard();
+        for sql in [
+            "ATTACH 'C:/x/' || 'invokeai.db' AS inv",
+            "ATTACH (SELECT path FROM images LIMIT 1) AS inv",
+            "ATTACH lower('C:/X/INVOKEAI.DB') AS inv",
+            "ATTACH printf('%s', 'C:/x/invokeai.db') AS inv",
+            "ATTACH ? AS inv",
+            "DETACH 'ma' || 'in'",
+            "DETACH (SELECT 'main')",
+            "ATTACH 'C:/x/' || 'invokeai.db' AS inv; \
+             CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN \
+               INSERT INTO images (id) SELECT name FROM boards; DELETE FROM boards; END; \
+             INSERT INTO images (id, path) VALUES ('x', 'y')",
+        ] {
+            assert_eq!(
+                guard.check(sql),
+                Err(Refusal::Denied),
+                "{sql:?} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn temp_objects_are_refused() {
+        // TEMP objects exist only on the pool connection, out of the guard's sight.
+        let guard = guard();
+        for sql in [
+            "CREATE TEMP TABLE t (v)",
+            "CREATE TEMPORARY TABLE t AS SELECT 1",
+            "CREATE TABLE temp.t (v)",
+            "CREATE TABLE TEMP.t AS SELECT 1",
+            "CREATE TEMP VIEW v AS SELECT 1",
+            "CREATE VIEW temp.v AS SELECT 1",
+            "CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN SELECT 1; END",
+            "CREATE TRIGGER temp.pwn AFTER INSERT ON main.images BEGIN SELECT 1; END",
+            "CREATE VIRTUAL TABLE temp.f USING fts5(body)",
+            "SELECT 1; CREATE TEMP TABLE t (v)",
+        ] {
+            assert_eq!(
+                guard.check(sql),
+                Err(Refusal::Denied),
+                "{sql:?} must be refused"
+            );
+        }
+        // An index in temp must be on a temp table, so it cannot even compile.
+        assert!(guard.check("CREATE INDEX temp.i ON images(path)").is_err());
+    }
+
+    #[test]
+    fn pragmas_compiled_on_the_guard_leave_its_own_settings_alone() {
+        let guard = guard();
+        for sql in [
+            "PRAGMA busy_timeout=60000",
+            "PRAGMA query_only=0",
+            "PRAGMA writable_schema=ON",
+        ] {
+            assert_eq!(guard.check(sql), Ok(()), "{sql:?} must be allowed");
+        }
+        // Read the settings back without the authorizer, which ignores pragmas.
+        guard
+            .conn
+            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
+        let read = |name: &str| -> i64 {
+            guard
+                .conn
+                .pragma_query_value(None, name, |row| row.get(0))
+                .unwrap()
+        };
+        assert_eq!(read("busy_timeout"), 1000);
+        assert_eq!(read("query_only"), 1);
+        assert_eq!(read("writable_schema"), 0);
     }
 
     #[test]

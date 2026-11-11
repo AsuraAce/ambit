@@ -307,31 +307,182 @@ fn sql_path(path: &Path) -> String {
     fixture_url(path)["sqlite:".len()..].to_owned()
 }
 
+/// A foreign database with one row in each of two tables.
 fn foreign_database(path: &Path) {
     let conn = rusqlite::Connection::open(path).unwrap();
-    conn.execute_batch("CREATE TABLE images (name TEXT); INSERT INTO images VALUES ('a.png');")
-        .unwrap();
+    conn.execute_batch(
+        "CREATE TABLE images (name TEXT); INSERT INTO images VALUES ('a.png');
+         CREATE TABLE boards (name TEXT); INSERT INTO boards VALUES ('board');",
+    )
+    .unwrap();
 }
 
-fn foreign_rows(path: &Path) -> i64 {
-    rusqlite::Connection::open(path)
+/// Rows left in the foreign database's `images` and `boards`.
+fn foreign_rows(path: &Path) -> (i64, i64) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let count = |table: &str| -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
-        .unwrap()
+    };
+    (count("images"), count("boards"))
 }
 
-/// Statements that reach a file other than the library through the loaded pool.
+/// Loads the library with the tables the attacks use: `paths` holds the
+/// foreign path, so a subquery filename resolves on the guard too.
+fn attack_fixture(sql: &MockSql, library: &Path, foreign: &Path) -> String {
+    let db = sql.load(library);
+    for query in [
+        "CREATE TABLE images (id TEXT, path TEXT)",
+        "CREATE TABLE loot (name TEXT)",
+        "CREATE TABLE paths (p TEXT)",
+    ] {
+        ipc(
+            &sql.webview,
+            "execute",
+            json!({"db":db,"query":query,"values":[]}),
+        );
+    }
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":"INSERT INTO paths VALUES (?)","values":[sql_path(foreign)]}),
+    );
+    db
+}
+
+/// Statements that write a file other than the library through the loaded pool.
+/// Only the first two give ATTACH a plain string literal.
 fn foreign_write_attacks(foreign: &Path) -> Vec<String> {
-    let foreign = sql_path(foreign);
+    let path = sql_path(foreign);
+    let (head, tail) = path.split_at(path.len() - "invokeai.db".len());
+    let delete = "DELETE FROM inv.images; DETACH inv;";
     vec![
-        format!("ATTACH DATABASE '{foreign}' AS inv; DELETE FROM inv.images; DETACH DATABASE inv;"),
-        format!("SELECT 1; /*x*/ aTtAcH '{foreign}' AS inv; DELETE FROM inv.images; DETACH inv;"),
-        // The ATTACH filename comes from a TEMP table that exists only on the pool connection.
+        format!("ATTACH DATABASE '{path}' AS inv; {delete}"),
+        format!("SELECT 1; /*x*/ aTtAcH '{path}' AS inv; {delete}"),
+        format!("ATTACH '{head}' || '{tail}' AS inv; {delete}"),
+        format!("ATTACH (SELECT p FROM paths) AS inv; {delete}"),
+        format!("ATTACH printf('%s', '{path}') AS inv; {delete}"),
+        // A TEMP trigger lives only on the pool connection: the guard never sees
+        // it fire. It copies the foreign boards into the library and empties them.
         format!(
-            "CREATE TEMP TABLE paths AS SELECT '{foreign}' AS p; \
-             ATTACH (SELECT p FROM paths) AS inv; DELETE FROM inv.images; DETACH inv;"
+            "ATTACH '{head}' || '{tail}' AS inv; \
+             CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN \
+               INSERT INTO loot SELECT name FROM boards; DELETE FROM boards; END; \
+             INSERT INTO images VALUES ('x', 'y')"
         ),
     ]
+}
+
+/// A lone ATTACH with a non-literal name. The plugin's connections cannot create
+/// a file this way (sqlx opens them without the create flag), but an attached
+/// existing database stays attached to that pool connection for later calls.
+fn attach_only_attacks(foreign: &Path) -> Vec<String> {
+    let path = sql_path(foreign);
+    let (head, tail) = path.split_at(path.len() - "invokeai.db".len());
+    vec![
+        format!("ATTACH '{head}' || '{tail}' AS inv"),
+        format!("ATTACH printf('%s', '{path}') AS inv"),
+        "ATTACH (SELECT p FROM paths) AS inv".to_owned(),
+    ]
+}
+
+#[test]
+fn sql_guard_refuses_attach_through_execute_and_select() {
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let foreign = directory.path.join("invokeai.db");
+    foreign_database(&foreign);
+    let sql = guarded_sql(&directory.path, &library);
+    let db = attack_fixture(&sql, &library, &foreign);
+
+    for command in ["execute", "select"] {
+        let attacks = foreign_write_attacks(&foreign)
+            .into_iter()
+            .chain(attach_only_attacks(&foreign))
+            .chain([
+                "DETACH DATABASE main".to_owned(),
+                "DETACH 'ma' || 'in'".to_owned(),
+                "CREATE TEMP TABLE t (v)".to_owned(),
+                "CREATE TABLE temp.t (v)".to_owned(),
+                "CREATE TRIGGER temp.t AFTER INSERT ON main.images BEGIN SELECT 1; END".to_owned(),
+            ]);
+        for query in attacks {
+            assert_eq!(
+                ipc_result(
+                    &sql.webview,
+                    command,
+                    json!({"db":db,"query":query,"values":[]})
+                ),
+                Err(json!(STATEMENT_REFUSED)),
+                "{command} {query}"
+            );
+            assert_eq!(foreign_rows(&foreign), (1, 1), "{command} {query}");
+        }
+    }
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":"SELECT (SELECT COUNT(*) FROM loot) AS loot, (SELECT COUNT(*) FROM images) AS images","values":[]})
+        ),
+        json!([{"loot":0,"images":0}])
+    );
+}
+
+#[test]
+fn bare_sql_plugin_lets_the_same_attach_reach_other_files() {
+    // Negative proof for the test above: without the guard, the pool runs them.
+    // Literal, concatenated, subquery and function-call ATTACH names.
+    for index in [0, 2, 3, 4] {
+        let directory = GeneratedBenchmarkDir::new();
+        let library = directory.path.join("library.db");
+        let foreign = directory.path.join("invokeai.db");
+        foreign_database(&foreign);
+        let sql = MockSql::new(&directory.path);
+        let db = attack_fixture(&sql, &library, &foreign);
+        let query = &foreign_write_attacks(&foreign)[index];
+        ipc(
+            &sql.webview,
+            "execute",
+            json!({"db":db,"query":query,"values":[]}),
+        );
+        assert_eq!(foreign_rows(&foreign), (0, 1), "{query}");
+    }
+
+    let directory = GeneratedBenchmarkDir::new();
+    let library = directory.path.join("library.db");
+    let foreign = directory.path.join("invokeai.db");
+    foreign_database(&foreign);
+    let sql = MockSql::new(&directory.path);
+    let db = attack_fixture(&sql, &library, &foreign);
+    let exploit = foreign_write_attacks(&foreign).pop().unwrap();
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":exploit,"values":[]}),
+    );
+    assert_eq!(foreign_rows(&foreign), (1, 0), "the boards were emptied");
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":"SELECT name FROM loot","values":[]})
+        ),
+        json!([{"name":"board"}]),
+        "and copied into the library"
+    );
+
+    for query in attach_only_attacks(&foreign) {
+        // One call, so the DETACH runs on the connection that attached.
+        let query = format!("{}; DETACH lone;", query.replace("AS inv", "AS lone"));
+        ipc(
+            &sql.webview,
+            "execute",
+            json!({"db":db,"query":query,"values":[]}),
+        );
+    }
 }
 
 fn vacuum_attacks(target: &Path) -> Vec<String> {
@@ -342,61 +493,6 @@ fn vacuum_attacks(target: &Path) -> Vec<String> {
         format!("SELECT 1; VACUUM INTO '{target}'"),
         format!("VACUUM main INTO (SELECT '{target}')"),
     ]
-}
-
-#[test]
-fn sql_guard_refuses_attach_through_execute_and_select() {
-    let directory = GeneratedBenchmarkDir::new();
-    let foreign = directory.path.join("invokeai.db");
-    foreign_database(&foreign);
-    let sql = guarded_sql(&directory.path, &directory.path.join("library.db"));
-    let db = sql.load(&directory.path.join("library.db"));
-
-    for command in ["execute", "select"] {
-        for query in foreign_write_attacks(&foreign) {
-            let refusal = ipc_result(
-                &sql.webview,
-                command,
-                json!({"db":db,"query":query,"values":[]}),
-            )
-            .expect_err("ATTACH must be refused");
-            // The TEMP-table form fails to compile on the guard ("no such
-            // table"), which refuses it with SQLite's message instead.
-            assert!(
-                refusal == json!(STATEMENT_REFUSED)
-                    || refusal
-                        .as_str()
-                        .is_some_and(|text| text.starts_with("SQL refused before execution:")),
-                "{command} {query}: {refusal}"
-            );
-            assert_eq!(foreign_rows(&foreign), 1, "{command} {query}");
-        }
-    }
-    assert_eq!(
-        ipc_result(
-            &sql.webview,
-            "execute",
-            json!({"db":db,"query":"DETACH DATABASE main","values":[]})
-        ),
-        Err(json!(STATEMENT_REFUSED))
-    );
-}
-
-#[test]
-fn bare_sql_plugin_lets_the_same_attach_rewrite_a_foreign_database() {
-    // Negative proof for the test above: without the guard, the pool runs it.
-    let directory = GeneratedBenchmarkDir::new();
-    let foreign = directory.path.join("invokeai.db");
-    foreign_database(&foreign);
-    let sql = MockSql::new(&directory.path);
-    let db = sql.load(&directory.path.join("library.db"));
-    let query = &foreign_write_attacks(&foreign)[0];
-    ipc(
-        &sql.webview,
-        "execute",
-        json!({"db":db,"query":query,"values":[]}),
-    );
-    assert_eq!(foreign_rows(&foreign), 0);
 }
 
 #[test]
