@@ -22,7 +22,8 @@ import type { DeleteRemovedImagesResult, ExactDuplicateResolution, ExactDuplicat
 interface UseAppHandlersProps {
     images: AIImage[];
     setImages: (update: AIImage[] | ((prev: AIImage[]) => AIImage[])) => void;
-    refreshMaintenanceCounts: () => void;
+    // WatcherContext's refresh catches and logs its own failures, so call sites fire and forget.
+    refreshMaintenanceCounts: () => Promise<void>;
     refreshHiddenAvailability: () => Promise<void>;
     activeImageState?: ActiveImageStateAdapter;
 }
@@ -115,7 +116,9 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         await updateImageMetadataFields(id, { overrideModel: normalizedModel });
 
         // Ensure filter panel is updated
-        rebuildFacetCacheIncremental('checkpoints').then(() => incrementFacetCacheVersion());
+        rebuildFacetCacheIncremental('checkpoints')
+            .then(() => incrementFacetCacheVersion())
+            .catch(error => console.error('Failed to refresh facet cache', error));
 
         addToast('Updated', 'success');
     };
@@ -142,7 +145,9 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         await updateImageMetadataFields(id, { tool });
 
         // Ensure filter panel is updated
-        rebuildFacetCacheIncremental('tools').then(() => incrementFacetCacheVersion());
+        rebuildFacetCacheIncremental('tools')
+            .then(() => incrementFacetCacheVersion())
+            .catch(error => console.error('Failed to refresh facet cache', error));
 
         addToast('Updated', 'success');
     };
@@ -213,7 +218,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             console.error('Failed to refresh image queries after resolving duplicates', error);
         }
         addToast(`Moved ${result.removedIds.length} duplicate${result.removedIds.length === 1 ? '' : 's'} to Removed`, 'success');
-        refreshMaintenanceCounts();
+        void refreshMaintenanceCounts();
         refreshFacets();
     };
 
@@ -241,7 +246,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         if (result.membershipWarningIds.length > 0) {
             addToast(`${result.membershipWarningIds.length} restored ${result.membershipWarningIds.length === 1 ? 'item has' : 'items have'} legacy collection data that could not be recovered.`, 'warning');
         }
-        refreshMaintenanceCounts();
+        void refreshMaintenanceCounts();
         void refreshFacetCacheForResourcesStrict(result.touchedResources)
             .then(() => incrementFacetCacheVersion())
             .catch(error => console.error('Failed to refresh restored facet resources', error));
@@ -258,7 +263,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         setImages(p => p.filter(i => !affectedIds.has(i.id)));
         removeImagesFromQueryCaches(queryClient, affectedIds);
         addToast(`Removed ${result.affectedIds.length} item${result.affectedIds.length === 1 ? '' : 's'} from the library`, 'success');
-        refreshMaintenanceCounts();
+        void refreshMaintenanceCounts();
         try {
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['images'] }),
@@ -283,7 +288,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
                 const clearedIds = new Set(result.clearedIds);
                 setImages(previous => previous.filter(image => !clearedIds.has(image.id)));
                 removeImagesFromQueryCaches(queryClient, clearedIds);
-                refreshMaintenanceCounts();
+                void refreshMaintenanceCounts();
                 try {
                     await Promise.all([
                         queryClient.invalidateQueries({ queryKey: ['images'] }),
@@ -332,7 +337,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
     const handleEmptyTrash = async () => {
         addToast('Removed items are now handled through the Removed tab actions.', 'info');
-        refreshMaintenanceCounts();
+        void refreshMaintenanceCounts();
     };
 
     const handleUpdateNotes = async (id: string, notes: string) => {
@@ -376,7 +381,8 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         Promise.all([
             rebuildFacetCacheIncremental('tools'),
             rebuildFacetCacheIncremental('checkpoints')
-        ]).then(() => incrementFacetCacheVersion());
+        ]).then(() => incrementFacetCacheVersion())
+            .catch(error => console.error('Failed to refresh facet cache', error));
 
         addToast('Reverted to original', 'success');
     };

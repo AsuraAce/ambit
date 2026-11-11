@@ -30,7 +30,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // Initialize Store
     useEffect(() => {
-        initialize();
+        initialize().catch(error => console.error('[Settings] Failed to initialize settings', error));
     }, [initialize]);
 
     useEffect(() => {

@@ -144,9 +144,9 @@ const scheduleLiveWatchSessionEnd = () => {
         clearTimeout(liveWatchTimeout);
     }
 
-    liveWatchTimeout = setTimeout(async () => {
+    liveWatchTimeout = setTimeout(() => {
         const endSession = useLibraryStore.getState().endLiveImageSession;
-        await endSession();
+        endSession().catch(error => console.error('[LiveWatch] Failed to end live session', error));
     }, LIVE_WATCH_SESSION_IDLE_MS);
 };
 

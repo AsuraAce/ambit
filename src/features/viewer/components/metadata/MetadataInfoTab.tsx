@@ -155,7 +155,7 @@ export const MetadataInfoTab = ({
     const modelPresentation = getModelPresentation(image.metadata);
 
     const handleCopyPrompt = () => {
-        navigator.clipboard.writeText(promptValue);
+        navigator.clipboard.writeText(promptValue).catch(error => console.error('[Clipboard] Copy failed', error));
         setCopiedPrompt(true);
         setTimeout(() => setCopiedPrompt(false), 2000);
     };
@@ -279,7 +279,7 @@ export const MetadataInfoTab = ({
             text = `${md.positivePrompt || ''}${neg}\n${params.join(', ')}`;
         }
 
-        navigator.clipboard.writeText(text);
+        navigator.clipboard.writeText(text).catch(error => console.error('[Clipboard] Copy failed', error));
         setCopiedData(true);
         setTimeout(() => setCopiedData(false), 2000);
     };

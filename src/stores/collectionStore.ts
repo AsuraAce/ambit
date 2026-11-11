@@ -230,7 +230,8 @@ const scheduleSupersedingDebounce = (
         state.resolve = null;
     }
     return new Promise((resolve, reject) => {
-        const timer = setTimeout(async () => {
+        // The async body settles the returned promise, so failures reach the caller.
+        const timer = setTimeout(() => void (async () => {
             try {
                 await task();
                 resolve();
@@ -242,7 +243,7 @@ const scheduleSupersedingDebounce = (
                     state.resolve = null;
                 }
             }
-        }, 300);
+        })(), 300);
         state.timer = timer;
         state.resolve = resolve;
     });
@@ -672,7 +673,7 @@ export const useCollectionStore = create<CollectionState>()(
                 try {
                     await preparationPromise;
                 } catch (error) {
-                    if (preparationPromise) preparationPromise = null;
+                    preparationPromise = null;
                     throw error;
                 }
             },

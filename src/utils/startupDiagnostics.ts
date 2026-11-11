@@ -136,7 +136,7 @@ export function createStartupDiagnosticBridge({
             if (!isTerminal && sentNonTerminalEvents >= maxBufferedEvents) return;
             if (!isTerminal) sentNonTerminalEvents += 1;
             try {
-                send({ ...pendingEvent, launchId });
+                void Promise.resolve(send({ ...pendingEvent, launchId })).catch(() => undefined);
             } catch {
                 // Diagnostics must never interrupt startup.
             }
@@ -330,11 +330,11 @@ export function createStartupDiagnostics(send: DiagnosticSink, now: () => number
         if (!isTerminal) emittedNonTerminal += 1;
         try {
             const databaseRole = databaseRoles[phase];
-            send({
+            void Promise.resolve(send({
                 launchId, phase, status, elapsedMs: Math.max(0, Math.round(now() - origin)), durationMs, cacheAction,
                 ...(databaseRole ? { databaseRole, attempt } : {}),
                 ...(status === 'failed' ? { failureKind: classifyFailure(error) } : {}),
-            });
+            })).catch(() => undefined);
         } catch {
             // Diagnostics must never interrupt library preparation.
         }

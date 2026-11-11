@@ -6,7 +6,7 @@ import { isBrowserMockMode } from './runtime';
 import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
 import { listenWithCleanup } from '../utils/tauriListener';
 
-export type WatcherCallback = (changes?: FolderChange[]) => void;
+export type WatcherCallback = (changes?: FolderChange[]) => void | Promise<void>;
 
 export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
@@ -73,7 +73,8 @@ export class WatcherService {
                     const pathCount = event.payload?.reduce((total, change) => total + change.paths.length, 0) || 0;
                     console.log(`[WatcherService] Folder change detected with ${changeCount} changes across ${pathCount} paths`);
                     this.diagnostic?.update({ lastEventAt: Date.now(), lastChangeCount: changeCount, lastPathCount: pathCount });
-                    onChangeEvent(event.payload);
+                    void Promise.resolve(onChangeEvent(event.payload))
+                        .catch(error => console.error('[WatcherService] Folder change handler failed', error));
                 },
                 'Native folder watcher events'
             );

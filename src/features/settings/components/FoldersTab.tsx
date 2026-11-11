@@ -40,11 +40,11 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         if (isManaged && variant === GeneratorTool.INVOKEAI) {
             const folder = combinedFolders.find((f) => (f.isManaged ? f.pathRaw : f.path) === path);
             if (folder) {
-                handleRescan(folder.id, path, variant, true);
+                handleRescan(folder.id, path, variant, true).catch(error => console.error('[FoldersTab] Rescan failed', error));
             }
             return;
         }
-        forceRefresh(path, force);
+        forceRefresh(path, force).catch(error => console.error('[FoldersTab] Metadata refresh failed', error));
     }, [combinedFolders, handleRescan, forceRefresh]);
 
     const handleRefreshAll = useCallback(async () => {
@@ -57,7 +57,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
 
         // 2. Trigger the global reparse job
         console.log('[FoldersTab] Triggering global metadata reparse');
-        forceRefresh(undefined, false); // No path = all, force = false (version-gated)
+        // No path = all, force = false (version-gated)
+        forceRefresh(undefined, false).catch(error => console.error('[FoldersTab] Metadata refresh failed', error));
     }, [combinedFolders, handleRescan, forceRefresh]);
 
     return (

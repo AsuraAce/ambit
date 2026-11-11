@@ -32,7 +32,7 @@ export const BackupSettings: React.FC = () => {
     }, [addToast, browserMockMode]);
 
     React.useEffect(() => {
-        loadBackups();
+        void loadBackups(); // reads a command Result and toasts failures
     }, [loadBackups]);
 
     const handleCreateBackup = async () => {
@@ -40,7 +40,7 @@ export const BackupSettings: React.FC = () => {
         const result = await commands.backupDatabase();
         if (result.status === 'ok') {
             addToast('Backup created successfully', 'success');
-            loadBackups();
+            void loadBackups(); // reads a command Result and toasts failures
         } else {
             console.error(result.error);
             addToast(`Backup failed: ${result.error}`, 'error');

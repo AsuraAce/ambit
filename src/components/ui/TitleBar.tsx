@@ -40,18 +40,24 @@ export const TitleBar = () => {
                 setIsMaximized(await win.isMaximized());
                 setIsFullscreen(await win.isFullscreen());
 
-                const unlistenResize = await win.listen('tauri://resize', async () => {
+                const syncWindowState = async () => {
                     setIsMaximized(await win.isMaximized());
                     setIsFullscreen(await win.isFullscreen());
+                };
+                const unlistenResize = await win.listen('tauri://resize', () => {
+                    syncWindowState().catch(error => console.warn('TitleBar: Failed to read window state', error));
                 });
 
                 // F11 Handler
-                const handleKeyDown = async (e: KeyboardEvent) => {
+                const toggleFullscreen = async () => {
+                    const current = await win.isFullscreen();
+                    await win.setFullscreen(!current);
+                    setIsFullscreen(!current);
+                };
+                const handleKeyDown = (e: KeyboardEvent) => {
                     if (e.key === 'F11') {
                         e.preventDefault();
-                        const current = await win.isFullscreen();
-                        await win.setFullscreen(!current);
-                        setIsFullscreen(!current);
+                        toggleFullscreen().catch(error => console.warn('TitleBar: Failed to toggle fullscreen', error));
                     }
                 };
 

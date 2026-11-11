@@ -500,9 +500,9 @@ export const useAppActions = ({
         }
     };
 
-    const handleShortcutPin = async () => {
+    const handleShortcutPin = () => {
         if (selectedImageIndex !== null && images[selectedImageIndex]) {
-            await handlePinImage(images[selectedImageIndex].id, !images[selectedImageIndex].isPinned);
+            handlePinImage(images[selectedImageIndex].id, !images[selectedImageIndex].isPinned);
         } else {
             handleBulkPin();
         }

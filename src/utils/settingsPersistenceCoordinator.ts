@@ -64,7 +64,7 @@ const run = <T>(work: (permit: SettingsPersistencePermit) => Promise<T>): Promis
         resolveTransaction = resolve;
         rejectTransaction = reject;
     });
-    register(transaction);
+    void register(transaction); // returns `transaction`, which the caller receives below
 
     void executeWithPermit(work).then(resolveTransaction, rejectTransaction);
     return transaction;
@@ -87,7 +87,7 @@ const runExclusive = <T>(work: (permit: SettingsPersistencePermit) => Promise<T>
         return executeWithPermit(work);
     })();
 
-    register(transaction);
+    void register(transaction); // returns `transaction`, which the caller receives below
     void transaction.catch(() => {
         admissionBlockers.delete(blocker);
     });

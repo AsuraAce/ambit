@@ -162,7 +162,8 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                 onTestEnvKey={() => {
                                     const keyToTest = process.env.API_KEY || '';
                                     if (keyToTest) {
-                                        (async () => {
+                                        // Errors are caught inside and shown as the verification status.
+                                        void (async () => {
                                             setIsVerifying(true);
                                             setVerificationStatus('idle');
                                             try {
