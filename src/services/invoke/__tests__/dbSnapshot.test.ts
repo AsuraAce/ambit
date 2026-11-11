@@ -31,9 +31,13 @@ const readInvokeDbSnapshotState = (
 
 const getInvokeDbSnapshot = vi.hoisted(() => vi.fn());
 
+const ensureFolderAccessible = vi.hoisted(() => vi.fn(async (_path: string | null) => true));
+
 vi.mock('../../../bindings', () => ({
     commands: { getInvokeDbSnapshot },
 }));
+
+vi.mock('../../assetScope', () => ({ ensureFolderAccessible }));
 
 const baseSnapshot = {
     dbPath: 'D:/Invoke/databases/invokeai.db',
@@ -344,7 +348,25 @@ describe('Invoke DB startup snapshot matching', () => {
                 expect.objectContaining({ path: 'D:/Invoke/databases/invokeai.db', modifiedMs: 100 }),
             ]),
         });
+        expect(ensureFolderAccessible).toHaveBeenCalledWith('D:/Invoke');
         expect(getInvokeDbSnapshot).toHaveBeenCalledWith('D:/Invoke');
+    });
+
+    // #402 smoke: a configured InvokeAI folder that was deleted cannot be put in
+    // scope, and the backend then refuses it as "outside the scope". Startup must
+    // still see the database as missing, so it reports the source unavailable.
+    it('reports the database missing when the configured root cannot be registered', async () => {
+        getInvokeDbSnapshot.mockClear();
+        ensureFolderAccessible.mockResolvedValueOnce(false);
+
+        const state = await readInvokeDbSnapshotState('D:/Gone/invoke', {});
+
+        expect(getInvokeDbSnapshot).not.toHaveBeenCalled();
+        expect(state.dbPath).toBe('D:/Gone/invoke/databases/invokeai.db');
+        expect(state.files.find(file => file.path === state.dbPath)).toEqual({
+            path: 'D:/Gone/invoke/databases/invokeai.db', exists: false, size: 0, modifiedMs: null,
+        });
+        expect(state.files.every(file => !file.exists)).toBe(true);
     });
 
     it('invalidates absent, differently configured, and structurally changed snapshots', () => {
