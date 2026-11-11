@@ -41,7 +41,7 @@
     "check:pr-title": "node ./scripts/check-pr-title.mjs",
     "typecheck": "tsc --noEmit",
     "health": "knip --no-exit-code && jscpd src src-tauri/src && node ./scripts/health-hotspots.mjs",
-    "verify:release": "corepack pnpm run check:versions && corepack pnpm run check:mediainfo && corepack pnpm run bindings:check && corepack pnpm run lint && corepack pnpm run typecheck && corepack pnpm run build:guard && corepack pnpm run coverage && corepack pnpm run test:rust && corepack pnpm run tauri:check",
+    "verify:release": "corepack pnpm run check:versions && corepack pnpm run check:mediainfo && corepack pnpm run bindings:check && corepack pnpm run lint && corepack pnpm run typecheck && corepack pnpm run build:guard && corepack pnpm run coverage && corepack pnpm run lint:rust && corepack pnpm run test:rust && corepack pnpm run tauri:check",
     "verify:published-updater": "node ./scripts/verify-published-updater.mjs",
     "audit:prod": "pnpm audit --prod",
     "audit:rust": "node ./scripts/audit-rust.mjs",
@@ -55,6 +55,7 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "test:rust": "node ./scripts/test-rust.mjs",
+    "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "coverage": "vitest run --coverage --coverage.provider=istanbul --maxWorkers=1"
   },
   "dependencies": {

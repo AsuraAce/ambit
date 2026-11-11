@@ -80,6 +80,7 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable action
         with:
           toolchain: 1.90.0
+          components: clippy
 
       - name: verify minimum supported rust
         shell: pwsh
@@ -97,6 +98,9 @@ jobs:
 
       - name: verify generated bindings
         run: pnpm run bindings:check
+
+      - name: lint rust
+        run: pnpm run lint:rust
 
       - name: run rust tests
         run: pnpm test:rust
