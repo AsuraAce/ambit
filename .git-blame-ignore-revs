@@ -1,0 +1,6 @@
+# Commits that only reformat code. `git blame` skips them when run with
+# `--ignore-revs-file .git-blame-ignore-revs`, or always after
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs`. GitHub applies this file automatically.
+
+# chore(format): add Prettier and rustfmt checks and apply the one-off reformat (#412)
+851b02e92e19c4375286ed50073f3cdb4827fa7f
