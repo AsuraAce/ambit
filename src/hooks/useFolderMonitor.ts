@@ -377,7 +377,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
         if (isTurningOn) {
             console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
-            performUnifiedScan(activeFolders, 'Catch-up');
+            performUnifiedScan(activeFolders, 'Catch-up').catch(error => console.error('[FolderMonitor] Catch-up scan failed', error));
         } 
 
         hasLiveWatchStartedRef.current = isLiveWatching;

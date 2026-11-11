@@ -31,11 +31,11 @@ export class ErrorBoundary extends Component<Props, State> {
             return (
                 <div style={{
                     padding: '20px',
-                    backgroundColor: 'rgba(255,0,0,0.1)',
-                    border: '1px solid red',
+                    backgroundColor: 'var(--error-fallback-surface)',
+                    border: '1px solid var(--error-fallback-border)',
                     borderRadius: '8px',
                     margin: '10px',
-                    color: '#ff4444'
+                    color: 'var(--error-fallback-text)'
                 }}>
                     <h2>Something went wrong in this section.</h2>
                     <details style={{ whiteSpace: 'pre-wrap', marginTop: '10px', fontSize: '12px', opacity: 0.8 }}>
@@ -46,8 +46,8 @@ export class ErrorBoundary extends Component<Props, State> {
                         style={{
                             marginTop: '15px',
                             padding: '8px 16px',
-                            backgroundColor: '#444',
-                            color: 'white',
+                            backgroundColor: 'var(--error-fallback-button)',
+                            color: 'var(--error-fallback-button-text)',
                             border: 'none',
                             borderRadius: '4px',
                             cursor: 'pointer'

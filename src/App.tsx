@@ -338,11 +338,15 @@ export default function App() {
     });
 
     const handleImportFiles = useCallback((files: FileList) => {
-        fileOps.handleImportFiles(Array.from(files));
+        fileOps.handleImportFiles(Array.from(files)).catch(error => console.error('[Import] Dropped-file import failed', error));
+    }, [fileOps]);
+
+    const handleImportDroppedPaths = useCallback((paths: string[]) => {
+        fileOps.handleImportPaths(paths).catch(error => console.error('[Import] Dropped-path import failed', error));
     }, [fileOps]);
 
     const { isDraggingExternal } = useDragDrop({
-        onImportPaths: fileOps.handleImportPaths,
+        onImportPaths: handleImportDroppedPaths,
         onImportFiles: handleImportFiles
     });
 
@@ -818,9 +822,17 @@ export default function App() {
         setSelectedIds,
         setLastSelectedId,
         clearSelection,
-        handleBulkDelete: () => settings.confirmDelete ? modals.openModal('deleteConfirm') : actions.executeDelete(),
+        handleBulkDelete: () => {
+            if (settings.confirmDelete) {
+                modals.openModal('deleteConfirm');
+                return;
+            }
+            actions.executeDelete().catch(error => console.error('[Delete] Shortcut delete failed', error));
+        },
         togglePrivacyMode: actions.handleTogglePrivacy,
-        toggleMasking: () => actions.handleBulkMask(),
+        toggleMasking: () => {
+            actions.handleBulkMask().catch(error => console.error('[Mask] Shortcut mask toggle failed', error));
+        },
         toggleFavorite: actions.handleShortcutFavorite,
         togglePin: actions.handleShortcutPin,
         openCollection: () => handleOpenCollectionModal('add'),
@@ -1085,7 +1097,8 @@ export default function App() {
                 canCheckForUpdates={updater.canCheckForUpdates}
                 onSettingsSave={setSettings}
                 onExportConfirm={(name, folder) => {
-                    actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
+                    actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined)
+                        .catch(error => console.error('[Export] Export failed', error));
                     setExportIds(new Set());
                 }}
                 onDeleteConfirm={actions.executeDelete}

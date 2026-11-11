@@ -342,7 +342,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const currentPageCount = queryData?.pages.length ?? 0;
         if (shouldPrefetchResultPages(filters, hasNextPage, isFetchingNextPage, currentPageCount)) {
             const timer = setTimeout(() => {
-                fetchNextPage();
+                void fetchNextPage(); // errors land in query state; this promise does not reject
             }, 500); // Increased delay to reduce load during filter changes
             return () => clearTimeout(timer);
         }
@@ -706,8 +706,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const clearAllFiltersAndRefresh = useCallback(() => {
         clearAllFilters();
         // Explicitly invalidate to ensure fresh data if cache was stale
-        queryClient.invalidateQueries({ queryKey: ['images'] });
-        queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+        // Refetch errors land in query state; invalidateQueries does not reject by default.
+        void queryClient.invalidateQueries({ queryKey: ['images'] });
+        void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     }, [clearAllFilters, queryClient]);
 
 

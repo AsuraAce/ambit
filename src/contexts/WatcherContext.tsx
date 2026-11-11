@@ -445,7 +445,9 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
         };
 
         // Debounce initialization
-        const timer = setTimeout(initWatcher, WATCHER_INIT_DEBOUNCE_MS);
+        const timer = setTimeout(() => {
+            initWatcher().catch(error => console.error('[Watcher] Failed to start live watch', error));
+        }, WATCHER_INIT_DEBOUNCE_MS);
         return () => {
             clearTimeout(timer);
             if (invokeSyncTimeoutRef.current) {

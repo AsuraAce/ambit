@@ -100,7 +100,7 @@ export const useImportOps = ({
                 addToast(`Imported ${uniqueNewImages.length} new item${uniqueNewImages.length === 1 ? '' : 's'} (${formatDetectedImageKindCounts(uniqueNewImages)})`, 'success');
             }
 
-            refreshHiddenAvailability();
+            refreshHiddenAvailability().catch(error => console.error('[Import] Failed to refresh hidden-content availability', error));
         } else {
             if (dupeCount > 0 && stats.skipped === 0 && stats.errors === 0) {
                 console.log(`Scan complete: ${dupeCount} duplicates found.`);

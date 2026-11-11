@@ -38,7 +38,7 @@ interface MaintenanceViewProps {
     onEmptyTrash: () => Promise<void>;
     onGroupImages?: (ids: string[]) => void;
     onViewImage: (id: string) => void;
-    onRegenerateThumbnails?: (ids?: string[]) => void;
+    onRegenerateThumbnails?: (ids?: string[]) => void | Promise<void>;
     maskedKeywords: string[];
     onUpdatePrompt?: (id: string, prompt: string) => void;
     onUpdateNegativePrompt?: (id: string, prompt: string) => void;
@@ -590,22 +590,23 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleThumbnailsScopeChange = useCallback((scope: 'global' | 'filtered') => {
         setThumbnailsScope(scope);
-        refreshData('thumbnails', false, { scope });
+        refreshData('thumbnails', false, { scope }).catch(error => console.error('[Maintenance] Refresh failed', error));
     }, [refreshData]);
 
     const handleUntaggedScopeChange = useCallback((scope: 'global' | 'filtered') => {
         setUntaggedScope(scope);
-        refreshData('untagged', false, { scope });
+        refreshData('untagged', false, { scope }).catch(error => console.error('[Maintenance] Refresh failed', error));
     }, [refreshData]);
 
     const handleIntermediatesScopeChange = useCallback((scope: 'global' | 'filtered') => {
         setIntermediatesScope(scope);
-        refreshData('intermediates', false, { scope });
+        refreshData('intermediates', false, { scope }).catch(error => console.error('[Maintenance] Refresh failed', error));
     }, [refreshData]);
 
     const handleIncludeUpgradeableChange = useCallback((include: boolean) => {
         setIncludeUpgradeable(include);
-        refreshData('thumbnails', true, { scope: thumbnailsScope, includeUpgradeable: include });
+        refreshData('thumbnails', true, { scope: thumbnailsScope, includeUpgradeable: include })
+            .catch(error => console.error('[Maintenance] Refresh failed', error));
     }, [refreshData, thumbnailsScope]);
 
 
@@ -792,7 +793,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                                 scope: tab === 'duplicates' ? 'global' : scope,
                                                 includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined,
                                                 runHashBackfill: tab === 'duplicates'
-                                            });
+                                            }).catch(error => console.error('[Maintenance] Scan failed', error));
                                         }}
                                     />
                                 )}

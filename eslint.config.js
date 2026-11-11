@@ -21,6 +21,8 @@ export default [
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     plugins: {
@@ -28,6 +30,12 @@ export default [
     },
     rules: {
       '@typescript-eslint/no-explicit-any': ['error', { fixToUnknown: true }],
+      '@typescript-eslint/no-floating-promises': 'error',
+      // React ignores the return value of JSX event handlers, so an async handler such as
+      // onClick={async () => ...} is not a misuse. typescript-eslint's React guidance turns
+      // this check off for JSX attributes; unhandled rejections there are tracked separately.
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+      '@typescript-eslint/await-thenable': 'error',
     },
   },
 ];

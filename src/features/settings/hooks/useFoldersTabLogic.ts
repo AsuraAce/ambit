@@ -110,7 +110,7 @@ export const useFoldersTabLogic = ({
     }, [settings.monitoredFolders, settings.invokeAiPath, setSettings]);
 
     useEffect(() => {
-        fetchCounts();
+        void fetchCounts(); // per-folder failures are caught and logged inside
     }, [settings.monitoredFolders.length]);
 
     const combinedFolders = useMemo(() => {
@@ -347,7 +347,8 @@ export const useFoldersTabLogic = ({
         // Trigger scan
         pendingScansRef.current.push({ id: newFolder.id, path: normalizedNew, variant });
         if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
-        scanDebounceRef.current = setTimeout(async () => {
+        // The async body catches its own failures and reports them as a toast.
+        scanDebounceRef.current = setTimeout(() => void (async () => {
             if (pendingScansRef.current.length === 0 || !onScanFolder) return;
             const foldersToScan = [...pendingScansRef.current];
             pendingScansRef.current = [];
@@ -413,7 +414,7 @@ export const useFoldersTabLogic = ({
                 }));
                 addToast('Folder scan failed', 'error');
             }
-        }, 500);
+        })(), 500);
     };
 
     const removeFolder = (id: string) => {

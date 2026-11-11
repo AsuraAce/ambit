@@ -271,7 +271,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection({ ...col, color });
-      refreshCollections(true);
+      refreshCollections(true).catch(error => console.error('[Collections] Refresh failed', error));
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -293,7 +293,7 @@ export const useCollectionOperations = ({
     try {
       await upsertCollection({ ...col, isArchived: newState });
       addToast(newState ? "Collection archived" : "Collection unarchived", "info");
-      refreshCollections(true);
+      refreshCollections(true).catch(error => console.error('[Collections] Refresh failed', error));
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -312,7 +312,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection({ ...col, isPinned: newState });
-      refreshCollections(true);
+      refreshCollections(true).catch(error => console.error('[Collections] Refresh failed', error));
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
