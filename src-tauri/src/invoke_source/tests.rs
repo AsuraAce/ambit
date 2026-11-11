@@ -430,6 +430,65 @@ fn only_an_invokeai_database_inside_the_scope_is_opened() {
 }
 
 #[test]
+fn a_linked_invokeai_database_is_refused_even_inside_the_scope() {
+    // A link named invokeai.db could redirect reads to another database, so only a
+    // regular file is opened.
+    let fixture = Fixture::new("link");
+    let folder_root = fixture.root.join("folder");
+    fs::create_dir_all(folder_root.join("databases").join(INVOKE_DB_FILE_NAME)).unwrap();
+    let refused = resolve_scoped_invoke_db(&folder_root.to_string_lossy(), |_| true).unwrap_err();
+    assert!(refused.contains("regular file"), "{refused}");
+
+    let linked_root = fixture.root.join("linked");
+    fs::create_dir_all(linked_root.join("databases")).unwrap();
+    let link = linked_root.join("databases").join(INVOKE_DB_FILE_NAME);
+    #[cfg(unix)]
+    let created = std::os::unix::fs::symlink(fixture.db(), &link);
+    #[cfg(windows)]
+    let created = std::os::windows::fs::symlink_file(fixture.db(), &link);
+    if let Err(error) = created {
+        eprintln!(
+            "Skipping linked invokeai.db coverage because file link creation failed: {error}"
+        );
+        return;
+    }
+
+    let refused = resolve_scoped_invoke_db(&linked_root.to_string_lossy(), |_| true).unwrap_err();
+    assert!(refused.contains("regular file"), "{refused}");
+}
+
+#[test]
+fn an_invokeai_folder_at_a_drive_root_gets_a_clear_error() {
+    // Ambit never adds a filesystem root to its scope, so say why instead of
+    // reporting a scope failure.
+    let fs_root = std::env::temp_dir()
+        .ancestors()
+        .last()
+        .unwrap()
+        .to_path_buf();
+    let root = fs_root.to_string_lossy().to_string();
+    let candidates = [
+        root.clone(),
+        fs_root.join("databases").to_string_lossy().to_string(),
+        fs_root
+            .join("databases")
+            .join(INVOKE_DB_FILE_NAME)
+            .to_string_lossy()
+            .to_string(),
+    ];
+    for candidate in candidates {
+        let refused = resolve_scoped_invoke_db(&candidate, |_| true).unwrap_err();
+        assert!(
+            refused.contains("root of a drive is not supported"),
+            "{candidate}: {refused}"
+        );
+    }
+
+    let fixture = Fixture::new("not-root");
+    assert!(resolve_scoped_invoke_db(&fixture.root.to_string_lossy(), |_| true).is_ok());
+}
+
+#[test]
 fn values_keep_their_types_and_binary_data_is_not_returned() {
     let fixture = Fixture::new("values");
     let rows = fixture

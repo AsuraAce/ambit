@@ -62,6 +62,12 @@ where
         return Err("No InvokeAI path provided.".to_string());
     }
     let db_path = resolve_invoke_db_path(root_path);
+    if is_at_filesystem_root(&db_path) {
+        return Err(
+            "InvokeAI at the root of a drive is not supported. Move it into a subfolder, or point Ambit at a subfolder that contains InvokeAI's databases folder."
+                .to_string(),
+        );
+    }
     let is_invoke_db = db_path.file_name().is_some_and(|name| {
         name.to_string_lossy()
             .eq_ignore_ascii_case(INVOKE_DB_FILE_NAME)
@@ -81,6 +87,25 @@ where
         return Err("InvokeAI database must be an existing regular file.".to_string());
     }
     Ok(db_path)
+}
+
+/// True when the InvokeAI folder is a filesystem root such as `E:\`. Ambit never
+/// adds a filesystem root to its scope, so such a folder can never be read.
+fn is_at_filesystem_root(db_path: &Path) -> bool {
+    let Some(mut root) = db_path.parent() else {
+        return true;
+    };
+    if root
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("databases"))
+    {
+        let Some(parent) = root.parent() else {
+            return true;
+        };
+        root = parent;
+    }
+    // An empty root is a relative path, which is refused later with its own error.
+    !root.as_os_str().is_empty() && root.parent().is_none()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
