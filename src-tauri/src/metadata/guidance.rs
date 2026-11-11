@@ -25,7 +25,7 @@ impl GuidanceClassifier {
     /// Cleans a model name by removing common extensions and weights.
     pub fn clean_name(name: &str) -> String {
         // 1. Extract basename (handle both / and \)
-        let basename = name.split(|c| c == '/' || c == '\\').last().unwrap_or(name);
+        let basename = name.split(['/', '\\']).next_back().unwrap_or(name);
 
         // 2. Remove a terminal extension and common generic suffixes, then normalize
         let normalized = basename
@@ -41,8 +41,7 @@ impl GuidanceClassifier {
             .unwrap_or(&normalized);
 
         without_extension
-            .replace(' ', "_")
-            .replace('-', "_")
+            .replace([' ', '-'], "_")
             .trim()
             .to_string()
     }

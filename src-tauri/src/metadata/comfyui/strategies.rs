@@ -108,16 +108,16 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<(ImageMetadata, ComfyFi
                                 }
                             }
                         }
-                    } else if !text.to_lowercase().starts_with("negative prompt:") {
-                        if !is_missing_prompt_value(&text) {
-                            meta.positive_prompt = text;
-                            record_core_source(
-                                &mut source_node_ids,
-                                ComfyMetadataField::PositivePrompt,
-                                id,
-                            );
-                            found = true;
-                        }
+                    } else if !text.to_lowercase().starts_with("negative prompt:")
+                        && !is_missing_prompt_value(&text)
+                    {
+                        meta.positive_prompt = text;
+                        record_core_source(
+                            &mut source_node_ids,
+                            ComfyMetadataField::PositivePrompt,
+                            id,
+                        );
+                        found = true;
                     }
                 }
             } else if title_lower.contains("negative") {
@@ -268,15 +268,13 @@ pub fn global_scan(graph: &ComfyGraph) -> (ImageMetadata, ComfyFieldSourceNodeId
                                 id,
                             );
                         }
-                    } else if text.trim().len() > 2 {
-                        if !is_missing_prompt_value(&text) {
-                            meta.positive_prompt = text;
-                            record_core_source(
-                                &mut source_node_ids,
-                                ComfyMetadataField::PositivePrompt,
-                                id,
-                            );
-                        }
+                    } else if text.trim().len() > 2 && !is_missing_prompt_value(&text) {
+                        meta.positive_prompt = text;
+                        record_core_source(
+                            &mut source_node_ids,
+                            ComfyMetadataField::PositivePrompt,
+                            id,
+                        );
                     }
                 }
             }

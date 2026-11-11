@@ -2229,8 +2229,7 @@ mod tests {
 
     fn apply_all_migrations(conn: &Connection) {
         for migration in init_db() {
-            conn.execute_batch(&migration.sql)
-                .expect("apply migrations");
+            conn.execute_batch(migration.sql).expect("apply migrations");
         }
     }
 

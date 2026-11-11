@@ -115,7 +115,7 @@ pub fn extract_video_metadata(video_path: &Path, mediainfo: &Value) -> VideoMeta
 pub fn reparse_video_metadata(original_evidence_json: &str) -> Option<VideoGenerationMetadata> {
     let evidence: Value = serde_json::from_str(original_evidence_json).ok()?;
     if !evidence.is_object()
-        || (!evidence.get("sidecar").is_some() && !evidence.get("embedded").is_some())
+        || (evidence.get("sidecar").is_none() && evidence.get("embedded").is_none())
     {
         return None;
     }
@@ -137,7 +137,7 @@ pub fn refresh_video_metadata_evidence(
 ) -> Option<VideoMetadataEvidence> {
     let evidence: Value = serde_json::from_str(original_evidence_json).ok()?;
     if !evidence.is_object()
-        || (!evidence.get("sidecar").is_some() && !evidence.get("embedded").is_some())
+        || (evidence.get("sidecar").is_none() && evidence.get("embedded").is_none())
     {
         return None;
     }
@@ -359,7 +359,7 @@ fn candidate_from_chunks(
         if let Some(selected_prompt) = chunks
             .get("prompt")
             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-            .filter(|prompt| is_linked_video_graph(prompt))
+            .filter(is_linked_video_graph)
             .and_then(|prompt| selected_video_workflow(&prompt).ok())
             .and_then(|prompt| serde_json::to_string(&prompt).ok())
         {

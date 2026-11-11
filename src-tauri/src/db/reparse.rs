@@ -405,8 +405,7 @@ pub async fn start_reparse_job(
                                 let meta = &result.metadata;
                                 let sampler_normalized = meta.sampler
                                     .to_lowercase()
-                                    .replace('_', " ")
-                                    .replace('-', " ");
+                                    .replace(['_', '-'], " ");
 
                                 update_stmt.execute(params![
                                     result.metadata_json,
@@ -517,7 +516,7 @@ pub async fn start_reparse_job(
                  }
 
                  let fetch_start = std::time::Instant::now();
-                 let placeholders = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
+                 let placeholders = std::iter::repeat_n("?", chunk.len()).collect::<Vec<_>>().join(",");
                  let batch_query = format!(
                     "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
                      FROM scoped_images
@@ -699,7 +698,7 @@ pub async fn start_reparse_job(
                                                 meta.steps,
                                                 meta.seed,
                                                 meta.cfg,
-                                                meta.sampler.to_lowercase().replace('_', " ").replace('-', " "),
+                                                meta.sampler.to_lowercase().replace(['_', '-'], " "),
                                                 meta.generation_type,
                                                 meta.positive_prompt,
                                                 meta.negative_prompt,

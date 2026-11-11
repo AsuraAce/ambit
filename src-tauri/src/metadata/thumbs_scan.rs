@@ -252,11 +252,7 @@ fn normalized_model_path_parts(model_path: &str) -> (String, Vec<String>) {
 }
 
 fn path_has_segment(parts: &[String], candidates: &[&str]) -> bool {
-    parts.iter().any(|part| {
-        candidates
-            .iter()
-            .any(|candidate| part.as_str() == *candidate)
-    })
+    parts.iter().any(|part| candidates.contains(&part.as_str()))
 }
 
 fn path_or_filename_contains(normalized_path: &str, candidates: &[&str]) -> bool {

@@ -168,7 +168,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
             if meta.model_hash.is_none() {
                 if let Some(hash) = model.get("hash").and_then(|s| s.as_str()) {
                     // Strip blake3: or similar prefix if present
-                    let clean_hash = hash.split(':').last().unwrap_or(hash);
+                    let clean_hash = hash.split(':').next_back().unwrap_or(hash);
                     meta.model_hash = Some(clean_hash.to_string());
                 }
             }

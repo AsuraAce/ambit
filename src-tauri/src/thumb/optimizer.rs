@@ -3514,7 +3514,7 @@ mod tests {
     fn migrated_repair_batch_marks_only_visible_scopes_with_selective_dirty_items() {
         let mut conn = Connection::open_in_memory().expect("in-memory db");
         for migration in crate::db::migrations::init_db() {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .expect("apply production migration");
         }
         conn.execute_batch(
@@ -3732,7 +3732,7 @@ mod tests {
         const IMAGE_COUNT: usize = 2_000;
         let mut conn = Connection::open_in_memory().expect("in-memory db");
         for migration in crate::db::migrations::init_db() {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .expect("apply production migration");
         }
         conn.execute_batch(
@@ -3901,7 +3901,7 @@ mod tests {
         const REPAIR_COUNT: usize = 4_500;
         let mut conn = Connection::open_in_memory().expect("in-memory db");
         for migration in crate::db::migrations::init_db() {
-            conn.execute_batch(&migration.sql)
+            conn.execute_batch(migration.sql)
                 .expect("apply production migration");
         }
 
@@ -4048,7 +4048,7 @@ mod tests {
             .expect("inspect benchmark schema");
         if has_candidate_views == 0 {
             conn.execute_batch(
-                &crate::db::migrations::m79_thumbnail_repair_candidates::migration79().sql,
+                crate::db::migrations::m79_thumbnail_repair_candidates::migration79().sql,
             )
             .expect("apply migration 79 to benchmark copy");
         }

@@ -253,40 +253,39 @@ impl<'a> ComfyEvaluator<'a> {
 
         for (id, node) in sampler_nodes {
             let t = get_node_type(node);
-            if (t.contains("KSampler") && !t.contains("Select") && !t.contains("Provider"))
-                || t == "SamplerCustomAdvanced"
+            if ((t.contains("KSampler") && !t.contains("Select") && !t.contains("Provider"))
+                || t == "SamplerCustomAdvanced")
+                && !self.is_muted(node)
             {
-                if !self.is_muted(node) {
-                    let mut loras = Vec::new();
-                    let mut ip_adapters = Vec::new();
-                    let mut hypernetworks = Vec::new();
-                    let (partial, partial_sources, partial_resource_sources) =
-                        super::eval_core::extract_from_sampler(
-                            self.graph,
-                            id,
-                            node,
-                            &mut loras,
-                            &mut ip_adapters,
-                            &mut hypernetworks,
-                        );
-                    if partial.steps > 0 || !partial.model.is_empty() {
-                        let before = meta.clone();
-                        meta.merge(partial);
-                        copy_changed_core_sources(
-                            &before,
-                            &meta,
-                            &partial_sources,
-                            &mut field_source_node_ids,
-                        );
-                        copy_changed_resource_sources(
-                            &before,
-                            &meta,
-                            &partial_resource_sources,
-                            &mut resource_source_node_ids,
-                        );
-                        if meta.steps > 0 && !meta.model.is_empty() {
-                            return (meta, field_source_node_ids, resource_source_node_ids);
-                        }
+                let mut loras = Vec::new();
+                let mut ip_adapters = Vec::new();
+                let mut hypernetworks = Vec::new();
+                let (partial, partial_sources, partial_resource_sources) =
+                    super::eval_core::extract_from_sampler(
+                        self.graph,
+                        id,
+                        node,
+                        &mut loras,
+                        &mut ip_adapters,
+                        &mut hypernetworks,
+                    );
+                if partial.steps > 0 || !partial.model.is_empty() {
+                    let before = meta.clone();
+                    meta.merge(partial);
+                    copy_changed_core_sources(
+                        &before,
+                        &meta,
+                        &partial_sources,
+                        &mut field_source_node_ids,
+                    );
+                    copy_changed_resource_sources(
+                        &before,
+                        &meta,
+                        &partial_resource_sources,
+                        &mut resource_source_node_ids,
+                    );
+                    if meta.steps > 0 && !meta.model.is_empty() {
+                        return (meta, field_source_node_ids, resource_source_node_ids);
                     }
                 }
             }

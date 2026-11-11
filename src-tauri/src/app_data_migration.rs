@@ -218,7 +218,7 @@ fn existing_database_file_moves(
             }
 
             Some(DatabaseFileMove {
-                name: *name,
+                name,
                 source,
                 destination: local_dir.join(name),
             })

@@ -108,7 +108,7 @@ fn retained_screen(log: &str) -> Option<Vec<ScreenArm>> {
         .map(serde_json::from_str)
         .collect::<Result<_, _>>()
         .ok()?;
-    if records.len() < 14 || records.len() > 50 || (records.len() - 2) % 12 != 0 {
+    if records.len() < 14 || records.len() > 50 || !(records.len() - 2).is_multiple_of(12) {
         return None;
     }
     let h = &records[0];

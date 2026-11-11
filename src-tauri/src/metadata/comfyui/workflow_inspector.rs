@@ -82,7 +82,7 @@ pub(crate) fn build_comfyui_workflow_graph_report(
                 },
                 title: get_node_title(node)
                     .filter(|title| !title.is_empty())
-                    .unwrap_or_else(|| {
+                    .unwrap_or({
                         if node_type.is_empty() {
                             "Unknown"
                         } else {

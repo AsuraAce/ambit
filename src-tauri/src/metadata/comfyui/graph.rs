@@ -888,7 +888,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
 
         if t == "KSampler" {
             match key {
-                "seed" | "noise_seed" => return arr.get(0),
+                "seed" | "noise_seed" => return arr.first(),
                 "steps" => return arr.get(2),
                 "cfg" => return arr.get(3),
                 "sampler_name" => return arr.get(4),
@@ -931,11 +931,8 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
-        if t == "FluxGuidance" {
-            match key {
-                "guidance" => return arr.first(),
-                _ => {}
-            }
+        if t == "FluxGuidance" && key == "guidance" {
+            return arr.first();
         }
 
         if t == "CFGGuider" && key == "cfg" {
@@ -1006,7 +1003,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
 
         if t == "ImpactWildcardProcessor" {
             match key {
-                "wildcard_text" => return arr.get(0),
+                "wildcard_text" => return arr.first(),
                 "populated_text" => return arr.get(1),
                 "seed" => return arr.get(3),
                 _ => {
@@ -1020,7 +1017,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
 
         if t == "Concat Text _O" {
             match key {
-                "text1" => return arr.get(0),
+                "text1" => return arr.first(),
                 "text2" => return arr.get(1),
                 _ => {}
             }

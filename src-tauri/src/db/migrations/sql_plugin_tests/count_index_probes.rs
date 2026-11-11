@@ -97,7 +97,7 @@ fn valid_held_record(v: &Value, kind: &str) -> bool {
     if !CASES[3..].contains(&case)
         || slot > 1
         || !v["indexed"].is_boolean()
-        || !v["round"].as_u64().is_some_and(|n| n < 6)
+        || v["round"].as_u64().is_none_or(|n| n >= 6)
     {
         return false;
     }

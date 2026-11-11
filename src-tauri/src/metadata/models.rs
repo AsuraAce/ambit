@@ -312,35 +312,33 @@ pub fn classify_unlabeled_models(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let mut updates = Vec::new();
-    for row in rows {
-        if let Ok((hash, name, r_type)) = row {
-            let should_classify = r_type != "checkpoint"
-                || name.to_lowercase().contains("control")
-                || name.to_lowercase().contains("ip-adapter");
+    for (hash, name, r_type) in rows.flatten() {
+        let should_classify = r_type != "checkpoint"
+            || name.to_lowercase().contains("control")
+            || name.to_lowercase().contains("ip-adapter");
 
-            if should_classify {
-                let h_param = if hash.starts_with("file:")
-                    || hash.starts_with("cnet_")
-                    || hash.starts_with("ipad_")
-                {
-                    None
-                } else {
-                    Some(hash.as_str())
-                };
-                if let Some((cat, sub)) = GuidanceClassifier::classify(&name, h_param) {
-                    updates.push((hash, cat.as_str().to_string(), sub));
-                } else if r_type != "checkpoint" {
-                    updates.push((
-                        hash,
-                        if r_type == "ip_adapters" {
-                            "IP-Adapter"
-                        } else {
-                            "ControlNet"
-                        }
-                        .to_string(),
-                        "other".to_string(),
-                    ));
-                }
+        if should_classify {
+            let h_param = if hash.starts_with("file:")
+                || hash.starts_with("cnet_")
+                || hash.starts_with("ipad_")
+            {
+                None
+            } else {
+                Some(hash.as_str())
+            };
+            if let Some((cat, sub)) = GuidanceClassifier::classify(&name, h_param) {
+                updates.push((hash, cat.as_str().to_string(), sub));
+            } else if r_type != "checkpoint" {
+                updates.push((
+                    hash,
+                    if r_type == "ip_adapters" {
+                        "IP-Adapter"
+                    } else {
+                        "ControlNet"
+                    }
+                    .to_string(),
+                    "other".to_string(),
+                ));
             }
         }
     }
@@ -774,7 +772,7 @@ mod tests {
     fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory db");
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).expect("apply migration");
+            conn.execute_batch(migration.sql).expect("apply migration");
         }
         conn
     }
