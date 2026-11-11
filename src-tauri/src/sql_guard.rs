@@ -4,7 +4,9 @@
 //! absolute path replaces its app-config base. Its permissions cannot scope the
 //! URL, so this wrapper refuses every `load` whose `db` is not the URL that
 //! `get_main_database_url` hands the frontend. `select`, `execute` and `close`
-//! act only on databases already loaded, so `load` is the one command to guard.
+//! act only on databases already loaded, but SQL run there can still reach other
+//! files through `ATTACH` and `VACUUM INTO`, so guarding `load` alone is not a
+//! boundary (#387 stays open until those commands are guarded too).
 
 use serde_json::Value as JsonValue;
 use tauri::{
