@@ -1,3 +1,14 @@
+// Test builds compile out the Tauri builder (`create_builder` and `run` are
+// `cfg(not(test))`), so every command and the state it uses looks unused there.
+// Dead code is still checked by the normal build, which Clippy also runs.
+#![cfg_attr(
+    test,
+    allow(
+        dead_code,
+        reason = "the cfg(not(test)) Tauri builder is the only caller of most commands"
+    )
+)]
+
 mod app_data_migration;
 mod comfy_support_replay;
 mod db;
