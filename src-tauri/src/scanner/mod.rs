@@ -192,14 +192,14 @@ pub async fn audit_invokeai_folder(path: String) -> Result<FolderStats, String> 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_invokeai_images(path: String) -> Result<Vec<String>, String> {
+pub async fn list_invokeai_images(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut files = Vec::new();
-        let images_path = Path::new(&path).join("outputs").join("images");
-        if images_path.exists() {
-            traversal::collect_images_recursive(&path.as_ref(), &images_path, &mut files);
-        }
-        Ok(files)
+        utils::list_invokeai_images_in_scope(&path, |candidate| {
+            app.fs_scope().is_allowed(candidate)
+        })
     })
     .await
     .map_err(|e| e.to_string())?
