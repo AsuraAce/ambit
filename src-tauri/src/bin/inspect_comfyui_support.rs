@@ -969,6 +969,10 @@ mod tests {
         move |_| Ok(contents.to_vec())
     }
 
+    #[allow(
+        clippy::type_complexity,
+        reason = "the fake matches the inspector callback signature"
+    )]
     fn fake_fixture_inspect(
         matches: bool,
     ) -> impl Fn(&[u8], Option<&[u8]>) -> Result<(String, bool), String> {

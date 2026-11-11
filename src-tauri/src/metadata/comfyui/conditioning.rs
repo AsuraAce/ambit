@@ -1615,6 +1615,10 @@ fn trace_text_input_with_state(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "parameter-object refactor tracked in #405"
+)]
 fn evaluate_transform_input(
     graph: &ComfyGraph,
     node: &Value,

@@ -219,6 +219,10 @@ fn connection_policy_screen_worker() {
     });
     let queries = [production_collection_stats_query(), maintenance_count_sql()];
     let mut reads_ms = [[0.; 6]; 2];
+    #[allow(
+        clippy::needless_range_loop,
+        reason = "read indexes the inner dimension of reads_ms"
+    )]
     for read in 0..6 {
         if cell % 2 == 1 {
             let values = pair(&sql, &db, queries);

@@ -32,8 +32,10 @@ fn read_model_name(value: &serde_json::Value) -> Option<&str> {
 }
 
 pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
-    let mut meta = ImageMetadata::default();
-    meta.tool = "InvokeAI".to_string();
+    let mut meta = ImageMetadata {
+        tool: "InvokeAI".to_string(),
+        ..Default::default()
+    };
 
     // 1. Root-Aware Resolution: Unwrap specific InvokeAI metadata containers
     // This handles the "original_metadata_json" blob from DB which might be wrapped or escaped.

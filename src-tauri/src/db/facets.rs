@@ -664,6 +664,10 @@ fn manual_thumbnail_image(
     Ok(None)
 }
 
+#[allow(
+    clippy::type_complexity,
+    reason = "named result struct tracked in #405"
+)]
 fn compute_thumbnail_fields(
     conn: &rusqlite::Connection,
     model: &FacetModelSource,
@@ -710,9 +714,9 @@ fn compute_thumbnail_fields(
 
     let sensitive = if model.thumbnail_sensitivity_override == Some(0) {
         0
-    } else if model.thumbnail_sensitivity_override == Some(1) {
-        1
-    } else if privacy_keyword_matches(conn, &model.name)? {
+    } else if model.thumbnail_sensitivity_override == Some(1)
+        || privacy_keyword_matches(conn, &model.name)?
+    {
         1
     } else if usable_manual_thumb.is_some() {
         manual_image.map(|(_, hidden, _)| hidden).unwrap_or(1)

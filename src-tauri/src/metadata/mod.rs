@@ -402,17 +402,21 @@ mod tests {
     }
     #[test]
     fn test_merge_metadata_override() {
-        let mut base = ImageMetadata::default();
-        base.tool = "A1111".to_string();
-        base.sampler = "_".to_string(); // Simulate bad A1111 param
-        base.steps = 0;
-        base.cfg = 0.0;
+        let mut base = ImageMetadata {
+            tool: "A1111".to_string(),
+            sampler: "_".to_string(), // Simulate bad A1111 param
+            steps: 0,
+            cfg: 0.0,
+            ..Default::default()
+        };
 
-        let mut secondary = ImageMetadata::default();
-        secondary.tool = "ComfyUI".to_string();
-        secondary.sampler = "euler".to_string();
-        secondary.steps = 20;
-        secondary.cfg = 3.5;
+        let secondary = ImageMetadata {
+            tool: "ComfyUI".to_string(),
+            sampler: "euler".to_string(),
+            steps: 20,
+            cfg: 3.5,
+            ..Default::default()
+        };
 
         merge_metadata(&mut base, secondary);
 
@@ -426,8 +430,10 @@ mod tests {
         let unknown = serde_json::to_value(ImageMetadata::default()).expect("serialize metadata");
         assert!(unknown.get("seed").is_none());
 
-        let mut zero = ImageMetadata::default();
-        zero.seed = Some(0);
+        let mut zero = ImageMetadata {
+            seed: Some(0),
+            ..Default::default()
+        };
         zero.loras.push("lora".to_string());
         zero.control_nets.push("control".to_string());
         zero.ip_adapters.push("ip-adapter".to_string());
@@ -446,10 +452,14 @@ mod tests {
 
     #[test]
     fn merge_only_fills_an_unknown_seed() {
-        let mut known_zero = ImageMetadata::default();
-        known_zero.seed = Some(0);
-        let mut secondary = ImageMetadata::default();
-        secondary.seed = Some(42);
+        let mut known_zero = ImageMetadata {
+            seed: Some(0),
+            ..Default::default()
+        };
+        let secondary = ImageMetadata {
+            seed: Some(42),
+            ..Default::default()
+        };
 
         known_zero.merge_if_missing(secondary.clone());
         assert_eq!(known_zero.seed, Some(0));

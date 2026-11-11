@@ -44,9 +44,11 @@ fn split_a1111_params(s: &str) -> Vec<String> {
 
 pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> ImageMetadata {
     let sanitized_text = text.replace('\0', "");
-    let mut meta = ImageMetadata::default();
-    meta.tool = default_tool.unwrap_or_else(|| "Automatic1111".to_string());
-    meta.raw_parameters = Some(sanitized_text.clone());
+    let mut meta = ImageMetadata {
+        tool: default_tool.unwrap_or_else(|| "Automatic1111".to_string()),
+        raw_parameters: Some(sanitized_text.clone()),
+        ..Default::default()
+    };
 
     let mut normalized_lines = Vec::new();
     for line in sanitized_text.lines() {
@@ -72,9 +74,9 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     let mut state = 0; // 0: positive, 1: negative, 2: params
 
     for line in normalized_lines {
-        if line.starts_with("Negative prompt: ") {
+        if let Some(content) = line.strip_prefix("Negative prompt: ") {
             state = 1;
-            let content = line[17..].trim();
+            let content = content.trim();
             if content.starts_with("Model: ")
                 || content.starts_with("Seed: ")
                 || content.starts_with("Steps: ")
@@ -190,9 +192,10 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                     }
                     "Model" | "Checkpoint" | "Model name" | "SD model" => {
                         // Avoid overwriting a good model name with a generic one or repeating info
-                        if meta.model == "Unknown" || meta.model.is_empty() {
-                            meta.model = val.to_string();
-                        } else if val.len() > meta.model.len() && val.starts_with(&meta.model) {
+                        if meta.model == "Unknown"
+                            || meta.model.is_empty()
+                            || (val.len() > meta.model.len() && val.starts_with(&meta.model))
+                        {
                             meta.model = val.to_string();
                         }
                     }

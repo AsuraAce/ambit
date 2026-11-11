@@ -243,20 +243,9 @@ pub fn global_scan(graph: &ComfyGraph) -> (ImageMetadata, ComfyFieldSourceNodeId
                         );
                     }
                 } else if meta.positive_prompt.trim().is_empty() {
-                    // Heuristic: If text starts with "negative", treat as negative
-                    if text.to_lowercase().starts_with("negative prompt:") {
-                        if meta.negative_prompt.trim().is_empty()
-                            && !is_missing_prompt_value(&text)
-                            && text.trim().len() > 2
-                        {
-                            meta.negative_prompt = text;
-                            record_core_source(
-                                &mut source_node_ids,
-                                ComfyMetadataField::NegativePrompt,
-                                id,
-                            );
-                        }
-                    } else if text.to_lowercase().starts_with("negative") {
+                    // Heuristic: If text starts with "negative" (including
+                    // "negative prompt:"), treat as negative
+                    if text.to_lowercase().starts_with("negative") {
                         if meta.negative_prompt.trim().is_empty()
                             && !is_missing_prompt_value(&text)
                             && text.trim().len() > 2

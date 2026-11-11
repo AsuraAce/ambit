@@ -41,8 +41,8 @@ impl ThumbnailOptimizationProfile {
 
         match self {
             Self::Quiet => 1,
-            Self::Balanced => std::cmp::max(1, std::cmp::min(6, available / 2)),
-            Self::Fast => std::cmp::max(1, std::cmp::min(12, available.saturating_sub(1))),
+            Self::Balanced => (available / 2).clamp(1, 6),
+            Self::Fast => available.saturating_sub(1).clamp(1, 12),
         }
     }
 
@@ -1209,6 +1209,10 @@ fn flush_pending_thumbnail_results(
     Ok(elapsed_ms(db_started_at))
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "parameter-object refactor tracked in #405"
+)]
 fn build_progress_payload(
     result: &ThumbnailOptimizationResult,
     started_at: Instant,

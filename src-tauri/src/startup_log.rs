@@ -480,6 +480,10 @@ impl StartupJournal {
         log::info!("[Startup repair] status={:?} elapsed={}ms unattributed={}ms; top exclusive: {}; filesystem enumeration (nested): {}", report.status, report.duration_ms, report.unattributed_ms, top, enumeration);
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "parameter-object refactor tracked in #405"
+    )]
     fn record(
         &self,
         phase: &str,
@@ -870,7 +874,7 @@ mod tests {
     #[test]
     fn validated_queue_reserves_terminal_and_repair_records_under_saturation() {
         use tauri::Manager;
-        assert!(RENDERER_QUEUE_LIMIT >= 256 + 8 * 4 + 7);
+        const { assert!(RENDERER_QUEUE_LIMIT >= 256 + 8 * 4 + 7) };
         let directory = TestLogs::new();
         let journal = Arc::new(StartupJournal::new(Instant::now(), Some(&directory.0)));
         let app = tauri::test::mock_builder()

@@ -486,6 +486,10 @@ impl IssueCollector {
         );
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "parameter-object refactor tracked in #405"
+    )]
     fn trace_prompt_input(
         &mut self,
         graph: &ComfyGraph,

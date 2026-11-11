@@ -319,6 +319,10 @@ pub struct FacetScopeCacheStatus {
 
 #[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "variant names are the serde and Specta wire names"
+)]
 pub enum InvokeImageReferenceRole {
     InitImage,
     ControlnetImage,
@@ -3956,6 +3960,10 @@ mod tests {
         assert_eq!(result.active_updated, 1);
         assert_eq!(result.removed_updated, 1);
 
+        #[allow(
+            clippy::type_complexity,
+            reason = "the tuple mirrors the SELECT row it reads"
+        )]
         let active_state: (
             String,
             Option<String>,
