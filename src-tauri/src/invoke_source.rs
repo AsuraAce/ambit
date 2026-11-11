@@ -1,7 +1,10 @@
 //! Read-only access to InvokeAI's own `invokeai.db`.
 //!
 //! Ambit only reads from InvokeAI, so this path never writes InvokeAI's files:
-//! not the database, not its `-wal`, and not its `-shm`. The webview supplies the
+//! not the database, not its `-wal`, and not its `-shm`. One race remains: if
+//! InvokeAI shuts down between the mode check and a `WalLive` read, SQLite opens
+//! the `-wal` with create and leaves an empty one; that query fails, and the next
+//! one reads the empty WAL as a snapshot. The webview supplies the
 //! SQL, so the connection is also locked down to one plain `SELECT` (or
 //! `PRAGMA table_info`) over the InvokeAI database itself.
 
@@ -84,8 +87,9 @@ where
 enum SourceOpenMode {
     /// Rollback-journal database: a read-only connection only takes shared locks.
     RollbackReadOnly,
-    /// WAL database with no `-wal` file: no WAL connection is open and every
-    /// commit is in the main file, so it is read as an immutable snapshot.
+    /// WAL database with no `-wal` file, or an empty one and no `-shm`: no WAL
+    /// connection is open and every commit is in the main file, so it is read as
+    /// an immutable snapshot.
     WalSnapshot,
     /// WAL database with `-wal` and `-shm`: InvokeAI is running or exited without
     /// cleanup. `readonly_shm` reads the WAL without writing the wal-index.
@@ -124,15 +128,17 @@ fn choose_open_mode(db_path: &Path) -> Result<SourceOpenMode, String> {
     if header[18] != 2 || header[19] != 2 {
         return Ok(SourceOpenMode::RollbackReadOnly);
     }
-    match (
-        path_exists(&sibling(db_path, "-wal")),
-        path_exists(&sibling(db_path, "-shm")),
-    ) {
-        (false, _) => Ok(SourceOpenMode::WalSnapshot),
-        (true, true) => Ok(SourceOpenMode::WalLive),
+    let wal_len = fs::symlink_metadata(sibling(db_path, "-wal")).map(|metadata| metadata.len());
+    match (wal_len, path_exists(&sibling(db_path, "-shm"))) {
+        (Err(_), _) => Ok(SourceOpenMode::WalSnapshot),
+        (Ok(_), true) => Ok(SourceOpenMode::WalLive),
+        // An empty WAL holds no commits. It can be left by an InvokeAI shutdown
+        // that races a read opening in WalLive mode.
+        (Ok(0), false) => Ok(SourceOpenMode::WalSnapshot),
         // Reading would either create -shm or ignore committed rows in the WAL.
-        (true, false) => Err(
-            "InvokeAI's database has a write-ahead log but no shared-memory file. Open and close InvokeAI once, then try again."
+        // InvokeAI also passes through this state briefly while it shuts down.
+        (Ok(_), false) => Err(
+            "InvokeAI's database has a write-ahead log but no shared-memory file. Try again; if this persists, open and close InvokeAI once."
                 .to_string(),
         ),
     }

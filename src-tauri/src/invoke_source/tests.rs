@@ -305,6 +305,51 @@ fn wal_without_shm_is_refused_without_creating_shm() {
     assert!(!path_exists(&fixture.shm()));
 }
 
+// An InvokeAI shutdown racing a WalLive open can leave an empty -wal; it must not
+// block later reads, and reading it must change nothing.
+#[test]
+fn empty_wal_without_shm_is_read_as_a_snapshot() {
+    let fixture = Fixture::new("empty-wal");
+    fs::write(fixture.wal(), b"").unwrap();
+    let before = fixture.snapshot();
+
+    fixture.read_like_sync();
+
+    assert_eq!(fixture.image_names(), ["a.png", "b.png", "c.png"]);
+    assert_eq!(fixture.snapshot(), before);
+    assert!(!path_exists(&fixture.shm()));
+}
+
+// Each statement below passes the read-only open and `readonly()`, so only the
+// named layer refuses it.
+#[test]
+fn authorizer_tail_check_and_attach_limit_each_refuse_on_their_own() {
+    let fixture = Fixture::new("layers");
+    let before = fixture.snapshot();
+    for sql in [
+        "SELECT * FROM pragma_journal_mode()",
+        "SELECT * FROM pragma_database_list",
+        "PRAGMA user_version",
+        "PRAGMA query_only=0",
+    ] {
+        let error = fixture.select(sql, &[]).unwrap_err();
+        assert!(error.contains("not authorized"), "{sql:?}: {error}");
+    }
+    let error = fixture.select("SELECT 1; SELECT 2", &[]).unwrap_err();
+    assert!(error.contains("exactly one statement"), "{error}");
+
+    let attach_target = fixture.root.join("other.db");
+    let conn = open_read_only(&fixture.db()).unwrap();
+    conn.authorizer(Some(|_: AuthContext<'_>| Authorization::Allow));
+    let attach = format!("ATTACH '{}' AS other", attach_target.to_string_lossy());
+    let error = run_select(&conn, &attach, &[]).unwrap_err();
+    assert!(error.contains("too many attached databases"), "{error}");
+    drop(conn);
+
+    assert_eq!(fixture.snapshot(), before);
+    assert!(!path_exists(&attach_target));
+}
+
 #[test]
 fn writes_attaches_pragmas_and_extra_statements_are_rejected() {
     let fixture = Fixture::new("reject");
@@ -320,6 +365,8 @@ fn writes_attaches_pragmas_and_extra_statements_are_rejected() {
         "PRAGMA wal_checkpoint(TRUNCATE)",
         "PRAGMA query_only=0",
         "BEGIN IMMEDIATE",
+        "VACUUM",
+        "ANALYZE",
         attach.as_str(),
         "SELECT 1; DELETE FROM images",
         "SELECT 1; SELECT 2",
