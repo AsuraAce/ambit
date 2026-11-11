@@ -55,6 +55,39 @@ where
     Ok(())
 }
 
+/// Lists InvokeAI output images only when both the InvokeAI root and its
+/// `outputs/images` folder are inside the registered filesystem scope. The
+/// images folder is checked on its own so a link that leaves the root is refused.
+pub fn list_invokeai_images_in_scope<F>(
+    path: &str,
+    mut is_allowed: F,
+) -> Result<Vec<String>, String>
+where
+    F: FnMut(&Path) -> bool,
+{
+    let root = Path::new(path);
+    if path.trim().is_empty() || !is_allowed(root) {
+        return Err(format!(
+            "InvokeAI folder is outside the allowed filesystem scope: {path}"
+        ));
+    }
+
+    let mut files = Vec::new();
+    let images_path = root.join("outputs").join("images");
+    if !images_path.exists() {
+        return Ok(files);
+    }
+    if !is_allowed(&images_path) {
+        return Err(format!(
+            "InvokeAI images folder is outside the allowed filesystem scope: {}",
+            images_path.to_string_lossy()
+        ));
+    }
+
+    super::traversal::collect_images_recursive(root, &images_path, &mut files);
+    Ok(files)
+}
+
 pub fn open_file_impl(app: &tauri::AppHandle, path: String) -> Result<(), String> {
     let conn = open_configured_app_db(app)?;
     let target = resolve_known_media_file_target(&conn, &path)?;
@@ -270,7 +303,8 @@ fn normalize_path_string(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        probe_file_metadata_bulk_impl, resolve_existing_regular_file, resolve_existing_show_target,
+        list_invokeai_images_in_scope, probe_file_metadata_bulk_impl,
+        resolve_existing_regular_file, resolve_existing_show_target,
         resolve_known_media_file_target, resolve_show_in_folder_target,
         validate_metadata_probe_paths,
     };
@@ -329,6 +363,64 @@ mod tests {
             result,
             Err("File metadata probe path is outside the allowed filesystem scope: C:/private/outside.png".to_string())
         );
+    }
+
+    fn invoke_fixture(name: &str) -> PathBuf {
+        let root = temp_dir(name);
+        let images = root.join("outputs").join("images");
+        fs::create_dir_all(&images).unwrap();
+        fs::write(images.join("a.png"), b"image").unwrap();
+        root
+    }
+
+    // #382: a webview caller must not be able to enumerate a folder the user never approved.
+    #[test]
+    fn invoke_listing_refuses_a_root_outside_the_registered_scope() {
+        let root = invoke_fixture("invoke_outside_scope");
+        let mut checked = Vec::new();
+
+        let result = list_invokeai_images_in_scope(&root.to_string_lossy(), |path| {
+            checked.push(path.to_path_buf());
+            false
+        });
+
+        assert!(result
+            .unwrap_err()
+            .starts_with("InvokeAI folder is outside the allowed filesystem scope"));
+        assert_eq!(checked, vec![root.clone()]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_listing_refuses_an_images_folder_outside_the_registered_scope() {
+        let root = invoke_fixture("invoke_images_outside_scope");
+        let images = root.join("outputs").join("images");
+
+        let result = list_invokeai_images_in_scope(&root.to_string_lossy(), |path| path != images);
+
+        assert!(result
+            .unwrap_err()
+            .starts_with("InvokeAI images folder is outside the allowed filesystem scope"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_listing_refuses_an_empty_path() {
+        let result = list_invokeai_images_in_scope("  ", |_| true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn invoke_listing_lists_images_inside_the_registered_scope() {
+        let root = invoke_fixture("invoke_inside_scope");
+
+        let files =
+            list_invokeai_images_in_scope(&root.to_string_lossy(), |path| path.starts_with(&root))
+                .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("a.png"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
