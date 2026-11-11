@@ -4,6 +4,8 @@ Status: Canonical
 
 Ambit uses a restrained semantic palette. The executable color values in `tailwind.config.js` are authoritative; this document defines their roles.
 
+`tailwind.config.js` is the single token file for colours and font families: the semantic palette, the `surface` and brand colours, and the theme custom properties (`:root` and `.dark`) it adds to the base layer. Stylesheets and components take colours through Tailwind utilities, `@apply` or those custom properties. `pnpm run lint` runs Stylelint over `src/**/*.css` and fails on hex colours, named colours, `rgb()`/`rgba()`/`hsl()`/`hsla()` and literal `font-family` values; the token file is JavaScript and outside its scope. Stylelint does not read `.tsx` files, so components follow the same rule by review: add a token before using a new colour.
+
 ## Semantic roles
 
 - **Sage** is the brand tone for primary actions, navigation and selection, ordinary progress, and positive states.
@@ -17,6 +19,6 @@ For small colored text, use `*-600` on light surfaces and `*-300` on dark surfac
 
 ## Exceptions
 
-User-selected collection colors and chart series may use broader hues because they represent user content or data categories. Keep their labels visible and avoid treating those colors as application semantics.
+User-selected collection colors and chart series may use broader hues because they represent user content or data categories. Keep their labels visible and avoid treating those colors as application semantics. Browser mock data (`src/services/browserMockData.ts`) uses raw hex for mock image content and mock collection colours; mark any other exception with a comment that names this section.
 
 The media canvas remains dark for image and video viewing. The shared viewer sidebar follows the selected application theme.

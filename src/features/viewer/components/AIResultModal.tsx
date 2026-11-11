@@ -72,7 +72,7 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                         exit={{ opacity: 0, y: 10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
                         className={cn(
-                            "relative w-full bg-white dark:bg-[#0a0a0c] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden",
+                            "relative w-full bg-white dark:bg-surface-dialog border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden",
                             "max-w-2xl h-[600px]" // Fixed height for consistency
                         )}
                     >
