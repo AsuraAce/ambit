@@ -4,19 +4,20 @@ import { DEFAULT_APP_SETTINGS } from '../../../constants/defaultSettings';
 import { CommandPalette } from '../CommandPalette';
 
 describe('CommandPalette', () => {
-    const renderPalette = (onClose = vi.fn(), onImport = vi.fn()) => render(
-        <CommandPalette
-            isOpen={true}
-            onClose={onClose}
-            onNavigate={vi.fn()}
-            onToggleTheme={vi.fn()}
-            onOpenSettings={vi.fn()}
-            onImport={onImport}
-            onCreateCollection={vi.fn()}
-            onToggleAI={vi.fn()}
-            settings={{ ...DEFAULT_APP_SETTINGS }}
-        />
-    );
+    const renderPalette = (onClose = vi.fn(), onImport = vi.fn()) =>
+        render(
+            <CommandPalette
+                isOpen={true}
+                onClose={onClose}
+                onNavigate={vi.fn()}
+                onToggleTheme={vi.fn()}
+                onOpenSettings={vi.fn()}
+                onImport={onImport}
+                onCreateCollection={vi.fn()}
+                onToggleAI={vi.fn()}
+                settings={{ ...DEFAULT_APP_SETTINGS }}
+            />
+        );
 
     it('delegates Import Images to the app import chooser before closing', () => {
         const onImport = vi.fn();

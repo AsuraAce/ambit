@@ -26,7 +26,7 @@ vi.mock('../../../bindings', () => ({
         rebuildFacetCache: vi.fn(),
         rebuildFacetCacheIncremental: vi.fn(),
         purgeDatabase: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('../../metadataParser', () => ({
@@ -59,7 +59,7 @@ const liveImportMetadata = {
 
 vi.mock('../connection', () => ({
     dbMutex: {
-        dispatch: (...args: unknown[]) => dispatchMock(...args as [() => Promise<unknown>]),
+        dispatch: (...args: unknown[]) => dispatchMock(...(args as [() => Promise<unknown>])),
     },
     getDb: () => getDbMock(),
 }));
@@ -75,15 +75,22 @@ describe('imageRepo batch removal', () => {
             notFoundIds: [],
             membershipWarningIds: [],
             touchedResources: {
-                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
-                controlNets: [], ipAdapters: [], tools: [],
+                checkpoints: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
             },
         });
-        vi.mocked(commands.removeImagesFromLibrary).mockImplementation(async ids => ({
-            status: 'ok', data: lifecycleResult(ids),
+        vi.mocked(commands.removeImagesFromLibrary).mockImplementation(async (ids) => ({
+            status: 'ok',
+            data: lifecycleResult(ids),
         }));
-        vi.mocked(commands.restoreRemovedImages).mockImplementation(async ids => ({
-            status: 'ok', data: lifecycleResult(ids),
+        vi.mocked(commands.restoreRemovedImages).mockImplementation(async (ids) => ({
+            status: 'ok',
+            data: lifecycleResult(ids),
         }));
     });
 
@@ -103,17 +110,21 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockRejectedValue(nativeError);
 
         const { insertImagesBatch } = await import('../imageRepo');
-        await expect(insertImagesBatch([{
-            id: 'C:/images/fails.png',
-            url: 'C:/images/fails.png',
-            thumbnailUrl: 'C:/thumbs/fails.webp',
-            filename: 'fails.png',
-            width: 512,
-            height: 512,
-            timestamp: 1700000000000,
-            metadata: liveImportMetadata,
-            isFavorite: false,
-        }])).rejects.toThrow('backend refused batch');
+        await expect(
+            insertImagesBatch([
+                {
+                    id: 'C:/images/fails.png',
+                    url: 'C:/images/fails.png',
+                    thumbnailUrl: 'C:/thumbs/fails.webp',
+                    filename: 'fails.png',
+                    width: 512,
+                    height: 512,
+                    timestamp: 1700000000000,
+                    metadata: liveImportMetadata,
+                    isFavorite: false,
+                },
+            ])
+        ).rejects.toThrow('backend refused batch');
 
         expect(errorSpy).toHaveBeenCalledWith('[DB] Rust batch insert failed', nativeError);
         errorSpy.mockRestore();
@@ -129,19 +140,21 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
 
         const { insertImagesBatch } = await import('../imageRepo');
-        await insertImagesBatch([{
-            id: 'C:/images/photo.jpg',
-            url: 'C:/images/photo.jpg',
-            thumbnailUrl: 'C:/thumbs/photo.webp',
-            filename: 'photo.jpg',
-            width: 6240,
-            height: 4160,
-            timestamp: 1700000000000,
-            metadata: liveImportMetadata,
-            isFavorite: false,
-            detectedSourceKind: 'other',
-            photoMetadataError: 'Malformed EXIF directory',
-        }]);
+        await insertImagesBatch([
+            {
+                id: 'C:/images/photo.jpg',
+                url: 'C:/images/photo.jpg',
+                thumbnailUrl: 'C:/thumbs/photo.webp',
+                filename: 'photo.jpg',
+                width: 6240,
+                height: 4160,
+                timestamp: 1700000000000,
+                metadata: liveImportMetadata,
+                isFavorite: false,
+                detectedSourceKind: 'other',
+                photoMetadataError: 'Malformed EXIF directory',
+            },
+        ]);
 
         expect(commands.saveImagesBatch).toHaveBeenCalledWith([
             expect.objectContaining({ photoMetadataError: 'Malformed EXIF directory' }),
@@ -284,11 +297,13 @@ describe('imageRepo batch removal', () => {
 
         await expect(insertImage(browserImages[0])).resolves.toBeUndefined();
         await expect(insertImagesBatch([browserImages[0]])).resolves.toBeUndefined();
-        await expect(moveImagePathIdentities([
-            { oldId: 'regular', newId: 'moved', thumbnailPath: 'thumb.webp', thumbnailSource: 'ambit' },
-            { oldId: 'missing-source', newId: 'unused' },
-            { oldId: 'pinned', newId: 'regular' },
-        ])).resolves.toEqual({ moved: 1, skippedTargetExists: 1, skippedSourceMissing: 1 });
+        await expect(
+            moveImagePathIdentities([
+                { oldId: 'regular', newId: 'moved', thumbnailPath: 'thumb.webp', thumbnailSource: 'ambit' },
+                { oldId: 'missing-source', newId: 'unused' },
+                { oldId: 'pinned', newId: 'regular' },
+            ])
+        ).resolves.toEqual({ moved: 1, skippedTargetExists: 1, skippedSourceMissing: 1 });
         await expect(rebuildFacetCache()).resolves.toBe(0);
         await expect(rebuildFacetCacheIncremental('loras')).resolves.toBe(0);
         await expect(syncCollectionImages(['regular'])).resolves.toBeUndefined();
@@ -323,7 +338,9 @@ describe('imageRepo batch removal', () => {
         });
         await expect(clearAllThumbnailPaths()).resolves.toBe(0);
         await expect(updateThumbnailPath('regular', 'thumb.webp')).resolves.toBeUndefined();
-        await expect(updateThumbnailPathsBatch([{ id: 'regular', thumbnailPath: 'thumb.webp', microThumbnail: 'data', thumbnailSource: 'ambit' }])).resolves.toBeUndefined();
+        await expect(
+            updateThumbnailPathsBatch([{ id: 'regular', thumbnailPath: 'thumb.webp', microThumbnail: 'data', thumbnailSource: 'ambit' }])
+        ).resolves.toBeUndefined();
         await expect(getExistingMetadata([])).resolves.toEqual(new Map());
 
         const existingMetadata = await getExistingMetadata(['regular', 'missing-source']);
@@ -371,17 +388,19 @@ describe('imageRepo batch removal', () => {
                 if (params.includes('C:/images/0.png')) {
                     throw new Error('sqlite busy');
                 }
-                return [{
-                    id: 'C:/images/900.png',
-                    timestamp: 1700000000000,
-                    file_size: 2048,
-                    metadata_json: JSON.stringify(liveImportMetadata),
-                    is_favorite: 1,
-                    is_pinned: 0,
-                    board_id: null,
-                    group_id: 'group-a',
-                    notes: null,
-                }];
+                return [
+                    {
+                        id: 'C:/images/900.png',
+                        timestamp: 1700000000000,
+                        file_size: 2048,
+                        metadata_json: JSON.stringify(liveImportMetadata),
+                        is_favorite: 1,
+                        is_pinned: 0,
+                        board_id: null,
+                        group_id: 'group-a',
+                        notes: null,
+                    },
+                ];
             }),
             execute: vi.fn(),
         };
@@ -426,17 +445,19 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
 
         const { insertImagesBatch } = await import('../imageRepo');
-        await insertImagesBatch([{
-            id: 'C:/images/live.png',
-            url: 'C:/images/live.png',
-            thumbnailUrl: 'C:/thumbs/live.webp',
-            filename: 'live.png',
-            width: 512,
-            height: 512,
-            timestamp: 1700000000000,
-            metadata: liveImportMetadata,
-            isFavorite: false,
-        }]);
+        await insertImagesBatch([
+            {
+                id: 'C:/images/live.png',
+                url: 'C:/images/live.png',
+                thumbnailUrl: 'C:/thumbs/live.webp',
+                filename: 'live.png',
+                width: 512,
+                height: 512,
+                timestamp: 1700000000000,
+                metadata: liveImportMetadata,
+                isFavorite: false,
+            },
+        ]);
 
         expect(db.execute).not.toHaveBeenCalled();
     });
@@ -452,26 +473,28 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
 
         const { insertImagesBatch } = await import('../imageRepo');
-        await insertImagesBatch([{
-            id: 'C:/images/no-metadata.jpeg',
-            url: 'C:/images/no-metadata.jpeg',
-            thumbnailUrl: 'C:/thumbs/no-metadata.webp',
-            filename: 'no-metadata.jpeg',
-            width: 512,
-            height: 512,
-            timestamp: 1700000000000,
-            metadata: {
-                tool: GeneratorTool.UNKNOWN,
-                model: 'Unknown',
-                steps: 0,
-                cfg: 0,
-                sampler: '',
-                positivePrompt: '',
-                negativePrompt: '',
+        await insertImagesBatch([
+            {
+                id: 'C:/images/no-metadata.jpeg',
+                url: 'C:/images/no-metadata.jpeg',
+                thumbnailUrl: 'C:/thumbs/no-metadata.webp',
+                filename: 'no-metadata.jpeg',
+                width: 512,
+                height: 512,
+                timestamp: 1700000000000,
+                metadata: {
+                    tool: GeneratorTool.UNKNOWN,
+                    model: 'Unknown',
+                    steps: 0,
+                    cfg: 0,
+                    sampler: '',
+                    positivePrompt: '',
+                    negativePrompt: '',
+                },
+                originalChunks: {},
+                isFavorite: false,
             },
-            originalChunks: {},
-            isFavorite: false,
-        }]);
+        ]);
 
         const [records] = vi.mocked(commands.saveImagesBatch).mock.calls[0];
         expect(records[0].originalMetadataJson).toBeNull();
@@ -487,10 +510,7 @@ describe('imageRepo batch removal', () => {
         const { updateImageMetadataFields } = await import('../imageRepo');
         await updateImageMetadataFields('C:/images/zero.png', { seed: 0 });
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining(', seed = ?'),
-            [0, 0, 'C:/images/zero.png']
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining(', seed = ?'), [0, 0, 'C:/images/zero.png']);
     });
 
     it('keeps the lightweight video generation mode synchronized with overrides', async () => {
@@ -506,10 +526,12 @@ describe('imageRepo batch removal', () => {
             generationType: 'guided_video',
         });
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining(', generation_type = ?'),
-            ['guided_video', 'guided_video', 'guided_video', 'C:/videos/clip.webm']
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining(', generation_type = ?'), [
+            'guided_video',
+            'guided_video',
+            'guided_video',
+            'C:/videos/clip.webm',
+        ]);
     });
 
     it('restores a genuine zero seed into both JSON and the scalar column', async () => {
@@ -518,9 +540,11 @@ describe('imageRepo batch removal', () => {
             seed: 0,
         };
         const db = {
-            select: vi.fn(async () => [{
-                original_parsed_json: JSON.stringify(originalMetadata),
-            }]),
+            select: vi.fn(async () => [
+                {
+                    original_parsed_json: JSON.stringify(originalMetadata),
+                },
+            ]),
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
@@ -535,13 +559,15 @@ describe('imageRepo batch removal', () => {
 
     it('restores the scalar video generation mode from the parsed baseline', async () => {
         const db = {
-            select: vi.fn(async () => [{
-                original_parsed_json: JSON.stringify({
-                    ...liveImportMetadata,
-                    generationType: 'text_to_video',
-                    generationMode: 'text_to_video',
-                }),
-            }]),
+            select: vi.fn(async () => [
+                {
+                    original_parsed_json: JSON.stringify({
+                        ...liveImportMetadata,
+                        generationType: 'text_to_video',
+                        generationMode: 'text_to_video',
+                    }),
+                },
+            ]),
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
@@ -565,18 +591,20 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
 
         const { insertImagesBatch } = await import('../imageRepo');
-        await insertImagesBatch([{
-            id: 'C:/images/live-visible.png',
-            url: 'C:/images/live-visible.png',
-            thumbnailUrl: 'C:/thumbs/live-visible.webp',
-            filename: 'live-visible.png',
-            width: 512,
-            height: 512,
-            timestamp: 1700000000000,
-            metadata: liveImportMetadata,
-            isFavorite: false,
-            userMasked: false,
-        }]);
+        await insertImagesBatch([
+            {
+                id: 'C:/images/live-visible.png',
+                url: 'C:/images/live-visible.png',
+                thumbnailUrl: 'C:/thumbs/live-visible.webp',
+                filename: 'live-visible.png',
+                width: 512,
+                height: 512,
+                timestamp: 1700000000000,
+                metadata: liveImportMetadata,
+                isFavorite: false,
+                userMasked: false,
+            },
+        ]);
 
         expect(db.execute).toHaveBeenCalledTimes(1);
         expect(db.execute).toHaveBeenCalledWith(
@@ -615,43 +643,45 @@ describe('imageRepo batch removal', () => {
         };
 
         const db = {
-            select: vi.fn(async () => [{
-                id,
-                path: id,
-                width: 512,
-                height: 768,
-                file_size: 2048,
-                file_hash: 'hash-a',
-                timestamp: 1700000000000,
-                thumbnail_path: 'C:/thumbs/synced.webp',
-                micro_thumbnail: null,
-                thumbnail_source: 'ambit',
-                is_favorite: 1,
-                is_pinned: 0,
-                is_deleted: 0,
-                is_missing: 0,
-                is_corrupt: 0,
-                user_masked: null,
-                group_id: null,
-                board_id: 'board-a',
-                notes: null,
-                is_intermediate_gen: 0,
-                is_grid_gen: 0,
-                model_name: 'Invoke Model',
-                model_hash: 'hash-model',
-                tool: 'InvokeAI',
-                resolved_model_name: 'Invoke Model',
-                steps: 24,
-                cfg: 6.5,
-                sampler: 'dpmpp',
-                generation_type: 'txt2img',
-                positive_prompt: 'edited prompt',
-                negative_prompt: '',
-                metadata_json: JSON.stringify(metadata),
-                original_metadata_json: JSON.stringify(originalChunks),
-                original_parsed_json: JSON.stringify(originalMetadata),
-                original_state_json: JSON.stringify(originalState),
-            }]),
+            select: vi.fn(async () => [
+                {
+                    id,
+                    path: id,
+                    width: 512,
+                    height: 768,
+                    file_size: 2048,
+                    file_hash: 'hash-a',
+                    timestamp: 1700000000000,
+                    thumbnail_path: 'C:/thumbs/synced.webp',
+                    micro_thumbnail: null,
+                    thumbnail_source: 'ambit',
+                    is_favorite: 1,
+                    is_pinned: 0,
+                    is_deleted: 0,
+                    is_missing: 0,
+                    is_corrupt: 0,
+                    user_masked: null,
+                    group_id: null,
+                    board_id: 'board-a',
+                    notes: null,
+                    is_intermediate_gen: 0,
+                    is_grid_gen: 0,
+                    model_name: 'Invoke Model',
+                    model_hash: 'hash-model',
+                    tool: 'InvokeAI',
+                    resolved_model_name: 'Invoke Model',
+                    steps: 24,
+                    cfg: 6.5,
+                    sampler: 'dpmpp',
+                    generation_type: 'txt2img',
+                    positive_prompt: 'edited prompt',
+                    negative_prompt: '',
+                    metadata_json: JSON.stringify(metadata),
+                    original_metadata_json: JSON.stringify(originalChunks),
+                    original_parsed_json: JSON.stringify(originalMetadata),
+                    original_state_json: JSON.stringify(originalState),
+                },
+            ]),
             execute: vi.fn(),
         };
 
@@ -676,15 +706,12 @@ describe('imageRepo batch removal', () => {
         expect(images[0].originalState).toEqual(originalState);
 
         await getImagesByIds([id], { includeOwnerHidden: true });
-        expect((db.select.mock.calls as unknown as [string, unknown[]?][])[1]?.[0])
-            .toContain('FROM images AS images');
+        expect((db.select.mock.calls as unknown as [string, unknown[]?][])[1]?.[0]).toContain('FROM images AS images');
     });
 
     it('finds only flat InvokeAI image rows for stale path repair', async () => {
         const db = {
-            select: vi.fn(async () => [
-                { id: 'D:/Invoke/outputs/images/old.png' }
-            ]),
+            select: vi.fn(async () => [{ id: 'D:/Invoke/outputs/images/old.png' }]),
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
@@ -693,48 +720,56 @@ describe('imageRepo batch removal', () => {
         const ids = await getFlatInvokeImageIdsForRoot('D:/Invoke');
 
         expect(ids).toEqual(['D:/Invoke/outputs/images/old.png']);
-        expect(db.select).toHaveBeenCalledWith(
-            expect.stringContaining("instr(substr(id, ?), '/') = 0"),
-            ['D:/Invoke/outputs/images/%', 'D:/Invoke/outputs/images/'.length + 1]
-        );
+        expect(db.select).toHaveBeenCalledWith(expect.stringContaining("instr(substr(id, ?), '/') = 0"), [
+            'D:/Invoke/outputs/images/%',
+            'D:/Invoke/outputs/images/'.length + 1,
+        ]);
     });
 
     it('chunks multi-image library removal so large selections do not exceed sqlite parameter limits', async () => {
         const ids = Array.from({ length: 1001 }, (_, index) => `C:/images/${index}.png`);
-        const imageRowsById = new Map(ids.map((id, index) => [id, {
-            id,
-            path: id,
-            width: 512,
-            height: 512,
-            file_size: 1024 + index,
-            timestamp: 1700000000000 + index,
-            metadata_json: JSON.stringify({ model: 'test', tool: 'ComfyUI' }),
-            thumbnail_path: `C:/thumbs/${index}.webp`,
-            micro_thumbnail: null,
-            thumbnail_source: 'ambit',
-            is_favorite: 0,
-            is_pinned: 0,
-            is_missing: 0,
-            user_masked: null,
-            group_id: null,
-            board_id: null,
-            notes: null,
-            original_metadata_json: null,
-            original_parsed_json: null,
-            original_state_json: null,
-            is_corrupt: 0,
-            invoke_image_name: `${index}.png`,
-            invoke_image_category: 'control',
-            invoke_image_origin: 'internal',
-        }]));
-        const membershipRowsById = new Map(ids.map(id => [id, [{ image_id: id, collection_id: 'collection-a' }]]));
-        const removedRows = new Map<string, {
-            id: string;
-            invokeImageName: string | null;
-            invokeImageCategory: string | null;
-            invokeImageOrigin: string | null;
-            collectionIdsJson: string | null;
-        }>();
+        const imageRowsById = new Map(
+            ids.map((id, index) => [
+                id,
+                {
+                    id,
+                    path: id,
+                    width: 512,
+                    height: 512,
+                    file_size: 1024 + index,
+                    timestamp: 1700000000000 + index,
+                    metadata_json: JSON.stringify({ model: 'test', tool: 'ComfyUI' }),
+                    thumbnail_path: `C:/thumbs/${index}.webp`,
+                    micro_thumbnail: null,
+                    thumbnail_source: 'ambit',
+                    is_favorite: 0,
+                    is_pinned: 0,
+                    is_missing: 0,
+                    user_masked: null,
+                    group_id: null,
+                    board_id: null,
+                    notes: null,
+                    original_metadata_json: null,
+                    original_parsed_json: null,
+                    original_state_json: null,
+                    is_corrupt: 0,
+                    invoke_image_name: `${index}.png`,
+                    invoke_image_category: 'control',
+                    invoke_image_origin: 'internal',
+                },
+            ])
+        );
+        const membershipRowsById = new Map(ids.map((id) => [id, [{ image_id: id, collection_id: 'collection-a' }]]));
+        const removedRows = new Map<
+            string,
+            {
+                id: string;
+                invokeImageName: string | null;
+                invokeImageCategory: string | null;
+                invokeImageOrigin: string | null;
+                collectionIdsJson: string | null;
+            }
+        >();
         const deletedImageIds = new Set<string>();
 
         const enforceParamLimit = (params: unknown[] = []) => {
@@ -747,10 +782,10 @@ describe('imageRepo batch removal', () => {
             select: vi.fn(async (sql: string, params: string[] = []) => {
                 enforceParamLimit(params);
                 if (sql.includes('FROM scoped_images')) {
-                    return params.map(id => imageRowsById.get(id)).filter(Boolean);
+                    return params.map((id) => imageRowsById.get(id)).filter(Boolean);
                 }
                 if (sql.includes('FROM collection_images')) {
-                    return params.flatMap(id => membershipRowsById.get(id) ?? []);
+                    return params.flatMap((id) => membershipRowsById.get(id) ?? []);
                 }
                 return [];
             }),
@@ -794,13 +829,15 @@ describe('imageRepo batch removal', () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 if (sql.includes('FROM scoped_images')) {
-                    return [{
-                        id: visibleId,
-                        path: visibleId,
-                        timestamp: 1,
-                        metadata_json: '{}',
-                        invoke_scope_hidden: 0,
-                    }];
+                    return [
+                        {
+                            id: visibleId,
+                            path: visibleId,
+                            timestamp: 1,
+                            metadata_json: '{}',
+                            invoke_scope_hidden: 0,
+                        },
+                    ];
                 }
                 return [];
             }),
@@ -814,7 +851,15 @@ describe('imageRepo batch removal', () => {
                 affectedIds: [visibleId],
                 notFoundIds: [hiddenId],
                 membershipWarningIds: [],
-                touchedResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] },
+                touchedResources: {
+                    checkpoints: [],
+                    loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: [],
+                },
             },
         });
 
@@ -859,10 +904,10 @@ describe('imageRepo batch removal', () => {
                 boardId: 'board-a',
             }),
         ]);
-        expect(db.execute).toHaveBeenCalledWith(
-            'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-            ['board-a', 'C:/images/boarded.png']
-        );
+        expect(db.execute).toHaveBeenCalledWith('INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)', [
+            'board-a',
+            'C:/images/boarded.png',
+        ]);
     });
 
     it('skips path identity moves that are empty or normalize to the same path', async () => {
@@ -874,10 +919,14 @@ describe('imageRepo batch removal', () => {
             skippedTargetExists: 0,
             skippedSourceMissing: 0,
         });
-        await expect(moveImagePathIdentities([{
-            oldId: 'C:/images/same.png',
-            newId: 'C:\\images\\same.png',
-        }])).resolves.toEqual({
+        await expect(
+            moveImagePathIdentities([
+                {
+                    oldId: 'C:/images/same.png',
+                    newId: 'C:\\images\\same.png',
+                },
+            ])
+        ).resolves.toEqual({
             moved: 0,
             skippedTargetExists: 0,
             skippedSourceMissing: 0,
@@ -890,12 +939,7 @@ describe('imageRepo batch removal', () => {
         invokeMock.mockResolvedValue(7);
 
         const { rebuildFacetCacheIncrementalBatchStrict } = await import('../imageRepo');
-        await expect(rebuildFacetCacheIncrementalBatchStrict([
-            'ip_adapters',
-            'control_nets',
-            'bogus',
-            'loras',
-        ])).resolves.toBe(7);
+        await expect(rebuildFacetCacheIncrementalBatchStrict(['ip_adapters', 'control_nets', 'bogus', 'loras'])).resolves.toBe(7);
 
         expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
             facetTypes: ['loras', 'controlNets', 'ipAdapters'],
@@ -920,22 +964,14 @@ describe('imageRepo batch removal', () => {
         const { syncCollectionImages } = await import('../imageRepo');
         await syncCollectionImages(['C:/images/a.png', 'C:/images/b.png']);
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('AND id IN (?,?)'),
-            ['C:/images/a.png', 'C:/images/b.png']
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('AND id IN (?,?)'), ['C:/images/a.png', 'C:/images/b.png']);
         expect(db.execute.mock.calls[0][0]).toContain('invoke_scope_hidden = 0');
         expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_snapshot');
         expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_exclusions');
         expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_additions');
-        expect(db.execute.mock.calls[0][0]).not.toContain(
-            'collection.invoke_owner_id IS images.invoke_owner_id'
-        );
+        expect(db.execute.mock.calls[0][0]).not.toContain('collection.invoke_owner_id IS images.invoke_owner_id');
         expect(db.execute.mock.calls[0][0]).not.toContain('SELECT board_id, id');
-        expect(db.select).toHaveBeenCalledWith(
-            expect.stringContaining('FROM collection_images'),
-            ['C:/images/a.png', 'C:/images/b.png']
-        );
+        expect(db.select).toHaveBeenCalledWith(expect.stringContaining('FROM collection_images'), ['C:/images/a.png', 'C:/images/b.png']);
     });
 
     it('syncs all board-linked images without invalidating smart collection thumbnail caches', async () => {
@@ -948,13 +984,10 @@ describe('imageRepo batch removal', () => {
         const { syncCollectionImages } = await import('../imageRepo');
         await syncCollectionImages();
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.not.stringContaining('AND id IN'),
-            []
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.not.stringContaining('AND id IN'), []);
         const cacheUpdateSql = db.execute.mock.calls
             .map(([query]) => query as string)
-            .find(query => query.includes('UPDATE collections'));
+            .find((query) => query.includes('UPDATE collections'));
         expect(cacheUpdateSql).toContain("source = 'invoke'");
         expect(cacheUpdateSql).toContain('filter_state IS NULL');
         expect(db.select).not.toHaveBeenCalled();
@@ -1007,10 +1040,7 @@ describe('imageRepo batch removal', () => {
         const { revertImageMetadata } = await import('../imageRepo');
         await revertImageMetadata('C:/images/no-original.png');
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('SET metadata_json = NULL'),
-            ['C:/images/no-original.png']
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('SET metadata_json = NULL'), ['C:/images/no-original.png']);
     });
 
     it('updates workflow JSON while preserving existing metadata fields', async () => {
@@ -1040,7 +1070,8 @@ describe('imageRepo batch removal', () => {
     it('rejects hidden workflow targets and skips malformed metadata JSON', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const db = {
-            select: vi.fn()
+            select: vi
+                .fn()
                 .mockResolvedValueOnce([])
                 .mockResolvedValueOnce([{ metadata_json: '{bad json' }])
                 .mockResolvedValueOnce([])
@@ -1071,43 +1102,38 @@ describe('imageRepo batch removal', () => {
     it('retries thumbnail path updates once when SQLite is briefly locked', async () => {
         const db = {
             select: vi.fn(async () => []),
-            execute: vi.fn()
-                .mockRejectedValueOnce(new Error('database is locked'))
-                .mockResolvedValue(undefined),
+            execute: vi.fn().mockRejectedValueOnce(new Error('database is locked')).mockResolvedValue(undefined),
         };
         getDbMock.mockResolvedValue(db);
 
         const { updateThumbnailPathsBatch } = await import('../imageRepo');
-        await updateThumbnailPathsBatch([{
-            id: 'C:/images/thumb.png',
-            thumbnailPath: 'C:/thumbs/thumb.webp',
-            microThumbnail: 'data:image/webp;base64,abc',
-            thumbnailSource: 'ambit',
-        }]);
+        await updateThumbnailPathsBatch([
+            {
+                id: 'C:/images/thumb.png',
+                thumbnailPath: 'C:/thumbs/thumb.webp',
+                microThumbnail: 'data:image/webp;base64,abc',
+                thumbnailSource: 'ambit',
+            },
+        ]);
 
         expect(db.execute).toHaveBeenCalledTimes(2);
-        expect(db.execute).toHaveBeenLastCalledWith(
-            expect.stringContaining('UPDATE images'),
-            [
-                'C:/thumbs/thumb.webp',
-                'data:image/webp;base64,abc',
-                'ambit',
-                'ambit',
-                'ambit',
-                'ambit',
-                'ambit',
-                'C:/images/thumb.png',
-            ]
-        );
+        expect(db.execute).toHaveBeenLastCalledWith(expect.stringContaining('UPDATE images'), [
+            'C:/thumbs/thumb.webp',
+            'data:image/webp;base64,abc',
+            'ambit',
+            'ambit',
+            'ambit',
+            'ambit',
+            'ambit',
+            'C:/images/thumb.png',
+        ]);
     });
 
     it('handles empty and partially failing thumbnail path batches without throwing', async () => {
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const db = {
             select: vi.fn(async () => []),
-            execute: vi.fn()
-                .mockRejectedValueOnce(new Error('disk full'))
-                .mockResolvedValue(undefined),
+            execute: vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValue(undefined),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1130,23 +1156,17 @@ describe('imageRepo batch removal', () => {
         ]);
 
         expect(db.execute).toHaveBeenCalledTimes(2);
-        expect(db.execute).toHaveBeenLastCalledWith(
-            expect.stringContaining('UPDATE images'),
-            [
-                'C:/thumbs/external.webp',
-                null,
-                'external',
-                'external',
-                'external',
-                'external',
-                'external',
-                'C:/images/external.png',
-            ]
-        );
-        expect(console.warn).toHaveBeenCalledWith(
-            '[DB] Thumbnail update failed for C:/images/fail.png:',
-            'disk full'
-        );
+        expect(db.execute).toHaveBeenLastCalledWith(expect.stringContaining('UPDATE images'), [
+            'C:/thumbs/external.webp',
+            null,
+            'external',
+            'external',
+            'external',
+            'external',
+            'external',
+            'C:/images/external.png',
+        ]);
+        expect(console.warn).toHaveBeenCalledWith('[DB] Thumbnail update failed for C:/images/fail.png:', 'disk full');
         expect(console.warn).toHaveBeenCalledWith('[DB] 1 thumbnail updates failed');
     });
 
@@ -1173,15 +1193,17 @@ describe('imageRepo batch removal', () => {
 
         await expect(rebuildFacetCacheIncremental('control_nets')).resolves.toBe(3);
         await expect(rebuildFacetCacheIncrementalBatch(['loras'])).resolves.toBe(0);
-        await expect(refreshFacetCacheForResourcesStrict({
-            checkpoints: ['Model'],
-            loras: [],
-            embeddings: [],
-            hypernetworks: [],
-            controlNets: [],
-            ipAdapters: [],
-            tools: [],
-        })).resolves.toBe(2);
+        await expect(
+            refreshFacetCacheForResourcesStrict({
+                checkpoints: ['Model'],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            })
+        ).resolves.toBe(2);
         await expect(rebuildThumbnailFacetCache()).resolves.toBeUndefined();
 
         expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
@@ -1251,11 +1273,15 @@ describe('imageRepo batch removal', () => {
         expect(sqlCalls).toContain('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
         expect(sqlCalls).toContain('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
         expect(sqlCalls).toContain('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
-        expect(sqlCalls).toContain("UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)");
+        expect(sqlCalls).toContain(
+            "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)"
+        );
         expect(sqlCalls).toContain('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
         expect(sqlCalls).toContain('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
-        expect(sqlCalls.some(sql => sql.includes('DELETE FROM images'))).toBe(false);
-        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls.some((sql) => sql.includes('DELETE FROM images'))).toBe(false);
+        expect(sqlCalls).toContain(
+            'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)'
+        );
     });
 
     it('rejects a thumbnail write when the image became hidden after it was queued', async () => {
@@ -1266,8 +1292,9 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
 
         const { updateThumbnailPath } = await import('../imageRepo');
-        await expect(updateThumbnailPath('hidden-owner-image', 'thumb.webp'))
-            .rejects.toThrow('Thumbnail update failed because the asset was not found');
+        await expect(updateThumbnailPath('hidden-owner-image', 'thumb.webp')).rejects.toThrow(
+            'Thumbnail update failed because the asset was not found'
+        );
         expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
     });
 
@@ -1279,13 +1306,8 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
         const verbatimId = '\\\\?\\C:\\videos\\clip.mp4';
         const canonicalId = '//?/C:/videos/clip.mp4';
-        const {
-            updateImageNotesCol,
-            toggleImagePin,
-            toggleImageFavorite,
-            toggleImageMask,
-            updateVideoPlaybackStatus,
-        } = await import('../imageRepo');
+        const { updateImageNotesCol, toggleImagePin, toggleImageFavorite, toggleImageMask, updateVideoPlaybackStatus } =
+            await import('../imageRepo');
 
         await updateImageNotesCol(verbatimId, 'motion reference');
         await toggleImagePin(verbatimId, true);
@@ -1293,10 +1315,22 @@ describe('imageRepo batch removal', () => {
         await toggleImageMask(verbatimId, false);
         await updateVideoPlaybackStatus(verbatimId, 'playable');
 
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', ['motion reference', canonicalId]);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, canonicalId]);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, canonicalId]);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [0, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
+            'motion reference',
+            canonicalId,
+        ]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
+            1,
+            canonicalId,
+        ]);
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            [1, canonicalId]
+        );
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            [0, canonicalId]
+        );
         expect(db.execute).toHaveBeenCalledWith(
             "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
             ['playable', canonicalId]
@@ -1332,7 +1366,7 @@ describe('imageRepo batch removal', () => {
         await expect(updatePinned('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
         const mutationSql = db.execute.mock.calls.map(([sql]) => String(sql));
         expect(mutationSql).toHaveLength(9);
-        mutationSql.forEach(sql => expect(sql).toContain('scoped_images'));
+        mutationSql.forEach((sql) => expect(sql).toContain('scoped_images'));
     });
 
     it('rejects metadata revert when the scoped source row is unavailable', async () => {
@@ -1350,34 +1384,36 @@ describe('imageRepo batch removal', () => {
 
     it('recovers high-fidelity A1111 metadata only for viewer reads that need it', async () => {
         const db = {
-            select: vi.fn(async () => [{
-                id: 'C:/images/a1111.png',
-                path: 'C:/images/a1111.png',
-                width: 512,
-                height: 512,
-                file_size: 1024,
-                timestamp: 1700000000000,
-                metadata_json: JSON.stringify({
-                    ...liveImportMetadata,
-                    tool: GeneratorTool.AUTOMATIC1111,
-                    rawParameters: undefined,
-                }),
-                thumbnail_path: null,
-                micro_thumbnail: null,
-                thumbnail_source: null,
-                is_favorite: 0,
-                is_pinned: 0,
-                is_deleted: 0,
-                is_missing: 0,
-                is_corrupt: 0,
-                user_masked: null,
-                group_id: null,
-                board_id: null,
-                notes: null,
-                original_metadata_json: null,
-                original_parsed_json: null,
-                original_state_json: null,
-            }]),
+            select: vi.fn(async () => [
+                {
+                    id: 'C:/images/a1111.png',
+                    path: 'C:/images/a1111.png',
+                    width: 512,
+                    height: 512,
+                    file_size: 1024,
+                    timestamp: 1700000000000,
+                    metadata_json: JSON.stringify({
+                        ...liveImportMetadata,
+                        tool: GeneratorTool.AUTOMATIC1111,
+                        rawParameters: undefined,
+                    }),
+                    thumbnail_path: null,
+                    micro_thumbnail: null,
+                    thumbnail_source: null,
+                    is_favorite: 0,
+                    is_pinned: 0,
+                    is_deleted: 0,
+                    is_missing: 0,
+                    is_corrupt: 0,
+                    user_masked: null,
+                    group_id: null,
+                    board_id: null,
+                    notes: null,
+                    original_metadata_json: null,
+                    original_parsed_json: null,
+                    original_state_json: null,
+                },
+            ]),
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
@@ -1400,32 +1436,35 @@ describe('imageRepo batch removal', () => {
     it('returns null for missing full-metadata reads and maps removed image lookups in chunks', async () => {
         const ids = Array.from({ length: 901 }, (_, index) => `C:/removed/${index}.png`);
         const db = {
-            select: vi.fn()
+            select: vi
+                .fn()
                 .mockResolvedValueOnce([])
-                .mockImplementation(async (_sql: string, params: string[]) => params.map(id => ({
-                    id,
-                    path: id,
-                    width: 128,
-                    height: 128,
-                    file_size: 256,
-                    timestamp: 1700000000000,
-                    metadata_json: JSON.stringify(liveImportMetadata),
-                    thumbnail_path: null,
-                    micro_thumbnail: null,
-                    thumbnail_source: null,
-                    is_favorite: 0,
-                    is_pinned: 0,
-                    is_deleted: 0,
-                    is_missing: 0,
-                    is_corrupt: 0,
-                    user_masked: null,
-                    group_id: null,
-                    board_id: null,
-                    notes: null,
-                    original_metadata_json: null,
-                    original_parsed_json: null,
-                    original_state_json: null,
-                }))),
+                .mockImplementation(async (_sql: string, params: string[]) =>
+                    params.map((id) => ({
+                        id,
+                        path: id,
+                        width: 128,
+                        height: 128,
+                        file_size: 256,
+                        timestamp: 1700000000000,
+                        metadata_json: JSON.stringify(liveImportMetadata),
+                        thumbnail_path: null,
+                        micro_thumbnail: null,
+                        thumbnail_source: null,
+                        is_favorite: 0,
+                        is_pinned: 0,
+                        is_deleted: 0,
+                        is_missing: 0,
+                        is_corrupt: 0,
+                        user_masked: null,
+                        group_id: null,
+                        board_id: null,
+                        notes: null,
+                        original_metadata_json: null,
+                        original_parsed_json: null,
+                        original_state_json: null,
+                    }))
+                ),
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
@@ -1436,8 +1475,8 @@ describe('imageRepo batch removal', () => {
 
         expect(removed).toHaveLength(901);
         expect(db.select).toHaveBeenCalledTimes(3);
-        expect((db.select.mock.calls[1][1] as string[])).toHaveLength(900);
-        expect((db.select.mock.calls[2][1] as string[])).toHaveLength(1);
+        expect(db.select.mock.calls[1][1] as string[]).toHaveLength(900);
+        expect(db.select.mock.calls[2][1] as string[]).toHaveLength(1);
     });
 
     it('finds removed Invoke images by canonical Windows source identity', async () => {
@@ -1459,16 +1498,13 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
 
         const { getRemovedInvokeImageNames } = await import('../imageRepo');
-        const removedNames = await getRemovedInvokeImageNames(
-            'D:/Invoke/databases/invokeai.db',
-            ['relocated.png', 'other-source.png']
-        );
+        const removedNames = await getRemovedInvokeImageNames('D:/Invoke/databases/invokeai.db', ['relocated.png', 'other-source.png']);
 
         expect(removedNames).toEqual(['relocated.png']);
-        expect(db.select).toHaveBeenCalledWith(
-            expect.stringContaining('invoke_source_id IS NOT NULL'),
-            ['relocated.png', 'other-source.png']
-        );
+        expect(db.select).toHaveBeenCalledWith(expect.stringContaining('invoke_source_id IS NOT NULL'), [
+            'relocated.png',
+            'other-source.png',
+        ]);
         const [sql] = db.select.mock.calls[0] as unknown as [string, unknown[]];
         expect(sql).toContain('FROM removed_images AS removed_images');
         expect(sql).toContain("JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'");
@@ -1499,47 +1535,49 @@ describe('imageRepo batch removal', () => {
 
     it('restores removed images and valid collection memberships before removing tombstones', async () => {
         const db = {
-            select: vi.fn(async () => [{
-                id: 'C:/removed/restore.png',
-                path: 'C:/removed/restore.png',
-                width: 128,
-                height: 128,
-                file_size: 256,
-                timestamp: 1700000000000,
-                metadata_json: JSON.stringify(liveImportMetadata),
-                thumbnail_path: null,
-                micro_thumbnail: null,
-                thumbnail_source: null,
-                thumbnail_version: 0,
-                detected_source_kind: 'photograph',
-                source_kind_override: 'other',
-                source_kind: 'other',
-                photo_metadata_json: JSON.stringify({
-                    capturedAt: null,
-                    captureTimeRaw: null,
-                    cameraMake: 'Test Camera Co',
-                    cameraModel: 'Camera One',
-                }),
-                capture_wall_time_ms: 1699999999000,
-                display_timestamp: 1700000000000,
-                photo_refresh_version: 0,
-                is_favorite: 0,
-                is_pinned: 0,
-                is_deleted: 0,
-                is_missing: 0,
-                is_corrupt: 0,
-                user_masked: null,
-                group_id: null,
-                board_id: null,
-                notes: null,
-                invoke_image_name: 'restore.png',
-                invoke_image_category: 'mask',
-                invoke_image_origin: 'internal',
-                original_metadata_json: null,
-                original_parsed_json: null,
-                original_state_json: null,
-                collection_ids_json: JSON.stringify(['collection-a', 'collection-b']),
-            }]),
+            select: vi.fn(async () => [
+                {
+                    id: 'C:/removed/restore.png',
+                    path: 'C:/removed/restore.png',
+                    width: 128,
+                    height: 128,
+                    file_size: 256,
+                    timestamp: 1700000000000,
+                    metadata_json: JSON.stringify(liveImportMetadata),
+                    thumbnail_path: null,
+                    micro_thumbnail: null,
+                    thumbnail_source: null,
+                    thumbnail_version: 0,
+                    detected_source_kind: 'photograph',
+                    source_kind_override: 'other',
+                    source_kind: 'other',
+                    photo_metadata_json: JSON.stringify({
+                        capturedAt: null,
+                        captureTimeRaw: null,
+                        cameraMake: 'Test Camera Co',
+                        cameraModel: 'Camera One',
+                    }),
+                    capture_wall_time_ms: 1699999999000,
+                    display_timestamp: 1700000000000,
+                    photo_refresh_version: 0,
+                    is_favorite: 0,
+                    is_pinned: 0,
+                    is_deleted: 0,
+                    is_missing: 0,
+                    is_corrupt: 0,
+                    user_masked: null,
+                    group_id: null,
+                    board_id: null,
+                    notes: null,
+                    invoke_image_name: 'restore.png',
+                    invoke_image_category: 'mask',
+                    invoke_image_origin: 'internal',
+                    original_metadata_json: null,
+                    original_parsed_json: null,
+                    original_state_json: null,
+                    collection_ids_json: JSON.stringify(['collection-a', 'collection-b']),
+                },
+            ]),
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
@@ -1550,7 +1588,15 @@ describe('imageRepo batch removal', () => {
                 affectedIds: ['C:/removed/restore.png'],
                 notFoundIds: [],
                 membershipWarningIds: [],
-                touchedResources: { checkpoints: ['Checkpoint'], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: ['InvokeAI'] },
+                touchedResources: {
+                    checkpoints: ['Checkpoint'],
+                    loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: ['InvokeAI'],
+                },
             },
         });
 
@@ -1589,12 +1635,14 @@ describe('imageRepo batch removal', () => {
         });
         expect(commands.deleteRemovedImagesFromDisk).not.toHaveBeenCalled();
 
-        await expect(deleteRemovedImagesFromDisk([
-            'C:/removed/ok.png',
-            'C:/removed/already-gone.png',
-            'C:/removed/fail.png',
-            'C:/removed/unknown.png',
-        ])).resolves.toEqual(nativeResult);
+        await expect(
+            deleteRemovedImagesFromDisk([
+                'C:/removed/ok.png',
+                'C:/removed/already-gone.png',
+                'C:/removed/fail.png',
+                'C:/removed/unknown.png',
+            ])
+        ).resolves.toEqual(nativeResult);
         expect(commands.deleteRemovedImagesFromDisk).toHaveBeenCalledWith([
             'C:/removed/ok.png',
             'C:/removed/already-gone.png',
@@ -1630,42 +1678,38 @@ describe('imageRepo batch removal', () => {
         browserMockModeMock.mockReturnValue(true);
         const { refreshFacetCacheForResourcesStrict } = await import('../imageRepo');
 
-        await expect(refreshFacetCacheForResourcesStrict({
-            checkpoints: ['Model'],
-            loras: [],
-            embeddings: [],
-            hypernetworks: [],
-            controlNets: [],
-            ipAdapters: [],
-            tools: [],
-        })).resolves.toBe(0);
+        await expect(
+            refreshFacetCacheForResourcesStrict({
+                checkpoints: ['Model'],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            })
+        ).resolves.toBe(0);
         expect(invokeMock).not.toHaveBeenCalled();
     });
 
     it('clears all thumbnail paths with retry and updates collection thumbnail caches only after changes', async () => {
         const db = {
             select: vi.fn(),
-            execute: vi.fn()
-                .mockRejectedValueOnce(new Error('database is locked'))
-                .mockResolvedValueOnce({ rowsAffected: 4 }),
+            execute: vi.fn().mockRejectedValueOnce(new Error('database is locked')).mockResolvedValueOnce({ rowsAffected: 4 }),
         };
         getDbMock.mockResolvedValue(db);
 
         const { clearAllThumbnailPaths } = await import('../imageRepo');
         await expect(clearAllThumbnailPaths()).resolves.toBe(4);
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('id IN (SELECT id FROM scoped_images)')
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('id IN (SELECT id FROM scoped_images)'));
     });
 
     it('does not clear collection caches when no thumbnail paths changed and surfaces non-lock failures', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const db = {
             select: vi.fn(),
-            execute: vi.fn()
-                .mockResolvedValueOnce({ rowsAffected: 0 })
-                .mockRejectedValueOnce(new Error('disk full')),
+            execute: vi.fn().mockResolvedValueOnce({ rowsAffected: 0 }).mockRejectedValueOnce(new Error('disk full')),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1673,21 +1717,18 @@ describe('imageRepo batch removal', () => {
         await expect(clearAllThumbnailPaths()).resolves.toBe(0);
         await expect(clearAllThumbnailPaths()).rejects.toThrow('disk full');
 
-        expect(console.error).toHaveBeenCalledWith(
-            '[DB] Failed to clear thumbnails',
-            expect.any(Error)
-        );
+        expect(console.error).toHaveBeenCalledWith('[DB] Failed to clear thumbnails', expect.any(Error));
     });
 
     it('handles empty batches and delegates normalized path identity writes', async () => {
         const { commands } = await import('../../../bindings');
         vi.mocked(commands.moveImagePathIdentities).mockResolvedValue({
             status: 'ok',
-            data: { moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0 }
+            data: { moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0 },
         });
         vi.mocked(commands.markImagePathIdentitiesMissing).mockResolvedValue({
             status: 'ok',
-            data: 1
+            data: 1,
         });
         const {
             insertImagesBatch,
@@ -1696,7 +1737,7 @@ describe('imageRepo batch removal', () => {
             moveImagePathIdentity,
             getRemovedImagesByIds,
             removeImagesFromLibrary,
-            restoreRemovedImages
+            restoreRemovedImages,
         } = await import('../imageRepo');
 
         await insertImagesBatch([]);
@@ -1708,12 +1749,14 @@ describe('imageRepo batch removal', () => {
         await removeImagesFromLibrary([]);
         await restoreRemovedImages([]);
 
-        expect(commands.moveImagePathIdentities).toHaveBeenCalledWith([{
-            oldId: 'C:/old.png',
-            newId: 'C:/new.png',
-            thumbnailPath: 'C:/thumb.webp',
-            thumbnailSource: 'source'
-        }]);
+        expect(commands.moveImagePathIdentities).toHaveBeenCalledWith([
+            {
+                oldId: 'C:/old.png',
+                newId: 'C:/new.png',
+                thumbnailPath: 'C:/thumb.webp',
+                thumbnailSource: 'source',
+            },
+        ]);
         expect(commands.markImagePathIdentitiesMissing).toHaveBeenCalledWith(['C:/gone.webm']);
         expect(getDbMock).not.toHaveBeenCalled();
     });
@@ -1735,20 +1778,36 @@ describe('imageRepo batch removal', () => {
 
     it('covers override-model updates, malformed reverts, visibility filters, and deep-scan failures', async () => {
         const a1111Row = {
-            id: 'C:/images/a1111.png', path: 'C:/images/a1111.png', width: 1, height: 1,
-            file_size: 1, timestamp: 1,
+            id: 'C:/images/a1111.png',
+            path: 'C:/images/a1111.png',
+            width: 1,
+            height: 1,
+            file_size: 1,
+            timestamp: 1,
             metadata_json: JSON.stringify({ ...liveImportMetadata, tool: GeneratorTool.AUTOMATIC1111 }),
-            thumbnail_path: null, micro_thumbnail: null, thumbnail_source: null,
-            is_favorite: 0, is_pinned: 0, is_deleted: 0, is_missing: 0, is_corrupt: 0,
-            user_masked: null, group_id: null, board_id: null, notes: null,
-            original_metadata_json: null, original_parsed_json: null, original_state_json: null
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            is_favorite: 0,
+            is_pinned: 0,
+            is_deleted: 0,
+            is_missing: 0,
+            is_corrupt: 0,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
         };
         const db = {
-            select: vi.fn()
+            select: vi
+                .fn()
                 .mockResolvedValueOnce([{ original_parsed_json: '{bad' }])
                 .mockResolvedValueOnce([a1111Row])
                 .mockResolvedValueOnce([a1111Row]),
-            execute: vi.fn()
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         scanImageNativeMock.mockRejectedValue(new Error('scan failed'));
@@ -1760,7 +1819,11 @@ describe('imageRepo batch removal', () => {
         await expect(getAllImages(undefined, 0, false, false, false)).resolves.toHaveLength(1);
         await expect(getImageWithFullMetadata('C:/images/a1111.png')).resolves.toBeTruthy();
 
-        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('resolved_model_name = ?'), ['override', 'override', 'C:/images/a.png']);
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('resolved_model_name = ?'), [
+            'override',
+            'override',
+            'C:/images/a.png',
+        ]);
         expect(db.execute).toHaveBeenCalledWith(
             'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
             ['C:/images/a.png']
@@ -1776,18 +1839,43 @@ describe('imageRepo batch removal', () => {
         const { toggleImageMask } = await import('../imageRepo');
         await toggleImageMask('C:/true.png', true);
         await toggleImageMask('C:/false.png', false);
-        expect(db.execute).toHaveBeenNthCalledWith(1, 'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, 'C:/true.png']);
-        expect(db.execute).toHaveBeenNthCalledWith(2, 'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [0, 'C:/false.png']);
+        expect(db.execute).toHaveBeenNthCalledWith(
+            1,
+            'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            [1, 'C:/true.png']
+        );
+        expect(db.execute).toHaveBeenNthCalledWith(
+            2,
+            'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            [0, 'C:/false.png']
+        );
     });
 
     it('returns cleanly when removal or restoration rows are absent and skips empty membership payloads', async () => {
         const removedRow = {
-            id: 'C:/removed/a.png', path: 'C:/removed/a.png', width: 1, height: 1, file_size: 1, timestamp: 1,
-            metadata_json: JSON.stringify(liveImportMetadata), thumbnail_path: null, micro_thumbnail: null,
-            thumbnail_source: null, is_favorite: 0, is_pinned: 0, is_deleted: 1, is_missing: 0,
-            is_corrupt: 0, user_masked: null, group_id: null, board_id: null, notes: null,
-            original_metadata_json: null, original_parsed_json: null, original_state_json: null,
-            collection_ids_json: null
+            id: 'C:/removed/a.png',
+            path: 'C:/removed/a.png',
+            width: 1,
+            height: 1,
+            file_size: 1,
+            timestamp: 1,
+            metadata_json: JSON.stringify(liveImportMetadata),
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            is_favorite: 0,
+            is_pinned: 0,
+            is_deleted: 1,
+            is_missing: 0,
+            is_corrupt: 0,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
+            collection_ids_json: null,
         };
         const restoreRows = [[], [removedRow], [{ ...removedRow, collection_ids_json: '{bad' }]];
         const db = {
@@ -1795,7 +1883,7 @@ describe('imageRepo batch removal', () => {
                 if (!sql.includes('FROM scoped_removed_images')) return [];
                 return restoreRows.shift() ?? [];
             }),
-            execute: vi.fn()
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         const { commands } = await import('../../../bindings');
@@ -1803,12 +1891,16 @@ describe('imageRepo batch removal', () => {
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const { removeImagesFromLibrary, restoreRemovedImages } = await import('../imageRepo');
 
-        await expect(removeImagesFromLibrary(['C:/missing.png'])).resolves.toEqual(expect.objectContaining({
-            affectedIds: ['C:/missing.png'],
-        }));
-        await expect(restoreRemovedImages(['C:/missing.png'])).resolves.toEqual(expect.objectContaining({
-            affectedIds: ['C:/missing.png'],
-        }));
+        await expect(removeImagesFromLibrary(['C:/missing.png'])).resolves.toEqual(
+            expect.objectContaining({
+                affectedIds: ['C:/missing.png'],
+            })
+        );
+        await expect(restoreRemovedImages(['C:/missing.png'])).resolves.toEqual(
+            expect.objectContaining({
+                affectedIds: ['C:/missing.png'],
+            })
+        );
         await restoreRemovedImages(['C:/removed/a.png']);
         await restoreRemovedImages(['C:/removed/bad.png']);
         const { commands: lifecycleCommands } = await import('../../../bindings');
@@ -1824,45 +1916,91 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
         const { insertImage, moveImagePathIdentities } = await import('../imageRepo');
         const minimal = {
-            id: 'C:/minimal.png', url: 'C:/minimal.png', thumbnailUrl: '', filename: 'minimal.png',
-            width: 1, height: 1, timestamp: 1, metadata: liveImportMetadata, isFavorite: false
+            id: 'C:/minimal.png',
+            url: 'C:/minimal.png',
+            thumbnailUrl: '',
+            filename: 'minimal.png',
+            width: 1,
+            height: 1,
+            timestamp: 1,
+            metadata: liveImportMetadata,
+            isFavorite: false,
         } as AIImage;
         await insertImage(minimal);
         const record = vi.mocked(commands.saveImagesBatch).mock.calls[0][0][0];
         expect(record).toMatchObject({
-            fileSize: 0, fileHash: null, thumbnailPath: '', microThumbnail: null,
-            thumbnailSource: null, isPinned: false, isDeleted: false, isMissing: false,
-            userMasked: null, groupId: null, boardId: null, notes: null,
-            originalMetadataJson: null, originalStateJson: null, isCorrupt: false,
-            invokeImageName: null, invokeImageCategory: null, invokeImageOrigin: null
+            fileSize: 0,
+            fileHash: null,
+            thumbnailPath: '',
+            microThumbnail: null,
+            thumbnailSource: null,
+            isPinned: false,
+            isDeleted: false,
+            isMissing: false,
+            userMasked: null,
+            groupId: null,
+            boardId: null,
+            notes: null,
+            originalMetadataJson: null,
+            originalStateJson: null,
+            isCorrupt: false,
+            invokeImageName: null,
+            invokeImageCategory: null,
+            invokeImageOrigin: null,
         });
         expect(db.execute).not.toHaveBeenCalled();
 
         browserMockModeMock.mockReturnValue(true);
         getBrowserMockImagesMock.mockReturnValue([minimal]);
         await expect(moveImagePathIdentities([{ oldId: minimal.id, newId: 'C:/moved.png' }])).resolves.toMatchObject({ moved: 1 });
-        expect(updateBrowserMockImageMock).toHaveBeenCalledWith(minimal.id, expect.objectContaining({
-            thumbnailUrl: 'C:/moved.png', thumbnailSource: undefined
-        }));
+        expect(updateBrowserMockImageMock).toHaveBeenCalledWith(
+            minimal.id,
+            expect.objectContaining({
+                thumbnailUrl: 'C:/moved.png',
+                thumbnailSource: undefined,
+            })
+        );
     });
 
     it('covers opposite boolean writes, default reads, empty workflow JSON, and board removal', async () => {
         const row = {
-            id: 'C:/a.png', path: 'C:/a.png', width: 1, height: 1, file_size: 1, timestamp: 1,
-            metadata_json: null, thumbnail_path: null, micro_thumbnail: null, thumbnail_source: null,
-            is_favorite: 0, is_pinned: 0, is_deleted: 0, is_missing: 0, is_corrupt: 0,
-            user_masked: null, group_id: null, board_id: null, notes: null,
-            original_metadata_json: null, original_parsed_json: null, original_state_json: null
+            id: 'C:/a.png',
+            path: 'C:/a.png',
+            width: 1,
+            height: 1,
+            file_size: 1,
+            timestamp: 1,
+            metadata_json: null,
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            is_favorite: 0,
+            is_pinned: 0,
+            is_deleted: 0,
+            is_missing: 0,
+            is_corrupt: 0,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
         };
         const db = {
-            select: vi.fn(async (sql: string) => sql.includes('SELECT metadata_json') ? [{ metadata_json: null }] : [row]),
-            execute: vi.fn()
+            select: vi.fn(async (sql: string) => (sql.includes('SELECT metadata_json') ? [{ metadata_json: null }] : [row])),
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         const {
-            getAllImages, toggleImagePin, toggleImageFavorite, toggleImageIntermediate,
-            updateFavorite, updatePinned, updateImageWorkflow,
-            updateImageWorkflowHint
+            getAllImages,
+            toggleImagePin,
+            toggleImageFavorite,
+            toggleImageIntermediate,
+            updateFavorite,
+            updatePinned,
+            updateImageWorkflow,
+            updateImageWorkflowHint,
         } = await import('../imageRepo');
 
         await expect(getAllImages()).resolves.toHaveLength(1);
@@ -1874,21 +2012,51 @@ describe('imageRepo batch removal', () => {
         await updateImageWorkflow('C:/a.png', '{}');
         await updateImageWorkflowHint('C:/a.png', false);
 
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith("UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)", [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [1, 'C:/a.png']);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
+            0,
+            'C:/a.png',
+        ]);
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            [1, 'C:/a.png']
+        );
+        expect(db.execute).toHaveBeenCalledWith(
+            "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)",
+            [0, 'C:/a.png']
+        );
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
+            0,
+            'C:/a.png',
+        ]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
+            1,
+            'C:/a.png',
+        ]);
     });
 
     it('passes null-heavy removal records to native lifecycle handling and deletes pathless tombstones', async () => {
         const tombstone = {
-            id: 'C:/nulls.png', path: '', timestamp: 1,
-            width: null, height: null, file_size: null, metadata_json: null,
-            thumbnail_path: null, micro_thumbnail: null, thumbnail_source: null,
-            is_favorite: null, is_pinned: null, is_missing: null, user_masked: null,
-            group_id: null, board_id: null, notes: null, original_metadata_json: null,
-            original_parsed_json: null, original_state_json: null, is_corrupt: null
+            id: 'C:/nulls.png',
+            path: '',
+            timestamp: 1,
+            width: null,
+            height: null,
+            file_size: null,
+            metadata_json: null,
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            is_favorite: null,
+            is_pinned: null,
+            is_missing: null,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
+            is_corrupt: null,
         };
         const db = {
             select: vi.fn(async (sql: string) => {
@@ -1897,7 +2065,7 @@ describe('imageRepo batch removal', () => {
                 if (sql.includes('FROM scoped_removed_images')) return [{ id: tombstone.id, path: '', thumbnail_path: null }];
                 return [];
             }),
-            execute: vi.fn()
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         const { commands } = await import('../../../bindings');
@@ -1924,23 +2092,38 @@ describe('imageRepo batch removal', () => {
 
     it('maps nullable existing metadata fields and browser thumbnail batch defaults', async () => {
         const db = {
-            select: vi.fn(async () => [{
-                id: 'C:/a.png', timestamp: 1, file_size: 0, metadata_json: '{}',
-                is_favorite: 0, is_pinned: 0, board_id: null, group_id: null, notes: null
-            }]),
-            execute: vi.fn()
+            select: vi.fn(async () => [
+                {
+                    id: 'C:/a.png',
+                    timestamp: 1,
+                    file_size: 0,
+                    metadata_json: '{}',
+                    is_favorite: 0,
+                    is_pinned: 0,
+                    board_id: null,
+                    group_id: null,
+                    notes: null,
+                },
+            ]),
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         const { getExistingMetadata, updateThumbnailPathsBatch } = await import('../imageRepo');
         const metadata = await getExistingMetadata(['C:/a.png']);
         expect(metadata.get('C:/a.png')).toMatchObject({
-            isFavorite: false, isPinned: false, boardId: undefined, groupId: undefined, notes: undefined
+            isFavorite: false,
+            isPinned: false,
+            boardId: undefined,
+            groupId: undefined,
+            notes: undefined,
         });
 
         browserMockModeMock.mockReturnValue(true);
         await updateThumbnailPathsBatch([{ id: 'C:/a.png', thumbnailPath: 'C:/thumb.webp' }]);
         expect(updateBrowserMockImageMock).toHaveBeenCalledWith('C:/a.png', {
-            thumbnailUrl: 'C:/thumb.webp', microThumbnail: undefined, thumbnailSource: undefined
+            thumbnailUrl: 'C:/thumb.webp',
+            microThumbnail: undefined,
+            thumbnailSource: undefined,
         });
     });
 
@@ -1951,19 +2134,47 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 2 });
         const { insertImagesBatch } = await import('../imageRepo');
         const rich = (id: string, userMasked: boolean): AIImage => ({
-            id, url: id, thumbnailUrl: 'asset://localhost/C:/thumb.webp', filename: 'rich.png',
-            width: 2, height: 3, fileSize: 4, fileHash: 'hash', timestamp: 5,
-            metadata: liveImportMetadata, microThumbnail: 'micro', thumbnailSource: 'ambit',
-            isFavorite: true, isPinned: true, isDeleted: true, isMissing: true, userMasked,
-            groupId: 'group', boardId: 'board', notes: 'notes', originalChunks: { parameters: 'raw' },
-            originalMetadata: liveImportMetadata, originalState: { isFavorite: true }, isCorrupt: true
+            id,
+            url: id,
+            thumbnailUrl: 'asset://localhost/C:/thumb.webp',
+            filename: 'rich.png',
+            width: 2,
+            height: 3,
+            fileSize: 4,
+            fileHash: 'hash',
+            timestamp: 5,
+            metadata: liveImportMetadata,
+            microThumbnail: 'micro',
+            thumbnailSource: 'ambit',
+            isFavorite: true,
+            isPinned: true,
+            isDeleted: true,
+            isMissing: true,
+            userMasked,
+            groupId: 'group',
+            boardId: 'board',
+            notes: 'notes',
+            originalChunks: { parameters: 'raw' },
+            originalMetadata: liveImportMetadata,
+            originalState: { isFavorite: true },
+            isCorrupt: true,
         });
         await insertImagesBatch([rich('C:/true.png', true), rich('C:/false.png', false)]);
         const records = vi.mocked(commands.saveImagesBatch).mock.calls[0][0];
         expect(records[0]).toMatchObject({
-            fileSize: 4, fileHash: 'hash', microThumbnail: 'micro', thumbnailSource: 'ambit',
-            isFavorite: true, isPinned: true, isDeleted: true, isMissing: true, userMasked: true,
-            groupId: 'group', boardId: 'board', notes: 'notes', isCorrupt: true
+            fileSize: 4,
+            fileHash: 'hash',
+            microThumbnail: 'micro',
+            thumbnailSource: 'ambit',
+            isFavorite: true,
+            isPinned: true,
+            isDeleted: true,
+            isMissing: true,
+            userMasked: true,
+            groupId: 'group',
+            boardId: 'board',
+            notes: 'notes',
+            isCorrupt: true,
         });
         expect(records[0].originalMetadataJson).toBe(JSON.stringify({ parameters: 'raw' }));
         expect(records[0].originalStateJson).toBe(JSON.stringify({ isFavorite: true }));
@@ -1972,20 +2183,37 @@ describe('imageRepo batch removal', () => {
 
     it('delegates membership preservation natively and reports all-trash-failed deletion batches', async () => {
         const row = {
-            id: 'C:/member.png', path: 'C:/member.png', width: 1, height: 1, file_size: 1,
-            timestamp: 1, metadata_json: '{}', thumbnail_path: null, micro_thumbnail: null,
-            thumbnail_source: null, photo_refresh_version: 1,
-            is_favorite: 0, is_pinned: 0, is_missing: 0, user_masked: null,
-            group_id: null, board_id: null, notes: null, original_metadata_json: null,
-            original_parsed_json: null, original_state_json: null, is_corrupt: 0
+            id: 'C:/member.png',
+            path: 'C:/member.png',
+            width: 1,
+            height: 1,
+            file_size: 1,
+            timestamp: 1,
+            metadata_json: '{}',
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            photo_refresh_version: 1,
+            is_favorite: 0,
+            is_pinned: 0,
+            is_missing: 0,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
+            is_corrupt: 0,
         };
         let removalDone = false;
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (sql.includes('FROM collection_images')) return [
-                    { image_id: row.id, collection_id: 'one' },
-                    { image_id: row.id, collection_id: 'two' }
-                ];
+                if (sql.includes('FROM collection_images'))
+                    return [
+                        { image_id: row.id, collection_id: 'one' },
+                        { image_id: row.id, collection_id: 'two' },
+                    ];
                 if (sql.includes('FROM scoped_removed_images')) return [{ id: row.id, path: row.path, thumbnail_path: null }];
                 if (sql.includes('FROM scoped_images') && !removalDone) {
                     removalDone = true;
@@ -1993,7 +2221,7 @@ describe('imageRepo batch removal', () => {
                 }
                 return [];
             }),
-            execute: vi.fn()
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         const { commands } = await import('../../../bindings');
@@ -2022,9 +2250,7 @@ describe('imageRepo batch removal', () => {
     it('handles string lock failures, repeated thumbnail failures, and truthy browser metadata fields', async () => {
         const db = {
             select: vi.fn(),
-            execute: vi.fn()
-                .mockRejectedValueOnce('database is locked')
-                .mockResolvedValueOnce({ rowsAffected: 0 })
+            execute: vi.fn().mockRejectedValueOnce('database is locked').mockResolvedValueOnce({ rowsAffected: 0 }),
         };
         getDbMock.mockResolvedValue(db);
         const { clearAllThumbnailPaths, updateThumbnailPathsBatch, getExistingMetadata } = await import('../imageRepo');
@@ -2034,71 +2260,122 @@ describe('imageRepo batch removal', () => {
         db.execute.mockRejectedValue('disk full');
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const updates = Array.from({ length: 5 }, (_, index) => ({
-            id: `C:/image-${index}.png`, thumbnailPath: `C:/thumb-${index}.webp`,
+            id: `C:/image-${index}.png`,
+            thumbnailPath: `C:/thumb-${index}.webp`,
             microThumbnail: index === 0 ? 'micro' : undefined,
-            thumbnailSource: index === 0 ? 'ambit' : undefined
+            thumbnailSource: index === 0 ? 'ambit' : undefined,
         }));
         await updateThumbnailPathsBatch(updates);
         expect(console.warn).toHaveBeenCalledWith('[DB] 5 thumbnail updates failed');
 
         browserMockModeMock.mockReturnValue(true);
-        getBrowserMockImagesMock.mockReturnValue([{
-            id: 'C:/browser.png', timestamp: 1, fileSize: 9, metadata: liveImportMetadata,
-            isFavorite: true, isPinned: true, boardId: 'board', groupId: 'group', notes: 'note'
-        }]);
+        getBrowserMockImagesMock.mockReturnValue([
+            {
+                id: 'C:/browser.png',
+                timestamp: 1,
+                fileSize: 9,
+                metadata: liveImportMetadata,
+                isFavorite: true,
+                isPinned: true,
+                boardId: 'board',
+                groupId: 'group',
+                notes: 'note',
+            },
+        ]);
         const existing = await getExistingMetadata(['C:/browser.png']);
         expect(existing.get('C:/browser.png')).toMatchObject({ fileSize: 9, isPinned: true });
     });
 
     it('covers legacy metadata persistence, snake-case null updates, sparse reverts, and read fallbacks', async () => {
         const baseRow = {
-            id: 'C:/read.png', path: 'C:/read.png', width: 1, height: 1, file_size: 1, timestamp: 1,
-            metadata_json: JSON.stringify(liveImportMetadata), thumbnail_path: null, micro_thumbnail: null,
-            thumbnail_source: null, is_favorite: 0, is_pinned: 0, is_deleted: 0, is_missing: 0,
-            is_corrupt: 0, user_masked: null, group_id: null, board_id: null, notes: null,
-            original_metadata_json: null, original_parsed_json: null, original_state_json: null
+            id: 'C:/read.png',
+            path: 'C:/read.png',
+            width: 1,
+            height: 1,
+            file_size: 1,
+            timestamp: 1,
+            metadata_json: JSON.stringify(liveImportMetadata),
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            is_favorite: 0,
+            is_pinned: 0,
+            is_deleted: 0,
+            is_missing: 0,
+            is_corrupt: 0,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
         };
         const db = {
             select: vi.fn(async (sql: string, params?: string[]) => {
                 if (sql.includes('original_parsed_json')) {
-                    return [{ original_parsed_json: JSON.stringify({ positive_prompt: 'snake positive', negative_prompt: 'snake negative' }) }];
+                    return [
+                        { original_parsed_json: JSON.stringify({ positive_prompt: 'snake positive', negative_prompt: 'snake negative' }) },
+                    ];
                 }
                 if (sql.includes('WHERE id = ?') && params?.[0] === 'C:/a1111.png') {
-                    return [{ ...baseRow, id: 'C:/a1111.png', path: 'C:/a1111.png', metadata_json: JSON.stringify({ ...liveImportMetadata, tool: GeneratorTool.AUTOMATIC1111 }) }];
+                    return [
+                        {
+                            ...baseRow,
+                            id: 'C:/a1111.png',
+                            path: 'C:/a1111.png',
+                            metadata_json: JSON.stringify({ ...liveImportMetadata, tool: GeneratorTool.AUTOMATIC1111 }),
+                        },
+                    ];
                 }
                 return [baseRow];
             }),
-            execute: vi.fn()
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         scanImageNativeMock.mockResolvedValue(null);
         const { commands } = await import('../../../bindings');
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
-        const {
-            insertImage, updateImageMetadataFields, revertImageMetadata,
-            getAllImages, getImageWithFullMetadata
-        } = await import('../imageRepo');
+        const { insertImage, updateImageMetadataFields, revertImageMetadata, getAllImages, getImageWithFullMetadata } =
+            await import('../imageRepo');
 
         await insertImage({
-            id: 'C:/legacy.png', url: 'C:/legacy.png', thumbnailUrl: '', filename: 'legacy.png',
-            width: 1, height: 1, timestamp: 1, metadata: liveImportMetadata, isFavorite: false,
-            originalMetadata: liveImportMetadata
+            id: 'C:/legacy.png',
+            url: 'C:/legacy.png',
+            thumbnailUrl: '',
+            filename: 'legacy.png',
+            width: 1,
+            height: 1,
+            timestamp: 1,
+            metadata: liveImportMetadata,
+            isFavorite: false,
+            originalMetadata: liveImportMetadata,
         });
         expect(vi.mocked(commands.saveImagesBatch).mock.calls[0][0][0].originalMetadataJson).toBe(JSON.stringify(liveImportMetadata));
 
         await updateImageMetadataFields('C:/read.png', {
-            positivePrompt: null, positive_prompt: 'snake', negativePrompt: null,
-            negative_prompt: null, seed: null
+            positivePrompt: null,
+            positive_prompt: 'snake',
+            negativePrompt: null,
+            negative_prompt: null,
+            seed: null,
         });
         await revertImageMetadata('C:/read.png');
         await expect(getAllImages(undefined, 0, true, true, false)).resolves.toHaveLength(1);
         await expect(getImageWithFullMetadata('C:/read.png')).resolves.toBeTruthy();
         await expect(getImageWithFullMetadata('C:/a1111.png')).resolves.toBeTruthy();
 
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('positive_prompt = ?'),
-            [null, 'snake', null, null, null, 'snake', null, null, 'C:/read.png']
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('positive_prompt = ?'), [
+            null,
+            'snake',
+            null,
+            null,
+            null,
+            'snake',
+            null,
+            null,
+            'C:/read.png',
+        ]);
         const revertCall = db.execute.mock.calls.find(([sql]) => String(sql).includes('SET metadata_json = ?'));
         expect(revertCall?.[1]).toEqual(expect.arrayContaining(['snake positive', 'snake negative', GeneratorTool.UNKNOWN]));
         expect(scanImageNativeMock).toHaveBeenCalledTimes(1);
@@ -2107,12 +2384,25 @@ describe('imageRepo batch removal', () => {
     it('covers browser ordering, unlimited reads, and absent existing-metadata defaults', async () => {
         browserMockModeMock.mockReturnValue(true);
         const first = {
-            id: 'first', url: 'first', thumbnailUrl: '', filename: 'first', width: 1, height: 1,
-            timestamp: 1, metadata: liveImportMetadata, isFavorite: false, isPinned: true
+            id: 'first',
+            url: 'first',
+            thumbnailUrl: '',
+            filename: 'first',
+            width: 1,
+            height: 1,
+            timestamp: 1,
+            metadata: liveImportMetadata,
+            isFavorite: false,
+            isPinned: true,
         } as AIImage;
         const second = {
-            ...first, id: 'second', url: 'second', filename: 'second', timestamp: 2,
-            fileSize: undefined, isPinned: undefined
+            ...first,
+            id: 'second',
+            url: 'second',
+            filename: 'second',
+            timestamp: 2,
+            fileSize: undefined,
+            isPinned: undefined,
         } as AIImage;
         getBrowserMockImagesMock.mockReturnValue([first, second]);
         const { getAllImages, getExistingMetadata } = await import('../imageRepo');
@@ -2125,17 +2415,32 @@ describe('imageRepo batch removal', () => {
 
     it('persists null prompt fallbacks and reads native grids when explicitly enabled', async () => {
         const row = {
-            id: 'C:/grid.png', path: 'C:/grid.png', width: 1, height: 1, file_size: 1, timestamp: 1,
-            metadata_json: '{}', thumbnail_path: null, micro_thumbnail: null, thumbnail_source: null,
-            is_favorite: 0, is_pinned: 0, is_deleted: 0, is_missing: 0, is_corrupt: 0,
-            user_masked: null, group_id: null, board_id: null, notes: null,
-            original_metadata_json: null, original_parsed_json: null, original_state_json: null
+            id: 'C:/grid.png',
+            path: 'C:/grid.png',
+            width: 1,
+            height: 1,
+            file_size: 1,
+            timestamp: 1,
+            metadata_json: '{}',
+            thumbnail_path: null,
+            micro_thumbnail: null,
+            thumbnail_source: null,
+            is_favorite: 0,
+            is_pinned: 0,
+            is_deleted: 0,
+            is_missing: 0,
+            is_corrupt: 0,
+            user_masked: null,
+            group_id: null,
+            board_id: null,
+            notes: null,
+            original_metadata_json: null,
+            original_parsed_json: null,
+            original_state_json: null,
         };
         const db = {
-            select: vi.fn(async (sql: string) => sql.includes('original_parsed_json')
-                ? [{ original_parsed_json: '{}' }]
-                : [row]),
-            execute: vi.fn()
+            select: vi.fn(async (sql: string) => (sql.includes('original_parsed_json') ? [{ original_parsed_json: '{}' }] : [row])),
+            execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
         const { updateImageMetadataFields, revertImageMetadata, getAllImages } = await import('../imageRepo');

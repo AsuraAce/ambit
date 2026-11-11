@@ -11,11 +11,13 @@ vi.mock('../../services/runtime', () => ({ isBrowserMockMode: () => state.browse
 vi.mock('../../bindings', () => ({ commands: { getParameterRanges: mocks.getParameterRanges } }));
 vi.mock('../../utils/sqlHelpers', () => ({ buildSqlWhereClause: mocks.buildSql }));
 vi.mock('../../services/browserMockData', () => ({ getBrowserMockImages: mocks.getImages }));
-vi.mock('../../contexts/SettingsContext', () => ({ useSettings: () => ({ settings: { maskingMode: 'blur', maskedKeywords: ['secret'] }, privacyEnabled: true }) }));
+vi.mock('../../contexts/SettingsContext', () => ({
+    useSettings: () => ({ settings: { maskingMode: 'blur', maskedKeywords: ['secret'] }, privacyEnabled: true }),
+}));
 vi.mock('../../contexts/CollectionContext', () => ({ useCollections: () => ({ collections: [] }) }));
 vi.mock('../../stores/libraryStore', () => ({ useLibraryStore: (selector: (value: typeof state) => unknown) => selector(state) }));
 vi.mock('../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (value: { privacyMaskIndexStatus: 'ready' }) => unknown) => selector({ privacyMaskIndexStatus: 'ready' })
+    useSettingsStore: (selector: (value: { privacyMaskIndexStatus: 'ready' }) => unknown) => selector({ privacyMaskIndexStatus: 'ready' }),
 }));
 vi.mock('../useDebouncedSideQueryFilters', () => ({ useDebouncedSideQueryFilters: (filters: unknown) => filters }));
 
@@ -40,88 +42,105 @@ describe('useParameterRangesQuery additional paths', () => {
         const { result } = renderHook(() => useParameterRangesQuery(createDefaultFilters()), { wrapper });
         await waitFor(() => expect(result.current.isSuccess).toBe(true));
         expect(result.current.data).toMatchObject({
-            steps: { min: 10, max: 30 }, cfg: { min: 4, max: 8 },
-            samplers: ['Euler', 'DPM'], generationTypes: ['unknown', 'img2img'], controlNets: ['depth'], ipAdapters: ['face'],
+            steps: { min: 10, max: 30 },
+            cfg: { min: 4, max: 8 },
+            samplers: ['Euler', 'DPM'],
+            generationTypes: ['unknown', 'img2img'],
+            controlNets: ['depth'],
+            ipAdapters: ['face'],
         });
     });
 
     it.each([
         { initialVisibility: false, nextVisibility: true, expectedSampler: 'AssetSampler' },
         { initialVisibility: true, nextVisibility: false, expectedSampler: 'VisibleSampler' },
-    ])('updates browser ranges when asset visibility changes from $initialVisibility to $nextVisibility', async ({
-        initialVisibility,
-        nextVisibility,
-        expectedSampler,
-    }) => {
-        state.browser = true;
-        mocks.getImages.mockReturnValue([
-            {
-                invokeImageCategory: 'general',
-                metadata: {
-                    steps: 10,
-                    cfg: 4,
-                    sampler: 'VisibleSampler',
-                    generationType: 'visible-generation',
+    ])(
+        'updates browser ranges when asset visibility changes from $initialVisibility to $nextVisibility',
+        async ({ initialVisibility, nextVisibility, expectedSampler }) => {
+            state.browser = true;
+            mocks.getImages.mockReturnValue([
+                {
+                    invokeImageCategory: 'general',
+                    metadata: {
+                        steps: 10,
+                        cfg: 4,
+                        sampler: 'VisibleSampler',
+                        generationType: 'visible-generation',
+                        controlNets: ['VisibleControlNet'],
+                        ipAdapters: ['VisibleIPAdapter'],
+                    },
+                },
+                {
+                    invokeImageCategory: 'control',
+                    metadata: {
+                        steps: 30,
+                        cfg: 8,
+                        sampler: 'AssetSampler',
+                        generationType: 'asset-generation',
+                        controlNets: ['AssetControlNet'],
+                        ipAdapters: ['AssetIPAdapter'],
+                    },
+                },
+            ]);
+            const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+            const stableWrapper = ({ children }: { children: React.ReactNode }) => (
+                <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+            );
+            const { result, rerender } = renderHook(
+                ({ showInvokeImageAssets }) => useParameterRangesQuery(createDefaultFilters({ showInvokeImageAssets })),
+                { wrapper: stableWrapper, initialProps: { showInvokeImageAssets: initialVisibility } }
+            );
+
+            await waitFor(() => expect(result.current.isSuccess).toBe(true));
+            rerender({ showInvokeImageAssets: nextVisibility });
+
+            await waitFor(() => {
+                expect(result.current.data?.samplers).toContain(expectedSampler);
+                expect(result.current.data?.samplers.includes('AssetSampler')).toBe(nextVisibility);
+            });
+            if (nextVisibility) {
+                expect(result.current.data).toMatchObject({
+                    steps: { min: 10, max: 30 },
+                    cfg: { min: 4, max: 8 },
+                    samplers: ['VisibleSampler', 'AssetSampler'],
+                    generationTypes: ['visible-generation', 'asset-generation'],
+                    controlNets: ['VisibleControlNet', 'AssetControlNet'],
+                    ipAdapters: ['VisibleIPAdapter', 'AssetIPAdapter'],
+                });
+            } else {
+                expect(result.current.data).toMatchObject({
+                    steps: { min: 10, max: 10 },
+                    cfg: { min: 4, max: 4 },
+                    samplers: ['VisibleSampler'],
+                    generationTypes: ['visible-generation'],
                     controlNets: ['VisibleControlNet'],
                     ipAdapters: ['VisibleIPAdapter'],
-                },
-            },
-            {
-                invokeImageCategory: 'control',
-                metadata: {
-                    steps: 30,
-                    cfg: 8,
-                    sampler: 'AssetSampler',
-                    generationType: 'asset-generation',
-                    controlNets: ['AssetControlNet'],
-                    ipAdapters: ['AssetIPAdapter'],
-                },
-            },
-        ]);
-        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-        const stableWrapper = ({ children }: { children: React.ReactNode }) => (
-            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        );
-        const { result, rerender } = renderHook(
-            ({ showInvokeImageAssets }) => useParameterRangesQuery(createDefaultFilters({ showInvokeImageAssets })),
-            { wrapper: stableWrapper, initialProps: { showInvokeImageAssets: initialVisibility } }
-        );
-
-        await waitFor(() => expect(result.current.isSuccess).toBe(true));
-        rerender({ showInvokeImageAssets: nextVisibility });
-
-        await waitFor(() => {
-            expect(result.current.data?.samplers).toContain(expectedSampler);
-            expect(result.current.data?.samplers.includes('AssetSampler')).toBe(nextVisibility);
-        });
-        if (nextVisibility) {
-            expect(result.current.data).toMatchObject({
-                steps: { min: 10, max: 30 },
-                cfg: { min: 4, max: 8 },
-                samplers: ['VisibleSampler', 'AssetSampler'],
-                generationTypes: ['visible-generation', 'asset-generation'],
-                controlNets: ['VisibleControlNet', 'AssetControlNet'],
-                ipAdapters: ['VisibleIPAdapter', 'AssetIPAdapter'],
-            });
-        } else {
-            expect(result.current.data).toMatchObject({
-                steps: { min: 10, max: 10 },
-                cfg: { min: 4, max: 4 },
-                samplers: ['VisibleSampler'],
-                generationTypes: ['visible-generation'],
-                controlNets: ['VisibleControlNet'],
-                ipAdapters: ['VisibleIPAdapter'],
-            });
+                });
+            }
         }
-    });
+    );
 
     it('passes disjunctive exclusions and unwraps native success', async () => {
-        const data = { steps: null, cfg: null, denoisingStrength: null, samplers: [], generationTypes: [], controlNets: [], ipAdapters: [], guidanceSubtypes: {} };
+        const data = {
+            steps: null,
+            cfg: null,
+            denoisingStrength: null,
+            samplers: [],
+            generationTypes: [],
+            controlNets: [],
+            ipAdapters: [],
+            guidanceSubtypes: {},
+        };
         mocks.getParameterRanges.mockResolvedValue({ status: 'ok', data });
         const filters = createDefaultFilters({ searchQuery: '  portrait  ', tools: [GeneratorTool.COMFYUI] });
         const { result } = renderHook(() => useParameterRangesQuery(filters), { wrapper });
         await waitFor(() => expect(result.current.isSuccess).toBe(true));
-        expect(mocks.buildSql).toHaveBeenCalledWith(filters, true, 'blur', ['secret'], [], false, ['samplers', 'generationTypes', 'controlNets', 'ipAdapters']);
+        expect(mocks.buildSql).toHaveBeenCalledWith(filters, true, 'blur', ['secret'], [], false, [
+            'samplers',
+            'generationTypes',
+            'controlNets',
+            'ipAdapters',
+        ]);
         expect(mocks.getParameterRanges).toHaveBeenCalledWith('WHERE model = ?', '["flux"]', 'c1', 'detail');
         expect(result.current.data).toBe(data);
     });

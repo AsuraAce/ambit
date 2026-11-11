@@ -18,18 +18,27 @@ export function describeInvokeRepairDecision(input: {
     const compare = (before: number | string, after: number | string) =>
         after === before ? 'equal' : after < before ? 'decreased' : 'increased';
     return {
-        decision: input.scope === 'none' ? 'no-admitted-scope'
-            : input.reconcileSourceFacts ? 'full-repair'
-                : input.canCatchUpAllUsers && !input.fingerprintCurrent ? 'incremental-catch-up' : 'unchanged',
+        decision:
+            input.scope === 'none'
+                ? 'no-admitted-scope'
+                : input.reconcileSourceFacts
+                  ? 'full-repair'
+                  : input.canCatchUpAllUsers && !input.fingerprintCurrent
+                    ? 'incremental-catch-up'
+                    : 'unchanged',
         scope: input.scope,
         forcedRefresh: input.forcedRefresh,
         snapshot: !input.snapshotPresent ? 'missing' : input.snapshotCompatible ? 'compatible' : 'incompatible',
         savedFingerprint: !saved ? 'unavailable' : saved.schemaVersion === 1 ? 'supported' : 'unsupported',
         currentFingerprint: !current ? 'unavailable' : current.schemaVersion === 1 ? 'supported' : 'unsupported',
         countComparison: saved && current ? compare(saved.imageCount, current.imageCount) : 'unavailable',
-        timestampComparison: !saved || !current ? 'unavailable'
-            : saved.imageUpdatedAt === null ? 'saved-absent'
-                : current.imageUpdatedAt === null ? 'current-absent'
+        timestampComparison:
+            !saved || !current
+                ? 'unavailable'
+                : saved.imageUpdatedAt === null
+                  ? 'saved-absent'
+                  : current.imageUpdatedAt === null
+                    ? 'current-absent'
                     : compare(saved.imageUpdatedAt, current.imageUpdatedAt),
         fingerprintCurrent: current ? input.fingerprintCurrent : null,
     };

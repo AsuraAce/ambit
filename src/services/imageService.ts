@@ -27,7 +27,7 @@ const dataUrlToBlob = (url: string): Blob => {
     }
 
     const binary = atob(match[2].replace(/\s/g, ''));
-    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     return new Blob([bytes], { type: match[1] });
 };
 
@@ -73,15 +73,20 @@ const blobToDataUrl = async (blob: Blob): Promise<string> => {
     return `data:${ANALYSIS_MIME_TYPE};base64,${btoa(binary)}`;
 };
 
-const canvasToWebp = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => {
-    canvas.toBlob(blob => {
-        if (!blob || blob.type !== ANALYSIS_MIME_TYPE) {
-            reject(new Error('Browser could not create a sanitized WebP analysis image'));
-            return;
-        }
-        resolve(blob);
-    }, ANALYSIS_MIME_TYPE, 0.9);
-});
+const canvasToWebp = (canvas: HTMLCanvasElement): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+        canvas.toBlob(
+            (blob) => {
+                if (!blob || blob.type !== ANALYSIS_MIME_TYPE) {
+                    reject(new Error('Browser could not create a sanitized WebP analysis image'));
+                    return;
+                }
+                resolve(blob);
+            },
+            ANALYSIS_MIME_TYPE,
+            0.9
+        );
+    });
 
 const drawBitmap = async (blob: Blob, canvas: HTMLCanvasElement): Promise<void> => {
     const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });

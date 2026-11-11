@@ -11,7 +11,7 @@ export const AssetTechnicalDetails: React.FC<{ rows: readonly TechnicalDetail[] 
     <section>
         <MetadataSectionHeader title="Technical details" icon={Info} />
         <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-            {rows.map(row => (
+            {rows.map((row) => (
                 <React.Fragment key={row.label}>
                     <dt className="text-gray-500 dark:text-zinc-500">{row.label}</dt>
                     <dd className="min-w-0 break-words">{row.value}</dd>

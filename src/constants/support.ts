@@ -23,14 +23,14 @@ export const SUPPORT_CHANNELS: SupportChannel[] = [
         id: 'issues',
         label: 'Report a bug',
         description: 'Use GitHub Issues for bugs, regressions, and concrete feature requests.',
-        url: ISSUES_URL
+        url: ISSUES_URL,
     },
     {
         id: 'releases',
         label: 'Follow releases',
         description: 'Track new builds, release notes, and packaged downloads.',
-        url: RELEASES_URL
-    }
+        url: RELEASES_URL,
+    },
 ];
 
 export const DONATION_PROVIDERS: DonationProvider[] = [
@@ -38,20 +38,20 @@ export const DONATION_PROVIDERS: DonationProvider[] = [
         id: 'ko-fi',
         label: 'Ko-fi',
         ctaLabel: 'Buy me a coffee',
-        url: KO_FI_URL
+        url: KO_FI_URL,
     },
     {
         id: 'github-sponsors',
         label: 'GitHub Sponsors',
         ctaLabel: 'Sponsor on GitHub',
-        url: GITHUB_SPONSORS_URL
+        url: GITHUB_SPONSORS_URL,
     },
     {
         id: 'patreon',
         label: 'Patreon',
         ctaLabel: 'Become a patron',
-        url: null
-    }
+        url: null,
+    },
 ];
 
 export const ENABLED_DONATION_PROVIDERS = DONATION_PROVIDERS.filter((provider) => !!provider.url);

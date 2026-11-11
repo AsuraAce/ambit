@@ -18,14 +18,7 @@ describe('MetadataTextAreaField', () => {
     it('keeps editing callbacks in the owning viewer', () => {
         const onChange = vi.fn();
         const onBlur = vi.fn();
-        render(
-            <MetadataTextAreaField
-                kind="notes"
-                value="Existing note"
-                onChange={onChange}
-                onBlur={onBlur}
-            />,
-        );
+        render(<MetadataTextAreaField kind="notes" value="Existing note" onChange={onChange} onBlur={onBlur} />);
 
         const textarea = screen.getByLabelText('Notes');
         fireEvent.change(textarea, { target: { value: 'Updated note' } });
@@ -45,7 +38,7 @@ describe('MetadataTextAreaField', () => {
                 headerAction={<button type="button">Field action</button>}
                 status={<span>Unsaved</span>}
                 overlay={<span>Suggestion</span>}
-            />,
+            />
         );
 
         const action = screen.getByRole('button', { name: 'Field action' });
@@ -90,7 +83,7 @@ describe('MetadataTextAreaField', () => {
                 onBlur={onBlur}
                 onCancelEdit={onCancelEdit}
                 readContent={<span>{'Line one\nLine two'}</span>}
-            />,
+            />
         );
 
         const readSurface = screen.getByRole('textbox', { name: 'Positive prompt' });
@@ -123,7 +116,7 @@ describe('MetadataTextAreaField', () => {
                 onChange={vi.fn()}
                 readOnly
                 readContent={<span>{'Line one\nLine two'}</span>}
-            />,
+            />
         );
 
         const readSurface = screen.getByRole('textbox', { name: 'Positive prompt' });

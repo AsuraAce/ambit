@@ -22,7 +22,15 @@ const renderDialog = (overrides: Partial<React.ComponentProps<typeof UpdateDialo
 describe('UpdateDialog', () => {
     it('renders only while open and installs an available update', () => {
         const closed = render(
-            <UpdateDialog availableVersion="2" currentVersion="1" errorMessage={null} isOpen={false} status="idle" onClose={vi.fn()} onInstall={vi.fn()} />
+            <UpdateDialog
+                availableVersion="2"
+                currentVersion="1"
+                errorMessage={null}
+                isOpen={false}
+                status="idle"
+                onClose={vi.fn()}
+                onInstall={vi.fn()}
+            />
         );
         expect(screen.queryByText('Update Available')).toBeNull();
         closed.unmount();
@@ -59,7 +67,7 @@ describe('UpdateDialog', () => {
         const { container, onClose } = renderDialog({ status: 'idle', notes: null, publishedAt: undefined });
         fireEvent.click(container.querySelector('.absolute.inset-0') as Element);
         fireEvent.click(screen.getByRole('button', { name: 'Later' }));
-        const closeButtons = screen.getAllByRole('button').filter(button => button.textContent === '');
+        const closeButtons = screen.getAllByRole('button').filter((button) => button.textContent === '');
         fireEvent.click(closeButtons[0]);
         expect(onClose).toHaveBeenCalledTimes(3);
     });

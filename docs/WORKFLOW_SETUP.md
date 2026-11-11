@@ -26,7 +26,7 @@ Protect `main` with these required status checks:
 `frontend-checks` validates version consistency, release automation scripts, lint, TypeScript, Vitest coverage, and the production bundle guard.
 
 `rust-tests` runs on Windows with Rust `1.90.0`, restores the Rust cache, verifies generated bindings, runs Rust tests, and performs the Tauri no-bundle build.
-Its Clippy step (`pnpm run lint:rust`) runs on the toolchain pinned in `rust-toolchain.toml` instead, the same one `verify:release` uses in the release workflow.
+Its Rust lint step (`pnpm run lint:rust`: `cargo fmt --check`, then Clippy) runs on the toolchain pinned in `rust-toolchain.toml` instead, the same one `verify:release` uses in the release workflow.
 
 `dependency-audits` is always present as a stable check:
 

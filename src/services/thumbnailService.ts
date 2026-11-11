@@ -25,30 +25,30 @@ const repairThumbnailBatch = async (
     operationId: number,
     ids: string[],
     thumbnailDir: string,
-    force: boolean,
+    force: boolean
 ): Promise<ThumbnailRepairBatchResult | null> => {
     if (ids.length === 0) return null;
 
-    const sourceRoots = useSettingsStore.getState().settings.monitoredFolders
-        .filter(folder => folder.isActive)
-        .map(folder => folder.path);
-    return await unwrap(commands.repairThumbnailBatch({
-        operationId,
-        ids,
-        thumbnailDir,
-        sourceRoots,
-        force,
-        respectBackoff: false,
-    }));
+    const sourceRoots = useSettingsStore
+        .getState()
+        .settings.monitoredFolders.filter((folder) => folder.isActive)
+        .map((folder) => folder.path);
+    return await unwrap(
+        commands.repairThumbnailBatch({
+            operationId,
+            ids,
+            thumbnailDir,
+            sourceRoots,
+            force,
+            respectBackoff: false,
+        })
+    );
 };
 
-const withThumbnailRepairOperation = async <T>(
-    signal: AbortSignal | undefined,
-    work: (operationId: number) => Promise<T>
-): Promise<T> => {
+const withThumbnailRepairOperation = async <T>(signal: AbortSignal | undefined, work: (operationId: number) => Promise<T>): Promise<T> => {
     const operationId = await unwrap(commands.beginThumbnailRepairOperation(thumbnailRepairOwnerId));
     const requestCancellation = () => {
-        void commands.cancelThumbnailOptimizationJob(operationId).catch(error => {
+        void commands.cancelThumbnailOptimizationJob(operationId).catch((error) => {
             console.error('[Thumb] Failed to request thumbnail repair cancellation', error);
         });
     };
@@ -79,7 +79,7 @@ export const getThumbnailDir = async (): Promise<string | undefined> => {
         cachedThumbnailDir = thumbPath;
         return thumbPath;
     } catch (e) {
-        console.error("Failed to resolve thumbnail dir", e);
+        console.error('Failed to resolve thumbnail dir', e);
         return undefined;
     }
 };
@@ -105,7 +105,7 @@ export const generateSingleThumbnail = async (imagePath: string): Promise<string
     try {
         const thumbDir = await getThumbnailDir();
         if (!thumbDir) {
-            console.warn("[Thumb] No thumbnail dir resolved");
+            console.warn('[Thumb] No thumbnail dir resolved');
             return null;
         }
 
@@ -133,12 +133,12 @@ export const regenerateThumbnailsForImages = async (
     if (!thumbDir || candidates.length === 0) return [];
     if (signal?.aborted) return [];
 
-    return withThumbnailRepairOperation(signal, async operationId => {
+    return withThumbnailRepairOperation(signal, async (operationId) => {
         let processed = 0;
         const total = candidates.length;
         const updates: AIImage[] = [];
         const BATCH_SIZE = 100;
-        const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]));
+        const candidatesById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
 
         // Process in batches
         for (let i = 0; i < total; i += BATCH_SIZE) {
@@ -149,11 +149,11 @@ export const regenerateThumbnailsForImages = async (
             }
 
             const batch = candidates.slice(i, i + BATCH_SIZE);
-            const ids = batch.map(img => img.id);
+            const ids = batch.map((img) => img.id);
 
             const result = await repairThumbnailBatch(operationId, ids, thumbDir, true);
             if (!result) break;
-            result.updates.forEach(update => {
+            result.updates.forEach((update) => {
                 const candidate = candidatesById.get(update.id);
                 if (candidate) {
                     updates.push({ ...candidate, thumbnailUrl: update.thumbnailPath });
@@ -187,7 +187,7 @@ export const regenerateAllUnoptimized = async (
     if (!thumbDir) return 0;
     if (signal?.aborted) return 0;
 
-    return withThumbnailRepairOperation(signal, async operationId => {
+    return withThumbnailRepairOperation(signal, async (operationId) => {
         // Count and page while one native owner excludes Smart repairs.
         const total = await getUnoptimizedImagesCount(whereClause, params, includeUpgradeable);
         if (total === 0) return 0;
@@ -217,7 +217,7 @@ export const regenerateAllUnoptimized = async (
                 if (signal?.aborted) break;
 
                 const batchEntries = entries.slice(i, i + BATCH_SIZE);
-                const batchIds = batchEntries.map(e => e.id);
+                const batchIds = batchEntries.map((e) => e.id);
 
                 const result = await repairThumbnailBatch(operationId, batchIds, thumbDir, false);
                 if (!result) break;
@@ -296,9 +296,7 @@ export const cleanupOrphanThumbnails = async (): Promise<number> => {
  * @param onProgress Optional progress callback
  * @returns Number of thumbnails synced
  */
-export const syncExistingThumbnailsToDB = async (
-    onProgress?: (current: number, total: number) => void
-): Promise<number> => {
+export const syncExistingThumbnailsToDB = async (onProgress?: (current: number, total: number) => void): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
 
@@ -319,7 +317,7 @@ export const syncExistingThumbnailsToDB = async (
     console.log(`[Thumb] Syncing ${rows.length} images without thumbnail paths...`);
 
     // Build fake AIImage objects with just enough data for regeneration
-    const candidates = rows.map(row => ({
+    const candidates = rows.map((row) => ({
         id: row.id,
         url: convertFileSrc(normalizePath(row.id)),
         thumbnailUrl: convertFileSrc(normalizePath(row.id)), // Same as url triggers regen
@@ -333,7 +331,7 @@ export const syncExistingThumbnailsToDB = async (
 
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
         const batch = candidates.slice(i, i + BATCH_SIZE);
-        const paths = batch.map(img => img.id);
+        const paths = batch.map((img) => img.id);
 
         try {
             // Fast-scan with skipThumbnail=false - Rust will skip existing files
@@ -396,32 +394,34 @@ export const pruneBrokenThumbnails = async (): Promise<number> => {
 
     for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
         const chunk = rows.slice(i, i + CHUNK_SIZE);
-        await Promise.all(chunk.map(async (row) => {
-            // If it's a web URL, skip check
-            if (row.thumbnail_path.startsWith('http')) return;
+        await Promise.all(
+            chunk.map(async (row) => {
+                // If it's a web URL, skip check
+                if (row.thumbnail_path.startsWith('http')) return;
 
-            // If it's a full absolute path, check it.
-            // If it's a filename only (legacy), join with thumbDir
-            // Newer entries store full absolute path.
-            let checkPath = normalizePath(row.thumbnail_path);
+                // If it's a full absolute path, check it.
+                // If it's a filename only (legacy), join with thumbDir
+                // Newer entries store full absolute path.
+                let checkPath = normalizePath(row.thumbnail_path);
 
-            // Heuristic for old relative paths (unlikely in new versions but safe to keep)
-            if (!checkPath.includes('/') && !checkPath.includes('\\')) {
-                checkPath = await join(thumbDir, checkPath);
-            }
-
-            try {
-                const doesExist = await exists(checkPath);
-                if (!doesExist) {
-                    brokenIds.push(row.id);
-                    brokenCount++;
+                // Heuristic for old relative paths (unlikely in new versions but safe to keep)
+                if (!checkPath.includes('/') && !checkPath.includes('\\')) {
+                    checkPath = await join(thumbDir, checkPath);
                 }
-            } catch (e) {
-                // If checking fails, assume available or transient error?
-                // Safest to assume NOT available if 'exists' throws for file system errors
-                console.warn(`[Thumb] Failed to check existence of ${checkPath}`, e);
-            }
-        }));
+
+                try {
+                    const doesExist = await exists(checkPath);
+                    if (!doesExist) {
+                        brokenIds.push(row.id);
+                        brokenCount++;
+                    }
+                } catch (e) {
+                    // If checking fails, assume available or transient error?
+                    // Safest to assume NOT available if 'exists' throws for file system errors
+                    console.warn(`[Thumb] Failed to check existence of ${checkPath}`, e);
+                }
+            })
+        );
     }
 
     if (brokenCount > 0) {

@@ -1,6 +1,16 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, AssetScope, FilterState, SortOption, MetadataRefreshScope, type ImageKindFilter, type MediaTypeFilter, type LibraryScopeCounts, type SourceKindCounts } from '../types';
+import {
+    AIImage,
+    AssetScope,
+    FilterState,
+    SortOption,
+    MetadataRefreshScope,
+    type ImageKindFilter,
+    type MediaTypeFilter,
+    type LibraryScopeCounts,
+    type SourceKindCounts,
+} from '../types';
 import { useSettings } from './SettingsContext';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { useCollections } from './CollectionContext';
@@ -9,12 +19,7 @@ import { appRepository } from '../services/repository';
 import { getDb } from '../services/db/connection';
 
 import { Facets, LibraryStats, ValidFacetNames } from '../services/db/searchRepo';
-import {
-    checkHiddenContentAvailability,
-    rebuildThumbnailFacetCache,
-    updateFavorite,
-    updatePinned,
-} from '../services/db/imageRepo';
+import { checkHiddenContentAvailability, rebuildThumbnailFacetCache, updateFavorite, updatePinned } from '../services/db/imageRepo';
 import { clearAllCollectionThumbnailCaches } from '../services/db/collectionRepo';
 import { useImagesQuery, type ImagesQueryKey } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
@@ -34,10 +39,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
 import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
-import {
-    isInvokeOwnerScopeAdmitted,
-    useInvokeOwnerScopeStore,
-} from '../stores/invokeOwnerScopeStore';
+import { isInvokeOwnerScopeAdmitted, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 
 interface SearchContextType {
     images: AIImage[];
@@ -97,62 +99,61 @@ const RECENT_SEARCH_LOAD_RETRY_BASE_MS = 250;
 const RECENT_SEARCH_LOAD_RETRY_MAX_MS = 4_000;
 const RECENT_SEARCH_LIMIT = 8;
 
-const applyRecentSearchMutation = (
-    current: string[],
-    mutation: React.SetStateAction<string[]>
-): string[] => {
+const applyRecentSearchMutation = (current: string[], mutation: React.SetStateAction<string[]>): string[] => {
     const next = typeof mutation === 'function' ? mutation(current) : mutation;
-    return next
-        .filter((search, index, searches) => searches.indexOf(search) === index)
-        .slice(0, RECENT_SEARCH_LIMIT);
+    return next.filter((search, index, searches) => searches.indexOf(search) === index).slice(0, RECENT_SEARCH_LIMIT);
 };
 
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, setSettings, privacyEnabled, isLoaded: settingsLoaded } = useSettings();
     const { collections, smartCollections, refreshCollections, isLoaded: collectionsLoaded } = useCollections();
     const queryClient = useQueryClient();
-    const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
-    const privacyMaskIndexRetryToken = useSettingsStore(state => state.privacyMaskIndexRetryToken);
-    const setPrivacyMaskIndexState = useSettingsStore(state => state.setPrivacyMaskIndexState);
-    const refreshSmartCounts = useCollectionStore(state => state.refreshSmartCounts);
-    const keywordStatsEnabled = useLibraryStore(state => state.keywordStatsEnabled);
-
-
+    const privacyMaskIndexStatus = useSettingsStore((state) => state.privacyMaskIndexStatus);
+    const privacyMaskIndexRetryToken = useSettingsStore((state) => state.privacyMaskIndexRetryToken);
+    const setPrivacyMaskIndexState = useSettingsStore((state) => state.setPrivacyMaskIndexState);
+    const refreshSmartCounts = useCollectionStore((state) => state.refreshSmartCounts);
+    const keywordStatsEnabled = useLibraryStore((state) => state.keywordStatsEnabled);
 
     // Zustand Store Access
     const {
-        images, setImages,
-        filters, setFilters,
-        sortOption, setSortOption,
+        images,
+        setImages,
+        filters,
+        setFilters,
+        sortOption,
+        setSortOption,
         // Removed deleted store properties
-        clearAllFilters
+        clearAllFilters,
     } = useSearchStore();
 
-    const privacyMaskKeywords = React.useMemo(() => (
-        getEffectiveMaskedKeywords(settings)
-            .map(keyword => keyword.trim().toLowerCase())
-            .filter(Boolean)
-            .sort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getEffectiveMaskedKeywords reads only promptMaskingEnabled and maskedKeywords, both listed
-    ), [settings.maskedKeywords, settings.promptMaskingEnabled]);
+    const privacyMaskKeywords = React.useMemo(
+        () =>
+            getEffectiveMaskedKeywords(settings)
+                .map((keyword) => keyword.trim().toLowerCase())
+                .filter(Boolean)
+                .sort(),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- getEffectiveMaskedKeywords reads only promptMaskingEnabled and maskedKeywords, both listed
+        [settings.maskedKeywords, settings.promptMaskingEnabled]
+    );
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
     const privacyQueryScopeKey = `${privacyEnabled ? 'enabled' : 'disabled'}\u001e${settings.maskingMode}\u001e${privacyMaskKey}`;
     const [lastSyncedPrivacyScope, setLastSyncedPrivacyScope] = useState<string | null>(null);
     const requiresPrivacyMaskIndex = privacyEnabled && !isBrowserMockMode();
-    const invokeQueriesAdmitted = useInvokeOwnerScopeStore(
-        state => isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
+    const invokeQueriesAdmitted = useInvokeOwnerScopeStore((state) =>
+        isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
     );
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
     const [sourceKindHydrated, setSourceKindHydrated] = useState(false);
     const sourceKindHydrationTargetRef = useRef<{ sourceKind: ImageKindFilter; mediaType: MediaTypeFilter } | null>(null);
 
-    const setSortOptionDispatch = useCallback((value: React.SetStateAction<SortOption>) => {
-        const nextSortOption = typeof value === 'function'
-            ? value(sortOption)
-            : value;
-        setSortOption(nextSortOption);
-    }, [setSortOption, sortOption]);
+    const setSortOptionDispatch = useCallback(
+        (value: React.SetStateAction<SortOption>) => {
+            const nextSortOption = typeof value === 'function' ? value(sortOption) : value;
+            setSortOption(nextSortOption);
+        },
+        [setSortOption, sortOption]
+    );
 
     React.useLayoutEffect(() => {
         if (!requiresPrivacyMaskIndex) {
@@ -184,13 +185,17 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const result = await measureStartupPhase('privacy', () => unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords)));
                 if (cancelled) return;
 
-                console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
+                console.info(
+                    `[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`
+                );
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
                     await clearAllCollectionThumbnailCaches();
                     await measureStartupPhase('facets', () => rebuildThumbnailFacetCache());
                     if (cancelled) return;
-                    console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
+                    console.info(
+                        `[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`
+                    );
                     useLibraryStore.getState().incrementFacetCacheVersion();
                     await Promise.all([
                         queryClient.invalidateQueries({ queryKey: ['images'] }),
@@ -231,22 +236,31 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const sourceKind = getEffectiveImageKind({ mediaType, sourceKind: settings.librarySourceKind });
         const currentSourceKind = normalizeImageKindFilter(filters.sourceKind);
         const currentMediaType = normalizeMediaTypeFilter(filters.mediaType, currentSourceKind);
-        sourceKindHydrationTargetRef.current = currentSourceKind === sourceKind && currentMediaType === mediaType
-            ? null : { sourceKind, mediaType };
+        sourceKindHydrationTargetRef.current =
+            currentSourceKind === sourceKind && currentMediaType === mediaType ? null : { sourceKind, mediaType };
         if (sourceKindHydrationTargetRef.current) {
-            setFilters(previous => ({ ...previous, sourceKind, mediaType }));
+            setFilters((previous) => ({ ...previous, sourceKind, mediaType }));
         }
         setSourceKindHydrated(true);
-    }, [filters.mediaType, filters.sourceKind, setFilters, settings.libraryMediaType, settings.librarySourceKind, settingsLoaded, sourceKindHydrated]);
+    }, [
+        filters.mediaType,
+        filters.sourceKind,
+        setFilters,
+        settings.libraryMediaType,
+        settings.librarySourceKind,
+        settingsLoaded,
+        sourceKindHydrated,
+    ]);
 
-    const databaseQueriesEnabled = settingsLoaded
-        && sourceKindHydrated
-        && (!sourceKindHydrationTargetRef.current
-            || (normalizeImageKindFilter(filters.sourceKind) === sourceKindHydrationTargetRef.current.sourceKind
-                && normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === sourceKindHydrationTargetRef.current.mediaType))
-        && collectionsLoaded
-        && invokeQueriesAdmitted
-        && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
+    const databaseQueriesEnabled =
+        settingsLoaded &&
+        sourceKindHydrated &&
+        (!sourceKindHydrationTargetRef.current ||
+            (normalizeImageKindFilter(filters.sourceKind) === sourceKindHydrationTargetRef.current.sourceKind &&
+                normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === sourceKindHydrationTargetRef.current.mediaType)) &&
+        collectionsLoaded &&
+        invokeQueriesAdmitted &&
+        (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
 
     React.useEffect(() => {
         if (invokeQueriesAdmitted) return;
@@ -258,10 +272,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             queryClient.cancelQueries({ queryKey: ['parameterRanges'] }),
         ]);
     }, [invokeQueriesAdmitted, queryClient]);
-    const allCollections = React.useMemo(
-        () => [...collections, ...smartCollections],
-        [collections, smartCollections]
-    );
+    const allCollections = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
 
     // React Query
     const {
@@ -273,31 +284,28 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isLoading: isQueryLoading,
         isPlaceholderData,
         status: imagesQueryStatus,
-        queryKey: imagesQueryKey
+        queryKey: imagesQueryKey,
     } = useImagesQuery({
         filters,
         sortOption,
         settings,
         privacyEnabled,
         allCollections,
-        settingsLoaded: databaseQueriesEnabled
+        settingsLoaded: databaseQueriesEnabled,
     });
-    const privacyScopeTransitionBlocked = privacyEnabled
-        && lastSyncedPrivacyScope !== privacyQueryScopeKey;
-    const privacyIndexBlocked = requiresPrivacyMaskIndex
-        && (!settingsLoaded || privacyMaskIndexStatus !== 'ready');
-    const privacyExposureBlocked = !invokeQueriesAdmitted
-        || privacyIndexBlocked
-        || privacyScopeTransitionBlocked;
+    const privacyScopeTransitionBlocked = privacyEnabled && lastSyncedPrivacyScope !== privacyQueryScopeKey;
+    const privacyIndexBlocked = requiresPrivacyMaskIndex && (!settingsLoaded || privacyMaskIndexStatus !== 'ready');
+    const privacyExposureBlocked = !invokeQueriesAdmitted || privacyIndexBlocked || privacyScopeTransitionBlocked;
     const isFirstPageFetching = isFetching && !isFetchingNextPage;
     const librarySafetyScope = JSON.stringify([imagesQueryKey[imagesQueryKey.length - 1], privacyQueryScopeKey]);
     const [preparedLibrarySafetyScope, setPreparedLibrarySafetyScope] = useState<string | null>(null);
-    const hasCurrentSafePage = databaseQueriesEnabled
-        && !privacyExposureBlocked
-        && imagesQueryStatus === 'success'
-        && Boolean(queryData?.pages.length)
-        && !isPlaceholderData
-        && !isFirstPageFetching;
+    const hasCurrentSafePage =
+        databaseQueriesEnabled &&
+        !privacyExposureBlocked &&
+        imagesQueryStatus === 'success' &&
+        Boolean(queryData?.pages.length) &&
+        !isPlaceholderData &&
+        !isFirstPageFetching;
     React.useLayoutEffect(() => {
         if (!databaseQueriesEnabled || privacyExposureBlocked) {
             setPreparedLibrarySafetyScope(null);
@@ -306,8 +314,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [databaseQueriesEnabled, hasCurrentSafePage, librarySafetyScope, privacyExposureBlocked]);
     // Ordinary searches retain admission so image requests throttle, rather than cancel, Smart repair.
-    const isLibraryReady = databaseQueriesEnabled && !privacyExposureBlocked
-        && (hasCurrentSafePage || preparedLibrarySafetyScope === librarySafetyScope);
+    const isLibraryReady =
+        databaseQueriesEnabled && !privacyExposureBlocked && (hasCurrentSafePage || preparedLibrarySafetyScope === librarySafetyScope);
     useEffect(() => {
         if (isLibraryReady) startupDiagnostics.mark('first-page');
     }, [isLibraryReady]);
@@ -315,7 +323,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Flatten pages into a single image array
     const _queryImages = React.useMemo(() => {
         if (!queryData) return [];
-        return queryData.pages.flatMap(p => p.images);
+        return queryData.pages.flatMap((p) => p.images);
     }, [queryData]);
 
     // Use query data if available, otherwise fallback to store (for transitions or overrides)
@@ -329,7 +337,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // SYNC PATTERN: When query data changes, update Store. This keeps store as "Source of Truth" for UI.
     React.useLayoutEffect(() => {
         if (queryData && !privacyIndexBlocked) {
-            const allImgs = queryData.pages.flatMap(p => p.images);
+            const allImgs = queryData.pages.flatMap((p) => p.images);
             setImages(allImgs);
             setLastSyncedPrivacyScope(privacyQueryScopeKey);
         } else if (privacyExposureBlocked) {
@@ -349,8 +357,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [filters, hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
 
-    const totalImagesCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.totalCount ?? 0;
-    const globalTotalCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.globalCount ?? 0;
+    const totalImagesCount = privacyExposureBlocked ? 0 : (queryData?.pages[0]?.totalCount ?? 0);
+    const globalTotalCount = privacyExposureBlocked ? 0 : (queryData?.pages[0]?.globalCount ?? 0);
     const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
     const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
     const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
@@ -358,25 +366,32 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
     const scopeResultCount = hasCurrentSafePage ? queryData?.pages[0]?.totalCount : undefined;
     const scopeCountsLoading = hasCurrentSafePage && (scopeQuery.isFetching || availabilityQuery.isFetching);
-    const scopeCountsError = hasCurrentSafePage && (
-        (scopeQuery.isError && !scopeQuery.isFetching) || (availabilityQuery.isError && !availabilityQuery.isFetching)
-    );
+    const scopeCountsError =
+        hasCurrentSafePage &&
+        ((scopeQuery.isError && !scopeQuery.isFetching) || (availabilityQuery.isError && !availabilityQuery.isFetching));
     const retryScopeCounts = useCallback(async () => {
         if (!hasCurrentSafePage) return;
         await Promise.all([
             scopeQuery.isError && !scopeQuery.isFetching ? scopeQuery.refetch() : undefined,
             availabilityQuery.isError && !availabilityQuery.isFetching ? availabilityQuery.refetch() : undefined,
         ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the query fields it reads; the query result objects change identity every render
-    }, [hasCurrentSafePage, scopeQuery.isError, scopeQuery.isFetching, scopeQuery.refetch,
-        availabilityQuery.isError, availabilityQuery.isFetching, availabilityQuery.refetch]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the query fields it reads; the query result objects change identity every render
+    }, [
+        hasCurrentSafePage,
+        scopeQuery.isError,
+        scopeQuery.isFetching,
+        scopeQuery.refetch,
+        availabilityQuery.isError,
+        availabilityQuery.isFetching,
+        availabilityQuery.refetch,
+    ]);
 
     // Stats & Facets Query
     const {
         data: statsData,
         isFacetsFetching,
         isStatsSummaryLoading,
-        isKeywordStatsLoading
+        isKeywordStatsLoading,
     } = useLibraryStatsQuery({
         filters,
         settings,
@@ -385,11 +400,26 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         settingsLoaded: databaseQueriesEnabled,
         assetScope,
         validFacetsEnabled: facetDrilldownActive,
-        keywordStatsEnabled
+        keywordStatsEnabled,
     });
 
-    const activeFacets = !privacyExposureBlocked && statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
-    const activeStats = !privacyExposureBlocked && statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
+    const activeFacets = (!privacyExposureBlocked && statsData?.facets) || {
+        checkpoints: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        tools: [],
+        controlNets: [],
+        ipAdapters: [],
+    };
+    const activeStats = (!privacyExposureBlocked && statsData?.stats) || {
+        totalImages: 0,
+        totalGenerations: 0,
+        avgSteps: 0,
+        estSizeMB: '0',
+        modelStats: [],
+        keywordStats: [],
+    };
     const activeValidNames = !privacyExposureBlocked && facetDrilldownActive ? statsData?.validNames || null : null;
 
     // We still need 'activeSqlWhere' for stats compatibility
@@ -414,22 +444,23 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
 
-    const refreshMetadata = useCallback(async (scope: MetadataRefreshScope = 'full') => {
-        const refreshTasks: Promise<unknown>[] = [
-            queryClient.invalidateQueries({ queryKey: ['images'] })
-        ];
+    const refreshMetadata = useCallback(
+        async (scope: MetadataRefreshScope = 'full') => {
+            const refreshTasks: Promise<unknown>[] = [queryClient.invalidateQueries({ queryKey: ['images'] })];
 
-        if (scope === 'full') {
-            refreshTasks.push(
-                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-                refreshCollections(false, {
-                    consistency: 'authoritative',
-                })
-            );
-        }
+            if (scope === 'full') {
+                refreshTasks.push(
+                    queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                    refreshCollections(false, {
+                        consistency: 'authoritative',
+                    })
+                );
+            }
 
-        await Promise.all(refreshTasks);
-    }, [queryClient, refreshCollections]);
+            await Promise.all(refreshTasks);
+        },
+        [queryClient, refreshCollections]
+    );
 
     const refreshCollectionsAfterImageFlagChange = useCallback(() => {
         void refreshCollections(true);
@@ -441,54 +472,65 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             collectionIds: [activeCollectionId],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
     }, [refreshCollections, refreshSmartCounts]);
 
-    const toggleFavorite = useCallback(async (id: string) => {
-        const imgs = useSearchStore.getState().images;
-        const img = imgs.find(i => i.id === id);
-        if (!img) return;
-        const newVal = !img.isFavorite;
+    const toggleFavorite = useCallback(
+        async (id: string) => {
+            const imgs = useSearchStore.getState().images;
+            const img = imgs.find((i) => i.id === id);
+            if (!img) return;
+            const newVal = !img.isFavorite;
 
-        try {
-            setImages(imgs.map(i => i.id === id ? { ...i, isFavorite: newVal } : i));
-            patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newVal });
-            await updateFavorite(id, newVal);
-            refreshCollectionsAfterImageFlagChange();
-        } catch (e) {
-            console.error("Toggle favorite failed", e);
-            setImages(imgs);
-            restoreImagesInQueryCaches(queryClient, imgs);
-        }
-    }, [queryClient, refreshCollectionsAfterImageFlagChange, setImages]);
+            try {
+                setImages(imgs.map((i) => (i.id === id ? { ...i, isFavorite: newVal } : i)));
+                patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newVal });
+                await updateFavorite(id, newVal);
+                refreshCollectionsAfterImageFlagChange();
+            } catch (e) {
+                console.error('Toggle favorite failed', e);
+                setImages(imgs);
+                restoreImagesInQueryCaches(queryClient, imgs);
+            }
+        },
+        [queryClient, refreshCollectionsAfterImageFlagChange, setImages]
+    );
 
-    const togglePin = useCallback(async (id: string, isPinned?: boolean) => {
-        const imgs = useSearchStore.getState().images;
-        const img = imgs.find(i => i.id === id);
-        if (!img) return;
-        const newVal = isPinned !== undefined ? isPinned : !img.isPinned;
-        const nextImages = applyOptimisticPinOrder(imgs, [id], newVal, filters.collectionId !== null);
+    const togglePin = useCallback(
+        async (id: string, isPinned?: boolean) => {
+            const imgs = useSearchStore.getState().images;
+            const img = imgs.find((i) => i.id === id);
+            if (!img) return;
+            const newVal = isPinned !== undefined ? isPinned : !img.isPinned;
+            const nextImages = applyOptimisticPinOrder(imgs, [id], newVal, filters.collectionId !== null);
 
-        try {
-            setImages(nextImages);
-            patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newVal }, {
-                previousOrder: imgs,
-                nextOrder: nextImages,
-                reorderQueryKey: imagesQueryKey
-            });
-            await updatePinned(id, newVal);
-            refreshCollectionsAfterImageFlagChange();
-        } catch (e) {
-            console.error("Toggle pin failed", e);
-            setImages(imgs);
-            restoreImagesInQueryCaches(queryClient, imgs, {
-                previousOrder: nextImages,
-                nextOrder: imgs,
-                reorderQueryKey: imagesQueryKey
-            });
-        }
-    }, [filters.collectionId, imagesQueryKey, queryClient, refreshCollectionsAfterImageFlagChange, setImages]);
+            try {
+                setImages(nextImages);
+                patchImageFlagsInQueryCaches(
+                    queryClient,
+                    [id],
+                    { isPinned: newVal },
+                    {
+                        previousOrder: imgs,
+                        nextOrder: nextImages,
+                        reorderQueryKey: imagesQueryKey,
+                    }
+                );
+                await updatePinned(id, newVal);
+                refreshCollectionsAfterImageFlagChange();
+            } catch (e) {
+                console.error('Toggle pin failed', e);
+                setImages(imgs);
+                restoreImagesInQueryCaches(queryClient, imgs, {
+                    previousOrder: nextImages,
+                    nextOrder: imgs,
+                    reorderQueryKey: imagesQueryKey,
+                });
+            }
+        },
+        [filters.collectionId, imagesQueryKey, queryClient, refreshCollectionsAfterImageFlagChange, setImages]
+    );
 
     // ... Missing: setRecentSearches, loadFacet, availableHiddenContent
     // Store doesn't have recentSearches yet.
@@ -511,19 +553,21 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const setRecentSearches = useCallback<React.Dispatch<React.SetStateAction<string[]>>>((mutation) => {
         recentSearchHydrationGenerationRef.current += 1;
         recentSearchesHydratedRef.current = true;
-        setRecentSearchesState(current => applyRecentSearchMutation(current, mutation));
+        setRecentSearchesState((current) => applyRecentSearchMutation(current, mutation));
 
-        void settingsPersistenceCoordinator.run(async () => {
-            const persistedState = await appRepository.update((state) => ({
-                ...state,
-                recentSearches: applyRecentSearchMutation(state.recentSearches ?? [], mutation)
-            }));
-            if (recentSearchesMountedRef.current) {
-                setRecentSearchesState([...(persistedState.recentSearches ?? [])]);
-            }
-        }).catch(error => {
-            console.error('[SearchContext] Failed to persist recent searches', error);
-        });
+        void settingsPersistenceCoordinator
+            .run(async () => {
+                const persistedState = await appRepository.update((state) => ({
+                    ...state,
+                    recentSearches: applyRecentSearchMutation(state.recentSearches ?? [], mutation),
+                }));
+                if (recentSearchesMountedRef.current) {
+                    setRecentSearchesState([...(persistedState.recentSearches ?? [])]);
+                }
+            })
+            .catch((error) => {
+                console.error('[SearchContext] Failed to persist recent searches', error);
+            });
     }, []);
 
     const refreshHiddenAvailability = useCallback(async () => {
@@ -548,14 +592,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let retryTimeout: ReturnType<typeof setTimeout> | undefined;
         let releaseRetryDelay: (() => void) | undefined;
 
-        const waitForRetry = (delayMs: number): Promise<void> => new Promise(resolve => {
-            releaseRetryDelay = resolve;
-            retryTimeout = setTimeout(() => {
-                retryTimeout = undefined;
-                releaseRetryDelay = undefined;
-                resolve();
-            }, delayMs);
-        });
+        const waitForRetry = (delayMs: number): Promise<void> =>
+            new Promise((resolve) => {
+                releaseRetryDelay = resolve;
+                retryTimeout = setTimeout(() => {
+                    retryTimeout = undefined;
+                    releaseRetryDelay = undefined;
+                    resolve();
+                }, delayMs);
+            });
 
         const loadRecentSearches = async () => {
             let retryCount = 0;
@@ -563,9 +608,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 try {
                     const hydrationGeneration = recentSearchHydrationGenerationRef.current;
                     const appState = await appRepository.load();
-                    if (cancelled
-                        || recentSearchesHydratedRef.current
-                        || hydrationGeneration !== recentSearchHydrationGenerationRef.current) return;
+                    if (
+                        cancelled ||
+                        recentSearchesHydratedRef.current ||
+                        hydrationGeneration !== recentSearchHydrationGenerationRef.current
+                    )
+                        return;
 
                     setRecentSearchesState(appState.recentSearches ?? []);
                     recentSearchesHydratedRef.current = true;
@@ -573,10 +621,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 } catch (error) {
                     if (cancelled) return;
                     console.error('[SearchContext] Failed to load persisted search state', error);
-                    const retryDelay = Math.min(
-                        RECENT_SEARCH_LOAD_RETRY_BASE_MS * (2 ** retryCount),
-                        RECENT_SEARCH_LOAD_RETRY_MAX_MS
-                    );
+                    const retryDelay = Math.min(RECENT_SEARCH_LOAD_RETRY_BASE_MS * 2 ** retryCount, RECENT_SEARCH_LOAD_RETRY_MAX_MS);
                     retryCount += 1;
                     await waitForRetry(retryDelay);
                 }
@@ -598,10 +643,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         let cancelled = false;
         void checkHiddenContentAvailability()
-            .then(availability => {
+            .then((availability) => {
                 if (!cancelled) setAvailableHiddenContent(availability);
             })
-            .catch(error => console.error('[SearchContext] Failed to load hidden-content availability', error));
+            .catch((error) => console.error('[SearchContext] Failed to load hidden-content availability', error));
 
         return () => {
             cancelled = true;
@@ -618,7 +663,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             showInvokeImageAssets: settings.libraryShowInvokeImageAssets ?? filters.showInvokeImageAssets ?? false,
         };
         viewSettingsHydrationTargetRef.current = target;
-        setFilters(prev => ({ ...prev, ...target }));
+        setFilters((prev) => ({ ...prev, ...target }));
         setViewSettingsHydrated(true);
     }, [
         filters.showGrids,
@@ -636,43 +681,73 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         if (!viewSettingsHydrated) return;
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
-        if (hydrationTarget
-            && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates
-                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
+        if (
+            hydrationTarget &&
+            (filters.showGrids !== hydrationTarget.showGrids ||
+                filters.showIntermediates !== hydrationTarget.showIntermediates ||
+                filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)
+        )
+            return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowGrids !== filters.showGrids) {
             setSettings({ libraryShowGrids: filters.showGrids });
         }
-    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowGrids, viewSettingsHydrated]);
+    }, [
+        filters.showGrids,
+        filters.showIntermediates,
+        filters.showInvokeImageAssets,
+        setSettings,
+        settings.libraryShowGrids,
+        viewSettingsHydrated,
+    ]);
 
     // 3. Persist Intermediate Toggle Change to Settings
     useEffect(() => {
         if (!viewSettingsHydrated) return;
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
-        if (hydrationTarget
-            && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates
-                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
+        if (
+            hydrationTarget &&
+            (filters.showGrids !== hydrationTarget.showGrids ||
+                filters.showIntermediates !== hydrationTarget.showIntermediates ||
+                filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)
+        )
+            return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowIntermediates !== filters.showIntermediates) {
             setSettings({ libraryShowIntermediates: filters.showIntermediates });
         }
-    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowIntermediates, viewSettingsHydrated]);
+    }, [
+        filters.showGrids,
+        filters.showIntermediates,
+        filters.showInvokeImageAssets,
+        setSettings,
+        settings.libraryShowIntermediates,
+        viewSettingsHydrated,
+    ]);
 
     // 4. Persist InvokeAI Image Asset Toggle Change to Settings
     useEffect(() => {
         if (!viewSettingsHydrated) return;
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
-        if (hydrationTarget
-            && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates
-                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
+        if (
+            hydrationTarget &&
+            (filters.showGrids !== hydrationTarget.showGrids ||
+                filters.showIntermediates !== hydrationTarget.showIntermediates ||
+                filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)
+        )
+            return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowInvokeImageAssets !== filters.showInvokeImageAssets) {
             setSettings({ libraryShowInvokeImageAssets: filters.showInvokeImageAssets });
         }
-    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowInvokeImageAssets, viewSettingsHydrated]);
+    }, [
+        filters.showGrids,
+        filters.showIntermediates,
+        filters.showInvokeImageAssets,
+        setSettings,
+        settings.libraryShowInvokeImageAssets,
+        viewSettingsHydrated,
+    ]);
 
     // Persist the top-level library scope after its saved value has hydrated.
     useEffect(() => {
@@ -684,27 +759,32 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (hydrationTarget !== null && (sourceKind !== hydrationTarget.sourceKind || mediaType !== hydrationTarget.mediaType)) return;
 
         sourceKindHydrationTargetRef.current = null;
-        if (normalizeImageKindFilter(settings.librarySourceKind) !== sourceKind
-            || normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind) !== mediaType) {
+        if (
+            normalizeImageKindFilter(settings.librarySourceKind) !== sourceKind ||
+            normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind) !== mediaType
+        ) {
             setSettings({ librarySourceKind: sourceKind, libraryMediaType: mediaType });
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getEffectiveImageKind reads only filters.mediaType and filters.sourceKind, both listed
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- getEffectiveImageKind reads only filters.mediaType and filters.sourceKind, both listed
     }, [filters.mediaType, filters.sourceKind, setSettings, settings.libraryMediaType, settings.librarySourceKind, sourceKindHydrated]);
 
     // Adapter for legacy fetchData calls
-    const fetchData = useCallback(async (isLoadMore: boolean, _isSilent: boolean = false) => {
-        if (privacyExposureBlocked) return;
-        if (isLoadMore) {
-            await fetchNextPage();
-        } else {
-            // Force refetch
-            // New count identity excludes pre-refresh responses; admission waits for the safe page.
-            useLibraryStore.getState().incrementScopeCountsVersion();
-            // Using queryClient.invalidateQueries triggers a background refetch
-            // Components using 'isFetching' will see true, but 'isLoading' stays false if data exists
-            await queryClient.invalidateQueries({ queryKey: ['images'] });
-        }
-    }, [fetchNextPage, privacyExposureBlocked, queryClient]);
+    const fetchData = useCallback(
+        async (isLoadMore: boolean, _isSilent: boolean = false) => {
+            if (privacyExposureBlocked) return;
+            if (isLoadMore) {
+                await fetchNextPage();
+            } else {
+                // Force refetch
+                // New count identity excludes pre-refresh responses; admission waits for the safe page.
+                useLibraryStore.getState().incrementScopeCountsVersion();
+                // Using queryClient.invalidateQueries triggers a background refetch
+                // Components using 'isFetching' will see true, but 'isLoading' stays false if data exists
+                await queryClient.invalidateQueries({ queryKey: ['images'] });
+            }
+        },
+        [fetchNextPage, privacyExposureBlocked, queryClient]
+    );
 
     const clearAllFiltersAndRefresh = useCallback(() => {
         clearAllFilters();
@@ -714,59 +794,58 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     }, [clearAllFilters, queryClient]);
 
-
-
     return (
-        <SearchContext.Provider value={{
-            images: privacyExposureBlocked ? [] : images,
-            imagesQueryKey,
-            setImages,
-            filters,
-            setFilters,
-            sortOption,
-            setSortOption: setSortOptionDispatch,
-            facets: activeFacets,
-            stats: activeStats,
-            totalImages: totalImagesCount,
-            globalTotal: globalTotalCount,
-            sourceKindCounts,
-            scopeCounts,
-            scopeAvailability,
-            scopeResultCount,
-            scopeCountsLoading,
-            scopeCountsError,
-            retryScopeCounts,
-            hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
-            loadMoreImages: async () => {
-                if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {
-                    await fetchNextPage();
-                }
-            },
-            clearAllFilters: clearAllFiltersAndRefresh,
-            isFiltering: !privacyIndexBlocked
-                && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
-            privacyExposureBlocked,
-            isLibraryReady,
-            activeSqlWhere,
-            activeSqlParams,
-            refreshMetadata,
-            fetchData,
-            recentSearches,
-            setRecentSearches,
-            toggleFavorite,
-            togglePin,
-            availableHiddenContent,
-            refreshHiddenAvailability,
-            isFacetsLoading: isFacetsFetching,
-            isLoadingMore: isFetchingNextPage,
-            isStatsSummaryLoading,
-            isKeywordStatsLoading,
-            validFacetNames: activeValidNames,
-            assetScope,
-            setAssetScope,
-            setFacetDrilldownActive,
-
-        }}>
+        <SearchContext.Provider
+            value={{
+                images: privacyExposureBlocked ? [] : images,
+                imagesQueryKey,
+                setImages,
+                filters,
+                setFilters,
+                sortOption,
+                setSortOption: setSortOptionDispatch,
+                facets: activeFacets,
+                stats: activeStats,
+                totalImages: totalImagesCount,
+                globalTotal: globalTotalCount,
+                sourceKindCounts,
+                scopeCounts,
+                scopeAvailability,
+                scopeResultCount,
+                scopeCountsLoading,
+                scopeCountsError,
+                retryScopeCounts,
+                hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
+                loadMoreImages: async () => {
+                    if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {
+                        await fetchNextPage();
+                    }
+                },
+                clearAllFilters: clearAllFiltersAndRefresh,
+                isFiltering:
+                    !privacyIndexBlocked && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
+                privacyExposureBlocked,
+                isLibraryReady,
+                activeSqlWhere,
+                activeSqlParams,
+                refreshMetadata,
+                fetchData,
+                recentSearches,
+                setRecentSearches,
+                toggleFavorite,
+                togglePin,
+                availableHiddenContent,
+                refreshHiddenAvailability,
+                isFacetsLoading: isFacetsFetching,
+                isLoadingMore: isFetchingNextPage,
+                isStatsSummaryLoading,
+                isKeywordStatsLoading,
+                validFacetNames: activeValidNames,
+                assetScope,
+                setAssetScope,
+                setFacetDrilldownActive,
+            }}
+        >
             {children}
         </SearchContext.Provider>
     );

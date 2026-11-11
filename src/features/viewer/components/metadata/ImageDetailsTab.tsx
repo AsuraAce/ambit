@@ -54,45 +54,56 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
 
     return (
         <div className="custom-scrollbar h-full overflow-y-auto p-5">
-            <AssetTechnicalDetails rows={[
-                { label: 'Dimensions', value: `${image.width}×${image.height}` },
-                { label: 'File type', value: extension },
-                { label: 'File size', value: formatFileSize(image.fileSize) },
-                { label: 'Modified', value: new Date(image.timestamp).toLocaleString() },
-            ]} />
+            <AssetTechnicalDetails
+                rows={[
+                    { label: 'Dimensions', value: `${image.width}×${image.height}` },
+                    { label: 'File type', value: extension },
+                    { label: 'File size', value: formatFileSize(image.fileSize) },
+                    { label: 'Modified', value: new Date(image.timestamp).toLocaleString() },
+                ]}
+            />
 
-            {onSetImageKind ? <section className="mt-6">
-                <MetadataSectionHeader title="Image kind" icon={ImageIcon} />
-                <select
-                    aria-label="Image kind"
-                    aria-describedby={kindHelpId}
-                    value={image.sourceKindOverride ?? 'automatic'}
-                    disabled={isKindSaving}
-                    onChange={event => {
-                        const value = event.target.value;
-                        if (value === 'automatic' || value === 'generated' || value === 'photograph' || value === 'other') {
-                            void saveImageKind(value === 'automatic' ? null : value);
-                        }
-                    }}
-                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
-                >
-                    <option value="automatic">Automatic ({detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})</option>
-                    <option value="generated">Generated</option>
-                    <option value="photograph">Photo</option>
-                    <option value="other">Other</option>
-                </select>
-                <p id={kindHelpId} className="mt-2 text-[11px] leading-relaxed text-gray-400">Automatic follows metadata detection. Manual choices survive rescanning.</p>
-            </section> : null}
+            {onSetImageKind ? (
+                <section className="mt-6">
+                    <MetadataSectionHeader title="Image kind" icon={ImageIcon} />
+                    <select
+                        aria-label="Image kind"
+                        aria-describedby={kindHelpId}
+                        value={image.sourceKindOverride ?? 'automatic'}
+                        disabled={isKindSaving}
+                        onChange={(event) => {
+                            const value = event.target.value;
+                            if (value === 'automatic' || value === 'generated' || value === 'photograph' || value === 'other') {
+                                void saveImageKind(value === 'automatic' ? null : value);
+                            }
+                        }}
+                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
+                    >
+                        <option value="automatic">
+                            Automatic (
+                            {detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})
+                        </option>
+                        <option value="generated">Generated</option>
+                        <option value="photograph">Photo</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <p id={kindHelpId} className="mt-2 text-[11px] leading-relaxed text-gray-400">
+                        Automatic follows metadata detection. Manual choices survive rescanning.
+                    </p>
+                </section>
+            ) : null}
 
             <section className="mt-6">
                 <MetadataSectionHeader title="Color palette" icon={Palette} />
                 {isPaletteLoading ? (
                     <div className="mt-3 flex gap-2 animate-pulse">
-                        {[1, 2, 3, 4, 5].map(item => <div key={item} className="h-10 w-10 rounded-lg bg-gray-200 dark:bg-white/5" />)}
+                        {[1, 2, 3, 4, 5].map((item) => (
+                            <div key={item} className="h-10 w-10 rounded-lg bg-gray-200 dark:bg-white/5" />
+                        ))}
                     </div>
                 ) : palette.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">
-                        {palette.map(color => (
+                        {palette.map((color) => (
                             <button
                                 type="button"
                                 aria-label={`Copy Color ${color}`}
@@ -109,13 +120,15 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                             </button>
                         ))}
                     </div>
-                ) : <p className="mt-3 text-xs italic text-zinc-500">No palette extracted</p>}
+                ) : (
+                    <p className="mt-3 text-xs italic text-zinc-500">No palette extracted</p>
+                )}
             </section>
 
             <MetadataTextAreaField
                 kind="notes"
                 value={notes}
-                onChange={event => setNotes(event.target.value)}
+                onChange={(event) => setNotes(event.target.value)}
                 onBlur={() => {
                     if (notes !== (image.notes ?? '')) onUpdateNotes?.(image.id, notes);
                 }}
@@ -123,13 +136,15 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                 className="mt-6"
             />
 
-            {onSetCollectionMembership ? <div className="mt-6">
-                <CollectionMembershipPicker
-                    assetId={image.id}
-                    collections={collections}
-                    onSetCollectionMembership={onSetCollectionMembership}
-                />
-            </div> : null}
+            {onSetCollectionMembership ? (
+                <div className="mt-6">
+                    <CollectionMembershipPicker
+                        assetId={image.id}
+                        collections={collections}
+                        onSetCollectionMembership={onSetCollectionMembership}
+                    />
+                </div>
+            ) : null}
         </div>
     );
 };

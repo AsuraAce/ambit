@@ -1,23 +1,28 @@
-
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
+import {
+    Box,
+    Workflow,
+    Search,
+    ChevronDown,
+    ChevronRight,
+    Copy,
+    Check,
+    Download,
+    Activity,
+    AlertTriangle,
+    ArrowDownToLine,
+    ArrowUpFromLine,
+} from 'lucide-react';
 import { AIImage, GeneratorTool, isVideoAsset } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
-import {
-    commands,
-    type ComfyParserDiagnosticsReport,
-    type ComfyWorkflowGraphReport
-} from '../../../bindings';
+import { commands, type ComfyParserDiagnosticsReport, type ComfyWorkflowGraphReport } from '../../../bindings';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { MetadataSectionHeader } from './metadata/MetadataSectionHeader';
-import {
-    buildComfySupportBundle,
-    buildDiagnosticsClipboardPayload
-} from './comfySupportBundle';
+import { buildComfySupportBundle, buildDiagnosticsClipboardPayload } from './comfySupportBundle';
 import {
     isWorkflowGraph,
     groupWorkflowNodes,
@@ -28,7 +33,7 @@ import {
     type WorkflowDisplayEdge,
     type WorkflowDisplayNode,
     type WorkflowInputs,
-    type WorkflowNodeConnections
+    type WorkflowNodeConnections,
 } from './workflowGraphUtils';
 
 interface WorkflowInspectorProps {
@@ -36,18 +41,21 @@ interface WorkflowInspectorProps {
     onWorkflowLoaded?: (workflowJson: string) => void;
 }
 
-const formatDiagnosticLabel = (value: string) =>
-    value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+const formatDiagnosticLabel = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
 const formatDiagnosticValue = (value: string | number | null | undefined) =>
     value === null || value === undefined || value === '' ? 'None' : String(value);
 
 const formatResourceFieldLabel = (field: string) => {
     switch (field) {
-        case 'loras': return 'LoRAs';
-        case 'control_nets': return 'ControlNets';
-        case 'ip_adapters': return 'IP-Adapters';
-        default: return formatDiagnosticLabel(field);
+        case 'loras':
+            return 'LoRAs';
+        case 'control_nets':
+            return 'ControlNets';
+        case 'ip_adapters':
+            return 'IP-Adapters';
+        default:
+            return formatDiagnosticLabel(field);
     }
 };
 
@@ -102,9 +110,7 @@ const WorkflowOutputAnchors: React.FC<{
         if (!node) return null;
 
         const isRoot = kind === 'root';
-        const label = isRoot
-            ? outputAmbiguous ? 'Root Candidate' : 'Root Sampler'
-            : 'Selected Output';
+        const label = isRoot ? (outputAmbiguous ? 'Root Candidate' : 'Root Sampler') : 'Selected Output';
         const Icon = isRoot ? Activity : ArrowDownToLine;
 
         return (
@@ -116,10 +122,15 @@ const WorkflowOutputAnchors: React.FC<{
                 title={`Open ${label.toLowerCase()} node ${nodeId}`}
                 className="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1 text-left text-[10px] transition-colors hover:border-sage-300 hover:bg-sage-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
             >
-                <Icon className={`h-3 w-3 shrink-0 ${isRoot ? 'text-harbor-600 dark:text-harbor-300' : 'text-sage-600 dark:text-sage-300'}`} />
+                <Icon
+                    className={`h-3 w-3 shrink-0 ${isRoot ? 'text-harbor-600 dark:text-harbor-300' : 'text-sage-600 dark:text-sage-300'}`}
+                />
                 <span className="min-w-0">
                     <span className="block font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</span>
-                    <span className="block max-w-44 truncate font-mono text-gray-700 dark:text-gray-200" title={`${node.title} / #${nodeId}`}>
+                    <span
+                        className="block max-w-44 truncate font-mono text-gray-700 dark:text-gray-200"
+                        title={`${node.title} / #${nodeId}`}
+                    >
                         {node.title} / #{nodeId}
                     </span>
                 </span>
@@ -139,9 +150,7 @@ const WorkflowOutputAnchors: React.FC<{
                     Multiple root samplers were found. Ambit does not treat any candidate as authoritative.
                 </div>
             ) : rootSamplerNodeIds.length === 0 ? (
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                    No sampler root was found for the selected output.
-                </div>
+                <div className="text-[10px] text-gray-500 dark:text-gray-400">No sampler root was found for the selected output.</div>
             ) : null}
         </section>
     );
@@ -158,7 +167,7 @@ const ComfyDiagnosticsPanel: React.FC<{
         chunks: Record<string, string>;
         report: ComfyParserDiagnosticsReport;
     } | null>(null);
-    const diagnostics = diagnosticsResult?.chunks === chunks ? diagnosticsResult?.report ?? null : null;
+    const diagnostics = diagnosticsResult?.chunks === chunks ? (diagnosticsResult?.report ?? null) : null;
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
@@ -186,7 +195,8 @@ const ComfyDiagnosticsPanel: React.FC<{
         setIsLoading(true);
         setError(null);
 
-        commands.inspectComfyuiMetadataChunks(chunks)
+        commands
+            .inspectComfyuiMetadataChunks(chunks)
             .then((result) => {
                 if (cancelled) return;
                 if (result.status === 'ok') {
@@ -210,15 +220,11 @@ const ComfyDiagnosticsPanel: React.FC<{
         };
     }, [chunks, chunkCount, expanded, image.id]);
 
-    const fieldSources = diagnostics
-        ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
-        : [];
+    const fieldSources = diagnostics ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b)) : [];
     const resourceSources = diagnostics?.resourceSources ?? [];
     const traversalIssues = diagnostics?.traversalIssues ?? [];
     const hasHiddenTraversalIssues = traversalIssues.length > 4;
-    const visibleTraversalIssues = showAllTraversalIssues
-        ? traversalIssues
-        : traversalIssues.slice(0, 4);
+    const visibleTraversalIssues = showAllTraversalIssues ? traversalIssues : traversalIssues.slice(0, 4);
 
     const handleCopyDiagnostics = async () => {
         const payload = buildDiagnosticsClipboardPayload(image, chunks!, diagnostics!);
@@ -232,20 +238,12 @@ const ComfyDiagnosticsPanel: React.FC<{
         setExportError(null);
 
         try {
-            const bundle = buildComfySupportBundle(
-                image,
-                chunks!,
-                diagnostics!,
-                new Date().toISOString()
-            );
+            const bundle = buildComfySupportBundle(image, chunks!, diagnostics!, new Date().toISOString());
             const contents = JSON.stringify(bundle, null, 2);
-            const [{ save }, { writeTextFile }] = await Promise.all([
-                import('@tauri-apps/plugin-dialog'),
-                import('@tauri-apps/plugin-fs')
-            ]);
+            const [{ save }, { writeTextFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')]);
             const filePath = await save({
                 filters: [{ name: 'JSON', extensions: ['json'] }],
-                defaultPath: 'ambit-comfyui-support.json'
+                defaultPath: 'ambit-comfyui-support.json',
             });
 
             if (filePath) {
@@ -262,20 +260,20 @@ const ComfyDiagnosticsPanel: React.FC<{
 
     return (
         <>
-        <div className="rounded-xl border border-ember-200 dark:border-ember-500/20 bg-ember-50/70 dark:bg-ember-500/10 p-3 text-xs">
-            <div className="flex flex-col items-stretch gap-2">
-                <button
-                    type="button"
-                    aria-expanded={expanded}
-                    onClick={() => setExpanded((current) => !current)}
-                    className="flex min-w-0 items-center gap-2 rounded-md font-bold text-ember-600 outline-none transition-colors hover:text-ember-700 focus-visible:ring-2 focus-visible:ring-ember-500/50 dark:text-ember-300 dark:hover:text-ember-200"
-                >
-                    <Activity className="h-3.5 w-3.5 shrink-0" />
-                    <span className="whitespace-nowrap">Parser Diagnostics</span>
-                    {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-                </button>
-                {expanded && diagnostics && (
-                    <div role="group" aria-label="Parser diagnostics actions" className="flex flex-wrap items-center justify-end gap-2">
+            <div className="rounded-xl border border-ember-200 dark:border-ember-500/20 bg-ember-50/70 dark:bg-ember-500/10 p-3 text-xs">
+                <div className="flex flex-col items-stretch gap-2">
+                    <button
+                        type="button"
+                        aria-expanded={expanded}
+                        onClick={() => setExpanded((current) => !current)}
+                        className="flex min-w-0 items-center gap-2 rounded-md font-bold text-ember-600 outline-none transition-colors hover:text-ember-700 focus-visible:ring-2 focus-visible:ring-ember-500/50 dark:text-ember-300 dark:hover:text-ember-200"
+                    >
+                        <Activity className="h-3.5 w-3.5 shrink-0" />
+                        <span className="whitespace-nowrap">Parser Diagnostics</span>
+                        {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                    </button>
+                    {expanded && diagnostics && (
+                        <div role="group" aria-label="Parser diagnostics actions" className="flex flex-wrap items-center justify-end gap-2">
                             <button
                                 onClick={handleCopyDiagnostics}
                                 title="Copy parser diagnostics summary"
@@ -298,248 +296,274 @@ const ComfyDiagnosticsPanel: React.FC<{
                             <span className="font-mono text-[10px] text-ember-600/70 dark:text-ember-300/70">
                                 {diagnostics.graphNodeCount} nodes
                             </span>
-                    </div>
-                )}
-            </div>
-
-            {expanded ? (
-            <>
-            {!chunks || chunkCount === 0 ? (
-                <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Raw chunks unavailable.</div>
-            ) : isLoading ? (
-                <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Loading diagnostics...</div>
-            ) : error ? (
-                <div className="mt-2 text-red-600 dark:text-red-300">Diagnostics unavailable: {error}</div>
-            ) : diagnostics ? (
-                <div className="mt-3 space-y-3 text-ember-600 dark:text-ember-300">
-                    <div className="grid grid-cols-1 gap-3">
-                        <div>
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Chunks</div>
-                            <div className="font-mono break-words">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Layers</div>
-                            <div className="font-mono break-words">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Output Selection</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
-                            <span className="rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5">
-                                {diagnostics.selectedOutputCandidateCount} output{diagnostics.selectedOutputCandidateCount === 1 ? '' : 's'} / {diagnostics.uniqueOutputRootSamplerCount} root{diagnostics.uniqueOutputRootSamplerCount === 1 ? '' : 's'}
-                            </span>
-                            {diagnostics.outputAmbiguous && (
-                                <span
-                                    title="Multiple saved-output roots were found, so no branch received strong traversal authority."
-                                    className="rounded-md border border-red-300/70 bg-red-50/80 px-1.5 py-0.5 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-                                >
-                                    Ambiguous
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Model</div>
-                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.model)}</div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Sampler</div>
-                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.sampler)}</div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Seed</div>
-                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.seed)}</div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Steps / CFG</div>
-                            <div className="font-mono break-all">{diagnostics.metadata.steps} / {diagnostics.metadata.cfg}</div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Positive Prompt</div>
-                        <div className="font-mono line-clamp-3 break-words">{formatDiagnosticValue(diagnostics.metadata.positivePrompt)}</div>
-                    </div>
-
-                    <div>
-                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Field Sources</div>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                            {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => {
-                                const sourceNodeIds = diagnostics.fieldSourceNodeIds?.[field] ?? [];
-                                return (
-                                    <div key={field} className="flex flex-wrap items-center gap-1">
-                                        <span
-                                            title={getDiagnosticLayerTitle(layer)}
-                                            className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${getDiagnosticLayerBadgeClass(layer)}`}
-                                        >
-                                            {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
-                                        </span>
-                                        {sourceNodeIds.map((nodeId) => {
-                                            const node = nodeById.get(nodeId);
-                                            return node ? (
-                                                <button
-                                                    key={nodeId}
-                                                    type="button"
-                                                    onClick={() => onFocusNode(nodeId)}
-                                                    title={`Jump to source node ${nodeId}: ${node.title}`}
-                                                    className="rounded-md border border-ember-300/70 bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-400/20 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
-                                                >
-                                                    #{nodeId}
-                                                </button>
-                                            ) : (
-                                                <span
-                                                    key={nodeId}
-                                                    title={`Source node ${nodeId} is not available in the normalized workflow graph.`}
-                                                    className="rounded-md border border-dashed border-ember-300/50 px-1.5 py-0.5 font-mono text-[10px] text-ember-600/60 dark:border-ember-400/20 dark:text-ember-300/50"
-                                                >
-                                                    #{nodeId}
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            }) : (
-                                <span className="text-ember-600/70 dark:text-ember-300/70">None</span>
-                            )}
-                        </div>
-                    </div>
-
-                    {resourceSources.length > 0 && (
-                        <div className="border-t border-ember-300/40 pt-3 dark:border-ember-400/15">
-                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Resource Sources</div>
-                            <div className="mt-1.5 space-y-1.5">
-                                {resourceSources.map((source) => (
-                                    <div
-                                        key={`${source.field}:${source.value}`}
-                                        className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]"
-                                    >
-                                        <span className="font-bold text-ember-600 dark:text-ember-300">
-                                            {formatResourceFieldLabel(source.field)}:
-                                        </span>
-                                        <span className="break-all text-ember-600 dark:text-ember-300">{source.value}</span>
-                                        <span
-                                            title={getDiagnosticLayerTitle(source.layer)}
-                                            className={`rounded-md border px-1.5 py-0.5 ${getDiagnosticLayerBadgeClass(source.layer)}`}
-                                        >
-                                            {formatDiagnosticLabel(source.layer ?? 'unknown')}
-                                        </span>
-                                        {source.nodeIds.map((nodeId) => {
-                                            const node = nodeById.get(nodeId);
-                                            return node ? (
-                                                <button
-                                                    key={nodeId}
-                                                    type="button"
-                                                    onClick={() => onFocusNode(nodeId)}
-                                                    aria-label={`Jump to ${formatResourceFieldLabel(source.field)} resource source node ${node.title} (${nodeId})`}
-                                                    title={`Jump to resource source node ${nodeId}: ${node.title}`}
-                                                    className="rounded-md border border-ember-300/70 bg-white/80 px-1.5 py-0.5 text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-400/20 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
-                                                >
-                                                    #{nodeId}
-                                                </button>
-                                            ) : (
-                                                <span
-                                                    key={nodeId}
-                                                    title={`Resource source node ${nodeId} is not available in the normalized workflow graph.`}
-                                                    className="rounded-md border border-dashed border-ember-300/50 px-1.5 py-0.5 text-ember-600/60 dark:border-ember-400/20 dark:text-ember-300/50"
-                                                >
-                                                    #{nodeId}
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
-                            </div>
                         </div>
                     )}
+                </div>
 
-                    {visibleTraversalIssues.length > 0 && (
-                        <div>
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    Traversal Blockers
-                                </div>
-                                {hasHiddenTraversalIssues && (
-                                    <button
-                                        type="button"
-                                        aria-expanded={showAllTraversalIssues}
-                                        onClick={() => setShowAllTraversalIssues((current) => !current)}
-                                        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-ember-600 transition-colors hover:bg-ember-100 dark:text-ember-300 dark:hover:bg-ember-500/10"
-                                    >
-                                        {showAllTraversalIssues ? (
-                                            <ChevronDown className="h-3 w-3" />
-                                        ) : (
-                                            <ChevronRight className="h-3 w-3" />
-                                        )}
-                                        {showAllTraversalIssues ? 'Show less' : `Show all (${traversalIssues.length})`}
-                                    </button>
-                                )}
-                            </div>
-                            <div className="mt-1 space-y-1">
-                                {visibleTraversalIssues.map((issue, index) => {
-                                    const node = nodeById.get(issue.nodeId);
-                                    return (
-                                        <div
-                                            key={`${issue.field}-${issue.nodeId}-${issue.inputName ?? ''}-${issue.reason}-${index}`}
-                                            title={getTraversalIssueTitle(issue.reason)}
-                                            className="rounded-md border border-ember-300/70 bg-ember-50/70 px-2 py-1 font-mono text-[10px] text-ember-600 dark:border-ember-400/30 dark:bg-ember-500/10 dark:text-ember-300"
-                                        >
-                                            <span className="font-bold">{formatDiagnosticLabel(issue.field)}</span>
-                                            {' at '}
-                                            {node ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onFocusNode(issue.nodeId)}
-                                                    aria-label={`Jump to traversal blocker node ${node.title} (${issue.nodeId})`}
-                                                    title={`Jump to traversal blocker node ${issue.nodeId}: ${node.title}`}
-                                                    className="rounded border border-ember-400/50 bg-white/70 px-1 py-0.5 font-mono text-[10px] font-bold text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-300/30 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
-                                                >
-                                                    #{issue.nodeId}
-                                                </button>
-                                            ) : (
-                                                <span
-                                                    title={`Traversal blocker node ${issue.nodeId} is not available in the normalized workflow graph.`}
-                                                    className="rounded border border-dashed border-ember-400/40 px-1 py-0.5 font-mono text-[10px] text-ember-600/70 dark:border-ember-300/20 dark:text-ember-300/60"
-                                                >
-                                                    #{issue.nodeId}
-                                                </span>
-                                            )}
-                                            {' '}{`(${issue.nodeType})`}
-                                            {issue.inputName ? ` / ${issue.inputName}` : ''}
-                                            {': '}{formatDiagnosticLabel(issue.reason)}
+                {expanded ? (
+                    <>
+                        {!chunks || chunkCount === 0 ? (
+                            <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Raw chunks unavailable.</div>
+                        ) : isLoading ? (
+                            <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Loading diagnostics...</div>
+                        ) : error ? (
+                            <div className="mt-2 text-red-600 dark:text-red-300">Diagnostics unavailable: {error}</div>
+                        ) : diagnostics ? (
+                            <div className="mt-3 space-y-3 text-ember-600 dark:text-ember-300">
+                                <div className="grid grid-cols-1 gap-3">
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                            Chunks
                                         </div>
-                                    );
-                                })}
-                                {diagnostics.traversalIssuesTruncated && (
-                                    <div className="text-[10px] text-ember-600/70 dark:text-ember-300/70">
-                                        Additional traversal blockers were omitted after the diagnostics limit.
+                                        <div className="font-mono break-words">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                            Layers
+                                        </div>
+                                        <div className="font-mono break-words">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                        Output Selection
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+                                        <span className="rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5">
+                                            {diagnostics.selectedOutputCandidateCount} output
+                                            {diagnostics.selectedOutputCandidateCount === 1 ? '' : 's'} /{' '}
+                                            {diagnostics.uniqueOutputRootSamplerCount} root
+                                            {diagnostics.uniqueOutputRootSamplerCount === 1 ? '' : 's'}
+                                        </span>
+                                        {diagnostics.outputAmbiguous && (
+                                            <span
+                                                title="Multiple saved-output roots were found, so no branch received strong traversal authority."
+                                                className="rounded-md border border-red-300/70 bg-red-50/80 px-1.5 py-0.5 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                                            >
+                                                Ambiguous
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                            Model
+                                        </div>
+                                        <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.model)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                            Sampler
+                                        </div>
+                                        <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.sampler)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Seed</div>
+                                        <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.seed)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                            Steps / CFG
+                                        </div>
+                                        <div className="font-mono break-all">
+                                            {diagnostics.metadata.steps} / {diagnostics.metadata.cfg}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                        Positive Prompt
+                                    </div>
+                                    <div className="font-mono line-clamp-3 break-words">
+                                        {formatDiagnosticValue(diagnostics.metadata.positivePrompt)}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                        Field Sources
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap gap-1.5">
+                                        {fieldSources.length > 0 ? (
+                                            fieldSources.map(([field, layer]) => {
+                                                const sourceNodeIds = diagnostics.fieldSourceNodeIds?.[field] ?? [];
+                                                return (
+                                                    <div key={field} className="flex flex-wrap items-center gap-1">
+                                                        <span
+                                                            title={getDiagnosticLayerTitle(layer)}
+                                                            className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${getDiagnosticLayerBadgeClass(layer)}`}
+                                                        >
+                                                            {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
+                                                        </span>
+                                                        {sourceNodeIds.map((nodeId) => {
+                                                            const node = nodeById.get(nodeId);
+                                                            return node ? (
+                                                                <button
+                                                                    key={nodeId}
+                                                                    type="button"
+                                                                    onClick={() => onFocusNode(nodeId)}
+                                                                    title={`Jump to source node ${nodeId}: ${node.title}`}
+                                                                    className="rounded-md border border-ember-300/70 bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-400/20 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
+                                                                >
+                                                                    #{nodeId}
+                                                                </button>
+                                                            ) : (
+                                                                <span
+                                                                    key={nodeId}
+                                                                    title={`Source node ${nodeId} is not available in the normalized workflow graph.`}
+                                                                    className="rounded-md border border-dashed border-ember-300/50 px-1.5 py-0.5 font-mono text-[10px] text-ember-600/60 dark:border-ember-400/20 dark:text-ember-300/50"
+                                                                >
+                                                                    #{nodeId}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <span className="text-ember-600/70 dark:text-ember-300/70">None</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {resourceSources.length > 0 && (
+                                    <div className="border-t border-ember-300/40 pt-3 dark:border-ember-400/15">
+                                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                            Resource Sources
+                                        </div>
+                                        <div className="mt-1.5 space-y-1.5">
+                                            {resourceSources.map((source) => (
+                                                <div
+                                                    key={`${source.field}:${source.value}`}
+                                                    className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]"
+                                                >
+                                                    <span className="font-bold text-ember-600 dark:text-ember-300">
+                                                        {formatResourceFieldLabel(source.field)}:
+                                                    </span>
+                                                    <span className="break-all text-ember-600 dark:text-ember-300">{source.value}</span>
+                                                    <span
+                                                        title={getDiagnosticLayerTitle(source.layer)}
+                                                        className={`rounded-md border px-1.5 py-0.5 ${getDiagnosticLayerBadgeClass(source.layer)}`}
+                                                    >
+                                                        {formatDiagnosticLabel(source.layer ?? 'unknown')}
+                                                    </span>
+                                                    {source.nodeIds.map((nodeId) => {
+                                                        const node = nodeById.get(nodeId);
+                                                        return node ? (
+                                                            <button
+                                                                key={nodeId}
+                                                                type="button"
+                                                                onClick={() => onFocusNode(nodeId)}
+                                                                aria-label={`Jump to ${formatResourceFieldLabel(source.field)} resource source node ${node.title} (${nodeId})`}
+                                                                title={`Jump to resource source node ${nodeId}: ${node.title}`}
+                                                                className="rounded-md border border-ember-300/70 bg-white/80 px-1.5 py-0.5 text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-400/20 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
+                                                            >
+                                                                #{nodeId}
+                                                            </button>
+                                                        ) : (
+                                                            <span
+                                                                key={nodeId}
+                                                                title={`Resource source node ${nodeId} is not available in the normalized workflow graph.`}
+                                                                className="rounded-md border border-dashed border-ember-300/50 px-1.5 py-0.5 text-ember-600/60 dark:border-ember-400/20 dark:text-ember-300/50"
+                                                            >
+                                                                #{nodeId}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {visibleTraversalIssues.length > 0 && (
+                                    <div>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
+                                                <AlertTriangle className="w-3 h-3" />
+                                                Traversal Blockers
+                                            </div>
+                                            {hasHiddenTraversalIssues && (
+                                                <button
+                                                    type="button"
+                                                    aria-expanded={showAllTraversalIssues}
+                                                    onClick={() => setShowAllTraversalIssues((current) => !current)}
+                                                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-ember-600 transition-colors hover:bg-ember-100 dark:text-ember-300 dark:hover:bg-ember-500/10"
+                                                >
+                                                    {showAllTraversalIssues ? (
+                                                        <ChevronDown className="h-3 w-3" />
+                                                    ) : (
+                                                        <ChevronRight className="h-3 w-3" />
+                                                    )}
+                                                    {showAllTraversalIssues ? 'Show less' : `Show all (${traversalIssues.length})`}
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="mt-1 space-y-1">
+                                            {visibleTraversalIssues.map((issue, index) => {
+                                                const node = nodeById.get(issue.nodeId);
+                                                return (
+                                                    <div
+                                                        key={`${issue.field}-${issue.nodeId}-${issue.inputName ?? ''}-${issue.reason}-${index}`}
+                                                        title={getTraversalIssueTitle(issue.reason)}
+                                                        className="rounded-md border border-ember-300/70 bg-ember-50/70 px-2 py-1 font-mono text-[10px] text-ember-600 dark:border-ember-400/30 dark:bg-ember-500/10 dark:text-ember-300"
+                                                    >
+                                                        <span className="font-bold">{formatDiagnosticLabel(issue.field)}</span>
+                                                        {' at '}
+                                                        {node ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onFocusNode(issue.nodeId)}
+                                                                aria-label={`Jump to traversal blocker node ${node.title} (${issue.nodeId})`}
+                                                                title={`Jump to traversal blocker node ${issue.nodeId}: ${node.title}`}
+                                                                className="rounded border border-ember-400/50 bg-white/70 px-1 py-0.5 font-mono text-[10px] font-bold text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-300/30 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
+                                                            >
+                                                                #{issue.nodeId}
+                                                            </button>
+                                                        ) : (
+                                                            <span
+                                                                title={`Traversal blocker node ${issue.nodeId} is not available in the normalized workflow graph.`}
+                                                                className="rounded border border-dashed border-ember-400/40 px-1 py-0.5 font-mono text-[10px] text-ember-600/70 dark:border-ember-300/20 dark:text-ember-300/60"
+                                                            >
+                                                                #{issue.nodeId}
+                                                            </span>
+                                                        )}{' '}
+                                                        {`(${issue.nodeType})`}
+                                                        {issue.inputName ? ` / ${issue.inputName}` : ''}
+                                                        {': '}
+                                                        {formatDiagnosticLabel(issue.reason)}
+                                                    </div>
+                                                );
+                                            })}
+                                            {diagnostics.traversalIssuesTruncated && (
+                                                <div className="text-[10px] text-ember-600/70 dark:text-ember-300/70">
+                                                    Additional traversal blockers were omitted after the diagnostics limit.
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
-                        </div>
-                    )}
-                </div>
-            ) : null}
-            {exportError && (
-                <div className="mt-2 text-red-600 dark:text-red-300">
-                    Support bundle export failed: {exportError}
-                </div>
-            )}
-            </>
-            ) : null}
-        </div>
-        <ConfirmDialog
-            isOpen={isExportConfirmOpen}
-            title="Export ComfyUI support bundle?"
-            message="This local JSON file includes the image's raw metadata chunks. It may contain prompts, model names, workflow settings, and local filenames. Ambit will not upload it."
-            confirmLabel="Export Bundle"
-            isLoading={isExporting}
-            onConfirm={handleExportDiagnostics}
-            onCancel={() => setIsExportConfirmOpen(false)}
-        />
+                        ) : null}
+                        {exportError && (
+                            <div className="mt-2 text-red-600 dark:text-red-300">Support bundle export failed: {exportError}</div>
+                        )}
+                    </>
+                ) : null}
+            </div>
+            <ConfirmDialog
+                isOpen={isExportConfirmOpen}
+                title="Export ComfyUI support bundle?"
+                message="This local JSON file includes the image's raw metadata chunks. It may contain prompts, model names, workflow settings, and local filenames. Ambit will not upload it."
+                confirmLabel="Export Bundle"
+                isLoading={isExporting}
+                onConfirm={handleExportDiagnostics}
+                onCancel={() => setIsExportConfirmOpen(false)}
+            />
         </>
     );
 };
@@ -557,7 +581,20 @@ const WorkflowNode: React.FC<{
     isFocused: boolean;
     focusRequestId: number | null;
     onFollowConnection: (nodeId: string) => void;
-}> = ({ id, title, type, inputs, connections, nodeById, isSelectedOutput, isRootSampler, outputAmbiguous, isFocused, focusRequestId, onFollowConnection }) => {
+}> = ({
+    id,
+    title,
+    type,
+    inputs,
+    connections,
+    nodeById,
+    isSelectedOutput,
+    isRootSampler,
+    outputAmbiguous,
+    isFocused,
+    focusRequestId,
+    onFollowConnection,
+}) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const hasInputs = Object.keys(inputs).length > 0;
     const hasConnections = connections.incoming.length > 0 || connections.outgoing.length > 0;
@@ -571,9 +608,8 @@ const WorkflowNode: React.FC<{
         const connectedNodeId = direction === 'incoming' ? edge.sourceNodeId : edge.targetNodeId;
         const connectedNode = nodeById.get(connectedNodeId);
         const connectedTitle = connectedNode?.title ?? `Node ${connectedNodeId}`;
-        const sourceSlot = edge.sourceOutputSlot === null || edge.sourceOutputSlot === undefined
-            ? 'output'
-            : `output ${edge.sourceOutputSlot}`;
+        const sourceSlot =
+            edge.sourceOutputSlot === null || edge.sourceOutputSlot === undefined ? 'output' : `output ${edge.sourceOutputSlot}`;
         const endpoint = `${sourceSlot} -> ${edge.targetInputName}`;
         const Icon = direction === 'incoming' ? ArrowDownToLine : ArrowUpFromLine;
 
@@ -588,9 +624,7 @@ const WorkflowNode: React.FC<{
             >
                 <Icon className="mt-0.5 h-3 w-3 shrink-0 text-sage-600 dark:text-sage-300" />
                 <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[11px] font-semibold text-gray-700 dark:text-gray-200">
-                        {connectedTitle}
-                    </span>
+                    <span className="block truncate text-[11px] font-semibold text-gray-700 dark:text-gray-200">{connectedTitle}</span>
                     <span className="block truncate font-mono text-[9px] text-gray-400" title={`${endpoint} / node ${connectedNodeId}`}>
                         {endpoint} / #{connectedNodeId}
                     </span>
@@ -615,13 +649,12 @@ const WorkflowNode: React.FC<{
             >
                 <Box className={`w-3.5 h-3.5 shrink-0 ${isExpanded ? 'text-sage-500' : 'text-gray-400'}`} />
                 <div className="flex-1 min-w-0">
-                    <div className="font-bold text-gray-800 dark:text-gray-200 truncate" title={title}>{title}</div>
+                    <div className="font-bold text-gray-800 dark:text-gray-200 truncate" title={title}>
+                        {title}
+                    </div>
                     <div className="flex min-w-0 items-center gap-1 text-[10px] text-gray-400 font-mono">
                         <span className="truncate">{type}</span>
-                        <span
-                            className="max-w-[45%] truncate text-gray-300 dark:text-gray-600"
-                            title={`Node ${id}`}
-                        >
+                        <span className="max-w-[45%] truncate text-gray-300 dark:text-gray-600" title={`Node ${id}`}>
                             #{id}
                         </span>
                     </div>
@@ -633,7 +666,9 @@ const WorkflowNode: React.FC<{
                                 </span>
                             )}
                             {isRootSampler && (
-                                <span className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${outputAmbiguous ? 'border-ember-300 bg-ember-50 text-ember-600 dark:border-ember-700 dark:bg-ember-900/20 dark:text-ember-300' : 'border-harbor-300 bg-harbor-50 text-harbor-600 dark:border-harbor-700 dark:bg-harbor-900/20 dark:text-harbor-300'}`}>
+                                <span
+                                    className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${outputAmbiguous ? 'border-ember-300 bg-ember-50 text-ember-600 dark:border-ember-700 dark:bg-ember-900/20 dark:text-ember-300' : 'border-harbor-300 bg-harbor-50 text-harbor-600 dark:border-harbor-700 dark:bg-harbor-900/20 dark:text-harbor-300'}`}
+                                >
                                     {outputAmbiguous ? 'Root Candidate' : 'Root Sampler'}
                                 </span>
                             )}
@@ -658,9 +693,17 @@ const WorkflowNode: React.FC<{
                                 }
 
                                 return (
-                                    <div key={key} className="flex justify-between items-start gap-2 text-xs group py-1 border-b border-gray-100/50 dark:border-white/5 last:border-0">
-                                        <span className="text-gray-500 dark:text-gray-400 truncate shrink-0 max-w-[40%] select-none">{key}:</span>
-                                        <span className="text-gray-700 dark:text-gray-300 font-mono break-all text-right line-clamp-4 hover:line-clamp-none transition-all cursor-text select-text" title={String(val)}>
+                                    <div
+                                        key={key}
+                                        className="flex justify-between items-start gap-2 text-xs group py-1 border-b border-gray-100/50 dark:border-white/5 last:border-0"
+                                    >
+                                        <span className="text-gray-500 dark:text-gray-400 truncate shrink-0 max-w-[40%] select-none">
+                                            {key}:
+                                        </span>
+                                        <span
+                                            className="text-gray-700 dark:text-gray-300 font-mono break-all text-right line-clamp-4 hover:line-clamp-none transition-all cursor-text select-text"
+                                            title={String(val)}
+                                        >
                                             {String(val)}
                                         </span>
                                     </div>
@@ -672,18 +715,14 @@ const WorkflowNode: React.FC<{
                     {connections.incoming.length > 0 && (
                         <section aria-label={`Incoming connections for node ${id}`}>
                             <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-400">Incoming</div>
-                            <div className="space-y-1">
-                                {connections.incoming.map((edge) => renderConnection(edge, 'incoming'))}
-                            </div>
+                            <div className="space-y-1">{connections.incoming.map((edge) => renderConnection(edge, 'incoming'))}</div>
                         </section>
                     )}
 
                     {connections.outgoing.length > 0 && (
                         <section aria-label={`Outgoing connections for node ${id}`}>
                             <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-400">Outgoing</div>
-                            <div className="space-y-1">
-                                {connections.outgoing.map((edge) => renderConnection(edge, 'outgoing'))}
-                            </div>
+                            <div className="space-y-1">{connections.outgoing.map((edge) => renderConnection(edge, 'outgoing'))}</div>
                         </section>
                     )}
                 </div>
@@ -703,7 +742,18 @@ const WorkflowNodeSection: React.FC<{
     focusedNodeId: string | null;
     focusRequestId: number | null;
     onFollowConnection: (nodeId: string) => void;
-}> = ({ path, nodes, connectionIndex, nodeById, selectedOutputNodeIdSet, rootSamplerNodeIdSet, outputAmbiguous, focusedNodeId, focusRequestId, onFollowConnection }) => {
+}> = ({
+    path,
+    nodes,
+    connectionIndex,
+    nodeById,
+    selectedOutputNodeIdSet,
+    rootSamplerNodeIdSet,
+    outputAmbiguous,
+    focusedNodeId,
+    focusRequestId,
+    onFollowConnection,
+}) => {
     const nodeList = (
         <div className="space-y-2">
             {nodes.map((node) => (
@@ -760,31 +810,37 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
     const isDeveloperMode = useSettingsStore((state) => state.settings.devMode === true);
-    const showParserDiagnostics = !isVideoAsset(image)
-        && isDeveloperMode
-        && image.metadata.tool === GeneratorTool.COMFYUI;
+    const showParserDiagnostics = !isVideoAsset(image) && isDeveloperMode && image.metadata.tool === GeneratorTool.COMFYUI;
     const originalWorkflow = image.originalChunks?.workflow;
     const originalPrompt = image.originalChunks?.prompt;
-    const originalChunks = useMemo(() => ({
-        ...(originalWorkflow ? { workflow: originalWorkflow } : {}),
-        ...(originalPrompt ? { prompt: originalPrompt } : {})
-    }), [originalWorkflow, originalPrompt]);
+    const originalChunks = useMemo(
+        () => ({
+            ...(originalWorkflow ? { workflow: originalWorkflow } : {}),
+            ...(originalPrompt ? { prompt: originalPrompt } : {}),
+        }),
+        [originalWorkflow, originalPrompt]
+    );
     const workflowJsonForActions = selectWorkflowJsonForActions({
         localWorkflowJson: localWorkflow,
         workflowJson: image.metadata.workflowJson,
-        originalChunks
+        originalChunks,
     });
-    const fallbackWorkflowGraphSource = useMemo(() => selectWorkflowGraphSource({
-        tool: image.metadata.tool,
-        localWorkflowJson: localWorkflow,
-        workflowJson: image.metadata.workflowJson,
-        originalChunks
-    }), [image.metadata.tool, image.metadata.workflowJson, localWorkflow, originalChunks]);
+    const fallbackWorkflowGraphSource = useMemo(
+        () =>
+            selectWorkflowGraphSource({
+                tool: image.metadata.tool,
+                localWorkflowJson: localWorkflow,
+                workflowJson: image.metadata.workflowJson,
+                originalChunks,
+            }),
+        [image.metadata.tool, image.metadata.workflowJson, localWorkflow, originalChunks]
+    );
     const backendGraphSource = useMemo(
-        () => workflowGraphSourceFromBackend(
-            backendWorkflowGraph?.chunks === originalChunks ? backendWorkflowGraph.report : null,
-            originalChunks
-        ),
+        () =>
+            workflowGraphSourceFromBackend(
+                backendWorkflowGraph?.chunks === originalChunks ? backendWorkflowGraph.report : null,
+                originalChunks
+            ),
         [backendWorkflowGraph, originalChunks]
     );
     const workflowGraphSource = backendGraphSource ?? fallbackWorkflowGraphSource;
@@ -792,14 +848,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const workflowNodes = workflowGraphSource?.nodes ?? [];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const workflowEdges = workflowGraphSource?.edges ?? [];
-    const nodeById = useMemo(
-        () => new Map(workflowNodes.map((node) => [String(node.id), node])),
-        [workflowNodes]
-    );
-    const connectionIndex = useMemo(
-        () => indexWorkflowConnections(workflowNodes, workflowEdges),
-        [workflowEdges, workflowNodes]
-    );
+    const nodeById = useMemo(() => new Map(workflowNodes.map((node) => [String(node.id), node])), [workflowNodes]);
+    const connectionIndex = useMemo(() => indexWorkflowConnections(workflowNodes, workflowEdges), [workflowEdges, workflowNodes]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const selectedOutputNodeIds = workflowGraphSource?.selectedOutputNodeIds ?? [];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
@@ -819,42 +869,37 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         () => selectedBranchNodeIds.filter((nodeId) => nodeById.has(nodeId)),
         [nodeById, selectedBranchNodeIds]
     );
-    const selectedOutputNodeIdSet = useMemo(
-        () => new Set(visibleSelectedOutputNodeIds),
-        [visibleSelectedOutputNodeIds]
-    );
-    const rootSamplerNodeIdSet = useMemo(
-        () => new Set(visibleRootSamplerNodeIds),
-        [visibleRootSamplerNodeIds]
-    );
-    const selectedBranchNodeIdSet = useMemo(
-        () => new Set(visibleSelectedBranchNodeIds),
-        [visibleSelectedBranchNodeIds]
-    );
-    const selectedBranchAvailable = workflowGraphSource?.normalizedByBackend === true
-        && !outputAmbiguous
-        && visibleRootSamplerNodeIds.length === 1
-        && visibleSelectedBranchNodeIds.length > 0;
+    const selectedOutputNodeIdSet = useMemo(() => new Set(visibleSelectedOutputNodeIds), [visibleSelectedOutputNodeIds]);
+    const rootSamplerNodeIdSet = useMemo(() => new Set(visibleRootSamplerNodeIds), [visibleRootSamplerNodeIds]);
+    const selectedBranchNodeIdSet = useMemo(() => new Set(visibleSelectedBranchNodeIds), [visibleSelectedBranchNodeIds]);
+    const selectedBranchAvailable =
+        workflowGraphSource?.normalizedByBackend === true &&
+        !outputAmbiguous &&
+        visibleRootSamplerNodeIds.length === 1 &&
+        visibleSelectedBranchNodeIds.length > 0;
     const selectedBranchUnavailableTitle = outputAmbiguous
         ? 'Unavailable because selected outputs resolve to different root samplers.'
         : visibleSelectedOutputNodeIds.length === 0
-            ? 'Unavailable because no saved output was selected.'
-            : visibleRootSamplerNodeIds.length === 0
-                ? 'Unavailable because no root sampler was found.'
-                : workflowGraphSource?.normalizedByBackend !== true
-                    ? 'Unavailable without a normalized ComfyUI graph.'
-                    : 'Unavailable because the selected dependency branch could not be resolved.';
+          ? 'Unavailable because no saved output was selected.'
+          : visibleRootSamplerNodeIds.length === 0
+            ? 'Unavailable because no root sampler was found.'
+            : workflowGraphSource?.normalizedByBackend !== true
+              ? 'Unavailable without a normalized ComfyUI graph.'
+              : 'Unavailable because the selected dependency branch could not be resolved.';
 
-    const handleFollowConnection = React.useCallback((nodeId: string) => {
-        if (nodeMode === 'selected' && !selectedBranchNodeIdSet.has(nodeId)) {
-            setNodeMode('all');
-        }
-        setSearchQuery('');
-        setFocusedConnection((current) => ({
-            nodeId,
-            requestId: (current?.requestId ?? 0) + 1
-        }));
-    }, [nodeMode, selectedBranchNodeIdSet]);
+    const handleFollowConnection = React.useCallback(
+        (nodeId: string) => {
+            if (nodeMode === 'selected' && !selectedBranchNodeIdSet.has(nodeId)) {
+                setNodeMode('all');
+            }
+            setSearchQuery('');
+            setFocusedConnection((current) => ({
+                nodeId,
+                requestId: (current?.requestId ?? 0) + 1,
+            }));
+        },
+        [nodeMode, selectedBranchNodeIdSet]
+    );
 
     React.useEffect(() => {
         setFocusedConnection(null);
@@ -876,12 +921,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         let cancelled = false;
         setBackendWorkflowGraph(null);
 
-        commands.inspectComfyuiWorkflowGraph(originalChunks)
+        commands
+            .inspectComfyuiWorkflowGraph(originalChunks)
             .then((result) => {
                 if (cancelled) return;
-                setBackendWorkflowGraph(result.status === 'ok'
-                    ? { chunks: originalChunks, report: result.data }
-                    : null);
+                setBackendWorkflowGraph(result.status === 'ok' ? { chunks: originalChunks, report: result.data } : null);
             })
             .catch(() => {
                 if (!cancelled) setBackendWorkflowGraph(null);
@@ -914,7 +958,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
 
                     const isValidWorkflow = result && isWorkflowGraph(result);
 
-                    console.log('[Workflow] Scan result:', isValidWorkflow ? 'Found VALID workflow' : 'No valid graph found', result?.substring(0, 100));
+                    console.log(
+                        '[Workflow] Scan result:',
+                        isValidWorkflow ? 'Found VALID workflow' : 'No valid graph found',
+                        result?.substring(0, 100)
+                    );
 
                     if (isValidWorkflow) {
                         setLocalWorkflow(result);
@@ -933,7 +981,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             };
             void loadWorkflow(); // catches and logs its own failures
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on image.id and the workflow fields; a new image object or parent callback must not restart the load
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on image.id and the workflow fields; a new image object or parent callback must not restart the load
     }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading, workflowJsonForActions]);
 
     // Sync local state if prop changes OR if image changes
@@ -942,7 +990,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(workflowJsonForActions!).catch(error => console.error('[Clipboard] Copy failed', error));
+        navigator.clipboard.writeText(workflowJsonForActions!).catch((error) => console.error('[Clipboard] Copy failed', error));
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -952,13 +1000,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
 
         try {
             // Generate a sensible filename: name_workflow.json
-            const baseName = image.filename.replace(/\.[^/.]+$/, "");
+            const baseName = image.filename.replace(/\.[^/.]+$/, '');
             const defaultPath = `${baseName}_workflow.json`;
 
             const { save } = await import('@tauri-apps/plugin-dialog');
             const filePath = await save({
                 filters: [{ name: 'JSON', extensions: ['json'] }],
-                defaultPath
+                defaultPath,
             });
 
             if (filePath) {
@@ -972,19 +1020,21 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     };
 
     const modeNodes = useMemo(
-        () => nodeMode === 'selected' && selectedBranchAvailable
-            ? workflowNodes.filter((node) => selectedBranchNodeIdSet.has(String(node.id)))
-            : workflowNodes,
+        () =>
+            nodeMode === 'selected' && selectedBranchAvailable
+                ? workflowNodes.filter((node) => selectedBranchNodeIdSet.has(String(node.id)))
+                : workflowNodes,
         [nodeMode, selectedBranchAvailable, selectedBranchNodeIdSet, workflowNodes]
     );
     const filteredNodes = useMemo(() => {
         if (!searchQuery) return modeNodes;
         const lowerQ = searchQuery.toLowerCase();
-        return modeNodes.filter(node =>
-            node.title.toLowerCase().includes(lowerQ) ||
-            node.type.toLowerCase().includes(lowerQ) ||
-            String(node.id).toLowerCase().includes(lowerQ) ||
-            node.subgraphPath?.some(segment => segment.toLowerCase().includes(lowerQ))
+        return modeNodes.filter(
+            (node) =>
+                node.title.toLowerCase().includes(lowerQ) ||
+                node.type.toLowerCase().includes(lowerQ) ||
+                String(node.id).toLowerCase().includes(lowerQ) ||
+                node.subgraphPath?.some((segment) => segment.toLowerCase().includes(lowerQ))
         );
     }, [modeNodes, searchQuery]);
     const filteredNodeGroups = useMemo(() => groupWorkflowNodes(filteredNodes), [filteredNodes]);
@@ -999,57 +1049,63 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, [filteredNodes, focusedConnection, searchQuery]);
 
-    const graphSourceLabel = image.metadata.tool === GeneratorTool.COMFYUI && workflowGraphSource
-        ? workflowGraphSource.source === 'prompt'
-            ? 'API Prompt'
-            : workflowGraphSource.normalizedByBackend
-                ? 'Expanded Workflow'
-                : 'Workflow'
-        : null;
+    const graphSourceLabel =
+        image.metadata.tool === GeneratorTool.COMFYUI && workflowGraphSource
+            ? workflowGraphSource.source === 'prompt'
+                ? 'API Prompt'
+                : workflowGraphSource.normalizedByBackend
+                  ? 'Expanded Workflow'
+                  : 'Workflow'
+            : null;
 
     return (
         <div className="flex flex-col h-full overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
-
             {/* Header & Search */}
             <div className="p-6 pb-2 shrink-0 space-y-4">
                 <MetadataSectionHeader
                     title="Node Graph"
                     icon={Workflow}
-                    trailing={<>
-                        <div className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-mono text-[10px] text-gray-400 dark:bg-white/5">
-                            {nodeMode === 'selected' ? `${modeNodes.length}/${workflowNodes.length}` : workflowNodes.length}
-                        </div>
-                        {graphSourceLabel && (
-                            <div className="rounded-full border border-sage-200 bg-sage-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-600 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300">
-                                {graphSourceLabel}
+                    trailing={
+                        <>
+                            <div className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-mono text-[10px] text-gray-400 dark:bg-white/5">
+                                {nodeMode === 'selected' ? `${modeNodes.length}/${workflowNodes.length}` : workflowNodes.length}
                             </div>
-                        )}
-                        {workflowJsonForActions ? (
-                        <div className="flex shrink-0 items-center gap-1">
-                            <TooltipButton
-                                onClick={handleCopy}
-                                label={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
-                                content={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
-                                title="Copy to clipboard"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sage-200 bg-sage-50 text-sage-600 transition-colors hover:bg-sage-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300 dark:hover:bg-sage-900/40"
-                            >
-                                {copied ? <Check aria-hidden="true" className="h-4 w-4" /> : <Copy aria-hidden="true" className="h-4 w-4" />}
-                            </TooltipButton>
-                            <TooltipButton
-                                onClick={handleDownload}
-                                label="Download workflow JSON"
-                                content="Download workflow JSON"
-                                title="Download JSON file"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-600 transition-colors hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-zinc-800 dark:bg-zinc-900/20 dark:text-zinc-400 dark:hover:bg-zinc-900/40"
-                            >
-                                <Download aria-hidden="true" className="h-4 w-4" />
-                            </TooltipButton>
-                            <span role="status" aria-live="polite" className="sr-only">
-                                {copied ? 'Copied workflow JSON' : ''}
-                            </span>
-                        </div>
-                        ) : null}
-                    </>}
+                            {graphSourceLabel && (
+                                <div className="rounded-full border border-sage-200 bg-sage-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-600 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300">
+                                    {graphSourceLabel}
+                                </div>
+                            )}
+                            {workflowJsonForActions ? (
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <TooltipButton
+                                        onClick={handleCopy}
+                                        label={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
+                                        content={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
+                                        title="Copy to clipboard"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sage-200 bg-sage-50 text-sage-600 transition-colors hover:bg-sage-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300 dark:hover:bg-sage-900/40"
+                                    >
+                                        {copied ? (
+                                            <Check aria-hidden="true" className="h-4 w-4" />
+                                        ) : (
+                                            <Copy aria-hidden="true" className="h-4 w-4" />
+                                        )}
+                                    </TooltipButton>
+                                    <TooltipButton
+                                        onClick={handleDownload}
+                                        label="Download workflow JSON"
+                                        content="Download workflow JSON"
+                                        title="Download JSON file"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-600 transition-colors hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-zinc-800 dark:bg-zinc-900/20 dark:text-zinc-400 dark:hover:bg-zinc-900/40"
+                                    >
+                                        <Download aria-hidden="true" className="h-4 w-4" />
+                                    </TooltipButton>
+                                    <span role="status" aria-live="polite" className="sr-only">
+                                        {copied ? 'Copied workflow JSON' : ''}
+                                    </span>
+                                </div>
+                            ) : null}
+                        </>
+                    }
                 />
 
                 {image.metadata.tool === GeneratorTool.COMFYUI && workflowNodes.length > 0 && (
@@ -1062,9 +1118,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                             type="button"
                             aria-pressed={nodeMode === 'all'}
                             onClick={() => setNodeMode('all')}
-                            className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${nodeMode === 'all'
-                                ? 'bg-white text-gray-800 shadow-sm dark:bg-zinc-700 dark:text-gray-100'
-                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                            className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                                nodeMode === 'all'
+                                    ? 'bg-white text-gray-800 shadow-sm dark:bg-zinc-700 dark:text-gray-100'
+                                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                            }`}
                         >
                             All Nodes
                         </button>
@@ -1072,13 +1130,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                             type="button"
                             aria-pressed={nodeMode === 'selected'}
                             disabled={!selectedBranchAvailable}
-                            title={selectedBranchAvailable ? 'Show the parser-selected saved-output dependency branch.' : selectedBranchUnavailableTitle}
+                            title={
+                                selectedBranchAvailable
+                                    ? 'Show the parser-selected saved-output dependency branch.'
+                                    : selectedBranchUnavailableTitle
+                            }
                             onClick={() => setNodeMode('selected')}
-                            className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${nodeMode === 'selected'
-                                ? 'bg-sage-600 text-white shadow-sm dark:bg-sage-500 dark:text-zinc-950'
-                                : selectedBranchAvailable
-                                    ? 'text-gray-500 hover:text-sage-600 dark:text-gray-400 dark:hover:text-sage-300'
-                                    : 'cursor-not-allowed text-gray-300 dark:text-gray-600'}`}
+                            className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                                nodeMode === 'selected'
+                                    ? 'bg-sage-600 text-white shadow-sm dark:bg-sage-500 dark:text-zinc-950'
+                                    : selectedBranchAvailable
+                                      ? 'text-gray-500 hover:text-sage-600 dark:text-gray-400 dark:hover:text-sage-300'
+                                      : 'cursor-not-allowed text-gray-300 dark:text-gray-600'
+                            }`}
                         >
                             Selected Branch
                         </button>
@@ -1105,7 +1169,6 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     nodeById={nodeById}
                     onFocusNode={handleFollowConnection}
                 />
-
             </div>
 
             {/* Node List */}
@@ -1146,15 +1209,15 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                 <div className="max-w-md mx-auto px-4">
                                     <Workflow className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2 opacity-50" />
                                     <p className="text-xs text-gray-400 mb-4 text-balance">
-                                        {isLoading ? "Reading workflow data from file headers..." :
-                                            !workflowJsonForActions
-                                                ? (image.metadata.hasWorkflowHint === false
-                                                    ? "This image was generated without a recorded workflow."
-                                                    : "No workflow data was found for this image in the database or file headers.")
-                                                : image.metadata.tool === GeneratorTool.INVOKEAI
-                                                    ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
-                                                    : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
-                                        }
+                                        {isLoading
+                                            ? 'Reading workflow data from file headers...'
+                                            : !workflowJsonForActions
+                                              ? image.metadata.hasWorkflowHint === false
+                                                  ? 'This image was generated without a recorded workflow.'
+                                                  : 'No workflow data was found for this image in the database or file headers.'
+                                              : image.metadata.tool === GeneratorTool.INVOKEAI
+                                                ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
+                                                : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."}
                                     </p>
                                     {workflowJsonForActions && (
                                         <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 text-left overflow-hidden">

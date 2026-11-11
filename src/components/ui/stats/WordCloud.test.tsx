@@ -5,11 +5,16 @@ import { WordCloud } from './WordCloud';
 describe('WordCloud', () => {
     it('normalizes distinct keyword counts and forwards selection', () => {
         const onWordClick = vi.fn();
-        render(<WordCloud
-            keywords={[{ text: 'portrait', value: 2 }, { text: 'landscape', value: 8 }]}
-            onWordClick={onWordClick}
-            totalImages={1234}
-        />);
+        render(
+            <WordCloud
+                keywords={[
+                    { text: 'portrait', value: 2 },
+                    { text: 'landscape', value: 8 },
+                ]}
+                onWordClick={onWordClick}
+                totalImages={1234}
+            />
+        );
 
         const portrait = screen.getByRole('button', { name: 'portrait' });
         const landscape = screen.getByRole('button', { name: 'landscape' });

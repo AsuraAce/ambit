@@ -21,8 +21,8 @@ const createImage = (id: string, width = 512, height = 512): AIImage => ({
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: '',
-        negativePrompt: ''
-    }
+        negativePrompt: '',
+    },
 });
 
 const handlers = {
@@ -31,7 +31,7 @@ const handlers = {
     onMouseMove: vi.fn(),
     onMouseUp: vi.fn(),
     onMouseLeave: vi.fn(),
-    onDoubleClick: vi.fn()
+    onDoubleClick: vi.fn(),
 };
 
 describe('viewer keyboard controls', () => {
@@ -75,7 +75,7 @@ describe('viewer keyboard controls', () => {
 
     it.each([
         ['Enter', 'Previous Image (Left Arrow)', 'previous'],
-        [' ', 'Next Image (Right Arrow)', 'next']
+        [' ', 'Next Image (Right Arrow)', 'next'],
     ])('keeps %s navigation activation on the local %s control', (key, accessibleName, direction) => {
         const onPrev = vi.fn();
         const onNext = vi.fn();

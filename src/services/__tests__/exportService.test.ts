@@ -61,12 +61,14 @@ describe('exportImagesToZip', () => {
         const zip = await writtenZip();
         expect(await zip.file('photo.png')?.async('uint8array')).toEqual(new Uint8Array([1, 2, 3]));
         expect(JSON.parse(await zip.file('metadata/photo.png.json')!.async('string'))).toEqual(image().metadata);
-        expect(JSON.parse(await zip.file('manifest.json')!.async('string'))).toEqual([{
-            filename: 'photo.png',
-            mediaType: 'image',
-            metadata: image().metadata,
-            notes: 'keeper',
-        }]);
+        expect(JSON.parse(await zip.file('manifest.json')!.async('string'))).toEqual([
+            {
+                filename: 'photo.png',
+                mediaType: 'image',
+                metadata: image().metadata,
+                notes: 'keeper',
+            },
+        ]);
     });
 
     it('archives original video bytes alongside images', async () => {
@@ -97,8 +99,8 @@ describe('exportImagesToZip', () => {
                 durationMs: 2500,
                 videoCodec: 'h264',
                 audioPresent: true,
-                playbackStatus: 'playable'
-            }
+                playbackStatus: 'playable',
+            },
         });
     });
 
@@ -108,17 +110,19 @@ describe('exportImagesToZip', () => {
         const reads = Array.from({ length: 6 }, () => new Promise<FileBytes>((resolve) => resolvers.push(resolve)));
         let readIndex = 0;
         mockedReadFile.mockImplementation(() => reads[readIndex++]);
-        const items = Array.from({ length: 6 }, (_, index) => image({
-            id: `C:/library/item-${index}.mp4`,
-            filename: `item-${index}.mp4`,
-            mediaType: 'video'
-        }));
+        const items = Array.from({ length: 6 }, (_, index) =>
+            image({
+                id: `C:/library/item-${index}.mp4`,
+                filename: `item-${index}.mp4`,
+                mediaType: 'video',
+            })
+        );
 
         const exportPromise = exportImagesToZip(items, 'C:/exports', 'bounded');
         await vi.waitFor(() => expect(mockedReadFile).toHaveBeenCalledTimes(4));
-        resolvers.slice(0, 4).forEach(resolve => resolve(new Uint8Array([1])));
+        resolvers.slice(0, 4).forEach((resolve) => resolve(new Uint8Array([1])));
         await vi.waitFor(() => expect(mockedReadFile).toHaveBeenCalledTimes(6));
-        resolvers.slice(4).forEach(resolve => resolve(new Uint8Array([2])));
+        resolvers.slice(4).forEach((resolve) => resolve(new Uint8Array([2])));
 
         await exportPromise;
     });
@@ -130,7 +134,10 @@ describe('exportImagesToZip', () => {
             image({ id: 'data', url: 'data:image/png;base64,AQ==', filename: 'c.png' }),
         ];
         mockedReadFile.mockRejectedValue(new Error('not a local file'));
-        vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => new Blob(['remote']) })));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({ blob: async () => new Blob(['remote']) }))
+        );
 
         await exportImagesToZip(images, 'C:/exports', 'remote.zip');
 
@@ -146,10 +153,14 @@ describe('exportImagesToZip', () => {
         mockedReadFile.mockRejectedValue(new Error('read denied'));
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
 
-        await exportImagesToZip([
-            image({ id: 'C:/missing.png', url: 'asset://C:/missing.png', filename: 'local.png' }),
-            image({ id: 'remote', url: 'https://example.test/missing.png', filename: 'remote.png' }),
-        ], 'C:/exports', 'errors');
+        await exportImagesToZip(
+            [
+                image({ id: 'C:/missing.png', url: 'asset://C:/missing.png', filename: 'local.png' }),
+                image({ id: 'remote', url: 'https://example.test/missing.png', filename: 'remote.png' }),
+            ],
+            'C:/exports',
+            'errors'
+        );
 
         const zip = await writtenZip();
         expect(await zip.file('local.png.error.txt')!.async('string')).toBe('Failed to read local file: C:/missing.png');

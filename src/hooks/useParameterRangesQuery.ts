@@ -11,10 +11,7 @@ import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
-import {
-    isInvokeOwnerScopeAdmitted,
-    useInvokeOwnerScopeStore,
-} from '../stores/invokeOwnerScopeStore';
+import { isInvokeOwnerScopeAdmitted, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 import { getInvokeOwnerQueryScopeKey, previousQueryMatchesInvokeScope } from '../utils/invokeOwnerQueryScope';
 
 const EMPTY_PARAMETER_RANGES: ParameterRanges = {
@@ -31,7 +28,7 @@ const EMPTY_PARAMETER_RANGES: ParameterRanges = {
 /**
  * Hook to fetch parameter ranges for dynamic filter UI.
  * Returns min/max for numeric parameters and distinct values for categorical ones.
- * 
+ *
  * DISJUNCTIVE: Samplers and Generation Types exclude their OWN filter from the query
  *              to prevent self-filtering while still respecting global filters.
  * GLOBAL: Steps and CFG ranges remain global (ignoring filters) for UI stability.
@@ -40,15 +37,15 @@ export function useParameterRangesQuery(filters: FilterState) {
     const { settings, privacyEnabled } = useSettings();
     const { collections: allCollections } = useCollections();
     const browserMockMode = isBrowserMockMode();
-    const invokeQueriesAdmitted = useInvokeOwnerScopeStore(
-        state => isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
+    const invokeQueriesAdmitted = useInvokeOwnerScopeStore((state) =>
+        isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
     );
-    const invokeOwnerScopeKey = useInvokeOwnerScopeStore(
-        state => getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
+    const invokeOwnerScopeKey = useInvokeOwnerScopeStore((state) =>
+        getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
     );
-    const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
+    const privacyMaskIndexStatus = useSettingsStore((state) => state.privacyMaskIndexStatus);
     const privacyBlocked = privacyEnabled && !browserMockMode && privacyMaskIndexStatus !== 'ready';
-    const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
+    const facetCacheVersion = useLibraryStore((state) => state.facetCacheVersion);
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
     const searchQueryKey = sideQueryFilters.searchQuery.trim();
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
@@ -72,25 +69,24 @@ export function useParameterRangesQuery(filters: FilterState) {
             settings.maskingMode,
             effectiveMaskedKeywords,
             privacyEnabled,
-            invokeOwnerScopeKey
+            invokeOwnerScopeKey,
         ],
         queryFn: async () => {
             if (browserMockMode) {
-                const images = getBrowserMockImages().filter(image =>
-                    sideQueryFilters.showInvokeImageAssets
-                    || !isKnownInvokeImageAsset(image.invokeImageCategory)
+                const images = getBrowserMockImages().filter(
+                    (image) => sideQueryFilters.showInvokeImageAssets || !isKnownInvokeImageAsset(image.invokeImageCategory)
                 );
-                const steps = images.map(image => image.metadata.steps);
-                const cfg = images.map(image => image.metadata.cfg);
+                const steps = images.map((image) => image.metadata.steps);
+                const cfg = images.map((image) => image.metadata.cfg);
                 return {
                     steps: { min: Math.min(...steps), max: Math.max(...steps) },
                     cfg: { min: Math.min(...cfg), max: Math.max(...cfg) },
                     denoisingStrength: null,
-                    samplers: Array.from(new Set(images.map(image => image.metadata.sampler))),
-                    generationTypes: Array.from(new Set(images.map(image => image.metadata.generationType ?? 'unknown'))),
-                    controlNets: Array.from(new Set(images.flatMap(image => image.metadata.controlNets ?? []))),
-                    ipAdapters: Array.from(new Set(images.flatMap(image => image.metadata.ipAdapters ?? []))),
-                    guidanceSubtypes: {}
+                    samplers: Array.from(new Set(images.map((image) => image.metadata.sampler))),
+                    generationTypes: Array.from(new Set(images.map((image) => image.metadata.generationType ?? 'unknown'))),
+                    controlNets: Array.from(new Set(images.flatMap((image) => image.metadata.controlNets ?? []))),
+                    ipAdapters: Array.from(new Set(images.flatMap((image) => image.metadata.ipAdapters ?? []))),
+                    guidanceSubtypes: {},
                 };
             }
 
@@ -107,12 +103,7 @@ export function useParameterRangesQuery(filters: FilterState) {
                 ['samplers', 'generationTypes', 'controlNets', 'ipAdapters'] // Exclude these from WHERE clause
             );
 
-            const result = await commands.getParameterRanges(
-                where,
-                JSON.stringify(params),
-                collectionId ?? null,
-                loraName ?? null
-            );
+            const result = await commands.getParameterRanges(where, JSON.stringify(params), collectionId ?? null, loraName ?? null);
 
             if (result.status === 'error') {
                 throw new Error(result.error);
@@ -121,15 +112,10 @@ export function useParameterRangesQuery(filters: FilterState) {
         },
         enabled: invokeQueriesAdmitted && !privacyBlocked,
         staleTime: 5 * 60 * 1000, // 5 minutes
-        gcTime: 30 * 60 * 1000,   // 30 minutes cache
-        placeholderData: (previousData, previousQuery) => (
-            previousQueryMatchesInvokeScope(previousQuery?.queryKey, invokeOwnerScopeKey)
-                ? previousData
-                : undefined
-        ),
+        gcTime: 30 * 60 * 1000, // 30 minutes cache
+        placeholderData: (previousData, previousQuery) =>
+            previousQueryMatchesInvokeScope(previousQuery?.queryKey, invokeOwnerScopeKey) ? previousData : undefined,
     });
 
-    return privacyBlocked || !invokeQueriesAdmitted
-        ? { ...query, data: EMPTY_PARAMETER_RANGES }
-        : query;
+    return privacyBlocked || !invokeQueriesAdmitted ? { ...query, data: EMPTY_PARAMETER_RANGES } : query;
 }

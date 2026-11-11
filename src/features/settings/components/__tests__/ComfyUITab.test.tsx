@@ -7,7 +7,7 @@ import { ComfyUITab } from '../ComfyUITab';
 const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
     open: vi.fn(),
-    normalizePath: vi.fn((path: string) => path.replace(/\\/g, '/'))
+    normalizePath: vi.fn((path: string) => path.replace(/\\/g, '/')),
 }));
 
 vi.mock('../../../../hooks/useToast', () => ({
@@ -18,8 +18,8 @@ vi.mock('../../../../hooks/useToast', () => ({
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('../../../../utils/pathUtils', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../../../../utils/pathUtils')>(),
-    normalizePath: mocks.normalizePath
+    ...(await importOriginal<typeof import('../../../../utils/pathUtils')>()),
+    normalizePath: mocks.normalizePath,
 }));
 
 const settings: AppSettings = {
@@ -73,14 +73,16 @@ describe('ComfyUITab', () => {
 
     it('recognizes an already monitored folder after slash normalization', () => {
         const setSettings = vi.fn();
-        render(<ComfyUITab
-            settings={{
-                ...settings,
-                comfyUiPath: 'D:\\ComfyUI\\output',
-                monitoredFolders: [{ id: 'existing', path: 'D:/ComfyUI/output', isActive: true, imageCount: 0 }]
-            }}
-            setSettings={setSettings}
-        />);
+        render(
+            <ComfyUITab
+                settings={{
+                    ...settings,
+                    comfyUiPath: 'D:\\ComfyUI\\output',
+                    monitoredFolders: [{ id: 'existing', path: 'D:/ComfyUI/output', isActive: true, imageCount: 0 }],
+                }}
+                setSettings={setSettings}
+            />
+        );
 
         fireEvent.click(screen.getByRole('button', { name: /link output folder/i }));
 
@@ -99,20 +101,24 @@ describe('ComfyUITab', () => {
         fireEvent.click(screen.getByRole('button', { name: /link output folder/i }));
 
         const update = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
-        expect(update(settings).monitoredFolders).toEqual([{
-            id: 'comfyui_123',
-            path: 'D:/ComfyUI/output',
-            isActive: true,
-            imageCount: 0,
-            variant: 'ComfyUI'
-        }]);
+        expect(update(settings).monitoredFolders).toEqual([
+            {
+                id: 'comfyui_123',
+                path: 'D:/ComfyUI/output',
+                isActive: true,
+                imageCount: 0,
+                variant: 'ComfyUI',
+            },
+        ]);
         expect(screen.getByText(/successfully linked/i)).not.toBeNull();
         expect(mocks.addToast).toHaveBeenCalledWith('Successfully linked ComfyUI output folder', 'success');
         vi.restoreAllMocks();
     });
 
     it('reports a failed link when settings persistence throws', () => {
-        const setSettings = vi.fn(() => { throw new Error('persistence failed'); });
+        const setSettings = vi.fn(() => {
+            throw new Error('persistence failed');
+        });
         render(<ComfyUITab settings={settings} setSettings={setSettings} />);
 
         fireEvent.click(screen.getByRole('button', { name: /link output folder/i }));
@@ -132,7 +138,7 @@ describe('ComfyUITab', () => {
         expect(mocks.open).toHaveBeenCalledWith({
             directory: true,
             multiple: false,
-            title: 'Select ComfyUI Output Folder'
+            title: 'Select ComfyUI Output Folder',
         });
         const update = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         expect(update(settings).comfyUiPath).toBe('E:/ComfyUI/output');

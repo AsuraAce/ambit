@@ -22,11 +22,7 @@ const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Da
 
 const summarizeDuration = (startedAt: number) => Math.round(nowMs() - startedAt);
 
-export const describeDbQueryReason = (
-    whereClause: string | undefined,
-    collectionId?: string,
-    loraName?: string
-): string => {
+export const describeDbQueryReason = (whereClause: string | undefined, collectionId?: string, loraName?: string): string => {
     const where = whereClause || '';
     const reasons: string[] = [];
 
@@ -41,11 +37,7 @@ export const describeDbQueryReason = (
     return reasons.length > 0 ? reasons.join('+') : 'default';
 };
 
-export const timeDbCall = async <T>(
-    label: string,
-    reason: string,
-    fn: () => Promise<T>
-): Promise<T> => {
+export const timeDbCall = async <T>(label: string, reason: string, fn: () => Promise<T>): Promise<T> => {
     const startedAt = nowMs();
 
     try {

@@ -131,14 +131,7 @@ describe('ApiKeyInput', () => {
         });
         expect(screen.getByRole('group', { name: 'Environment key' })).not.toBeNull();
 
-        render(
-            <ApiKeyInput
-                {...envProps}
-                isEnvKey={false}
-                label="Manual key"
-                onTestEnvKey={undefined}
-            />
-        );
+        render(<ApiKeyInput {...envProps} isEnvKey={false} label="Manual key" onTestEnvKey={undefined} />);
         expect(screen.getByLabelText('Manual key')).not.toBeNull();
     });
 });

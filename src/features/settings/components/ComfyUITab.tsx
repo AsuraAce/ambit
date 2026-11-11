@@ -18,11 +18,11 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
         const comfyUiPath = settings.comfyUiPath!;
         // Check if already linked
         const normalizedPath = comfyUiPath.replace(/\\/g, '/');
-        const exists = settings.monitoredFolders.some(f => f.path.replace(/\\/g, '/') === normalizedPath);
+        const exists = settings.monitoredFolders.some((f) => f.path.replace(/\\/g, '/') === normalizedPath);
 
         if (exists) {
-            setTestResult({ success: true, message: "Folder is already being monitored!" });
-            addToast("Folder is already being monitored", "info");
+            setTestResult({ success: true, message: 'Folder is already being monitored!' });
+            addToast('Folder is already being monitored', 'info');
             return;
         }
 
@@ -37,26 +37,25 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 path: comfyUiPath,
                 isActive: true,
                 imageCount: 0, // Will be updated by scanner
-                variant: GeneratorTool.COMFYUI
+                variant: GeneratorTool.COMFYUI,
             };
 
-            setSettings(prev => ({
+            setSettings((prev) => ({
                 ...prev,
-                monitoredFolders: [...prev.monitoredFolders, newFolder]
+                monitoredFolders: [...prev.monitoredFolders, newFolder],
             }));
 
-            setTestResult({ success: true, message: "Successfully linked ComfyUI output folder!" });
-            addToast("Successfully linked ComfyUI output folder", "success");
+            setTestResult({ success: true, message: 'Successfully linked ComfyUI output folder!' });
+            addToast('Successfully linked ComfyUI output folder', 'success');
         } catch (e) {
             console.error(e);
-            setTestResult({ success: false, message: "Failed to link folder." });
-            addToast("Failed to link folder", "error");
+            setTestResult({ success: false, message: 'Failed to link folder.' });
+            addToast('Failed to link folder', 'error');
         }
     };
 
     return (
         <div className="space-y-8 max-w-3xl">
-
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="mb-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-300">
                     <Workflow className="w-4 h-4" /> Output Configuration
@@ -73,7 +72,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     <input
                                         type="text"
                                         value={settings.comfyUiPath || ''}
-                                        onChange={(e) => setSettings(prev => ({ ...prev, comfyUiPath: e.target.value }))}
+                                        onChange={(e) => setSettings((prev) => ({ ...prev, comfyUiPath: e.target.value }))}
                                         placeholder="e.g. C:\\ComfyUI\\output"
                                         className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
                                     />
@@ -85,12 +84,18 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     onClick={async () => {
                                         try {
                                             const { open } = await import('@tauri-apps/plugin-dialog');
-                                            const selected = await open({ directory: true, multiple: false, title: 'Select ComfyUI Output Folder' });
+                                            const selected = await open({
+                                                directory: true,
+                                                multiple: false,
+                                                title: 'Select ComfyUI Output Folder',
+                                            });
                                             if (selected && typeof selected === 'string') {
                                                 const { normalizePath } = await import('../../../utils/pathUtils');
-                                                setSettings(prev => ({ ...prev, comfyUiPath: normalizePath(selected) }));
+                                                setSettings((prev) => ({ ...prev, comfyUiPath: normalizePath(selected) }));
                                             }
-                                        } catch (e) { console.error(e); }
+                                        } catch (e) {
+                                            console.error(e);
+                                        }
                                     }}
                                     className="aspect-square h-[42px] flex items-center justify-center bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all"
                                 >
@@ -108,20 +113,24 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                             <button
                                 onClick={handleLinkFolder}
                                 disabled={!settings.comfyUiPath}
-                                className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.comfyUiPath
-                                    ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                                    : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
-                                    }`}
+                                className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${
+                                    !settings.comfyUiPath
+                                        ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
+                                        : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
+                                }`}
                             >
                                 <Plus className="w-4 h-4" />
                                 Link Output Folder
                             </button>
 
                             {testResult && (
-                                <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in duration-150 motion-reduce:animate-none ${testResult.success
-                                    ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
-                                    : 'bg-red-500/10 text-red-600 dark:text-red-300'
-                                    }`}>
+                                <div
+                                    className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in duration-150 motion-reduce:animate-none ${
+                                        testResult.success
+                                            ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
+                                            : 'bg-red-500/10 text-red-600 dark:text-red-300'
+                                    }`}
+                                >
                                     {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                                     {testResult.message}
                                 </div>

@@ -4,9 +4,15 @@ import { createStartupDiagnosticBridge } from '../startupDiagnostics';
 import type { StartupRepairDecision } from '../../bindings';
 
 const decision: StartupRepairDecision = {
-    decision: 'full-repair', scope: 'all', forcedRefresh: false, snapshot: 'missing',
-    savedFingerprint: 'unavailable', currentFingerprint: 'supported',
-    countComparison: 'unavailable', timestampComparison: 'unavailable', fingerprintCurrent: false,
+    decision: 'full-repair',
+    scope: 'all',
+    forcedRefresh: false,
+    snapshot: 'missing',
+    savedFingerprint: 'unavailable',
+    currentFingerprint: 'supported',
+    countComparison: 'unavailable',
+    timestampComparison: 'unavailable',
+    fingerprintCurrent: false,
 };
 
 describe('startup repair aggregate evidence', () => {
@@ -34,7 +40,10 @@ describe('startup repair aggregate evidence', () => {
         expect(stage).toHaveBeenCalledTimes(1);
         expect(report).toHaveBeenCalledTimes(1);
         expect(report.mock.calls[0][0]).toMatchObject({
-            durationMs: 20, unattributedMs: 6, status: 'completed', counters: { identityRows: 1000 },
+            durationMs: 20,
+            unattributedMs: 6,
+            status: 'completed',
+            counters: { identityRows: 1000 },
             metrics: expect.arrayContaining([
                 { operation: 'identity-paths', calls: 2, totalMs: 14, maxMs: 10 },
                 { operation: 'filesystem-enumeration', calls: 1, totalMs: 5, maxMs: 5 },
@@ -46,23 +55,45 @@ describe('startup repair aggregate evidence', () => {
     it('retains the interrupted operation and contains diagnostic sink/clock errors', () => {
         let now = 0;
         const report = vi.fn();
-        const collector = createStartupRepairCollector({ now: () => now, report, stage: () => { throw Error('private'); } });
+        const collector = createStartupRepairCollector({
+            now: () => now,
+            report,
+            stage: () => {
+                throw Error('private');
+            },
+        });
         collector.stage('facts');
         collector.start('fact-write');
         now = 17;
         collector.finish('cancelled');
-        expect(report.mock.calls[0][0]).toMatchObject({ status: 'cancelled', durationMs: 17,
-            metrics: expect.arrayContaining([{ operation: 'fact-write', calls: 1, totalMs: 17, maxMs: 17 }]) });
-        const unavailable = createStartupRepairCollector({
-            now: () => { throw Error('clock'); }, report: () => { throw Error('disk'); }, stage: () => undefined,
+        expect(report.mock.calls[0][0]).toMatchObject({
+            status: 'cancelled',
+            durationMs: 17,
+            metrics: expect.arrayContaining([{ operation: 'fact-write', calls: 1, totalMs: 17, maxMs: 17 }]),
         });
-        expect(() => { unavailable.start('setup')(); unavailable.finish('failed'); }).not.toThrow();
+        const unavailable = createStartupRepairCollector({
+            now: () => {
+                throw Error('clock');
+            },
+            report: () => {
+                throw Error('disk');
+            },
+            stage: () => undefined,
+        });
+        expect(() => {
+            unavailable.start('setup')();
+            unavailable.finish('failed');
+        }).not.toThrow();
     });
 
     it('reserves one decision and repair across preconnect saturation and readiness', async () => {
         const send = vi.fn();
-        const bridge = createStartupDiagnosticBridge({ now: () => 0, send,
-            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }), maxBufferedEvents: 1 });
+        const bridge = createStartupDiagnosticBridge({
+            now: () => 0,
+            send,
+            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }),
+            maxBufferedEvents: 1,
+        });
         bridge.mark('facets');
         bridge.repairDecision(decision);
         bridge.repairDecision({ ...decision, decision: 'unchanged' });
@@ -80,8 +111,11 @@ describe('startup repair aggregate evidence', () => {
 
     it('does not duplicate a repair sent by a launch subscriber and contains transport rejection', async () => {
         const send = vi.fn(() => Promise.reject(Error('private transport')));
-        const bridge = createStartupDiagnosticBridge({ now: () => 0, send,
-            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }) });
+        const bridge = createStartupDiagnosticBridge({
+            now: () => 0,
+            send,
+            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }),
+        });
         bridge.subscribe(() => bridge.repairDecision(decision));
         await bridge.connect();
         expect(send).toHaveBeenCalledTimes(1);
@@ -91,8 +125,11 @@ describe('startup repair aggregate evidence', () => {
     });
 
     it('does not claim runtime repair after startup failure, or fabricate timing after clock failure', () => {
-        const bridge = createStartupDiagnosticBridge({ now: () => 0, send: vi.fn(),
-            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }) });
+        const bridge = createStartupDiagnosticBridge({
+            now: () => 0,
+            send: vi.fn(),
+            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }),
+        });
         bridge.fail('startup-failure', 'render-error');
         expect(bridge.claimRepair()).toBeUndefined();
         const report = vi.fn();

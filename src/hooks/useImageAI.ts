@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { AiThinkingMode } from '../types';
@@ -7,99 +6,99 @@ import type { AiThinkingMode } from '../types';
  * Parses a Gemini API error into a user-friendly message.
  */
 function parseGeminiError(error: unknown): string {
-  const msg = error instanceof Error ? error.message : String(error);
-  const lowerMsg = msg.toLowerCase();
+    const msg = error instanceof Error ? error.message : String(error);
+    const lowerMsg = msg.toLowerCase();
 
-  if (lowerMsg.includes('quota') || lowerMsg.includes('resource exhausted') || lowerMsg.includes('429')) {
-    return 'AI quota exceeded. Please try again later.';
-  }
-  if (lowerMsg.includes('rate') || lowerMsg.includes('too many requests')) {
-    return 'Too many requests. Please wait a moment.';
-  }
-  if (lowerMsg.includes('no api key') || lowerMsg.includes('missing')) {
-    return 'API key is missing. Add it in Settings > Experiments.';
-  }
-  if (lowerMsg.includes('api key') || lowerMsg.includes('invalid') || lowerMsg.includes('401') || lowerMsg.includes('403')) {
-    return 'Invalid API key. Check your settings.';
-  }
-  if (lowerMsg.includes('network') || lowerMsg.includes('fetch')) {
-    return 'Network error. Check your connection.';
-  }
+    if (lowerMsg.includes('quota') || lowerMsg.includes('resource exhausted') || lowerMsg.includes('429')) {
+        return 'AI quota exceeded. Please try again later.';
+    }
+    if (lowerMsg.includes('rate') || lowerMsg.includes('too many requests')) {
+        return 'Too many requests. Please wait a moment.';
+    }
+    if (lowerMsg.includes('no api key') || lowerMsg.includes('missing')) {
+        return 'API key is missing. Add it in Settings > Experiments.';
+    }
+    if (lowerMsg.includes('api key') || lowerMsg.includes('invalid') || lowerMsg.includes('401') || lowerMsg.includes('403')) {
+        return 'Invalid API key. Check your settings.';
+    }
+    if (lowerMsg.includes('network') || lowerMsg.includes('fetch')) {
+        return 'Network error. Check your connection.';
+    }
 
-  return 'AI request failed. Please try again.';
+    return 'AI request failed. Please try again.';
 }
 
 interface UseImageAIOptions {
-  aiModel?: string;
-  aiThinkingMode?: AiThinkingMode;
-  enableAI?: boolean;
-  prompts?: Record<string, string>; // New: System prompt overrides
-  onError?: (message: string) => void;
+    aiModel?: string;
+    aiThinkingMode?: AiThinkingMode;
+    enableAI?: boolean;
+    prompts?: Record<string, string>; // New: System prompt overrides
+    onError?: (message: string) => void;
 }
 
 export const useImageAI = ({ aiModel, aiThinkingMode, enableAI, prompts, onError }: UseImageAIOptions) => {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'analysis' | 'variations'>('analysis');
-  const [result, setResult] = useState<string | string[] | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [modalOpen, setModalOpen] = useState(false);
+    const [modalType, setModalType] = useState<'analysis' | 'variations'>('analysis');
+    const [result, setResult] = useState<string | string[] | null>(null);
 
-  const analyzePrompt = async (prompt: string, onOpenSettings: () => void) => {
-    const apiKey = useSettingsStore.getState().geminiApiKey;
-    if (!enableAI || !apiKey) {
-      onOpenSettings();
-      return;
-    }
+    const analyzePrompt = async (prompt: string, onOpenSettings: () => void) => {
+        const apiKey = useSettingsStore.getState().geminiApiKey;
+        if (!enableAI || !apiKey) {
+            onOpenSettings();
+            return;
+        }
 
-    setIsAnalyzing(true);
-    try {
-      const { analyzePromptAndSuggest } = await import('../services/geminiService');
-      const insight = await analyzePromptAndSuggest(prompt, apiKey, aiModel, prompts, aiThinkingMode);
-      setResult(insight);
-      setModalType('analysis');
-      setModalOpen(true);
-    } catch (e) {
-      console.error('AI Analysis Error:', e);
-      onError?.(parseGeminiError(e));
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
+        setIsAnalyzing(true);
+        try {
+            const { analyzePromptAndSuggest } = await import('../services/geminiService');
+            const insight = await analyzePromptAndSuggest(prompt, apiKey, aiModel, prompts, aiThinkingMode);
+            setResult(insight);
+            setModalType('analysis');
+            setModalOpen(true);
+        } catch (e) {
+            console.error('AI Analysis Error:', e);
+            onError?.(parseGeminiError(e));
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
 
-  const generateVariations = async (prompt: string, onOpenSettings: () => void) => {
-    const apiKey = useSettingsStore.getState().geminiApiKey;
-    if (!enableAI || !apiKey) {
-      onOpenSettings();
-      return;
-    }
+    const generateVariations = async (prompt: string, onOpenSettings: () => void) => {
+        const apiKey = useSettingsStore.getState().geminiApiKey;
+        if (!enableAI || !apiKey) {
+            onOpenSettings();
+            return;
+        }
 
-    setIsAnalyzing(true);
-    try {
-      const { generatePromptVariations } = await import('../services/geminiService');
-      const vars = await generatePromptVariations(prompt, apiKey, aiModel, prompts, aiThinkingMode);
-      setResult(vars);
-      setModalType('variations');
-      setModalOpen(true);
-    } catch (e) {
-      console.error('AI Variations Error:', e);
-      onError?.(parseGeminiError(e));
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
+        setIsAnalyzing(true);
+        try {
+            const { generatePromptVariations } = await import('../services/geminiService');
+            const vars = await generatePromptVariations(prompt, apiKey, aiModel, prompts, aiThinkingMode);
+            setResult(vars);
+            setModalType('variations');
+            setModalOpen(true);
+        } catch (e) {
+            console.error('AI Variations Error:', e);
+            onError?.(parseGeminiError(e));
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
 
-  const closeModal = () => setModalOpen(false);
-  const openModal = () => {
-    if (result) setModalOpen(true);
-  };
+    const closeModal = () => setModalOpen(false);
+    const openModal = () => {
+        if (result) setModalOpen(true);
+    };
 
-  return {
-    isAnalyzing,
-    modalOpen,
-    modalType,
-    result,
-    analyzePrompt,
-    generateVariations,
-    closeModal,
-    openModal
-  };
+    return {
+        isAnalyzing,
+        modalOpen,
+        modalType,
+        result,
+        analyzePrompt,
+        generateVariations,
+        closeModal,
+        openModal,
+    };
 };

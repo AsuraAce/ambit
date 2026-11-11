@@ -1,7 +1,27 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw, HardDrive, ImageOff } from 'lucide-react';
+import {
+    Search,
+    Puzzle,
+    Check,
+    LayoutGrid,
+    List as ListIcon,
+    SortAsc,
+    SortDesc,
+    Clock,
+    Calendar,
+    ArrowDownWideNarrow,
+    ArrowUpWideNarrow,
+    Pin,
+    Circle,
+    CircleDot,
+    Eye,
+    EyeOff,
+    RotateCcw,
+    HardDrive,
+    ImageOff,
+} from 'lucide-react';
 import type { AssetScope, FacetSortOption, FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown } from './FilterPrimitives';
@@ -64,9 +84,7 @@ interface ResourceSectionProps {
 
 const compareByName = (a: ResourceItem, b: ResourceItem) => a.name.localeCompare(b.name);
 
-const compareWithNameTieBreak = (primary: number, a: ResourceItem, b: ResourceItem) => (
-    primary || compareByName(a, b)
-);
+const compareWithNameTieBreak = (primary: number, a: ResourceItem, b: ResourceItem) => primary || compareByName(a, b);
 
 const facetSortIds: FacetSortOption[] = [
     'count_desc',
@@ -76,12 +94,10 @@ const facetSortIds: FacetSortOption[] = [
     'recent_desc',
     'recent_asc',
     'added_desc',
-    'added_asc'
+    'added_asc',
 ];
 
-const isFacetSortOption = (id: unknown): id is FacetSortOption => (
-    typeof id === 'string' && facetSortIds.includes(id as FacetSortOption)
-);
+const isFacetSortOption = (id: unknown): id is FacetSortOption => typeof id === 'string' && facetSortIds.includes(id as FacetSortOption);
 
 export const ResourceSection: React.FC<ResourceSectionProps> = ({
     title,
@@ -93,7 +109,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     onToggle,
     isLoading,
     validNames,
-    assetScope = 'used'
+    assetScope = 'used',
 }) => {
     const { settings, setSettings } = useSettings();
     const [searchQuery, setSearchQuery] = useState('');
@@ -106,54 +122,62 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const persistedSortOption = settings.resourceSortOptions?.[type];
     const sortOption: FacetSortOption = isFacetSortOption(persistedSortOption) ? persistedSortOption : 'count_desc';
 
-    const toggleViewMode = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-        const nextMode = viewMode === 'list' ? 'grid' : 'list';
-        setSettings(prev => ({
-            ...prev,
-            resourceViewModes: {
-                ...prev.resourceViewModes,
-                [type]: nextMode
-            }
-        }));
-    }, [type, viewMode, setSettings]);
+    const toggleViewMode = useCallback(
+        (e: React.MouseEvent) => {
+            e.stopPropagation();
+            const nextMode = viewMode === 'list' ? 'grid' : 'list';
+            setSettings((prev) => ({
+                ...prev,
+                resourceViewModes: {
+                    ...prev.resourceViewModes,
+                    [type]: nextMode,
+                },
+            }));
+        },
+        [type, viewMode, setSettings]
+    );
 
-    const setSortOption = useCallback((option: FacetSortOption) => {
-        setSettings(prev => ({
-            ...prev,
-            resourceSortOptions: {
-                ...prev.resourceSortOptions,
-                [type]: option
-            }
-        }));
-    }, [type, setSettings]);
+    const setSortOption = useCallback(
+        (option: FacetSortOption) => {
+            setSettings((prev) => ({
+                ...prev,
+                resourceSortOptions: {
+                    ...prev.resourceSortOptions,
+                    [type]: option,
+                },
+            }));
+        },
+        [type, setSettings]
+    );
 
-    const handleSortSelect = useCallback((id: string) => {
-        setSortOption(id as FacetSortOption);
-    }, [setSortOption]);
+    const handleSortSelect = useCallback(
+        (id: string) => {
+            setSortOption(id as FacetSortOption);
+        },
+        [setSortOption]
+    );
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
     const filterKey: ResourceFilterKey = type === 'checkpoints' ? 'models' : type;
-    const selectedNames = useMemo(() => new Set((filters[filterKey] || [])), [filters, filterKey]);
-    const validNameSet = useMemo(() => validNames ? new Set(validNames) : null, [validNames]);
+    const selectedNames = useMemo(() => new Set(filters[filterKey] || []), [filters, filterKey]);
+    const validNameSet = useMemo(() => (validNames ? new Set(validNames) : null), [validNames]);
 
-    const getItemAliases = useCallback((item: ResourceItem) => (
-        uniqueAssetAliases([item.name, ...(item.filterAliases || [])])
-    ), []);
+    const getItemAliases = useCallback((item: ResourceItem) => uniqueAssetAliases([item.name, ...(item.filterAliases || [])]), []);
 
-    const isItemSelected = useCallback((item: ResourceItem) => (
-        getItemAliases(item).some(alias => selectedNames.has(alias))
-    ), [getItemAliases, selectedNames]);
+    const isItemSelected = useCallback(
+        (item: ResourceItem) => getItemAliases(item).some((alias) => selectedNames.has(alias)),
+        [getItemAliases, selectedNames]
+    );
 
     const toggleItem = (item: ResourceItem) => {
         if (item.count === 0 && item.isLocalDisk) return;
-        setFilters(prev => {
-            const currentList = (prev[filterKey]) || [];
+        setFilters((prev) => {
+            const currentList = prev[filterKey] || [];
             const itemAliases = getItemAliases(item);
             const itemAliasSet = new Set(itemAliases);
-            const selected = currentList.some(value => itemAliasSet.has(value));
+            const selected = currentList.some((value) => itemAliasSet.has(value));
             const nextAliasGroups: NonNullable<FilterState['assetFilterAliases']> = {
-                ...(prev.assetFilterAliases || {})
+                ...(prev.assetFilterAliases || {}),
             };
             const aliasGroup = { ...(prev.assetFilterAliases?.[filterKey] || {}) };
             nextAliasGroups[filterKey] = aliasGroup;
@@ -164,8 +188,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 }
                 return {
                     ...prev,
-                    [filterKey]: currentList.filter(value => !itemAliasSet.has(value)),
-                    assetFilterAliases: nextAliasGroups
+                    [filterKey]: currentList.filter((value) => !itemAliasSet.has(value)),
+                    assetFilterAliases: nextAliasGroups,
                 };
             }
 
@@ -173,63 +197,79 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             return {
                 ...prev,
                 [filterKey]: [...currentList, item.name],
-                assetFilterAliases: nextAliasGroups
+                assetFilterAliases: nextAliasGroups,
             };
         });
     };
 
-    const getAddedSortValue = useCallback((item: ResourceItem) => {
-        if ((assetScope === 'local' || assetScope === 'all') && item.isLocalDisk) {
-            return item.localModifiedAt ?? item.createdAt ?? 0;
-        }
-
-        return item.createdAt ?? item.localModifiedAt ?? 0;
-    }, [assetScope]);
-
-    const filteredItems = useMemo(() => data
-        .filter(item => {
-            const aliases = getItemAliases(item);
-            const query = searchQuery.toLowerCase();
-            if (!aliases.some(alias => alias.toLowerCase().includes(query))) return false;
-
-            const isSelected = aliases.some(alias => selectedNames.has(alias));
-            const isUnusedLocal = item.count === 0 && item.isLocalDisk;
-            const isUsed = item.count > 0 || isSelected;
-
-            if (assetScope === 'used' && !isUsed) return false;
-            if (assetScope === 'local' && !item.isLocalDisk) return false;
-            if (assetScope === 'all' && !isUsed && !item.isLocalDisk) return false;
-
-            if (assetScope === 'used' && validNameSet) {
-                if (!isSelected && !aliases.some(alias => validNameSet.has(alias))) return false;
+    const getAddedSortValue = useCallback(
+        (item: ResourceItem) => {
+            if ((assetScope === 'local' || assetScope === 'all') && item.isLocalDisk) {
+                return item.localModifiedAt ?? item.createdAt ?? 0;
             }
 
-            return assetScope !== 'used' || !isUnusedLocal;
-        })
-        .sort((a, b) => {
-            switch (sortOption) {
-                case 'count_desc': return compareWithNameTieBreak(b.count - a.count, a, b);
-                case 'count_asc': return compareWithNameTieBreak(a.count - b.count, a, b);
-                case 'name_asc': return a.name.localeCompare(b.name);
-                case 'name_desc': return b.name.localeCompare(a.name);
-                case 'recent_desc': return compareWithNameTieBreak((b.lastUsedAt || 0) - (a.lastUsedAt || 0), a, b);
-                case 'recent_asc': return compareWithNameTieBreak((a.lastUsedAt || 0) - (b.lastUsedAt || 0), a, b);
-                case 'added_desc': return compareWithNameTieBreak(getAddedSortValue(b) - getAddedSortValue(a), a, b);
-                case 'added_asc': return compareWithNameTieBreak(getAddedSortValue(a) - getAddedSortValue(b), a, b);
-            }
-        }), [assetScope, data, getAddedSortValue, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]);
+            return item.createdAt ?? item.localModifiedAt ?? 0;
+        },
+        [assetScope]
+    );
 
-    const singularType = type === 'loras'
-        ? 'LoRA'
-        : type === 'embeddings'
-            ? 'Embedding'
-            : type === 'checkpoints'
+    const filteredItems = useMemo(
+        () =>
+            data
+                .filter((item) => {
+                    const aliases = getItemAliases(item);
+                    const query = searchQuery.toLowerCase();
+                    if (!aliases.some((alias) => alias.toLowerCase().includes(query))) return false;
+
+                    const isSelected = aliases.some((alias) => selectedNames.has(alias));
+                    const isUnusedLocal = item.count === 0 && item.isLocalDisk;
+                    const isUsed = item.count > 0 || isSelected;
+
+                    if (assetScope === 'used' && !isUsed) return false;
+                    if (assetScope === 'local' && !item.isLocalDisk) return false;
+                    if (assetScope === 'all' && !isUsed && !item.isLocalDisk) return false;
+
+                    if (assetScope === 'used' && validNameSet) {
+                        if (!isSelected && !aliases.some((alias) => validNameSet.has(alias))) return false;
+                    }
+
+                    return assetScope !== 'used' || !isUnusedLocal;
+                })
+                .sort((a, b) => {
+                    switch (sortOption) {
+                        case 'count_desc':
+                            return compareWithNameTieBreak(b.count - a.count, a, b);
+                        case 'count_asc':
+                            return compareWithNameTieBreak(a.count - b.count, a, b);
+                        case 'name_asc':
+                            return a.name.localeCompare(b.name);
+                        case 'name_desc':
+                            return b.name.localeCompare(a.name);
+                        case 'recent_desc':
+                            return compareWithNameTieBreak((b.lastUsedAt || 0) - (a.lastUsedAt || 0), a, b);
+                        case 'recent_asc':
+                            return compareWithNameTieBreak((a.lastUsedAt || 0) - (b.lastUsedAt || 0), a, b);
+                        case 'added_desc':
+                            return compareWithNameTieBreak(getAddedSortValue(b) - getAddedSortValue(a), a, b);
+                        case 'added_asc':
+                            return compareWithNameTieBreak(getAddedSortValue(a) - getAddedSortValue(b), a, b);
+                    }
+                }),
+        [assetScope, data, getAddedSortValue, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]
+    );
+
+    const singularType =
+        type === 'loras'
+            ? 'LoRA'
+            : type === 'embeddings'
+              ? 'Embedding'
+              : type === 'checkpoints'
                 ? 'Checkpoint'
                 : type === 'controlNets'
-                    ? 'ControlNet'
-                    : type === 'ipAdapters'
-                        ? 'IP-Adapter'
-                        : 'Hypernetwork';
+                  ? 'ControlNet'
+                  : type === 'ipAdapters'
+                    ? 'IP-Adapter'
+                    : 'Hypernetwork';
 
     const visibleItems = filteredItems.slice(0, renderLimit);
     const hasMore = filteredItems.length > renderLimit;
@@ -244,33 +284,32 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const menuRef = useRef<HTMLDivElement>(null);
     const queryClient = useQueryClient();
 
-    const getBackendResourceType = useCallback(() => (
-        type === 'checkpoints'
-            ? 'checkpoint'
-            : type === 'controlNets'
-                ? 'control_nets'
-                : type === 'ipAdapters'
-                    ? 'ip_adapters'
-                    : type
-    ), [type]);
+    const getBackendResourceType = useCallback(
+        () =>
+            type === 'checkpoints' ? 'checkpoint' : type === 'controlNets' ? 'control_nets' : type === 'ipAdapters' ? 'ip_adapters' : type,
+        [type]
+    );
 
-    const getFallbackHash = useCallback((item: ResourceItem) => {
-        if (item.hash) return item.hash;
-        switch (type) {
-            case 'checkpoints':
-                return `name:${item.name}`;
-            case 'loras':
-                return `lora_${item.name}`;
-            case 'embeddings':
-                return `emb_${item.name}`;
-            case 'hypernetworks':
-                return `hyper_${item.name}`;
-            case 'controlNets':
-                return `cnet_${item.name}`;
-            case 'ipAdapters':
-                return `ipad_${item.name}`;
-        }
-    }, [type]);
+    const getFallbackHash = useCallback(
+        (item: ResourceItem) => {
+            if (item.hash) return item.hash;
+            switch (type) {
+                case 'checkpoints':
+                    return `name:${item.name}`;
+                case 'loras':
+                    return `lora_${item.name}`;
+                case 'embeddings':
+                    return `emb_${item.name}`;
+                case 'hypernetworks':
+                    return `hyper_${item.name}`;
+                case 'controlNets':
+                    return `cnet_${item.name}`;
+                case 'ipAdapters':
+                    return `ipad_${item.name}`;
+            }
+        },
+        [type]
+    );
 
     // Close menu on click outside
     useEffect(() => {
@@ -296,7 +335,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             setContextMenu(null);
         } catch (error) {
-            console.error("Failed to reset thumbnail", error);
+            console.error('Failed to reset thumbnail', error);
         }
     };
 
@@ -308,18 +347,23 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             setContextMenu(null);
         } catch (error) {
-            console.error("Failed to clear all thumbnails", error);
+            console.error('Failed to clear all thumbnails', error);
         }
     };
 
     const handleThumbnailSensitivity = async (item: ResourceItem, sensitivity: boolean | null) => {
         try {
-            const result = await commands.setResourceThumbnailSensitivity(getFallbackHash(item), item.name, sensitivity, getBackendResourceType());
+            const result = await commands.setResourceThumbnailSensitivity(
+                getFallbackHash(item),
+                item.name,
+                sensitivity,
+                getBackendResourceType()
+            );
             if (result.status === 'error') throw new Error(result.error);
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             setContextMenu(null);
         } catch (error) {
-            console.error("Failed to update thumbnail privacy", error);
+            console.error('Failed to update thumbnail privacy', error);
         }
     };
 
@@ -331,9 +375,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         const localOnlyTitle = hasSidecarPreview
             ? 'Local only: no indexed library images. Preview from sidecar image.'
             : 'Local only: no indexed library images.';
-        const localTitle = hasSidecarPreview
-            ? 'Local asset on disk. Preview from sidecar image.'
-            : 'Local asset on disk';
+        const localTitle = hasSidecarPreview ? 'Local asset on disk. Preview from sidecar image.' : 'Local asset on disk';
 
         return (
             <div
@@ -341,13 +383,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 onClick={() => toggleItem(item)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
                 title={isInventoryOnly ? `${item.name} has no indexed library images` : item.name}
-                className={`group relative aspect-square rounded-xl overflow-hidden border transition-all duration-300 ease-spring ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected
-                    ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
-                    : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
-                    }`}
+                className={`group relative aspect-square rounded-xl overflow-hidden border transition-all duration-300 ease-spring ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${
+                    isSelected
+                        ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
+                        : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
+                }`}
             >
                 {/* Thumbnail */}
-                <div className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}>
+                <div
+                    className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}
+                >
                     {thumbUrl ? (
                         <PrivacyAwareThumbnail
                             src={thumbUrl}
@@ -382,7 +427,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
                 {/* Count Badge - Hover Only for ALL items, always Top Right */}
                 {!isSelected && (
-                    <div className={`absolute top-1.5 right-1.5 transition-opacity z-10 ${isInventoryOnly ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                    <div
+                        className={`absolute top-1.5 right-1.5 transition-opacity z-10 ${isInventoryOnly ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
                         <div
                             role={isInventoryOnly ? 'img' : undefined}
                             aria-label={isInventoryOnly ? localOnlyTitle : undefined}
@@ -404,11 +451,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         <HardDrive className="h-3 w-3" aria-hidden="true" />
                     </div>
                 )}
-
             </div>
         );
     };
-
 
     const renderListItem = (item: ResourceItem) => {
         const isSelected = isItemSelected(item);
@@ -418,28 +463,27 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         const localOnlyTitle = hasSidecarPreview
             ? 'Local only: no indexed library images. Preview from sidecar image.'
             : 'Local only: no indexed library images.';
-        const localTitle = hasSidecarPreview
-            ? 'Local asset on disk. Preview from sidecar image.'
-            : 'Local asset on disk';
+        const localTitle = hasSidecarPreview ? 'Local asset on disk. Preview from sidecar image.' : 'Local asset on disk';
 
         return (
             <div
                 key={`${item.name}-${item.hash || 'no-hash'}`}
                 onClick={() => toggleItem(item)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
-                className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ease-spring border group relative overflow-hidden ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected
-                    ? 'bg-gradient-to-r from-sage-100 to-transparent dark:from-sage-600/20 dark:to-transparent border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
-                    : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
-                    }`}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ease-spring border group relative overflow-hidden ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${
+                    isSelected
+                        ? 'bg-gradient-to-r from-sage-100 to-transparent dark:from-sage-600/20 dark:to-transparent border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
+                        : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
+                }`}
             >
                 {/* Left Accent Bar */}
-                {isSelected && (
-                    <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-sage-500 rounded-full" />
-                )}
+                {isSelected && <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-sage-500 rounded-full" />}
 
                 <div className="flex items-center gap-3 overflow-hidden">
                     {/* Tiny Avatar Thumbnail */}
-                    <div className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border relative ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}>
+                    <div
+                        className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border relative ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}
+                    >
                         {thumbUrl ? (
                             <PrivacyAwareThumbnail
                                 src={thumbUrl}
@@ -456,7 +500,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         )}
                     </div>
 
-                    <span className="truncate" title={item.name}>{type === 'checkpoints' ? formatModelName(item.name) : item.name}</span>
+                    <span className="truncate" title={item.name}>
+                        {type === 'checkpoints' ? formatModelName(item.name) : item.name}
+                    </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <span
@@ -487,12 +533,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     return (
         <div className="space-y-2">
-            <SectionHeader
-                title={title}
-                isOpen={isOpen}
-                onToggle={onToggle}
-                isLoading={isLoading}
-            />
+            <SectionHeader title={title} isOpen={isOpen} onToggle={onToggle} isLoading={isLoading} />
             {isOpen && (
                 <div className="space-y-3 animate-in slide-in-from-top-2 duration-300 ease-spring">
                     {/* Toolbar Row */}
@@ -510,7 +551,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             currentValue={sortOption}
                             onSelect={handleSortSelect}
                             align="left"
-                            triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                            triggerClassName={(isOpen) =>
+                                `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`
+                            }
                         />
                         <TooltipButton
                             label={viewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
@@ -524,23 +567,27 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         {supportsMatchMode && (
                             <TooltipButton
                                 label={`${title} match mode: ${isAllMode ? 'Match All' : 'Match Any'}. Activate to use ${isAllMode ? 'Match Any' : 'Match All'}.`}
-                                content={isAllMode
-                                    ? 'Match All: Show images containing every selected item.'
-                                    : 'Match Any: Show images containing at least one selected item.'}
+                                content={
+                                    isAllMode
+                                        ? 'Match All: Show images containing every selected item.'
+                                        : 'Match Any: Show images containing at least one selected item.'
+                                }
                                 aria-pressed={isAllMode}
                                 onClick={() => {
                                     const nextMode = isAllMode ? 'any' : 'all';
-                                    setFilters(prev => ({
+                                    setFilters((prev) => ({
                                         ...prev,
                                         matchModes: {
                                             ...prev.matchModes,
-                                            [filterKey]: nextMode
-                                        }
+                                            [filterKey]: nextMode,
+                                        },
                                     }));
                                 }}
-                                className={`transition-colors p-1.5 rounded-lg border ${isAllMode
-                                    ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30'
-                                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                                className={`transition-colors p-1.5 rounded-lg border ${
+                                    isAllMode
+                                        ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30'
+                                        : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'
+                                }`}
                             >
                                 {isAllMode ? <CircleDot className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
                             </TooltipButton>
@@ -549,7 +596,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             label={`Search ${singularType}s`}
                             content={`Search ${singularType}s`}
                             aria-expanded={isSearchOpen}
-                            onClick={() => { setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
+                            onClick={() => {
+                                setIsSearchOpen(!isSearchOpen);
+                                if (isSearchOpen) setSearchQuery('');
+                            }}
                             className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                         >
                             <Search className="w-3.5 h-3.5" />
@@ -567,7 +617,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
                     <div className={`pr-1 ${viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}`}>
                         <AnimatePresence mode="popLayout" initial={false}>
-                            {visibleItems.map(item => (
+                            {visibleItems.map((item) => (
                                 <motion.div
                                     key={`${item.name}-${item.hash || 'no-hash'}`}
                                     layout
@@ -577,7 +627,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                     transition={{
                                         layout: { duration: 0.2, ease: 'easeInOut' },
                                         opacity: { duration: 0.15 },
-                                        scale: { duration: 0.15 }
+                                        scale: { duration: 0.15 },
                                     }}
                                 >
                                     {viewMode === 'grid' ? renderGridItem(item) : renderListItem(item)}
@@ -587,7 +637,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
                         {hasMore && (
                             <button
-                                onClick={() => setRenderLimit(prev => prev + 30)}
+                                onClick={() => setRenderLimit((prev) => prev + 30)}
                                 className={`w-full py-2 text-xs font-medium text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/20 hover:bg-sage-100 dark:hover:bg-sage-900/40 rounded-lg transition-colors border border-sage-200 dark:border-sage-500/30 ${viewMode === 'grid' ? 'col-span-3' : ''}`}
                             >
                                 Show More ({filteredItems.length - renderLimit} remaining)
@@ -595,13 +645,17 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         )}
 
                         {filteredItems.length === 0 && !isLoading && (
-                            <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} text-xs text-gray-400 text-center py-8 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>
+                            <div
+                                className={`${viewMode === 'grid' ? 'col-span-3' : ''} text-xs text-gray-400 text-center py-8 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}
+                            >
                                 {data.length === 0 ? `No ${singularType}s found` : `No matching ${singularType}s`}
                             </div>
                         )}
 
                         {filteredItems.length === 0 && isLoading && (
-                            <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} flex flex-col items-center justify-center py-8 space-y-3 border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>
+                            <div
+                                className={`${viewMode === 'grid' ? 'col-span-3' : ''} flex flex-col items-center justify-center py-8 space-y-3 border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}
+                            >
                                 <div className="w-4 h-4 border-2 border-sage-500/30 border-t-sage-500 rounded-full animate-spin" />
                                 <span className="text-[10px] text-gray-400 font-medium animate-pulse">Loading {singularType}s...</span>
                             </div>
@@ -609,83 +663,93 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     </div>
                 </div>
             )}
-            {contextMenu && createPortal(
-                <div
-                    ref={menuRef}
-                    className="fixed z-[100] w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
-                >
-                    <div className="p-1">
-                        <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
-                            {type === 'checkpoints' ? formatModelName(contextMenu.item.name) : contextMenu.item.name}
+            {contextMenu &&
+                createPortal(
+                    <div
+                        ref={menuRef}
+                        className="fixed z-[100] w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+                        style={{ top: contextMenu.y, left: contextMenu.x }}
+                    >
+                        <div className="p-1">
+                            <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
+                                {type === 'checkpoints' ? formatModelName(contextMenu.item.name) : contextMenu.item.name}
+                            </div>
+                            {/* Use Preview - enabled if User Override OR (In Dynamic AND Sidecar available) */}
+                            <button
+                                onClick={() => handleResetToSidecar(contextMenu.item)}
+                                disabled={!contextMenu.item.isUserOverride && !(!contextMenu.item.isManual && contextMenu.item.hasSidecar)}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                                    contextMenu.item.isUserOverride || (!contextMenu.item.isManual && contextMenu.item.hasSidecar)
+                                        ? 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                        : 'text-gray-400 cursor-not-allowed opacity-50'
+                                }`}
+                                title={contextMenu.item.isUserOverride ? 'Clear user override' : 'Use sidecar preview'}
+                            >
+                                <Puzzle className="w-3.5 h-3.5" />
+                                Use Preview
+                            </button>
+                            {/* Use Dynamic - disabled if already in dynamic mode (isManual = 0) */}
+                            <button
+                                onClick={() => handleUseDynamic(contextMenu.item)}
+                                disabled={!contextMenu.item.isManual}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                                    contextMenu.item.isManual
+                                        ? 'text-ember-600 dark:text-ember-300 hover:bg-ember-50 dark:hover:bg-ember-900/20'
+                                        : 'text-gray-400 cursor-not-allowed opacity-50'
+                                }`}
+                                title="Clear sidecar and override, use pinned/recent image"
+                            >
+                                <Pin className="w-3.5 h-3.5" />
+                                Use Dynamic
+                            </button>
+                            <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+                            <button
+                                onClick={() => handleThumbnailSensitivity(contextMenu.item, true)}
+                                disabled={contextMenu.item.thumbnailSensitivityOverride === 1}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                                    contextMenu.item.thumbnailSensitivityOverride === 1
+                                        ? 'text-gray-400 cursor-not-allowed opacity-50'
+                                        : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                }`}
+                                title="Always mask this resource thumbnail"
+                            >
+                                <EyeOff className="w-3.5 h-3.5" />
+                                Mask Thumbnail
+                            </button>
+                            <button
+                                onClick={() => handleThumbnailSensitivity(contextMenu.item, false)}
+                                disabled={contextMenu.item.thumbnailSensitivityOverride === 0}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                                    contextMenu.item.thumbnailSensitivityOverride === 0
+                                        ? 'text-gray-400 cursor-not-allowed opacity-50'
+                                        : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                }`}
+                                title="Always show this resource thumbnail"
+                            >
+                                <Eye className="w-3.5 h-3.5" />
+                                Always Show Thumbnail
+                            </button>
+                            <button
+                                onClick={() => handleThumbnailSensitivity(contextMenu.item, null)}
+                                disabled={
+                                    contextMenu.item.thumbnailSensitivityOverride === null ||
+                                    contextMenu.item.thumbnailSensitivityOverride === undefined
+                                }
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                                    contextMenu.item.thumbnailSensitivityOverride === null ||
+                                    contextMenu.item.thumbnailSensitivityOverride === undefined
+                                        ? 'text-gray-400 cursor-not-allowed opacity-50'
+                                        : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                }`}
+                                title="Return thumbnail privacy to automatic detection"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                Reset Thumbnail Privacy
+                            </button>
                         </div>
-                        {/* Use Preview - enabled if User Override OR (In Dynamic AND Sidecar available) */}
-                        <button
-                            onClick={() => handleResetToSidecar(contextMenu.item)}
-                            disabled={!contextMenu.item.isUserOverride && !(!contextMenu.item.isManual && contextMenu.item.hasSidecar)}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${(contextMenu.item.isUserOverride || (!contextMenu.item.isManual && contextMenu.item.hasSidecar))
-                                ? 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
-                                : 'text-gray-400 cursor-not-allowed opacity-50'
-                                }`}
-                            title={contextMenu.item.isUserOverride ? "Clear user override" : "Use sidecar preview"}
-                        >
-                            <Puzzle className="w-3.5 h-3.5" />
-                            Use Preview
-                        </button>
-                        {/* Use Dynamic - disabled if already in dynamic mode (isManual = 0) */}
-                        <button
-                            onClick={() => handleUseDynamic(contextMenu.item)}
-                            disabled={!contextMenu.item.isManual}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
-                                ? 'text-ember-600 dark:text-ember-300 hover:bg-ember-50 dark:hover:bg-ember-900/20'
-                                : 'text-gray-400 cursor-not-allowed opacity-50'
-                                }`}
-                            title="Clear sidecar and override, use pinned/recent image"
-                        >
-                            <Pin className="w-3.5 h-3.5" />
-                            Use Dynamic
-                        </button>
-                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-                        <button
-                            onClick={() => handleThumbnailSensitivity(contextMenu.item, true)}
-                            disabled={contextMenu.item.thumbnailSensitivityOverride === 1}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.thumbnailSensitivityOverride === 1
-                                ? 'text-gray-400 cursor-not-allowed opacity-50'
-                                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
-                                }`}
-                            title="Always mask this resource thumbnail"
-                        >
-                            <EyeOff className="w-3.5 h-3.5" />
-                            Mask Thumbnail
-                        </button>
-                        <button
-                            onClick={() => handleThumbnailSensitivity(contextMenu.item, false)}
-                            disabled={contextMenu.item.thumbnailSensitivityOverride === 0}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.thumbnailSensitivityOverride === 0
-                                ? 'text-gray-400 cursor-not-allowed opacity-50'
-                                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
-                                }`}
-                            title="Always show this resource thumbnail"
-                        >
-                            <Eye className="w-3.5 h-3.5" />
-                            Always Show Thumbnail
-                        </button>
-                        <button
-                            onClick={() => handleThumbnailSensitivity(contextMenu.item, null)}
-                            disabled={contextMenu.item.thumbnailSensitivityOverride === null || contextMenu.item.thumbnailSensitivityOverride === undefined}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.thumbnailSensitivityOverride === null || contextMenu.item.thumbnailSensitivityOverride === undefined
-                                ? 'text-gray-400 cursor-not-allowed opacity-50'
-                                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
-                                }`}
-                            title="Return thumbnail privacy to automatic detection"
-                        >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Reset Thumbnail Privacy
-                        </button>
-                    </div>
-                </div>,
-                document.body
-            )}
+                    </div>,
+                    document.body
+                )}
         </div>
     );
 };

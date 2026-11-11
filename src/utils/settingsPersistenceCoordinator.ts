@@ -37,15 +37,12 @@ const register = <T>(transaction: Promise<T>): Promise<T> => {
     return transaction;
 };
 
-const admissionError = (): Error => (
+const admissionError = (): Error =>
     Array.from(admissionBlockers.values()).includes('closing')
         ? new SettingsPersistenceClosingError()
-        : new SettingsPersistencePausedError()
-);
+        : new SettingsPersistencePausedError();
 
-const executeWithPermit = async <T>(
-    work: (permit: SettingsPersistencePermit) => Promise<T>
-): Promise<T> => {
+const executeWithPermit = async <T>(work: (permit: SettingsPersistencePermit) => Promise<T>): Promise<T> => {
     const permit = {} as SettingsPersistencePermit;
     activePermits.add(permit);
     try {
@@ -98,7 +95,7 @@ const drainActiveTransactions = async (): Promise<void> => {
     const failures: unknown[] = [];
     while (activeTransactions.size > 0) {
         const settled = await Promise.allSettled(Array.from(activeTransactions));
-        settled.forEach(result => {
+        settled.forEach((result) => {
             if (result.status === 'rejected') failures.push(result.reason);
         });
     }

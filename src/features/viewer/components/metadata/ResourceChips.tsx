@@ -28,24 +28,40 @@ export const parseResourceLabel = (item: string): { name: string; weight: string
     };
 };
 
-export const buildResourceSearchTerm = (kind: ResourceFilterKind, name: string): string =>
-    `${RESOURCE_FILTER_PREFIX[kind]}${name}`;
+export const buildResourceSearchTerm = (kind: ResourceFilterKind, name: string): string => `${RESOURCE_FILTER_PREFIX[kind]}${name}`;
 
 export const ResourceChips: React.FC<ResourceChipsProps> = ({ items, onSelect }) => (
     <div className="flex flex-wrap gap-2">
         {items.map((item, index) => {
             if (typeof item !== 'string') {
-                return <MetadataChip key={index}><span className="truncate px-2 py-1.5 font-mono text-xs text-gray-700 dark:text-gray-300">{String(item)}</span></MetadataChip>;
+                return (
+                    <MetadataChip key={index}>
+                        <span className="truncate px-2 py-1.5 font-mono text-xs text-gray-700 dark:text-gray-300">{String(item)}</span>
+                    </MetadataChip>
+                );
             }
 
             const { name, weight } = parseResourceLabel(item);
             const content = (
                 <>
-                    <span className="truncate px-2 py-1.5 font-mono text-xs text-gray-700 group-hover:text-sage-600 dark:text-gray-300 dark:group-hover:text-sage-300" title={name}>{name}</span>
-                    {weight && <span className="border-l border-gray-200 bg-gray-200 px-1.5 py-1.5 text-[10px] font-bold text-gray-500 group-hover:bg-sage-100 group-hover:text-sage-600 dark:border-white/10 dark:bg-white/10 dark:text-zinc-400 dark:group-hover:bg-sage-900/30">{weight}</span>}
+                    <span
+                        className="truncate px-2 py-1.5 font-mono text-xs text-gray-700 group-hover:text-sage-600 dark:text-gray-300 dark:group-hover:text-sage-300"
+                        title={name}
+                    >
+                        {name}
+                    </span>
+                    {weight && (
+                        <span className="border-l border-gray-200 bg-gray-200 px-1.5 py-1.5 text-[10px] font-bold text-gray-500 group-hover:bg-sage-100 group-hover:text-sage-600 dark:border-white/10 dark:bg-white/10 dark:text-zinc-400 dark:group-hover:bg-sage-900/30">
+                            {weight}
+                        </span>
+                    )}
                 </>
             );
-            return <MetadataChip key={index} onClick={onSelect ? () => onSelect(name) : undefined}>{content}</MetadataChip>;
+            return (
+                <MetadataChip key={index} onClick={onSelect ? () => onSelect(name) : undefined}>
+                    {content}
+                </MetadataChip>
+            );
         })}
     </div>
 );

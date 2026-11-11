@@ -27,23 +27,21 @@ const retainRelevantMemberships = (
     pendingKeys: Set<string>
 ): Map<string, string[]> => {
     const retainedAssetIds = new Set([activeAssetId]);
-    pendingKeys.forEach(key => retainedAssetIds.add(key.split(membershipKeySeparator, 1)[0]));
-    if (memberships.size <= retainedAssetIds.size
-        && [...memberships.keys()].every(assetId => retainedAssetIds.has(assetId))) {
+    pendingKeys.forEach((key) => retainedAssetIds.add(key.split(membershipKeySeparator, 1)[0]));
+    if (memberships.size <= retainedAssetIds.size && [...memberships.keys()].every((assetId) => retainedAssetIds.has(assetId))) {
         return memberships;
     }
 
     const retained = new Map<string, string[]>();
-    retainedAssetIds.forEach(assetId => {
+    retainedAssetIds.forEach((assetId) => {
         const assetMemberships = memberships.get(assetId);
         if (assetMemberships) retained.set(assetId, assetMemberships);
     });
     return retained;
 };
 
-const hasPendingMembershipForAsset = (pendingKeys: Set<string>, assetId: string): boolean => (
-    [...pendingKeys].some(key => key.startsWith(`${assetId}${membershipKeySeparator}`))
-);
+const hasPendingMembershipForAsset = (pendingKeys: Set<string>, assetId: string): boolean =>
+    [...pendingKeys].some((key) => key.startsWith(`${assetId}${membershipKeySeparator}`));
 
 export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProps> = ({
     assetId,
@@ -55,32 +53,25 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
     const searchInputRef = React.useRef<HTMLInputElement>(null);
     const listRef = React.useRef<HTMLDivElement>(null);
     const searchRegionId = React.useId();
-    const [membershipsByAsset, setMembershipsByAsset] = React.useState<Map<string, string[]>>(
-        () => new Map([[assetId, []]])
-    );
+    const [membershipsByAsset, setMembershipsByAsset] = React.useState<Map<string, string[]>>(() => new Map([[assetId, []]]));
     const [loadState, setLoadState] = React.useState<MembershipLoadState>({ assetId, status: 'loading' });
     const [retryToken, setRetryToken] = React.useState(0);
     const [pendingKeys, setPendingKeys] = React.useState<Set<string>>(() => new Set());
     const pendingKeysRef = React.useRef(new Set<string>());
     const activeAssetIdRef = React.useRef(assetId);
     const requestIdRef = React.useRef(0);
-    const thumbnailHydrationPendingIds = useCollectionStore(state => state.thumbnailHydrationPendingIds) ?? {};
+    const thumbnailHydrationPendingIds = useCollectionStore((state) => state.thumbnailHydrationPendingIds) ?? {};
 
     const memberships = React.useMemo(() => membershipsByAsset.get(assetId) ?? [], [membershipsByAsset, assetId]);
     const isLoading = loadState.assetId !== assetId || loadState.status === 'loading';
     const hasError = loadState.assetId === assetId && loadState.status === 'error';
     const isReady = loadState.assetId === assetId && loadState.status === 'ready';
-    const manualCollections = React.useMemo(
-        () => collections.filter(collection => !collection.filters),
-        [collections]
-    );
+    const manualCollections = React.useMemo(() => collections.filter((collection) => !collection.filters), [collections]);
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const membershipIds = React.useMemo(() => new Set(memberships), [memberships]);
-    const memberCollections = manualCollections.filter(collection => membershipIds.has(collection.id));
-    const otherCollections = manualCollections.filter(collection => !membershipIds.has(collection.id));
-    const matchesQuery = (collection: Collection) => (
-        !normalizedQuery || collection.name.toLocaleLowerCase().includes(normalizedQuery)
-    );
+    const memberCollections = manualCollections.filter((collection) => membershipIds.has(collection.id));
+    const otherCollections = manualCollections.filter((collection) => !membershipIds.has(collection.id));
+    const matchesQuery = (collection: Collection) => !normalizedQuery || collection.name.toLocaleLowerCase().includes(normalizedQuery);
     const visibleMemberCollections = memberCollections.filter(matchesQuery);
     const visibleOtherCollections = otherCollections.filter(matchesQuery);
     const hasVisibleCollections = visibleMemberCollections.length > 0 || visibleOtherCollections.length > 0;
@@ -108,11 +99,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
 
     React.useLayoutEffect(() => {
         activeAssetIdRef.current = assetId;
-        setMembershipsByAsset(current => retainRelevantMemberships(
-            current,
-            assetId,
-            pendingKeysRef.current
-        ));
+        setMembershipsByAsset((current) => retainRelevantMemberships(current, assetId, pendingKeysRef.current));
     }, [assetId]);
 
     React.useEffect(() => {
@@ -123,27 +110,25 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
         setLoadState({ assetId: requestedAssetId, status: 'loading' });
 
         void getCollectionsForImage(requestedAssetId)
-            .then(collectionIds => {
+            .then((collectionIds) => {
                 if (cancelled || requestIdRef.current !== requestId) return;
-                setMembershipsByAsset(current => {
-                    const next = new Map(retainRelevantMemberships(
-                        current,
-                        requestedAssetId,
-                        pendingKeysRef.current
-                    ));
+                setMembershipsByAsset((current) => {
+                    const next = new Map(retainRelevantMemberships(current, requestedAssetId, pendingKeysRef.current));
                     next.set(requestedAssetId, collectionIds);
                     return next;
                 });
                 setLoadState({ assetId: requestedAssetId, status: 'ready' });
             })
-            .catch(error => {
+            .catch((error) => {
                 console.error('[CollectionMembershipPicker] Failed to load collection membership', error);
                 if (!cancelled && requestIdRef.current === requestId) {
                     setLoadState({ assetId: requestedAssetId, status: 'error' });
                 }
             });
 
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+        };
     }, [assetId, retryToken]);
 
     const toggleMembership = async (collectionId: string, wasMember: boolean) => {
@@ -153,17 +138,18 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
         const requestedAssetId = assetId;
         const shouldBelong = !wasMember;
         pendingKeysRef.current.add(membershipKey);
-        setPendingKeys(current => new Set(current).add(membershipKey));
-        setMembershipsByAsset(current => {
+        setPendingKeys((current) => new Set(current).add(membershipKey));
+        setMembershipsByAsset((current) => {
             const currentMemberships = current.get(requestedAssetId) ?? [];
-            const next = new Map(retainRelevantMemberships(
-                current,
-                activeAssetIdRef.current,
-                pendingKeysRef.current
-            ));
-            next.set(requestedAssetId, shouldBelong
-                ? (currentMemberships.includes(collectionId) ? currentMemberships : [...currentMemberships, collectionId])
-                : currentMemberships.filter(id => id !== collectionId));
+            const next = new Map(retainRelevantMemberships(current, activeAssetIdRef.current, pendingKeysRef.current));
+            next.set(
+                requestedAssetId,
+                shouldBelong
+                    ? currentMemberships.includes(collectionId)
+                        ? currentMemberships
+                        : [...currentMemberships, collectionId]
+                    : currentMemberships.filter((id) => id !== collectionId)
+            );
             return next;
         });
 
@@ -176,18 +162,18 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
 
         const settledMembership = didPersist ? shouldBelong : wasMember;
         pendingKeysRef.current.delete(membershipKey);
-        setMembershipsByAsset(current => {
+        setMembershipsByAsset((current) => {
             const currentMemberships = current.get(requestedAssetId) ?? [];
-            const next = new Map(retainRelevantMemberships(
-                current,
-                activeAssetIdRef.current,
-                pendingKeysRef.current
-            ));
-            if (activeAssetIdRef.current === requestedAssetId
-                || hasPendingMembershipForAsset(pendingKeysRef.current, requestedAssetId)) {
-                next.set(requestedAssetId, settledMembership
-                    ? (currentMemberships.includes(collectionId) ? currentMemberships : [...currentMemberships, collectionId])
-                    : currentMemberships.filter(id => id !== collectionId));
+            const next = new Map(retainRelevantMemberships(current, activeAssetIdRef.current, pendingKeysRef.current));
+            if (activeAssetIdRef.current === requestedAssetId || hasPendingMembershipForAsset(pendingKeysRef.current, requestedAssetId)) {
+                next.set(
+                    requestedAssetId,
+                    settledMembership
+                        ? currentMemberships.includes(collectionId)
+                            ? currentMemberships
+                            : [...currentMemberships, collectionId]
+                        : currentMemberships.filter((id) => id !== collectionId)
+                );
             }
             return next;
         });
@@ -196,7 +182,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
             requestIdRef.current += 1;
             setLoadState({ assetId: requestedAssetId, status: 'ready' });
         }
-        setPendingKeys(current => {
+        setPendingKeys((current) => {
             const next = new Set(current);
             next.delete(membershipKey);
             return next;
@@ -232,14 +218,26 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                 ) : showThumbnailSkeleton ? (
                     <CollectionThumbnailSkeleton className="h-10 w-10 shrink-0 rounded-lg" />
                 ) : (
-                    <span data-testid="collection-thumbnail-fallback" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100 dark:border-white/5 dark:bg-zinc-800" aria-hidden="true">
+                    <span
+                        data-testid="collection-thumbnail-fallback"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100 dark:border-white/5 dark:bg-zinc-800"
+                        aria-hidden="true"
+                    >
                         <Folder className="h-5 w-5 text-gray-400 dark:text-zinc-500" />
                     </span>
                 )}
-                <span className="min-w-0 flex-1 truncate font-medium text-gray-900 group-hover:text-sage-700 dark:text-gray-100 dark:group-hover:text-sage-300">{collection.name}</span>
-                {isMember
-                    ? <Check data-membership-indicator="selected" className="h-4 w-4 shrink-0 text-sage-600 dark:text-sage-300" aria-hidden="true" />
-                    : <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                <span className="min-w-0 flex-1 truncate font-medium text-gray-900 group-hover:text-sage-700 dark:text-gray-100 dark:group-hover:text-sage-300">
+                    {collection.name}
+                </span>
+                {isMember ? (
+                    <Check
+                        data-membership-indicator="selected"
+                        className="h-4 w-4 shrink-0 text-sage-600 dark:text-sage-300"
+                        aria-hidden="true"
+                    />
+                ) : (
+                    <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                )}
             </button>
         );
     };
@@ -249,7 +247,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
             <MetadataSectionHeader
                 title="Collections"
                 icon={Layout}
-                trailing={(
+                trailing={
                     <TooltipButton
                         label="Search Collections"
                         content="Search Collections"
@@ -260,7 +258,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                     >
                         <Search className="h-3.5 w-3.5" aria-hidden="true" />
                     </TooltipButton>
-                )}
+                }
                 className="mb-3"
             />
             {isSearchOpen ? (
@@ -274,8 +272,8 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                             aria-label="Find collection"
                             placeholder="Find collection..."
                             value={query}
-                            onChange={event => setQuery(event.target.value)}
-                            onKeyDown={event => {
+                            onChange={(event) => setQuery(event.target.value)}
+                            onKeyDown={(event) => {
                                 if (event.key !== 'Escape') return;
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -286,16 +284,33 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                     </label>
                 </div>
             ) : null}
-            <div ref={listRef} data-testid="collection-membership-list" className="custom-scrollbar relative max-h-60 min-h-12 space-y-3 overflow-y-auto pr-1">
+            <div
+                ref={listRef}
+                data-testid="collection-membership-list"
+                className="custom-scrollbar relative max-h-60 min-h-12 space-y-3 overflow-y-auto pr-1"
+            >
                 {isLoading && (
-                    <div role="status" aria-label="Loading collection membership" className="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-[1px] dark:bg-zinc-900/50">
+                    <div
+                        role="status"
+                        aria-label="Loading collection membership"
+                        className="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-[1px] dark:bg-zinc-900/50"
+                    >
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-sage-500 border-t-transparent" />
                     </div>
                 )}
                 {hasError && (
-                    <div role="alert" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/90 px-4 text-center dark:bg-zinc-900/90">
+                    <div
+                        role="alert"
+                        className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/90 px-4 text-center dark:bg-zinc-900/90"
+                    >
                         <span className="text-xs text-gray-600 dark:text-gray-300">Could not load collection membership.</span>
-                        <button type="button" onClick={() => setRetryToken(token => token + 1)} className="text-xs font-medium text-sage-700 hover:underline dark:text-sage-300">Retry</button>
+                        <button
+                            type="button"
+                            onClick={() => setRetryToken((token) => token + 1)}
+                            className="text-xs font-medium text-sage-700 hover:underline dark:text-sage-300"
+                        >
+                            Retry
+                        </button>
                     </div>
                 )}
                 {!isLoading && !hasError && !hasVisibleCollections && (
@@ -313,7 +328,9 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                 )}
                 {visibleOtherCollections.length > 0 && (
                     <div className="space-y-2">
-                        <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{memberCollections.length > 0 ? 'Add to another collection' : 'Add to a collection'}</p>
+                        <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            {memberCollections.length > 0 ? 'Add to another collection' : 'Add to a collection'}
+                        </p>
                         {visibleOtherCollections.map(renderCollection)}
                     </div>
                 )}

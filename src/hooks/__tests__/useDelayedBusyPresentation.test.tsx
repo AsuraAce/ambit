@@ -13,14 +13,16 @@ describe('useDelayedBusyPresentation', () => {
         vi.useRealTimers();
     });
 
-    const renderPresentation = (isActive = true, resetKey = 'root-a') => renderHook(
-        ({ active, key }) => useDelayedBusyPresentation(active, {
-            revealDelayMs: 700,
-            minimumVisibleMs: 500,
-            resetKey: key,
-        }),
-        { initialProps: { active: isActive, key: resetKey } }
-    );
+    const renderPresentation = (isActive = true, resetKey = 'root-a') =>
+        renderHook(
+            ({ active, key }) =>
+                useDelayedBusyPresentation(active, {
+                    revealDelayMs: 700,
+                    minimumVisibleMs: 500,
+                    resetKey: key,
+                }),
+            { initialProps: { active: isActive, key: resetKey } }
+        );
 
     it('never reveals work that finishes during the grace period', () => {
         const view = renderPresentation();

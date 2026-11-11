@@ -4,53 +4,73 @@ import type { FilterState } from '../../../../types';
 import { ParameterSection } from '../ParameterSection';
 
 const mocks = vi.hoisted(() => ({
-    data: undefined as {
-        steps: { min: number; max: number } | null;
-        cfg: { min: number; max: number } | null;
-        samplers: string[];
-        generationTypes: string[];
-    } | undefined,
-    isLoading: false
+    data: undefined as
+        | {
+              steps: { min: number; max: number } | null;
+              cfg: { min: number; max: number } | null;
+              samplers: string[];
+              generationTypes: string[];
+          }
+        | undefined,
+    isLoading: false,
 }));
 
 vi.mock('../../../../hooks/useParameterRangesQuery', () => ({
-    useParameterRangesQuery: vi.fn(() => ({ data: mocks.data, isLoading: mocks.isLoading }))
+    useParameterRangesQuery: vi.fn(() => ({ data: mocks.data, isLoading: mocks.isLoading })),
 }));
 
 vi.mock('../FilterPrimitives', () => ({
-    SectionHeader: ({ title, onToggle }: { title: string; onToggle: () => void }) => (
-        <button onClick={onToggle}>{title}</button>
-    ),
-    FilterSlider: ({ label, min, max, step, onChange }: {
+    SectionHeader: ({ title, onToggle }: { title: string; onToggle: () => void }) => <button onClick={onToggle}>{title}</button>,
+    FilterSlider: ({
+        label,
+        min,
+        max,
+        step,
+        onChange,
+    }: {
         label: string;
         min: number;
         max: number;
         step?: number;
         onChange: (min: number, max: number) => void;
-    }) => <button onClick={() => onChange(min + 1, max - 1)}>{label}:{min}:{max}:{step ?? 1}</button>,
-    MultiSelectDropdown: ({ groups, onChange }: {
-        groups: Array<{ label: string; items: string[] }>;
-        onChange: (values: string[]) => void;
     }) => (
-        <button onClick={() => onChange(['Euler'])}>
-            {groups.map(group => `${group.label}=${group.items.join(',')}`).join('|')}
+        <button onClick={() => onChange(min + 1, max - 1)}>
+            {label}:{min}:{max}:{step ?? 1}
         </button>
     ),
-    ChipSelect: ({ options, formatLabel, onChange }: {
+    MultiSelectDropdown: ({
+        groups,
+        onChange,
+    }: {
+        groups: Array<{ label: string; items: string[] }>;
+        onChange: (values: string[]) => void;
+    }) => <button onClick={() => onChange(['Euler'])}>{groups.map((group) => `${group.label}=${group.items.join(',')}`).join('|')}</button>,
+    ChipSelect: ({
+        options,
+        formatLabel,
+        onChange,
+    }: {
         options: string[];
         formatLabel: (value: string) => string;
         onChange: (values: string[]) => void;
-    }) => (
-        <button onClick={() => onChange(['txt2img'])}>
-            {options.map(formatLabel).join('|')}
-        </button>
-    )
+    }) => <button onClick={() => onChange(['txt2img'])}>{options.map(formatLabel).join('|')}</button>,
 }));
 
 const createFilters = (overrides: Partial<FilterState> = {}): FilterState => ({
-    searchQuery: '', models: [], tools: [], loras: [], embeddings: [], hypernetworks: [],
-    samplers: [], generationTypes: [], controlNets: [], ipAdapters: [], dateRange: 'all',
-    favoritesOnly: false, collectionId: null, ...overrides
+    searchQuery: '',
+    models: [],
+    tools: [],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    dateRange: 'all',
+    favoritesOnly: false,
+    collectionId: null,
+    ...overrides,
 });
 
 describe('ParameterSection', () => {
@@ -86,7 +106,7 @@ describe('ParameterSection', () => {
             steps: { min: 1.2, max: 9.1 },
             cfg: { min: 2.2, max: 8.1 },
             samplers: ['Euler a', 'euler_a', 'DPM++ 2M', 'LMS', 'Heun', 'DDIM', 'UniPC', 'uni pc custom', 'Deis', 'Zeta'],
-            generationTypes: ['txt2img', 'img2img', 'extras', 'grid', 'saved', 'unknown', 'custom']
+            generationTypes: ['txt2img', 'img2img', 'extras', 'grid', 'saved', 'unknown', 'custom'],
         };
         let filters = createFilters();
         const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => {

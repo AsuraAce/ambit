@@ -57,14 +57,15 @@ describe('startup bootstrap', () => {
         document.body.append(script);
         script.dispatchEvent(new Event('error'));
 
-        expect(bootstrap.takeEvents()).toEqual([expect.objectContaining({
-            phase: 'startup-failure', failureKind: 'script-load',
-        })]);
-        expect(document.querySelector('[data-startup-failure="true"]')?.textContent)
-            .toContain('Ambit couldn’t start');
+        expect(bootstrap.takeEvents()).toEqual([
+            expect.objectContaining({
+                phase: 'startup-failure',
+                failureKind: 'script-load',
+            }),
+        ]);
+        expect(document.querySelector('[data-startup-failure="true"]')?.textContent).toContain('Ambit couldn’t start');
         bootstrap.setFailureLaunchId('launch-123');
-        expect(document.querySelector('[data-startup-launch-id="true"]')?.textContent)
-            .toBe('Launch ID: launch-123');
+        expect(document.querySelector('[data-startup-launch-id="true"]')?.textContent).toBe('Launch ID: launch-123');
         const loader = document.getElementById('static-loading')!;
         expect(loader.style.position).toBe('fixed');
         expect(loader.style.zIndex).toBe('2147483647');
@@ -78,10 +79,8 @@ describe('startup bootstrap', () => {
 
         bootstrap.showFailure();
 
-        expect(document.querySelector('[data-startup-failure="true"]')?.textContent)
-            .toContain('Ambit couldn’t start');
-        expect(document.querySelector('[data-startup-launch-id="true"]')?.textContent)
-            .toBe('Launch ID: launch-after-ready');
+        expect(document.querySelector('[data-startup-failure="true"]')?.textContent).toContain('Ambit couldn’t start');
+        expect(document.querySelector('[data-startup-launch-id="true"]')?.textContent).toBe('Launch ID: launch-after-ready');
         const loader = document.getElementById('static-loading')!;
         expect(loader.style.position).toBe('fixed');
         expect(loader.style.inset).toBe('0px');
@@ -97,17 +96,16 @@ describe('startup bootstrap', () => {
         script.dispatchEvent(new Event('error'));
         window.dispatchEvent(new Event('unhandledrejection'));
 
-        expect(bootstrap.takeEvents().map(event => event.failureKind)).toEqual([
-            'script-load', 'unhandled-rejection',
-        ]);
+        expect(bootstrap.takeEvents().map((event) => event.failureKind)).toEqual(['script-load', 'unhandled-rejection']);
     });
 
     it('keeps the static fallback explicit when its transport cannot run', () => {
         const bootstrap = installBootstrap();
         bootstrap.markTransportUnavailable();
 
-        expect(document.querySelector('.static-loading__subtitle')?.textContent)
-            .toBe('Startup diagnostics unavailable. Ambit will continue starting.');
+        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe(
+            'Startup diagnostics unavailable. Ambit will continue starting.'
+        );
     });
 
     it('shows a fatal fallback if the sole module entry cannot load the app', () => {
@@ -119,9 +117,12 @@ describe('startup bootstrap', () => {
 
         expect(document.querySelector('[data-startup-failure="true"]')?.textContent).toContain('Ambit couldn’t start');
         expect(document.getElementById('static-loading')?.dataset.ambitFatal).toBe('true');
-        expect(bootstrap.takeEvents()).toEqual([expect.objectContaining({
-            phase: 'startup-failure', failureKind: 'script-load',
-        })]);
+        expect(bootstrap.takeEvents()).toEqual([
+            expect.objectContaining({
+                phase: 'startup-failure',
+                failureKind: 'script-load',
+            }),
+        ]);
     });
 
     it('shows a nonfatal status after fifteen seconds without React mounting', () => {
@@ -129,8 +130,7 @@ describe('startup bootstrap', () => {
         installBootstrap();
         vi.advanceTimersByTime(15_000);
 
-        expect(document.querySelector('.static-loading__subtitle')?.textContent)
-            .toBe('Startup is taking longer than expected');
+        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe('Startup is taking longer than expected');
         expect(document.getElementById('static-loading')?.dataset.ambitFatal).toBeUndefined();
     });
 
@@ -140,8 +140,7 @@ describe('startup bootstrap', () => {
         bootstrap.markReactMounted();
         vi.advanceTimersByTime(30_000);
 
-        expect(document.querySelector('.static-loading__subtitle')?.textContent)
-            .toBe('Startup is taking longer than expected');
+        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe('Startup is taking longer than expected');
 
         document.getElementById('static-loading')?.remove();
         bootstrap.markReady();
@@ -195,7 +194,6 @@ describe('startup bootstrap', () => {
         postMountWarning?.();
 
         expect(bootstrap.takeEvents()).toEqual([]);
-        expect(document.querySelector('[data-startup-failure="true"]')?.textContent)
-            .toContain('Ambit couldn’t start');
+        expect(document.querySelector('[data-startup-failure="true"]')?.textContent).toContain('Ambit couldn’t start');
     });
 });

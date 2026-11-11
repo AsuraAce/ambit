@@ -45,7 +45,7 @@ const renderBar = (images: AIImage[], extra: Partial<React.ComponentProps<typeof
     const callbacks = actions();
     render(
         <SelectionBar
-            selectedIds={new Set(images.map(item => item.id))}
+            selectedIds={new Set(images.map((item) => item.id))}
             filteredImages={images}
             lastSelectedId={images[0]?.id ?? null}
             isExporting={false}
@@ -73,7 +73,16 @@ describe('SelectionBar', () => {
             activeCollectionId: 'collection-1',
         });
 
-        for (const label of ['Compare Selected Images', 'Add Selected to Favorites', 'Pin Selected Items', 'Add Selected to Collection', 'Remove Selected from Collection', 'Export Selected Items', 'Remove Selected from Library', 'Clear Selection']) {
+        for (const label of [
+            'Compare Selected Images',
+            'Add Selected to Favorites',
+            'Pin Selected Items',
+            'Add Selected to Collection',
+            'Remove Selected from Collection',
+            'Export Selected Items',
+            'Remove Selected from Library',
+            'Clear Selection',
+        ]) {
             fireEvent.click(screen.getByRole('button', { name: label }));
         }
         fireEvent.click(screen.getByRole('button', { name: 'Force Mask All Content' }));
@@ -120,12 +129,13 @@ describe('SelectionBar', () => {
             expect(button.className).not.toContain('text-red');
         }
 
-        expect(screen.getByRole('button', { name: 'Remove Selected from Library' }).className)
-            .toContain('text-red-500/70');
-        expect(screen.getByRole('button', { name: 'Add Selected to Favorites' }).querySelector('svg')?.getAttribute('class'))
-            .not.toContain('fill-current');
-        expect(screen.getByRole('button', { name: 'Pin Selected Items' }).querySelector('svg')?.getAttribute('class'))
-            .not.toContain('fill-current');
+        expect(screen.getByRole('button', { name: 'Remove Selected from Library' }).className).toContain('text-red-500/70');
+        expect(screen.getByRole('button', { name: 'Add Selected to Favorites' }).querySelector('svg')?.getAttribute('class')).not.toContain(
+            'fill-current'
+        );
+        expect(screen.getByRole('button', { name: 'Pin Selected Items' }).querySelector('svg')?.getAttribute('class')).not.toContain(
+            'fill-current'
+        );
     });
 
     it('colors and fills favorite and pin only when every selected image shares the state', () => {
@@ -187,10 +197,7 @@ describe('SelectionBar', () => {
     });
 
     it('keeps compare image-only while allowing mixed-media ZIP export', () => {
-        const callbacks = renderBar([
-            image('one'),
-            { ...image('video'), mediaType: 'video' }
-        ]);
+        const callbacks = renderBar([image('one'), { ...image('video'), mediaType: 'video' }]);
 
         expect(screen.queryByRole('button', { name: 'Compare Selected Images' })).toBeNull();
         const exportButton = screen.getByRole('button', { name: 'Export Selected Items' }) as HTMLButtonElement;

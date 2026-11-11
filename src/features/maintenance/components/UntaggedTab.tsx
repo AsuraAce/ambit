@@ -35,44 +35,47 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     onRangeSelection,
     onBackgroundClick,
     untaggedScope,
-    onScopeChange
+    onScopeChange,
 }) => {
-    const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
-        const isSelected = selectedIds.has(img.id);
+    const renderItem = useCallback(
+        (img: AIImage, style: React.CSSProperties, index: number) => {
+            const isSelected = selectedIds.has(img.id);
 
-        const overlayActions = (revealGranted: boolean) => (
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onViewImage(img.id, revealGranted);
-                }}
-                className="px-4 py-2 bg-white/90 dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-full text-xs font-bold shadow-xl transform scale-90 hover:scale-100 transition-all flex items-center gap-2 hover:bg-white dark:hover:bg-zinc-800"
-            >
-                <Eye className="w-4 h-4" /> View Image
-            </button>
-        );
+            const overlayActions = (revealGranted: boolean) => (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onViewImage(img.id, revealGranted);
+                    }}
+                    className="px-4 py-2 bg-white/90 dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-full text-xs font-bold shadow-xl transform scale-90 hover:scale-100 transition-all flex items-center gap-2 hover:bg-white dark:hover:bg-zinc-800"
+                >
+                    <Eye className="w-4 h-4" /> View Image
+                </button>
+            );
 
-        return (
-            <MaintenanceItem
-                key={img.id}
-                img={img}
-                style={style}
-                isSelected={isSelected}
-                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
-                maskedKeywords={maskedKeywords}
-                overlayActions={overlayActions}
-            >
-                {/* Specific logic for Untagged item from original code */}
-                {!isSelected && (
-                    <div className="absolute inset-x-0 bottom-6 flex justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
-                            <Wand2 className="w-3 h-3" /> Recover
-                        </span>
-                    </div>
-                )}
-            </MaintenanceItem>
-        );
-    }, [selectedIds, onItemClick, onViewImage, maskedKeywords]);
+            return (
+                <MaintenanceItem
+                    key={img.id}
+                    img={img}
+                    style={style}
+                    isSelected={isSelected}
+                    onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
+                    maskedKeywords={maskedKeywords}
+                    overlayActions={overlayActions}
+                >
+                    {/* Specific logic for Untagged item from original code */}
+                    {!isSelected && (
+                        <div className="absolute inset-x-0 bottom-6 flex justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
+                                <Wand2 className="w-3 h-3" /> Recover
+                            </span>
+                        </div>
+                    )}
+                </MaintenanceItem>
+            );
+        },
+        [selectedIds, onItemClick, onViewImage, maskedKeywords]
+    );
 
     if (images.length === 0) {
         return (
@@ -97,7 +100,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     const actions = (
         <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white/50 p-1 shadow-sm dark:border-white/5 dark:bg-black/20">
             {selectedIds.size > 0 ? (
-                    <button
+                <button
                     onClick={onRemoveFromLibrary}
                     className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                 >

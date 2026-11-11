@@ -9,7 +9,7 @@ const appVersionMock = vi.hoisted(() => vi.fn((): string | null => 'test'));
 vi.mock('../../../../hooks/useAppVersion', () => ({ useAppVersion: appVersionMock }));
 
 vi.mock('../DevTab', () => ({
-    DevTab: () => <div>Dev panel</div>
+    DevTab: () => <div>Dev panel</div>,
 }));
 
 vi.mock('..', () => ({
@@ -18,7 +18,7 @@ vi.mock('..', () => ({
             <button
                 type="button"
                 onClick={() =>
-                    setSettings(prev => ({
+                    setSettings((prev) => ({
                         ...prev,
                         monitoredFolders: [
                             ...prev.monitoredFolders,
@@ -27,9 +27,9 @@ vi.mock('..', () => ({
                                 path: 'D:/AmbitFixtures/Linked',
                                 isActive: true,
                                 imageCount: 0,
-                                initialScanPending: true
-                            }
-                        ]
+                                initialScanPending: true,
+                            },
+                        ],
                     }))
                 }
             >
@@ -38,13 +38,11 @@ vi.mock('..', () => ({
             <button
                 type="button"
                 onClick={() =>
-                    setSettings(prev => ({
+                    setSettings((prev) => ({
                         ...prev,
-                        monitoredFolders: prev.monitoredFolders.map(folder =>
-                            folder.id === 'folder-1'
-                                ? { ...folder, initialScanPending: false, lastScanned: 123 }
-                                : folder
-                        )
+                        monitoredFolders: prev.monitoredFolders.map((folder) =>
+                            folder.id === 'folder-1' ? { ...folder, initialScanPending: false, lastScanned: 123 } : folder
+                        ),
                     }))
                 }
             >
@@ -58,9 +56,7 @@ vi.mock('..', () => ({
     PrivacyTab: () => null,
     IntelligenceTab: () => <div>Intelligence panel</div>,
     AdvancedTab: () => <div>Advanced panel</div>,
-    ConnectionsTab: ({ initialSubTab }: { initialSubTab?: string }) => (
-        <div>Connections panel {initialSubTab ?? 'none'}</div>
-    )
+    ConnectionsTab: ({ initialSubTab }: { initialSubTab?: string }) => <div>Connections panel {initialSubTab ?? 'none'}</div>,
 }));
 
 const createSettings = (): AppSettings => ({
@@ -73,7 +69,7 @@ const createSettings = (): AppSettings => ({
     promptMaskingEnabled: true,
     maskedKeywords: [],
     maskingMode: 'blur',
-    enableAI: false
+    enableAI: false,
 });
 
 describe('SettingsModal', () => {
@@ -121,7 +117,7 @@ describe('SettingsModal', () => {
             id: 'folder-1',
             path: 'D:/AmbitFixtures/Linked',
             initialScanPending: false,
-            lastScanned: 123
+            lastScanned: 123,
         });
     });
 

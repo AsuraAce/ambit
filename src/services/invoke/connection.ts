@@ -118,7 +118,7 @@ export const inspectInvokeConnection = async (rootPath: string): Promise<InvokeO
         throw new Error(INVOKE_DATABASE_NOT_FOUND);
     }
     const snapshot = await unwrap(commands.getInvokeDbSnapshot(path));
-    if (!snapshot.files.some(file => isSameInvokePath(file.path, dbPath) && file.exists)) {
+    if (!snapshot.files.some((file) => isSameInvokePath(file.path, dbPath) && file.exists)) {
         throw new Error(INVOKE_DATABASE_NOT_FOUND);
     }
     // Do not let SQLite create an empty database when checking a mistyped path.
@@ -132,7 +132,9 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
     const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
     const db = await measureStartupPhase('owner-source-open', () => getInvokeSourceDatabase(dbPath));
     const imageColumns = new Set(
-        (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(images)'))).map(column => column.name)
+        (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(images)'))).map(
+            (column) => column.name
+        )
     );
     if (imageColumns.size === 0) throw new Error('This database does not contain an InvokeAI images table.');
     if (!imageColumns.has('user_id')) {
@@ -140,13 +142,18 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
     }
 
     const tables = new Set(
-        (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'")))
-            .map(table => table.name)
+        (
+            await measureStartupPhase('owner-source-schema', () =>
+                db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        ).map((table) => table.name)
     );
     let canReadDisplayNames = false;
     if (tables.has('users')) {
         const userColumns = new Set(
-            (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(users)'))).map(column => column.name)
+            (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(users)'))).map(
+                (column) => column.name
+            )
         );
         canReadDisplayNames = userColumns.has('user_id') && userColumns.has('display_name');
     }
@@ -155,8 +162,9 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
         ? ', SUM(CASE WHEN COALESCE(i.is_intermediate, 0) = 1 THEN 1 ELSE 0 END) AS intermediate_count'
         : '';
 
-    const ownerRows = await measureStartupPhase('owner-source-images', () => canReadDisplayNames
-        ? db.select<OwnerRow[]>(`
+    const ownerRows = await measureStartupPhase('owner-source-images', () =>
+        canReadDisplayNames
+            ? db.select<OwnerRow[]>(`
             SELECT CAST(i.user_id AS TEXT) AS owner_id,
                    MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
                    count(*) AS count${intermediateCountSelect}
@@ -165,16 +173,17 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
             GROUP BY i.user_id
             ORDER BY display_name COLLATE NOCASE, owner_id
         `)
-        : db.select<OwnerRow[]>(`
+            : db.select<OwnerRow[]>(`
             SELECT CAST(i.user_id AS TEXT) AS owner_id, count(*) AS count${intermediateCountSelect}
             FROM images i
             GROUP BY i.user_id
             ORDER BY owner_id
-        `));
+        `)
+    );
     let unassignedImageCount = 0;
     let unassignedBoardCount = 0;
     const ownersById = new Map<string, InvokeOwnerSummary>();
-    ownerRows.forEach(row => {
+    ownerRows.forEach((row) => {
         const ownerId = row.owner_id?.trim() ?? '';
         if (!ownerId) {
             unassignedImageCount += row.count;
@@ -186,19 +195,24 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
             ownerId,
             displayName: row.display_name?.trim() || existing?.displayName,
             imageCount: (existing?.imageCount ?? 0) + row.count,
-            ...((row.intermediate_count ?? 0) > 0 ? {
-                intermediateImageCount: (existing?.intermediateImageCount ?? 0) + (row.intermediate_count ?? 0),
-            } : {}),
+            ...((row.intermediate_count ?? 0) > 0
+                ? {
+                      intermediateImageCount: (existing?.intermediateImageCount ?? 0) + (row.intermediate_count ?? 0),
+                  }
+                : {}),
         });
     });
 
     if (tables.has('boards')) {
         const boardColumns = new Set(
-            (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(boards)'))).map(column => column.name)
+            (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(boards)'))).map(
+                (column) => column.name
+            )
         );
         if (boardColumns.has('user_id')) {
-            const boardOwnerRows = await measureStartupPhase('owner-source-boards', () => canReadDisplayNames
-                ? db.select<OwnerRow[]>(`
+            const boardOwnerRows = await measureStartupPhase('owner-source-boards', () =>
+                canReadDisplayNames
+                    ? db.select<OwnerRow[]>(`
                     SELECT CAST(b.user_id AS TEXT) AS owner_id,
                            MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
                            count(*) AS count
@@ -207,13 +221,14 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
                     GROUP BY b.user_id
                     ORDER BY display_name COLLATE NOCASE, owner_id
                 `)
-                : db.select<OwnerRow[]>(`
+                    : db.select<OwnerRow[]>(`
                     SELECT CAST(user_id AS TEXT) AS owner_id, count(*) AS count
                     FROM boards
                     GROUP BY user_id
                     ORDER BY owner_id
-                `));
-            boardOwnerRows.forEach(row => {
+                `)
+            );
+            boardOwnerRows.forEach((row) => {
                 const ownerId = row.owner_id?.trim() ?? '';
                 if (!ownerId) {
                     unassignedBoardCount += row.count;
@@ -229,7 +244,9 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
                 });
             });
         } else {
-            const [row] = await measureStartupPhase('owner-source-boards', () => db.select<CountRow[]>('SELECT count(*) AS count FROM boards'));
+            const [row] = await measureStartupPhase('owner-source-boards', () =>
+                db.select<CountRow[]>('SELECT count(*) AS count FROM boards')
+            );
             unassignedBoardCount = row?.count ?? 0;
         }
     }
@@ -239,15 +256,15 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
         dbPath,
         imagesRoot,
         owners: Array.from(ownersById.values()).sort((left, right) =>
-            (left.displayName || left.ownerId).localeCompare(right.displayName || right.ownerId)),
+            (left.displayName || left.ownerId).localeCompare(right.displayName || right.ownerId)
+        ),
         unassignedImageCount,
         unassignedBoardCount,
     };
 };
 
-const readColumns = async (db: InvokeSourceDatabase, table: string): Promise<Set<string>> => new Set(
-    (await db.select<TableRow[]>(`PRAGMA table_info(${table})`)).map(column => column.name)
-);
+const readColumns = async (db: InvokeSourceDatabase, table: string): Promise<Set<string>> =>
+    new Set((await db.select<TableRow[]>(`PRAGMA table_info(${table})`)).map((column) => column.name));
 
 const maxTimestampExpression = (columns: Set<string>): string => {
     if (columns.has('updated_at')) return 'MAX(updated_at)';
@@ -255,51 +272,47 @@ const maxTimestampExpression = (columns: Set<string>): string => {
     return 'NULL';
 };
 
-export const readInvokeSourceFingerprint = async (
-    rootPath: string,
-    scope: InvokeSyncScope
-): Promise<InvokeSourceFingerprint> => {
+export const readInvokeSourceFingerprint = async (rootPath: string, scope: InvokeSyncScope): Promise<InvokeSourceFingerprint> => {
     const { dbPath } = resolveInvokePaths(rootPath);
     const db = await getInvokeSourceDatabase(dbPath);
-    const tables = new Set(
-        (await db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'"))
-            .map(table => table.name)
-    );
+    const tables = new Set((await db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'")).map((table) => table.name));
     const imageColumns = await readColumns(db, 'images');
-    const imageOwnerClause = scope.mode === 'owner' && imageColumns.has('user_id')
-        ? ' WHERE user_id = ?'
-        : '';
-    const ownerParams = scope.mode === 'owner' && imageColumns.has('user_id')
-        ? [scope.ownerId]
-        : [];
-    const [image] = await db.select<FingerprintRow[]>(`
+    const imageOwnerClause = scope.mode === 'owner' && imageColumns.has('user_id') ? ' WHERE user_id = ?' : '';
+    const ownerParams = scope.mode === 'owner' && imageColumns.has('user_id') ? [scope.ownerId] : [];
+    const [image] = await db.select<FingerprintRow[]>(
+        `
         SELECT COUNT(*) AS count, ${maxTimestampExpression(imageColumns)} AS updated_at
         FROM images${imageOwnerClause}
-    `, ownerParams);
+    `,
+        ownerParams
+    );
 
     let board: FingerprintRow = { count: 0, updated_at: null };
     let membership: FingerprintRow = { count: 0, max_row_id: null };
     if (tables.has('boards')) {
         const boardColumns = await readColumns(db, 'boards');
-        const boardOwnerClause = scope.mode === 'owner' && boardColumns.has('user_id')
-            ? ' WHERE user_id = ?'
-            : '';
-        const boardParams = scope.mode === 'owner' && boardColumns.has('user_id')
-            ? [scope.ownerId]
-            : [];
-        [board] = await db.select<FingerprintRow[]>(`
+        const boardOwnerClause = scope.mode === 'owner' && boardColumns.has('user_id') ? ' WHERE user_id = ?' : '';
+        const boardParams = scope.mode === 'owner' && boardColumns.has('user_id') ? [scope.ownerId] : [];
+        [board] = await db.select<FingerprintRow[]>(
+            `
             SELECT COUNT(*) AS count, ${maxTimestampExpression(boardColumns)} AS updated_at
             FROM boards${boardOwnerClause}
-        `, boardParams);
+        `,
+            boardParams
+        );
 
         if (tables.has('board_images')) {
-            const membershipJoin = scope.mode === 'owner' && boardColumns.has('user_id')
-                ? ' INNER JOIN boards b ON b.board_id = bi.board_id AND b.user_id = ?'
-                : '';
-            [membership] = await db.select<FingerprintRow[]>(`
+            const membershipJoin =
+                scope.mode === 'owner' && boardColumns.has('user_id')
+                    ? ' INNER JOIN boards b ON b.board_id = bi.board_id AND b.user_id = ?'
+                    : '';
+            [membership] = await db.select<FingerprintRow[]>(
+                `
                 SELECT COUNT(*) AS count, CAST(MAX(bi.rowid) AS TEXT) AS max_row_id
                 FROM board_images bi${membershipJoin}
-            `, boardParams);
+            `,
+                boardParams
+            );
         }
     }
 
@@ -331,31 +344,25 @@ export interface InvokeBoards {
     isAuthoritative: boolean;
 }
 
-export async function fetchBoards(
-    db: InvokeSourceDatabase,
-    scope: InvokeSyncScope
-): Promise<InvokeBoards> {
+export async function fetchBoards(db: InvokeSourceDatabase, scope: InvokeSyncScope): Promise<InvokeBoards> {
     const boards = new Map<string, InvokeBoardInfo>();
 
     try {
-        const boardColumns = scope.mode === 'legacy'
-            ? new Set<string>()
-            : new Set(
-                (await db.select<TableRow[]>('PRAGMA table_info(boards)')).map(column => column.name)
-            );
+        const boardColumns =
+            scope.mode === 'legacy'
+                ? new Set<string>()
+                : new Set((await db.select<TableRow[]>('PRAGMA table_info(boards)')).map((column) => column.name));
         if (scope.mode === 'owner' && !boardColumns.has('user_id')) {
             return { boards, isAuthoritative: false };
         }
 
-        const ownerSelect = scope.mode !== 'legacy' && boardColumns.has('user_id')
-            ? ', b.user_id'
-            : '';
+        const ownerSelect = scope.mode !== 'legacy' && boardColumns.has('user_id') ? ', b.user_id' : '';
         const rows = await db.select<BoardRow[]>(`
             SELECT b.board_id, b.board_name, b.created_at${ownerSelect}
             FROM boards b
         `);
 
-        rows.forEach(board => {
+        rows.forEach((board) => {
             const timeRaw = board.created_at.includes('Z') ? board.created_at : `${board.created_at} Z`;
             boards.set(board.board_id, {
                 name: board.board_name,
@@ -370,19 +377,15 @@ export async function fetchBoards(
     }
 }
 
-export async function fetchBoardMappings(
-    db: InvokeSourceDatabase,
-    scope: InvokeSyncScope
-): Promise<InvokeBoardMappings> {
+export async function fetchBoardMappings(db: InvokeSourceDatabase, scope: InvokeSyncScope): Promise<InvokeBoardMappings> {
     const imageToBoardId = new Map<string, string>();
     const boards = new Map<string, InvokeBoardInfo>();
 
     try {
-        const boardColumns = scope.mode === 'legacy'
-            ? new Set<string>()
-            : new Set(
-                (await db.select<TableRow[]>('PRAGMA table_info(boards)')).map(column => column.name)
-            );
+        const boardColumns =
+            scope.mode === 'legacy'
+                ? new Set<string>()
+                : new Set((await db.select<TableRow[]>('PRAGMA table_info(boards)')).map((column) => column.name));
         if (scope.mode === 'owner' && !boardColumns.has('user_id')) {
             console.warn('InvokeAI boards are not owner-scoped because boards.user_id is missing.');
             return { imageToBoardId, boards, isAuthoritative: false };
@@ -407,11 +410,14 @@ export async function fetchBoardMappings(
         const ownerSelect = boardColumns.has('user_id') ? ', b.user_id' : '';
         const ownerWhere = scope.mode === 'owner' ? 'WHERE b.user_id = ?' : '';
         const ownerParams = scope.mode === 'owner' ? [scope.ownerId] : [];
-        const boardsRows = await db.select<BoardRow[]>(`
+        const boardsRows = await db.select<BoardRow[]>(
+            `
             SELECT b.board_id, b.board_name, b.created_at${ownerSelect}
             FROM boards b
             ${ownerWhere}
-        `, ownerParams);
+        `,
+            ownerParams
+        );
         boardsRows.forEach((b) => {
             const timeRaw = b.created_at.includes('Z') ? b.created_at : b.created_at + ' Z';
             const timestamp = new Date(timeRaw).getTime();
@@ -422,14 +428,15 @@ export async function fetchBoardMappings(
             });
         });
 
-        const mappingJoin = scope.mode === 'owner'
-            ? 'INNER JOIN boards b ON b.board_id = bi.board_id AND b.user_id = ?'
-            : '';
-        const images = await db.select<BoardImageRow[]>(`
+        const mappingJoin = scope.mode === 'owner' ? 'INNER JOIN boards b ON b.board_id = bi.board_id AND b.user_id = ?' : '';
+        const images = await db.select<BoardImageRow[]>(
+            `
             SELECT bi.image_name, bi.board_id
             FROM board_images bi
             ${mappingJoin}
-        `, ownerParams);
+        `,
+            ownerParams
+        );
         for (const img of images) {
             if (img.board_id) imageToBoardId.set(String(img.image_name), img.board_id);
         }
@@ -442,16 +449,14 @@ export async function fetchBoardMappings(
     return { imageToBoardId, boards, isAuthoritative: false };
 }
 
-export const testConnection = async (rootPath: string): Promise<{ success: boolean, count: number, message: string }> => {
-    if (!rootPath) return { success: false, count: 0, message: "No path provided." };
+export const testConnection = async (rootPath: string): Promise<{ success: boolean; count: number; message: string }> => {
+    if (!rootPath) return { success: false, count: 0, message: 'No path provided.' };
 
     const isFile = rootPath.endsWith('.db');
-    const rawCandidates = isFile ? [rootPath] : [
-        `${rootPath}/databases/invokeai.db`,
-        `${rootPath}\\databases\\invokeai.db`,
-        `${rootPath}/invokeai.db`
-    ];
-    const candidates = Array.from(new Set(rawCandidates.map(path => path.replace(/\\/g, '/'))));
+    const rawCandidates = isFile
+        ? [rootPath]
+        : [`${rootPath}/databases/invokeai.db`, `${rootPath}\\databases\\invokeai.db`, `${rootPath}/invokeai.db`];
+    const candidates = Array.from(new Set(rawCandidates.map((path) => path.replace(/\\/g, '/'))));
 
     // A user-requested connection test must not reuse a handle to a source file
     // that was replaced at the same path. In-flight readers keep their handles.
@@ -469,7 +474,7 @@ export const testConnection = async (rootPath: string): Promise<{ success: boole
             return {
                 success: true,
                 count: count,
-                message: `Connected! Found ${count} images.`
+                message: `Connected! Found ${count} images.`,
             };
         } catch (e: unknown) {
             console.warn(`[InvokeAI] Failed to connect to ${path}:`, e);
@@ -479,12 +484,12 @@ export const testConnection = async (rootPath: string): Promise<{ success: boole
     return {
         success: false,
         count: 0,
-        message: "Could not find valid 'invokeai.db' at this path."
+        message: "Could not find valid 'invokeai.db' at this path.",
     };
 };
 
 export const diagnoseInvokeAI = async (rootPath: string): Promise<InvokeDiagnostics | { error: string }> => {
-    if (!rootPath) return { error: "No path provided." };
+    if (!rootPath) return { error: 'No path provided.' };
 
     const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
 
@@ -526,7 +531,7 @@ export const diagnoseInvokeAI = async (rootPath: string): Promise<InvokeDiagnost
             intermediateStatus,
             dbPath,
             imagesRoot,
-            tables: tableCounts
+            tables: tableCounts,
         };
     } catch (e: unknown) {
         return { error: e instanceof Error ? e.message : String(e) };

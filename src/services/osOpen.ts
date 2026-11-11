@@ -3,8 +3,7 @@ import { isBrowserMockMode } from './runtime';
 
 export const OS_OPEN_BROWSER_UNAVAILABLE_MESSAGE = 'Unavailable in browser mock mode.';
 
-export const isOsOpenUnavailable = (error: string): boolean =>
-    error === OS_OPEN_BROWSER_UNAVAILABLE_MESSAGE;
+export const isOsOpenUnavailable = (error: string): boolean => error === OS_OPEN_BROWSER_UNAVAILABLE_MESSAGE;
 
 export const openFileInDefaultApp = async (path: string): Promise<Result<null, string>> => {
     if (isBrowserMockMode()) {
@@ -22,9 +21,7 @@ export const showPathInFolder = async (path: string): Promise<Result<null, strin
     return runOsOpenCommand(() => commands.showInFolder(path));
 };
 
-const runOsOpenCommand = async (
-    command: () => Promise<Result<null, string>>
-): Promise<Result<null, string>> => {
+const runOsOpenCommand = async (command: () => Promise<Result<null, string>>): Promise<Result<null, string>> => {
     try {
         return await command();
     } catch (error) {

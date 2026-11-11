@@ -38,12 +38,12 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     thumbnailSize,
     isActiveThumbnail,
     onRangeSelection,
-    onBackgroundClick
+    onBackgroundClick,
 }) => {
-    const _privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const _privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const containerRef = React.useRef<HTMLDivElement>(null);
-    const [dragBox, setDragBox] = React.useState<{ x: number, y: number, w: number, h: number } | null>(null);
-    const dragStartRef = React.useRef<{ x: number, y: number } | null>(null);
+    const [dragBox, setDragBox] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
+    const dragStartRef = React.useRef<{ x: number; y: number } | null>(null);
     const isDraggingRef = React.useRef(false);
     const onRangeSelectionRef = React.useRef(onRangeSelection);
     const onBackgroundClickRef = React.useRef(onBackgroundClick);
@@ -91,7 +91,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                     x: Math.min(dragStartRef.current.x, currentX),
                     y: Math.min(dragStartRef.current.y, currentY),
                     w: Math.abs(currentX - dragStartRef.current.x),
-                    h: Math.abs(currentY - dragStartRef.current.y)
+                    h: Math.abs(currentY - dragStartRef.current.y),
                 });
             }
         };
@@ -123,12 +123,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                     const itemW = rect.width;
                     const itemH = rect.height;
 
-                    const overlap = (
-                        itemX < bx + bw &&
-                        itemX + itemW > bx &&
-                        itemY < by + bh &&
-                        itemY + itemH > by
-                    );
+                    const overlap = itemX < bx + bw && itemX + itemW > bx && itemY < by + bh && itemY + itemH > by;
 
                     if (overlap) selectedIndexes.push(idx);
                 });
@@ -166,7 +161,10 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                         {images.length}
                     </span>
                 </div>
-                <span className="p-1 rounded-full text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors" aria-hidden="true">
+                <span
+                    className="p-1 rounded-full text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                    aria-hidden="true"
+                >
                     {isCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
                 </span>
             </button>
@@ -177,12 +175,10 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                 onMouseDown={handleMouseDown}
                 className={`px-6 pb-4 transition-all duration-500 ease-spring overflow-hidden relative ${isCollapsed ? 'overflow-y-hidden' : 'overflow-y-auto custom-scrollbar'}`}
                 style={{
-                    maxHeight: isCollapsed ? `${thumbnailSize + 32}px` : '60vh' // 32px for padding. ensures 1 row is visible.
+                    maxHeight: isCollapsed ? `${thumbnailSize + 32}px` : '60vh', // 32px for padding. ensures 1 row is visible.
                 }}
             >
-                <div
-                    className="flex flex-wrap gap-4 w-full"
-                >
+                <div className="flex flex-wrap gap-4 w-full">
                     {images.map((img, index) => {
                         const ratio = (img.width || 1) / (img.height || 1);
                         const width = thumbnailSize * ratio;
@@ -195,7 +191,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                                     width: width,
                                     flexGrow: ratio, // Grow proportional to aspect ratio keeps scaling natural
                                     minWidth: thumbnailSize * 0.5,
-                                    maxWidth: thumbnailSize * 3 // prevent ultra-wide
+                                    maxWidth: thumbnailSize * 3, // prevent ultra-wide
                                 }}
                                 className="relative"
                                 data-pinned-item-index={index}
@@ -206,7 +202,8 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                                         width: '100%',
                                         height: '100%',
                                         position: 'relative',
-                                        top: 0, left: 0
+                                        top: 0,
+                                        left: 0,
                                     }}
                                     index={index} // This is the GLOBAL index 0..N because Pinned images are at the start
                                     isSelected={selectedIds.has(img.id)}
@@ -238,7 +235,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                             left: dragBox.x,
                             top: dragBox.y,
                             width: dragBox.w,
-                            height: dragBox.h
+                            height: dragBox.h,
                         }}
                     />
                 )}

@@ -13,26 +13,20 @@ vi.mock('framer-motion', () => {
         exit?: unknown;
     };
 
-    const MotionDiv = ({
-        children,
-        initial: _initial,
-        animate: _animate,
-        exit: _exit,
-        ...props
-    }: MotionDivProps) => <div {...props}>{children}</div>;
+    const MotionDiv = ({ children, initial: _initial, animate: _animate, exit: _exit, ...props }: MotionDivProps) => (
+        <div {...props}>{children}</div>
+    );
 
     return {
         AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
         motion: {
-            div: MotionDiv
-        }
+            div: MotionDiv,
+        },
     };
 });
 
 vi.mock('../../../../components/ui/PrivacyAwareThumbnail', () => ({
-    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => (
-        <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />
-    )
+    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />,
 }));
 
 const baseCollection: Collection = {
@@ -42,34 +36,37 @@ const baseCollection: Collection = {
     count: 1,
     createdAt: 1,
     updatedAt: 1,
-    source: 'ambit'
+    source: 'ambit',
 };
 
 type ModalOverrides = Partial<React.ComponentProps<typeof AddToCollectionModal>>;
 
-const renderModal = (collections: Collection[], overrides: ModalOverrides = {}) => render(
-    <AddToCollectionModal
-        isOpen
-        onClose={() => { }}
-        collections={collections}
-        selectedIds={['image-1']}
-        onConfirm={() => { }}
-        {...overrides}
-    />
-);
+const renderModal = (collections: Collection[], overrides: ModalOverrides = {}) =>
+    render(
+        <AddToCollectionModal
+            isOpen
+            onClose={() => {}}
+            collections={collections}
+            selectedIds={['image-1']}
+            onConfirm={() => {}}
+            {...overrides}
+        />
+    );
 
 const FocusHarness = () => {
     const [isOpen, setIsOpen] = React.useState(false);
 
     return (
         <>
-            <button type="button" onClick={() => setIsOpen(true)}>Open collection picker</button>
+            <button type="button" onClick={() => setIsOpen(true)}>
+                Open collection picker
+            </button>
             <AddToCollectionModal
                 isOpen={isOpen}
                 onClose={() => setIsOpen(false)}
                 collections={[baseCollection]}
                 selectedIds={['image-1']}
-                onConfirm={() => { }}
+                onConfirm={() => {}}
             />
         </>
     );
@@ -83,8 +80,8 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
     it('renders a skeleton for collections with pending thumbnail hydration', () => {
         useCollectionStore.setState({
             thumbnailHydrationPendingIds: {
-                'collection-1': true
-            }
+                'collection-1': true,
+            },
         });
 
         renderModal([baseCollection]);
@@ -97,16 +94,18 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
     it('renders a skeleton for smart collections with pending summary hydration', () => {
         useCollectionStore.setState({
             smartSummaryPendingIds: {
-                'smart-collection-1': true
-            }
+                'smart-collection-1': true,
+            },
         });
 
-        renderModal([{
-            ...baseCollection,
-            id: 'smart-collection-1',
-            name: 'Smart Collection One',
-            filters: createDefaultFilters({ dateRange: 'today' })
-        }]);
+        renderModal([
+            {
+                ...baseCollection,
+                id: 'smart-collection-1',
+                name: 'Smart Collection One',
+                filters: createDefaultFilters({ dateRange: 'today' }),
+            },
+        ]);
 
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
         expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
@@ -173,8 +172,10 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
         fireEvent.click(screen.getByRole('button', { name: option }));
-        const names = screen.getAllByRole('button').filter(button => expected.includes(button.textContent?.match(/Alpha|Beta/)?.[0] ?? ''));
-        expect(names.map(button => button.textContent?.match(/Alpha|Beta/)?.[0])).toEqual(expected);
+        const names = screen
+            .getAllByRole('button')
+            .filter((button) => expected.includes(button.textContent?.match(/Alpha|Beta/)?.[0] ?? ''));
+        expect(names.map((button) => button.textContent?.match(/Alpha|Beta/)?.[0])).toEqual(expected);
     });
 
     it('renders unknown smart counts as uncalculated and sorts them last in both count directions', () => {
@@ -184,7 +185,7 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
             name: 'Unknown',
             count: undefined,
             imageIds: ['one', 'two', 'three'],
-            filters: createDefaultFilters()
+            filters: createDefaultFilters(),
         };
         const empty = { ...baseCollection, id: 'empty', name: 'Empty', count: 0 };
         const full = { ...baseCollection, id: 'full', name: 'Full', count: undefined, imageIds: ['one', 'two'] };
@@ -195,9 +196,11 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         expect(unknownCount.getAttribute('aria-label')).toBe('Count not calculated');
         expect(screen.getByText('0 images')).toBeTruthy();
 
-        const collectionOrder = () => screen.getAllByRole('button')
-            .map(button => button.textContent?.match(/Unknown|Empty|Full/)?.[0])
-            .filter((name): name is string => !!name);
+        const collectionOrder = () =>
+            screen
+                .getAllByRole('button')
+                .map((button) => button.textContent?.match(/Unknown|Empty|Full/)?.[0])
+                .filter((name): name is string => !!name);
 
         fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
         fireEvent.click(screen.getByRole('button', { name: 'Most Images' }));
@@ -235,17 +238,19 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
 
     it('renders hydrated thumbnails and all collection color classes', () => {
         const colors = ['red', 'orange', 'green', 'blue', 'purple', 'unknown'] as const;
-        renderModal(colors.map((color, index) => ({
-            ...baseCollection,
-            id: color,
-            name: color,
-            color,
-            thumbnail: `thumb-${index}`,
-            safeThumbnail: `safe-${index}`,
-            thumbnailIsSensitive: index === 0,
-            filters: index % 2 === 0 ? createDefaultFilters() : undefined,
-            createdAt: index,
-        })));
+        renderModal(
+            colors.map((color, index) => ({
+                ...baseCollection,
+                id: color,
+                name: color,
+                color,
+                thumbnail: `thumb-${index}`,
+                safeThumbnail: `safe-${index}`,
+                thumbnailIsSensitive: index === 0,
+                filters: index % 2 === 0 ? createDefaultFilters() : undefined,
+                createdAt: index,
+            }))
+        );
         expect(screen.getAllByTestId('privacy-aware-thumbnail')).toHaveLength(colors.length);
         for (const className of ['bg-red-500', 'bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-purple-500']) {
             expect(document.querySelector(`.${className}`)).not.toBeNull();

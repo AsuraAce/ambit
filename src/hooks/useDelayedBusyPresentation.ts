@@ -14,11 +14,7 @@ interface BusyPresentationState {
 
 export const useDelayedBusyPresentation = (
     isActive: boolean,
-    {
-        revealDelayMs,
-        minimumVisibleMs,
-        resetKey = '',
-    }: DelayedBusyPresentationOptions
+    { revealDelayMs, minimumVisibleMs, resetKey = '' }: DelayedBusyPresentationOptions
 ): boolean => {
     const [presentation, setPresentation] = React.useState<BusyPresentationState>({
         resetKey,
@@ -38,11 +34,9 @@ export const useDelayedBusyPresentation = (
             if (presentation.isVisible) return;
 
             const revealTimerId = window.setTimeout(() => {
-                setPresentation(current => (
-                    current.resetKey === resetKey
-                        ? { ...current, isVisible: true, revealedAt: Date.now() }
-                        : current
-                ));
+                setPresentation((current) =>
+                    current.resetKey === resetKey ? { ...current, isVisible: true, revealedAt: Date.now() } : current
+                );
             }, revealDelayMs);
             return () => window.clearTimeout(revealTimerId);
         }
@@ -52,22 +46,10 @@ export const useDelayedBusyPresentation = (
         const visibleForMs = Date.now() - presentation.revealedAt!;
         const remainingMs = Math.max(0, minimumVisibleMs - visibleForMs);
         const hideTimerId = window.setTimeout(() => {
-            setPresentation(current => (
-                current.resetKey === resetKey
-                    ? { ...current, isVisible: false, revealedAt: null }
-                    : current
-            ));
+            setPresentation((current) => (current.resetKey === resetKey ? { ...current, isVisible: false, revealedAt: null } : current));
         }, remainingMs);
         return () => window.clearTimeout(hideTimerId);
-    }, [
-        isActive,
-        minimumVisibleMs,
-        presentation.isVisible,
-        presentation.resetKey,
-        presentation.revealedAt,
-        resetKey,
-        revealDelayMs,
-    ]);
+    }, [isActive, minimumVisibleMs, presentation.isVisible, presentation.resetKey, presentation.revealedAt, resetKey, revealDelayMs]);
 
     return presentation.resetKey === resetKey && presentation.isVisible;
 };

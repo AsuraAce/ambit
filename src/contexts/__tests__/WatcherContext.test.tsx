@@ -20,39 +20,39 @@ const mocks = vi.hoisted(() => ({
     getMaintenanceCounts: vi.fn(),
     markImagePathIdentitiesMissing: vi.fn(),
     moveImagePathIdentities: vi.fn(),
-    refreshMetadata: vi.fn()
+    refreshMetadata: vi.fn(),
 }));
 
 vi.mock('../SettingsContext', () => ({
-    useSettings: () => ({ settings: mocks.settings, isLoaded: mocks.isLoaded })
+    useSettings: () => ({ settings: mocks.settings, isLoaded: mocks.isLoaded }),
 }));
 
 vi.mock('../SyncContext', () => ({
     useSync: () => ({
         startInvokeSync: mocks.startInvokeSync,
         startTargetedLiveSync: mocks.startTargetedLiveSync,
-        syncStatus: mocks.syncStatus
-    })
+        syncStatus: mocks.syncStatus,
+    }),
 }));
 
 vi.mock('../SearchContext', () => ({
-    useSearch: () => ({ refreshMetadata: mocks.refreshMetadata })
+    useSearch: () => ({ refreshMetadata: mocks.refreshMetadata }),
 }));
 
 vi.mock('../../services/WatcherService', () => ({
     watcherService: {
         startWatching: (...args: [string[], WatchCallback]) => mocks.startWatching(...args),
-        stopWatching: () => mocks.stopWatching()
-    }
+        stopWatching: () => mocks.stopWatching(),
+    },
 }));
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
-    getMaintenanceCounts: mocks.getMaintenanceCounts
+    getMaintenanceCounts: mocks.getMaintenanceCounts,
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
     moveImagePathIdentities: mocks.moveImagePathIdentities,
-    markImagePathIdentitiesMissing: mocks.markImagePathIdentitiesMissing
+    markImagePathIdentitiesMissing: mocks.markImagePathIdentitiesMissing,
 }));
 
 const baseSettings = (): AppSettings => ({
@@ -65,13 +65,13 @@ const baseSettings = (): AppSettings => ({
     promptMaskingEnabled: true,
     maskedKeywords: [],
     maskingMode: 'blur',
-    enableAI: false
+    enableAI: false,
 });
 
 const targetedResult = (handledPaths: string[] = []) => ({
     handledPaths,
     failedPaths: [],
-    importedCount: handledPaths.length
+    importedCount: handledPaths.length,
 });
 
 const Consumer = () => {
@@ -82,17 +82,18 @@ const Consumer = () => {
             <span data-testid="event">{value.lastWatcherEvent}</span>
             <span data-testid="missing">{value.maintenanceCounts.missing}</span>
             <button onClick={() => value.setIsLiveWatching(true)}>Enable</button>
-            <button onClick={() => value.setIsLiveWatching(current => !current)}>Toggle</button>
+            <button onClick={() => value.setIsLiveWatching((current) => !current)}>Toggle</button>
             <button onClick={() => void value.refreshMaintenanceCounts()}>Refresh</button>
         </div>
     );
 };
 
-const renderProvider = () => render(
-    <WatcherProvider>
-        <Consumer />
-    </WatcherProvider>
-);
+const renderProvider = () =>
+    render(
+        <WatcherProvider>
+            <Consumer />
+        </WatcherProvider>
+    );
 
 const advanceInit = async () => {
     await act(async () => vi.advanceTimersByTime(500));
@@ -121,7 +122,7 @@ describe('WatcherContext', () => {
             intermediates: 3,
             missing: 4,
             trash: 5,
-            duplicates: 6
+            duplicates: 6,
         });
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
     });
@@ -148,7 +149,11 @@ describe('WatcherContext', () => {
         expect(mocks.getMaintenanceCounts).not.toHaveBeenCalled();
 
         mocks.isLoaded = true;
-        view.rerender(<WatcherProvider><Consumer /></WatcherProvider>);
+        view.rerender(
+            <WatcherProvider>
+                <Consumer />
+            </WatcherProvider>
+        );
         fireEvent.click(screen.getByText('Refresh'));
         await act(async () => Promise.resolve());
         expect(screen.getByTestId('missing').textContent).toBe('4');
@@ -168,7 +173,11 @@ describe('WatcherContext', () => {
         expect(mocks.stopWatching).not.toHaveBeenCalled();
 
         mocks.isLoaded = true;
-        view.rerender(<WatcherProvider><Consumer /></WatcherProvider>);
+        view.rerender(
+            <WatcherProvider>
+                <Consumer />
+            </WatcherProvider>
+        );
         await advanceInit();
         expect(mocks.stopWatching).toHaveBeenCalled();
     });
@@ -187,8 +196,8 @@ describe('WatcherContext', () => {
             ...baseSettings(),
             monitoredFolders: [
                 { id: 'active', path: 'C:/active', isActive: true, imageCount: 0 },
-                { id: 'inactive', path: 'C:/inactive', isActive: false, imageCount: 0 }
-            ]
+                { id: 'inactive', path: 'C:/inactive', isActive: false, imageCount: 0 },
+            ],
         };
         useLibraryStore.setState({ isLiveWatching: true });
         mocks.startTargetedLiveSync.mockResolvedValue(targetedResult(['C:/active/new.png']));
@@ -213,7 +222,7 @@ describe('WatcherContext', () => {
     it('preserves identity on rename, marks removals missing, and imports the renamed video', async () => {
         mocks.settings = {
             ...baseSettings(),
-            monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }]
+            monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }],
         };
         useLibraryStore.setState({ isLiveWatching: true });
         mocks.moveImagePathIdentities.mockResolvedValueOnce({ moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0 });
@@ -222,19 +231,16 @@ describe('WatcherContext', () => {
         renderProvider();
         await advanceInit();
 
-        await act(async () => mocks.watcherCallback?.([
-            { kind: 'rename', paths: ['C:/active/old.mp4', 'C:/active/new.mp4'] },
-            { kind: 'remove', paths: ['C:/active/gone.webm'] }
-        ]));
+        await act(async () =>
+            mocks.watcherCallback?.([
+                { kind: 'rename', paths: ['C:/active/old.mp4', 'C:/active/new.mp4'] },
+                { kind: 'remove', paths: ['C:/active/gone.webm'] },
+            ])
+        );
         await act(async () => Promise.resolve());
 
-        expect(mocks.moveImagePathIdentities).toHaveBeenCalledWith([
-            { oldId: 'C:/active/old.mp4', newId: 'C:/active/new.mp4' }
-        ]);
-        expect(mocks.markImagePathIdentitiesMissing).toHaveBeenCalledWith([
-            'C:/active/old.mp4',
-            'C:/active/gone.webm'
-        ]);
+        expect(mocks.moveImagePathIdentities).toHaveBeenCalledWith([{ oldId: 'C:/active/old.mp4', newId: 'C:/active/new.mp4' }]);
+        expect(mocks.markImagePathIdentitiesMissing).toHaveBeenCalledWith(['C:/active/old.mp4', 'C:/active/gone.webm']);
         expect(mocks.refreshMetadata).toHaveBeenCalled();
         expect(mocks.startTargetedLiveSync).toHaveBeenCalledWith(
             ['C:/active/new.mp4'],
@@ -245,12 +251,16 @@ describe('WatcherContext', () => {
     it('merges generic events arriving during an active targeted drain', async () => {
         mocks.settings = {
             ...baseSettings(),
-            monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }]
+            monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }],
         };
         useLibraryStore.setState({ isLiveWatching: true });
         let resolveFirst!: (value: ReturnType<typeof targetedResult>) => void;
         mocks.startTargetedLiveSync
-            .mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve; }))
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveFirst = resolve;
+                })
+            )
             .mockResolvedValueOnce(targetedResult());
         renderProvider();
         await advanceInit();
@@ -266,10 +276,12 @@ describe('WatcherContext', () => {
         await act(async () => Promise.resolve());
         expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
         expect(mocks.startTargetedLiveSync.mock.calls[1][0]).toEqual(['C:/active/two.png', 'C:/active/three.png']);
-        expect(mocks.startTargetedLiveSync.mock.calls[1][1]).toEqual(expect.objectContaining({
-            eventCount: 2,
-            pathCount: 3
-        }));
+        expect(mocks.startTargetedLiveSync.mock.calls[1][1]).toEqual(
+            expect.objectContaining({
+                eventCount: 2,
+                pathCount: 3,
+            })
+        );
     });
 
     it('filters Invoke database paths, debounces repeated events, and starts live sync', async () => {
@@ -282,19 +294,28 @@ describe('WatcherContext', () => {
         expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'live' });
         mocks.startInvokeSync.mockClear();
 
-        await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: [
-            'C:/InvokeAI/databases/invokeai.db',
-            'C:/InvokeAI/databases/invokeai.db-wal',
-            'C:/InvokeAI/databases/ignore.txt'
-        ] }]));
+        await act(async () =>
+            mocks.watcherCallback?.([
+                {
+                    kind: 'modify',
+                    paths: [
+                        'C:/InvokeAI/databases/invokeai.db',
+                        'C:/InvokeAI/databases/invokeai.db-wal',
+                        'C:/InvokeAI/databases/ignore.txt',
+                    ],
+                },
+            ])
+        );
         await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: ['C:/InvokeAI/databases/invokeai.db'] }]));
         expect(mocks.startInvokeSync).not.toHaveBeenCalled();
 
         await act(async () => vi.advanceTimersByTime(500));
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({
-            mode: 'live',
-            perfContext: expect.objectContaining({ eventCount: 2, pathCount: 3 })
-        }));
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith(
+            expect.objectContaining({
+                mode: 'live',
+                perfContext: expect.objectContaining({ eventCount: 2, pathCount: 3 }),
+            })
+        );
     });
 
     it('skips activation catch-up while syncing and deduplicates the same Invoke root', async () => {
@@ -307,7 +328,11 @@ describe('WatcherContext', () => {
 
         mocks.syncStatus = 'idle';
         mocks.settings = { ...mocks.settings, monitoredFolders: [{ id: 'new', path: 'C:/new', isActive: true, imageCount: 0 }] };
-        view.rerender(<WatcherProvider><Consumer /></WatcherProvider>);
+        view.rerender(
+            <WatcherProvider>
+                <Consumer />
+            </WatcherProvider>
+        );
         await advanceInit();
         expect(mocks.startInvokeSync).not.toHaveBeenCalled();
     });
@@ -335,9 +360,12 @@ describe('WatcherContext', () => {
         await act(async () => vi.advanceTimersByTime(500));
 
         expect(mocks.startInvokeSync).toHaveBeenCalledOnce();
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({
-            mode: 'live', perfContext: expect.objectContaining({ eventCount: 1, pathCount: 1 }),
-        }));
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith(
+            expect.objectContaining({
+                mode: 'live',
+                perfContext: expect.objectContaining({ eventCount: 1, pathCount: 1 }),
+            })
+        );
     });
 
     it('rejects the Invoke part of an event delayed by generic rename work without dropping the generic changes', async () => {
@@ -348,7 +376,11 @@ describe('WatcherContext', () => {
         };
         useLibraryStore.setState({ isLiveWatching: true });
         let releaseRename!: () => void;
-        mocks.moveImagePathIdentities.mockReturnValueOnce(new Promise<void>(resolve => { releaseRename = resolve; }));
+        mocks.moveImagePathIdentities.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                releaseRename = resolve;
+            })
+        );
         renderProvider();
         await advanceInit();
         mocks.startInvokeSync.mockClear();
@@ -362,7 +394,10 @@ describe('WatcherContext', () => {
         expect(mocks.moveImagePathIdentities).toHaveBeenCalledOnce();
         act(() => useLibraryStore.getState().markInvokeSyncCancelled());
         act(() => useLibraryStore.getState().markInvokeSyncCancelled());
-        await act(async () => { releaseRename(); await pendingEvent; });
+        await act(async () => {
+            releaseRename();
+            await pendingEvent;
+        });
         await act(async () => vi.advanceTimersByTime(500));
 
         expect(mocks.startInvokeSync).not.toHaveBeenCalled();
@@ -377,7 +412,11 @@ describe('WatcherContext', () => {
         mocks.settings = { ...baseSettings(), invokeAiPath: 'C:/InvokeAI' };
         useLibraryStore.setState({ isLiveWatching: true });
         let finishInitialization!: () => void;
-        mocks.startWatching.mockReturnValueOnce(new Promise<void>(resolve => { finishInitialization = resolve; }));
+        mocks.startWatching.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishInitialization = resolve;
+            })
+        );
         renderProvider();
         await advanceInit();
         expect(mocks.startWatching).toHaveBeenCalledOnce();

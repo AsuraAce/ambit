@@ -14,13 +14,7 @@ interface AIResultModalProps {
 
 // ... imports ...
 
-export const AIResultModal: React.FC<AIResultModalProps> = ({
-    isOpen,
-    onClose,
-    type,
-    content,
-    onCopy
-}) => {
+export const AIResultModal: React.FC<AIResultModalProps> = ({ isOpen, onClose, type, content, onCopy }) => {
     const [copiedAll, setCopiedAll] = React.useState(false);
     const [activeTab, setActiveTab] = React.useState(0);
     // New state for Analysis tabs: 0 = Analysis Report, 1 = Applied Example
@@ -70,10 +64,10 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
                         className={cn(
-                            "relative w-full bg-white dark:bg-surface-dialog border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden",
-                            "max-w-2xl h-[600px]" // Fixed height for consistency
+                            'relative w-full bg-white dark:bg-surface-dialog border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden',
+                            'max-w-2xl h-[600px]' // Fixed height for consistency
                         )}
                     >
                         {/* Decorative top line */}
@@ -93,9 +87,7 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                     <h3 className="font-bold text-gray-900 dark:text-white text-sm">
                                         {type === 'analysis' ? 'Prompt Analysis' : 'Creative Variations'}
                                     </h3>
-                                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                        Gemini AI
-                                    </p>
+                                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Gemini AI</p>
                                 </div>
                             </div>
 
@@ -130,10 +122,10 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                         <button
                                             onClick={() => setActiveAnalysisTab(0)}
                                             className={cn(
-                                                "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2",
+                                                'px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2',
                                                 activeAnalysisTab === 0
-                                                    ? "bg-amethyst-600 text-white shadow-lg shadow-amethyst-500/20"
-                                                    : "bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-600 dark:hover:text-amethyst-300 border border-gray-200 dark:border-white/10 hover:border-amethyst-300"
+                                                    ? 'bg-amethyst-600 text-white shadow-lg shadow-amethyst-500/20'
+                                                    : 'bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-600 dark:hover:text-amethyst-300 border border-gray-200 dark:border-white/10 hover:border-amethyst-300'
                                             )}
                                         >
                                             <Sparkles className="w-3.5 h-3.5" /> Analysis Report
@@ -142,10 +134,10 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                             <button
                                                 onClick={() => setActiveAnalysisTab(1)}
                                                 className={cn(
-                                                    "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2",
+                                                    'px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2',
                                                     activeAnalysisTab === 1
-                                                        ? "bg-amethyst-600 text-white shadow-lg shadow-amethyst-500/20"
-                                                        : "bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-600 dark:hover:text-amethyst-300 border border-gray-200 dark:border-white/10 hover:border-amethyst-300"
+                                                        ? 'bg-amethyst-600 text-white shadow-lg shadow-amethyst-500/20'
+                                                        : 'bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-600 dark:hover:text-amethyst-300 border border-gray-200 dark:border-white/10 hover:border-amethyst-300'
                                                 )}
                                             >
                                                 <Wand2 className="w-3.5 h-3.5" /> Applied Example
@@ -158,11 +150,7 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                         {activeAnalysisTab === 0 ? (
                                             <div className="bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-100 dark:border-white/5 p-5">
                                                 <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                    <ReactMarkdown
-                                                        components={safeMarkdownComponents}
-                                                    >
-                                                        {analysisText}
-                                                    </ReactMarkdown>
+                                                    <ReactMarkdown components={safeMarkdownComponents}>{analysisText}</ReactMarkdown>
                                                 </div>
                                             </div>
                                         ) : (
@@ -182,10 +170,10 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                                 key={i}
                                                 onClick={() => setActiveTab(i)}
                                                 className={cn(
-                                                    "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200",
+                                                    'px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200',
                                                     activeTab === i
-                                                        ? "bg-amethyst-600 text-white shadow-lg shadow-amethyst-500/20"
-                                                        : "bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-600 dark:hover:text-amethyst-300 border border-gray-200 dark:border-white/10 hover:border-amethyst-300"
+                                                        ? 'bg-amethyst-600 text-white shadow-lg shadow-amethyst-500/20'
+                                                        : 'bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-600 dark:hover:text-amethyst-300 border border-gray-200 dark:border-white/10 hover:border-amethyst-300'
                                                 )}
                                             >
                                                 Variation {i + 1}
@@ -244,10 +232,10 @@ const MasteredPromptCard: React.FC<{ prompt: string; onCopy: (text: string) => v
                 <button
                     onClick={handleCopy}
                     className={cn(
-                        "p-2 rounded-lg transition-all duration-200 border text-xs font-medium flex items-center gap-1.5",
+                        'p-2 rounded-lg transition-all duration-200 border text-xs font-medium flex items-center gap-1.5',
                         copied
-                            ? "bg-amethyst-600 border-amethyst-600 text-white"
-                            : "bg-white dark:bg-black/40 border-gray-200 dark:border-white/10 text-gray-500 hover:text-amethyst-600 dark:hover:text-amethyst-300 hover:border-amethyst-300"
+                            ? 'bg-amethyst-600 border-amethyst-600 text-white'
+                            : 'bg-white dark:bg-black/40 border-gray-200 dark:border-white/10 text-gray-500 hover:text-amethyst-600 dark:hover:text-amethyst-300 hover:border-amethyst-300'
                     )}
                 >
                     {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -302,8 +290,10 @@ const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index: _index
                         onClick={onPrev}
                         disabled={!hasPrev}
                         className={cn(
-                            "w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 flex items-center justify-center shadow-lg transition-all",
-                            hasPrev ? "hover:border-amethyst-300 hover:text-amethyst-600 dark:hover:text-amethyst-300" : "opacity-30 cursor-not-allowed"
+                            'w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 flex items-center justify-center shadow-lg transition-all',
+                            hasPrev
+                                ? 'hover:border-amethyst-300 hover:text-amethyst-600 dark:hover:text-amethyst-300'
+                                : 'opacity-30 cursor-not-allowed'
                         )}
                     >
                         <ChevronLeft className="w-4 h-4 text-gray-500" />
@@ -316,8 +306,10 @@ const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index: _index
                         onClick={onNext}
                         disabled={!hasNext}
                         className={cn(
-                            "w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 flex items-center justify-center shadow-lg transition-all",
-                            hasNext ? "hover:border-amethyst-300 hover:text-amethyst-600 dark:hover:text-amethyst-300" : "opacity-30 cursor-not-allowed"
+                            'w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 flex items-center justify-center shadow-lg transition-all',
+                            hasNext
+                                ? 'hover:border-amethyst-300 hover:text-amethyst-600 dark:hover:text-amethyst-300'
+                                : 'opacity-30 cursor-not-allowed'
                         )}
                     >
                         <ChevronRight className="w-4 h-4 text-gray-500" />
@@ -335,10 +327,10 @@ const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index: _index
                 <button
                     onClick={handleCopy}
                     className={cn(
-                        "px-4 py-2 rounded-lg transition-all duration-200 border text-sm font-semibold flex items-center gap-2",
+                        'px-4 py-2 rounded-lg transition-all duration-200 border text-sm font-semibold flex items-center gap-2',
                         copied
-                            ? "bg-amethyst-500 border-amethyst-500 text-white shadow-lg shadow-amethyst-500/20"
-                            : "bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-300 hover:border-amethyst-300"
+                            ? 'bg-amethyst-500 border-amethyst-500 text-white shadow-lg shadow-amethyst-500/20'
+                            : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-300 hover:border-amethyst-300'
                     )}
                 >
                     {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}

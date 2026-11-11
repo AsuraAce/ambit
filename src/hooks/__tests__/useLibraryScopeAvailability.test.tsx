@@ -14,25 +14,45 @@ vi.mock('../../services/browserMockData', () => ({ getBrowserMockScopeAvailabili
 vi.mock('../../services/runtime', () => ({ isBrowserMockMode: () => mocks.useBrowser }));
 
 describe('useLibraryScopeAvailability', () => {
-    beforeEach(() => { vi.clearAllMocks(); mocks.useBrowser = false; });
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.useBrowser = false;
+    });
 
     const setup = (enabled = true) => {
         const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-        const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+        const wrapper = ({ children }: { children: React.ReactNode }) => (
+            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        );
         const props = { filters: createDefaultFilters(), settings: createDefaultAppSettings(), privacyEnabled: false, enabled };
         return { client, props, ...renderHook(useLibraryScopeAvailability, { wrapper, initialProps: props }) };
     };
 
     it('does not invent zero availability while loading or block on current search and collection', async () => {
         const counts = createEmptyLibraryScopeCounts();
-        counts.media.image = 2; counts.media.all = 2; counts.imageKinds.photograph = 2; counts.imageKinds.all = 2;
+        counts.media.image = 2;
+        counts.media.all = 2;
+        counts.imageKinds.photograph = 2;
+        counts.imageKinds.all = 2;
         let resolve!: (value: typeof counts) => void;
-        mocks.count.mockReturnValue(new Promise<typeof counts>(done => { resolve = done; }));
+        mocks.count.mockReturnValue(
+            new Promise<typeof counts>((done) => {
+                resolve = done;
+            })
+        );
         const hook = setup();
         expect(hook.result.current.data).toBeUndefined();
         await act(async () => resolve(counts));
         await waitFor(() => expect(hook.result.current.data).toEqual(counts));
-        hook.rerender({ ...hook.props, filters: createDefaultFilters({ searchQuery: 'no matches', collectionId: 'empty', mediaType: 'video', sourceKind: 'photograph' }) });
+        hook.rerender({
+            ...hook.props,
+            filters: createDefaultFilters({
+                searchQuery: 'no matches',
+                collectionId: 'empty',
+                mediaType: 'video',
+                sourceKind: 'photograph',
+            }),
+        });
         expect(hook.result.current.data).toEqual(counts);
         expect(mocks.count).toHaveBeenCalledTimes(1);
         expect(mocks.count.mock.calls[0][0]).not.toContain('media_type');
@@ -55,7 +75,9 @@ describe('useLibraryScopeAvailability', () => {
         mocks.count.mockResolvedValue(createEmptyLibraryScopeCounts());
         const hook = setup();
         await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
-        await act(async () => { await hook.client.invalidateQueries({ queryKey: ['libraryStats'] }); });
+        await act(async () => {
+            await hook.client.invalidateQueries({ queryKey: ['libraryStats'] });
+        });
         expect(mocks.count).toHaveBeenCalledTimes(2);
         act(() => useLibraryStore.getState().incrementFacetCacheVersion());
         await waitFor(() => expect(mocks.count).toHaveBeenCalledTimes(3));
@@ -67,7 +89,10 @@ describe('useLibraryScopeAvailability', () => {
         mocks.browser.mockReturnValue(createEmptyLibraryScopeCounts());
         const hook = setup();
         await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
-        expect(mocks.browser).toHaveBeenCalledWith(expect.objectContaining({ mediaType: 'all', sourceKind: 'all', collectionId: null }), { privacyEnabled: false, settings: hook.props.settings });
+        expect(mocks.browser).toHaveBeenCalledWith(expect.objectContaining({ mediaType: 'all', sourceKind: 'all', collectionId: null }), {
+            privacyEnabled: false,
+            settings: hook.props.settings,
+        });
         expect(mocks.count).not.toHaveBeenCalled();
     });
 });

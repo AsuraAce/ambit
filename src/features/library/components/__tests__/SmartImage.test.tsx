@@ -4,15 +4,15 @@ import { SmartImage } from '../SmartImage';
 
 const mocks = vi.hoisted(() => ({
     convertFileSrc: vi.fn((path: string) => `asset://${path}`),
-    ensureAssetPathAccessible: vi.fn()
+    ensureAssetPathAccessible: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-    convertFileSrc: mocks.convertFileSrc
+    convertFileSrc: mocks.convertFileSrc,
 }));
 
 vi.mock('../../../../services/assetScope', () => ({
-    ensureAssetPathAccessible: mocks.ensureAssetPathAccessible
+    ensureAssetPathAccessible: mocks.ensureAssetPathAccessible,
 }));
 
 describe('SmartImage', () => {
@@ -61,14 +61,7 @@ describe('SmartImage', () => {
     });
 
     it('shows a micro preview while loading and removes it after the real image loads', () => {
-        render(
-            <SmartImage
-                src="C:/library/image.png"
-                microSrc="data:image/webp;base64,abc"
-                alt="Generated image"
-                objectFit="contain"
-            />
-        );
+        render(<SmartImage src="C:/library/image.png" microSrc="data:image/webp;base64,abc" alt="Generated image" objectFit="contain" />);
 
         const preview = document.querySelector('img[aria-hidden="true"]');
         expect(preview?.getAttribute('src')).toBe('data:image/webp;base64,abc');
@@ -93,13 +86,7 @@ describe('SmartImage', () => {
 
     it('adds retry cache busters before swapping to the fallback source', async () => {
         vi.useFakeTimers();
-        render(
-            <SmartImage
-                src="C:/library/thumb.webp"
-                fallbackSrc="C:/library/source.png"
-                alt="Generated image"
-            />
-        );
+        render(<SmartImage src="C:/library/thumb.webp" fallbackSrc="C:/library/source.png" alt="Generated image" />);
 
         const img = screen.getByAltText('Generated image');
         fireEvent.error(img);
@@ -132,13 +119,7 @@ describe('SmartImage', () => {
         vi.useFakeTimers();
         const onImageError = vi.fn();
 
-        render(
-            <SmartImage
-                src="C:/library/Broken.png"
-                alt="Broken image"
-                onImageError={onImageError}
-            />
-        );
+        render(<SmartImage src="C:/library/Broken.png" alt="Broken image" onImageError={onImageError} />);
 
         for (const delay of [500, 1000, 2000]) {
             await act(async () => {
@@ -191,23 +172,11 @@ describe('SmartImage', () => {
         vi.useFakeTimers();
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         mocks.ensureAssetPathAccessible.mockRejectedValue(new Error('scope denied'));
-        render(
-            <SmartImage
-                src="C:/thumb.png"
-                fallbackSrc="C:/source.png"
-                alt="Scoped image"
-            />
-        );
+        render(<SmartImage src="C:/thumb.png" fallbackSrc="C:/source.png" alt="Scoped image" />);
 
         await act(async () => Promise.resolve());
-        expect(warn).toHaveBeenCalledWith(
-            '[SmartImage] Failed to register current image path',
-            expect.any(Error)
-        );
-        expect(warn).toHaveBeenCalledWith(
-            '[SmartImage] Failed to register fallback image path',
-            expect.any(Error)
-        );
+        expect(warn).toHaveBeenCalledWith('[SmartImage] Failed to register current image path', expect.any(Error));
+        expect(warn).toHaveBeenCalledWith('[SmartImage] Failed to register fallback image path', expect.any(Error));
 
         for (const delay of [500, 1000, 2000]) {
             fireEvent.error(screen.getByAltText('Scoped image'));
@@ -216,10 +185,7 @@ describe('SmartImage', () => {
         fireEvent.error(screen.getByAltText('Scoped image'));
         await act(async () => Promise.resolve());
 
-        expect(warn).toHaveBeenCalledWith(
-            '[SmartImage] Failed to register fallback before swap',
-            expect.any(Error)
-        );
+        expect(warn).toHaveBeenCalledWith('[SmartImage] Failed to register fallback before swap', expect.any(Error));
         expect(screen.getByAltText('Scoped image').getAttribute('src')).toBe('asset://C:/source.png');
         warn.mockRestore();
     });
@@ -235,9 +201,7 @@ describe('SmartImage', () => {
         });
 
         expect(onError).toHaveBeenCalledTimes(1);
-        expect(screen.getByAltText('Remote image').getAttribute('src')).toBe(
-            'https://example.test/image.png?v=1&retry=1'
-        );
+        expect(screen.getByAltText('Remote image').getAttribute('src')).toBe('https://example.test/image.png?v=1&retry=1');
         expect(mocks.convertFileSrc).not.toHaveBeenCalled();
     });
 
@@ -260,11 +224,7 @@ describe('SmartImage', () => {
         });
         render(<SmartImage src="C:/bad.png" alt="Bad URL" />);
         expect(screen.getByAltText('Bad URL').getAttribute('src')).toBe('C:/bad.png');
-        expect(warn).toHaveBeenCalledWith(
-            '[SmartImage] Error normalizing URL:',
-            expect.any(Error),
-            { currentSrc: 'C:/bad.png' }
-        );
+        expect(warn).toHaveBeenCalledWith('[SmartImage] Error normalizing URL:', expect.any(Error), { currentSrc: 'C:/bad.png' });
 
         const malformed = 'https://example.test/%E0%A4%A';
         const { rerender } = render(<SmartImage src={malformed} alt="Malformed URL" />);

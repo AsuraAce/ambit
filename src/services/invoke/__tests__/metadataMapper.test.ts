@@ -19,33 +19,43 @@ describe('metadataMapper', () => {
             model: 'Unknown',
             hasWorkflowHint: false,
             isIntermediate: false,
-            loras: [], controlNets: [], ipAdapters: [], embeddings: [], hypernetworks: []
+            loras: [],
+            controlNets: [],
+            ipAdapters: [],
+            embeddings: [],
+            hypernetworks: [],
         });
         expect(mapInvokeMetadata({ metadata_json: '{bad', has_workflow: 1, is_intermediate: true }, 'metadata_json', 0)).toMatchObject({
             hasWorkflowHint: true,
-            isIntermediate: true
+            isIntermediate: true,
         });
     });
 
     it('maps object metadata and lets explicit row workflow hints override mapped hints', () => {
-        const result = mapInvokeMetadata({
-            metadata: { workflow: { id: 1 }, positive_prompt: 'prompt' },
-            has_workflow: 0
-        }, 'metadata', 0);
+        const result = mapInvokeMetadata(
+            {
+                metadata: { workflow: { id: 1 }, positive_prompt: 'prompt' },
+                has_workflow: 0,
+            },
+            'metadata',
+            0
+        );
         expect(result.positivePrompt).toBe('prompt');
         expect(result.hasWorkflowHint).toBe(false);
         expect(result.workflowJson).toBe('{"id":1}');
     });
 
     it('maps null metadata without inventing an explicit CFG value', () => {
-        expect(mapRawInvokeMetadata(null)).toEqual(expect.objectContaining({
-            tool: GeneratorTool.INVOKEAI,
-            model: 'Unknown',
-            steps: 0,
-            sampler: 'Unknown',
-            hasWorkflowHint: false,
-            isIntermediate: false
-        }));
+        expect(mapRawInvokeMetadata(null)).toEqual(
+            expect.objectContaining({
+                tool: GeneratorTool.INVOKEAI,
+                model: 'Unknown',
+                steps: 0,
+                sampler: 'Unknown',
+                hasWorkflowHint: false,
+                isIntermediate: false,
+            })
+        );
         expect(mapRawInvokeMetadata(null).cfg).toBeUndefined();
         expect(mapRawInvokeMetadata({ positive_prompt: 'invoke' })).not.toHaveProperty('cfg');
         expect(mapInvokeMetadata({ metadata_json: '{}' }, 'metadata_json', 0).cfg).toBe(0);
@@ -72,15 +82,24 @@ describe('metadataMapper', () => {
                 hiresUpscaler: 'latent',
                 generationType: 'img2img',
                 isFavorite: true,
-                model: 'nested.ckpt'
+                model: 'nested.ckpt',
             },
-            model_hash: 123
+            model_hash: 123,
         });
         expect(imageResult).toMatchObject({
-            positivePrompt: '42', negativePrompt: 'false', steps: 12, cfg: 6.5, seed: 0,
-            sampler: 'true', clipSkip: 2, denoisingStrength: 0.35,
-            hiresUpscaler: 'latent', generationType: 'img2img', isFavorite: true,
-            model: 'nested', modelHash: '123'
+            positivePrompt: '42',
+            negativePrompt: 'false',
+            steps: 12,
+            cfg: 6.5,
+            seed: 0,
+            sampler: 'true',
+            clipSkip: 2,
+            denoisingStrength: 0.35,
+            hiresUpscaler: 'latent',
+            generationType: 'img2img',
+            isFavorite: true,
+            model: 'nested',
+            modelHash: '123',
         });
 
         const generationResult = mapRawInvokeMetadata({ generation: { subject: 'favorite', scheduler: 'ddim' } });
@@ -100,18 +119,18 @@ describe('metadataMapper', () => {
                 vae: { name: 'FLUX.1-schnell_ae', type: 'vae' },
                 t2iAdapters: [
                     { model: { name: 'T2I-Adapter-Canny-SDXL-1.0.safetensors' } },
-                    'C:\\InvokeAI\\models\\t2iadapter_depth_sd15v2.PTH'
+                    'C:\\InvokeAI\\models\\t2iadapter_depth_sd15v2.PTH',
                 ],
                 t2i_adapters: [
                     {
-                        t2i_adapter_model: { model_name: 't2iadapter_sketch_sd15v2.ckpt' }
+                        t2i_adapter_model: { model_name: 't2iadapter_sketch_sd15v2.ckpt' },
                     },
-                    't2iadapter_depth_sd15v2.pth'
+                    't2iadapter_depth_sd15v2.pth',
                 ],
                 t2i_adapter: {
-                    model: 'C:\\InvokeAI\\models\\T2I-Adapter-Lineart.SAFETENSORS'
-                }
-            }
+                    model: 'C:\\InvokeAI\\models\\T2I-Adapter-Lineart.SAFETENSORS',
+                },
+            },
         });
 
         expect(result).toMatchObject({
@@ -119,57 +138,60 @@ describe('metadataMapper', () => {
             denoisingStrength: 0,
             generationType: 'sdxl_txt2img',
             vae: 'FLUX.1-schnell_ae',
-            controlNets: [
-                't2i_adapter_canny_sdxl_1.0',
-                't2iadapter_depth_sd15v2',
-                't2iadapter_sketch_sd15v2',
-                't2i_adapter_lineart'
-            ],
-            ipAdapters: []
+            controlNets: ['t2i_adapter_canny_sdxl_1.0', 't2iadapter_depth_sd15v2', 't2iadapter_sketch_sd15v2', 't2i_adapter_lineart'],
+            ipAdapters: [],
         });
     });
 
     it('falls back through guidance, legacy cfg, hrf strength, and open generation modes', () => {
-        expect(mapRawInvokeMetadata({
-            guidance: '3.5',
-            cfg: 7,
-            hrf_strength: '0.45',
-            generationType: 'flux_txt2img',
-            vae: 'vae-ft-mse-840000-ema-pruned.ckpt'
-        })).toMatchObject({
+        expect(
+            mapRawInvokeMetadata({
+                guidance: '3.5',
+                cfg: 7,
+                hrf_strength: '0.45',
+                generationType: 'flux_txt2img',
+                vae: 'vae-ft-mse-840000-ema-pruned.ckpt',
+            })
+        ).toMatchObject({
             cfg: 3.5,
             denoisingStrength: 0.45,
             generationType: 'flux_txt2img',
-            vae: 'vae-ft-mse-840000-ema-pruned.ckpt'
+            vae: 'vae-ft-mse-840000-ema-pruned.ckpt',
         });
         expect(mapRawInvokeMetadata({ cfg: '6.25' }).cfg).toBe(6.25);
     });
 
     it('uses the same finite decimal numeric-string grammar as the Rust parser', () => {
-        expect(mapRawInvokeMetadata({
-            cfg_scale: '   ',
-            guidance: ' 4.5e0 ',
-            denoising_strength: '\t',
-            denoisingStrength: ' +3.5e-1 '
-        })).toMatchObject({
+        expect(
+            mapRawInvokeMetadata({
+                cfg_scale: '   ',
+                guidance: ' 4.5e0 ',
+                denoising_strength: '\t',
+                denoisingStrength: ' +3.5e-1 ',
+            })
+        ).toMatchObject({
             cfg: 4.5,
-            denoisingStrength: 0.35
+            denoisingStrength: 0.35,
         });
         expect(mapRawInvokeMetadata({ cfg_scale: '0x10', guidance: ' 6.25 ' }).cfg).toBe(6.25);
     });
 
     it('rejects values outside the finite f32 range before applying field precedence', () => {
-        expect(mapRawInvokeMetadata({
-            cfg_scale: '1e100',
-            guidance: '6.5',
-            denoising_strength: -1e100,
-            denoisingStrength: '0.4'
-        })).toMatchObject({ cfg: 6.5, denoisingStrength: 0.4 });
+        expect(
+            mapRawInvokeMetadata({
+                cfg_scale: '1e100',
+                guidance: '6.5',
+                denoising_strength: -1e100,
+                denoisingStrength: '0.4',
+            })
+        ).toMatchObject({ cfg: 6.5, denoisingStrength: 0.4 });
 
-        expect(mapRawInvokeMetadata({
-            cfg_scale: '3.4028236e38',
-            guidance: '3.4028235e38'
-        }).cfg).toBe(3.4028235e38);
+        expect(
+            mapRawInvokeMetadata({
+                cfg_scale: '3.4028236e38',
+                guidance: '3.4028235e38',
+            }).cfg
+        ).toBe(3.4028235e38);
     });
 
     it('discovers workflows and hashes across legacy storage locations', () => {
@@ -193,7 +215,12 @@ describe('metadataMapper', () => {
     it('extracts all resource aliases, object shapes, weights, and nested arrays', () => {
         const result = mapRawInvokeMetadata({
             loras: [null, 'plain', 'plain', { model: { default: 'default-lora' }, weight: '0.5' }, { name: 'named' }],
-            control_adapters: [null, 'control.ckpt', { control_model: { model_name: 'nested-control.safetensors' } }, { name: 'direct-control.pt' }],
+            control_adapters: [
+                null,
+                'control.ckpt',
+                { control_model: { model_name: 'nested-control.safetensors' } },
+                { name: 'direct-control.pt' },
+            ],
             control_model: { model_name: 'single-control.bin' },
             ip_adapters: [null, 'adapter.pth', { ip_adapter_model: { name: 'nested-adapter.bin' } }, { name: 'direct-adapter.pt' }],
             ip_adapter: { model_name: 'single-adapter.ckpt' },
@@ -201,7 +228,7 @@ describe('metadataMapper', () => {
             textual_inversion: { lora_name: 'single-embedding.safetensors' },
             hypernetworks: [null, 'hyper.pt', 'hyper.pt', { name: 'object-hyper.ckpt' }],
             hypernet: { model_name: 'single-hyper.bin' },
-            nested: [{ hypernets: 'nested-hyper.pth' }]
+            nested: [{ hypernets: 'nested-hyper.pth' }],
         });
         expect(result.loras).toEqual(expect.arrayContaining(['plain', 'default-lora (0.50)', 'named']));
         expect(result.controlNets).toEqual(expect.arrayContaining(['control', 'nested_control', 'direct_control', 'single_control']));
@@ -213,7 +240,7 @@ describe('metadataMapper', () => {
     it('canonicalizes and deduplicates guidance resources across generic control and T2I aliases', () => {
         const result = mapRawInvokeMetadata({
             control_adapters: ['C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'],
-            t2iAdapters: ['c:/invokeai/models/t2i-adapter-depth.safetensors']
+            t2iAdapters: ['c:/invokeai/models/t2i-adapter-depth.safetensors'],
         });
 
         expect(result.controlNets).toEqual(['t2i_adapter_depth']);
@@ -223,8 +250,9 @@ describe('metadataMapper', () => {
     it('deduplicates prompt resources and handles default, weighted, and malformed syntax', () => {
         const result = mapRawInvokeMetadata({
             embeddings: ['easy'],
-            positive_prompt: 'embedding:easy <embedding:easy> <xy> <xy> <lora> <hypernet> <lora:lora> <lora:lora:1.0> <lora:weighted:0.25> <hypernet:hyper> <hypernet:hyper:1.0> <hypernet:hyper> <hypernet:weighted:0.25>',
-            negative_prompt: '<lora:lora> <hypernet:hyper>'
+            positive_prompt:
+                'embedding:easy <embedding:easy> <xy> <xy> <lora> <hypernet> <lora:lora> <lora:lora:1.0> <lora:weighted:0.25> <hypernet:hyper> <hypernet:hyper:1.0> <hypernet:hyper> <hypernet:weighted:0.25>',
+            negative_prompt: '<lora:lora> <hypernet:hyper>',
         });
         expect(result.embeddings).toEqual(['easy', 'xy']);
         expect(result.loras).toEqual(['lora', 'weighted (0.25)']);
@@ -237,22 +265,24 @@ describe('metadataMapper', () => {
             controlnets: [{}, { control_model: {} }],
             ip_adapters: [{}, { ip_adapter_model: {} }, { ip_adapter_model: 'string-adapter.safetensors' }],
             embeddings: [{}],
-            hypernetworks: [{}]
+            hypernetworks: [{}],
         });
         expect(result).toMatchObject({
             loras: [],
             controlNets: [],
             ipAdapters: ['string-adapter'],
             embeddings: [],
-            hypernetworks: []
+            hypernetworks: [],
         });
     });
 
     it('uses wrapper model hashes when the unwrapped root has none', () => {
-        expect(mapRawInvokeMetadata({
-            invokeai_metadata: { positive_prompt: 'prompt' },
-            model_hash: 'wrapper-hash'
-        }).modelHash).toBe('wrapper-hash');
+        expect(
+            mapRawInvokeMetadata({
+                invokeai_metadata: { positive_prompt: 'prompt' },
+                model_hash: 'wrapper-hash',
+            }).modelHash
+        ).toBe('wrapper-hash');
     });
 
     it('ignores inherited enumerable properties during recursive resource scans', () => {
@@ -282,10 +312,10 @@ describe('metadataMapper', () => {
                 cfg_scale: 7.5,
                 seed: 12345,
                 scheduler: 'euler_a',
-                model: { model_name: 'sd-1.5' }
+                model: { model_name: 'sd-1.5' },
             }),
             has_workflow: 0,
-            is_intermediate: 0
+            is_intermediate: 0,
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);
@@ -299,12 +329,20 @@ describe('metadataMapper', () => {
     });
 
     it('should preserve zero and leave a missing seed unknown', () => {
-        const zero = mapInvokeMetadata({
-            metadata_json: JSON.stringify({ seed: 0 })
-        }, 'metadata_json', 0);
-        const unknown = mapInvokeMetadata({
-            metadata_json: JSON.stringify({})
-        }, 'metadata_json', 0);
+        const zero = mapInvokeMetadata(
+            {
+                metadata_json: JSON.stringify({ seed: 0 }),
+            },
+            'metadata_json',
+            0
+        );
+        const unknown = mapInvokeMetadata(
+            {
+                metadata_json: JSON.stringify({}),
+            },
+            'metadata_json',
+            0
+        );
 
         expect(zero.seed).toBe(0);
         expect(unknown.seed).toBeUndefined();
@@ -313,15 +351,13 @@ describe('metadataMapper', () => {
     it('should recursively extract ControlNets (v3/v5 format)', () => {
         const row = {
             metadata_json: JSON.stringify({
-                controlnets: [
-                    { control_model: 'control_v11p_sd15_canny.safetensors' }
-                ],
+                controlnets: [{ control_model: 'control_v11p_sd15_canny.safetensors' }],
                 nodes: {
                     'node-1': {
-                        control_model: { name: 'control_v11f1p_sd15_depth.ckpt' }
-                    }
-                }
-            })
+                        control_model: { name: 'control_v11f1p_sd15_depth.ckpt' },
+                    },
+                },
+            }),
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);
@@ -336,11 +372,11 @@ describe('metadataMapper', () => {
                 workflow: {
                     nodes: {
                         'ip-node': {
-                            ip_adapter_model: { name: 'ip_adapter_sd15_faceid.bin' }
-                        }
-                    }
-                }
-            })
+                            ip_adapter_model: { name: 'ip_adapter_sd15_faceid.bin' },
+                        },
+                    },
+                },
+            }),
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);
@@ -353,9 +389,9 @@ describe('metadataMapper', () => {
             metadata_json: JSON.stringify({
                 loras: [
                     { lora: { name: 'style1' }, weight: 0.8 },
-                    { model_name: 'detailer', weight: 1.0 }
-                ]
-            })
+                    { model_name: 'detailer', weight: 1.0 },
+                ],
+            }),
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);
@@ -366,17 +402,14 @@ describe('metadataMapper', () => {
     it('should extract embeddings (textual inversions) from various field names and formats', () => {
         const row = {
             metadata_json: JSON.stringify({
-                embeddings: [
-                    { name: 'easynegative.safetensors' },
-                    { model_name: 'bad-artist-v2' }
-                ],
+                embeddings: [{ name: 'easynegative.safetensors' }, { model_name: 'bad-artist-v2' }],
                 ti: { name: 'deep_negative' },
                 nodes: {
                     'ti-node': {
-                        textual_inversion: 'another_emb.ckpt'
-                    }
-                }
-            })
+                        textual_inversion: 'another_emb.ckpt',
+                    },
+                },
+            }),
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);
@@ -391,8 +424,8 @@ describe('metadataMapper', () => {
         const row = {
             metadata_json: JSON.stringify({
                 positive_prompt: 'a cat, <style1>, <<<<full body shot',
-                negative_prompt: '<easynegative>, bad, <lora:some_lora:0.8>, <hypernet:A1 Extra-600000:0.15>'
-            })
+                negative_prompt: '<easynegative>, bad, <lora:some_lora:0.8>, <hypernet:A1 Extra-600000:0.15>',
+            }),
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);
@@ -408,8 +441,8 @@ describe('metadataMapper', () => {
         const row = {
             metadata_json: JSON.stringify({
                 positive_prompt: 'a cat, <lora:style_v1:0.8>, <lora:detailer:1.0>, <hypernet:my-hn:0.5>',
-                negative_prompt: '<hypernet:A1 Extra:0.15>'
-            })
+                negative_prompt: '<hypernet:A1 Extra:0.15>',
+            }),
         };
 
         const result = mapInvokeMetadata(row, 'metadata_json', 0);

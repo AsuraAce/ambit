@@ -5,15 +5,15 @@
 
 // Mapping of specific raw names to canonical names
 const SAMPLER_MAP: Record<string, string> = {
-    'euler_a': 'Euler a',
+    euler_a: 'Euler a',
     'euler-a': 'Euler a',
     'euler a': 'Euler a',
-    'euler': 'Euler',
-    'heun': 'Heun',
-    'lms': 'LMS',
-    'lms_k': 'LMS Karras',
-    'dpm2': 'DPM2',
-    'dpm2_a': 'DPM2 a',
+    euler: 'Euler',
+    heun: 'Heun',
+    lms: 'LMS',
+    lms_k: 'LMS Karras',
+    dpm2: 'DPM2',
+    dpm2_a: 'DPM2 a',
     'dpm++ 2s a': 'DPM++ 2S a',
     'dpm++ 2m': 'DPM++ 2M',
     'dpm++ 2m sde': 'DPM++ 2M SDE',
@@ -22,9 +22,9 @@ const SAMPLER_MAP: Record<string, string> = {
     'dpm++ sde karras': 'DPM++ SDE Karras',
     'dpm fast': 'DPM Fast',
     'dpm adaptive': 'DPM Adaptive',
-    'ddim': 'DDIM',
-    'plms': 'PLMS',
-    'unipc': 'UniPC',
+    ddim: 'DDIM',
+    plms: 'PLMS',
+    unipc: 'UniPC',
 };
 
 /**
@@ -43,7 +43,7 @@ export function normalizeSampler(name: string): string {
     return name
         .replace(/[_-]/g, ' ')
         .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join(' ');
 }
 
@@ -54,7 +54,7 @@ export function normalizeSampler(name: string): string {
 export function expandSamplerVariants(selectedCanonical: string[], allRawSamplers: string[]): string[] {
     if (!selectedCanonical.length) return [];
 
-    return allRawSamplers.filter(raw => {
+    return allRawSamplers.filter((raw) => {
         const canonical = normalizeSampler(raw);
         return selectedCanonical.includes(canonical);
     });

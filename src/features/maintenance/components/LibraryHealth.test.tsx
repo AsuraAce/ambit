@@ -25,27 +25,27 @@ const healthMocks = vi.hoisted(() => {
             calls.push({ resolve, signal, onProgress });
             onProgress?.(0, 10);
             return promise;
-        })
+        }),
     };
 });
 
 vi.mock('../../../contexts/LibraryContext', () => ({
     useLibraryContext: () => ({
-        refreshMaintenanceCounts: healthMocks.refreshMaintenanceCounts
-    })
+        refreshMaintenanceCounts: healthMocks.refreshMaintenanceCounts,
+    }),
 }));
 
 vi.mock('../../../services/db/maintenanceRepo', () => ({
     verifyLibraryIntegrity: healthMocks.verifyLibraryIntegrity,
-    pruneMissingLinks: healthMocks.pruneMissingLinks
+    pruneMissingLinks: healthMocks.pruneMissingLinks,
 }));
 
 const auditResult = (missingIds: string[], wasCancelled = false): MissingFileAuditResult => ({
     scanned: wasCancelled ? 5 : 10,
     total: 10,
     missingIds,
-    sampleMissingPaths: missingIds.map(id => `${id}.png`),
-    wasCancelled
+    sampleMissingPaths: missingIds.map((id) => `${id}.png`),
+    wasCancelled,
 });
 
 const startAudit = async () => {
@@ -163,10 +163,12 @@ describe('LibraryHealth missing audit ownership', () => {
         act(() => useLibraryStore.setState({ isScanningMissingFiles: true }));
         expect((screen.getByRole('button', { name: 'Run Audit' }) as HTMLButtonElement).disabled).toBe(true);
 
-        act(() => useLibraryStore.setState({
-            isScanningMissingFiles: false,
-            lastMissingScanResult: auditResult([])
-        }));
+        act(() =>
+            useLibraryStore.setState({
+                isScanningMissingFiles: false,
+                lastMissingScanResult: auditResult([]),
+            })
+        );
         expect(screen.getByText('File Links Healthy')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Open Maintenance' }));
         expect(onNavigate).toHaveBeenCalled();
@@ -199,7 +201,7 @@ describe('LibraryHealth missing audit ownership', () => {
     it('shows running audit progress from the shared store', () => {
         useLibraryStore.setState({
             isScanningMissingFiles: true,
-            missingScanProgress: { current: 3, total: 4, message: 'Checking' }
+            missingScanProgress: { current: 3, total: 4, message: 'Checking' },
         });
         render(<LibraryHealth />);
 
@@ -210,9 +212,11 @@ describe('LibraryHealth missing audit ownership', () => {
         vi.useFakeTimers();
         try {
             let resolvePrune!: () => void;
-            healthMocks.pruneMissingLinks.mockReturnValueOnce(new Promise<void>(resolve => {
-                resolvePrune = () => resolve();
-            }));
+            healthMocks.pruneMissingLinks.mockReturnValueOnce(
+                new Promise<void>((resolve) => {
+                    resolvePrune = () => resolve();
+                })
+            );
             useLibraryStore.setState({ lastMissingScanResult: auditResult(['missing']) });
             render(<LibraryHealth />);
 

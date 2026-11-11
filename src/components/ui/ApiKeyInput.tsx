@@ -27,39 +27,42 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
     error,
     isEnvKey = false,
     onTestEnvKey,
-    placeholder = "Paste your API key here…",
-    label = "Gemini API key",
+    placeholder = 'Paste your API key here…',
+    label = 'Gemini API key',
     showLabel = true,
-    className
+    className,
 }) => {
     const inputId = React.useId();
     const labelId = `${inputId}-label`;
     const hasPositiveStatus = status === 'success' || (!isEnvKey && status === 'configured');
-    const statusMessage = status === 'success'
-        ? isEnvKey
-            ? 'Environment API key verified'
-            : 'API key verified and saved'
-        : status === 'configured' && !isEnvKey
-            ? 'API key configured'
-            : null;
-    const verifyLabel = status === 'configured'
-        ? 'Re-verify'
-        : status === 'success'
-            ? 'Verified'
-            : 'Verify';
+    const statusMessage =
+        status === 'success'
+            ? isEnvKey
+                ? 'Environment API key verified'
+                : 'API key verified and saved'
+            : status === 'configured' && !isEnvKey
+              ? 'API key configured'
+              : null;
+    const verifyLabel = status === 'configured' ? 'Re-verify' : status === 'success' ? 'Verified' : 'Verify';
 
     return (
-        <div className={cn("space-y-2", className)}>
+        <div className={cn('space-y-2', className)}>
             {showLabel && (
                 <div className="flex justify-between items-end mb-2">
                     {isEnvKey ? (
-                        <span id={labelId} className="text-xs font-bold text-gray-500 uppercase tracking-widest leading-none">{label}</span>
+                        <span id={labelId} className="text-xs font-bold text-gray-500 uppercase tracking-widest leading-none">
+                            {label}
+                        </span>
                     ) : (
-                        <label htmlFor={inputId} className="text-xs font-bold text-gray-500 uppercase tracking-widest leading-none">{label}</label>
+                        <label htmlFor={inputId} className="text-xs font-bold text-gray-500 uppercase tracking-widest leading-none">
+                            {label}
+                        </label>
                     )}
                     <button
                         type="button"
-                        onClick={() => { void openExternalUrl(GEMINI_API_KEY_URL); }}
+                        onClick={() => {
+                            void openExternalUrl(GEMINI_API_KEY_URL);
+                        }}
                         className="inline-flex items-center gap-1 rounded text-xs font-semibold text-amethyst-600 hover:text-amethyst-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amethyst-500 dark:text-amethyst-300"
                     >
                         Get a Gemini API key
@@ -110,11 +113,13 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
                                 if (!isVerifying) onChange(e.target.value);
                             }}
                             className={cn(
-                                "w-full bg-gray-50 dark:bg-white/5 border rounded-xl px-4 py-4 pr-32 text-sm text-gray-900 outline-none transition-all focus:border-amethyst-500/50 focus:ring-4 focus:ring-amethyst-500/5 dark:text-white",
+                                'w-full bg-gray-50 dark:bg-white/5 border rounded-xl px-4 py-4 pr-32 text-sm text-gray-900 outline-none transition-all focus:border-amethyst-500/50 focus:ring-4 focus:ring-amethyst-500/5 dark:text-white',
                                 isVerifying && 'cursor-wait opacity-70',
-                                hasPositiveStatus ? 'border-sage-500/50' :
-                                    status === 'error' ? 'border-red-500/50' :
-                                        'border-gray-200 dark:border-white/10'
+                                hasPositiveStatus
+                                    ? 'border-sage-500/50'
+                                    : status === 'error'
+                                      ? 'border-red-500/50'
+                                      : 'border-gray-200 dark:border-white/10'
                             )}
                         />
                         <div className="absolute right-2 top-2 bottom-2 flex items-center gap-2">
@@ -139,19 +144,24 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
                             </button>
                         </div>
                     </div>
-
                 </div>
             )}
 
             {statusMessage ? (
-                <div role="status" className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-600 dark:text-sage-300 animate-in fade-in duration-150 motion-reduce:animate-none">
+                <div
+                    role="status"
+                    className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-600 dark:text-sage-300 animate-in fade-in duration-150 motion-reduce:animate-none"
+                >
                     <Check className="w-3 h-3" />
                     <span>{statusMessage}</span>
                 </div>
             ) : null}
 
             {status === 'error' && error && (
-                <div role="alert" className="flex items-center gap-2 px-1 text-[11px] font-bold text-red-500/80 animate-in fade-in duration-150 motion-reduce:animate-none">
+                <div
+                    role="alert"
+                    className="flex items-center gap-2 px-1 text-[11px] font-bold text-red-500/80 animate-in fade-in duration-150 motion-reduce:animate-none"
+                >
                     <XCircle className="w-3 h-3" />
                     <span>{error}</span>
                 </div>

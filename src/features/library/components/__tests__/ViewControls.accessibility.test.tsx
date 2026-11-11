@@ -15,9 +15,9 @@ vi.mock('../../../../contexts/SearchContext', () => ({
             filters,
             setFilters,
             sortOption: 'date_desc',
-            setSortOption
+            setSortOption,
         };
-    }
+    },
 }));
 
 const renderViewControls = (setLayoutMode = vi.fn()) => {

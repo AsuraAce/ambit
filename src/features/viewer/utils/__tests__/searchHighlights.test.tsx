@@ -12,42 +12,42 @@ describe('derivePromptHighlightSpec', () => {
     it('highlights plain terms in the positive prompt', () => {
         expect(derivePromptHighlightSpec('sunset')).toEqual({
             positivePrompt: ['sunset'],
-            negativePrompt: []
+            negativePrompt: [],
         });
     });
 
     it('highlights quoted phrases in the positive prompt', () => {
         expect(derivePromptHighlightSpec('"golden hour"')).toEqual({
             positivePrompt: ['golden hour'],
-            negativePrompt: []
+            negativePrompt: [],
         });
     });
 
     it('highlights neg and negative operators in the negative prompt', () => {
         expect(derivePromptHighlightSpec('neg:blur negative:watermark')).toEqual({
             positivePrompt: [],
-            negativePrompt: ['blur', 'watermark']
+            negativePrompt: ['blur', 'watermark'],
         });
     });
 
     it('skips excluded terms', () => {
         expect(derivePromptHighlightSpec('-bird !cat')).toEqual({
             positivePrompt: [],
-            negativePrompt: []
+            negativePrompt: [],
         });
     });
 
     it('skips non-prompt operators', () => {
         expect(derivePromptHighlightSpec('model:flux file:portrait all:anime steps:>30')).toEqual({
             positivePrompt: [],
-            negativePrompt: []
+            negativePrompt: [],
         });
     });
 
     it('dedupes terms case-insensitively per prompt field', () => {
         expect(derivePromptHighlightSpec('Sunset sunset neg:Blur negative:blur')).toEqual({
             positivePrompt: ['Sunset'],
-            negativePrompt: ['Blur']
+            negativePrompt: ['Blur'],
         });
     });
 });
@@ -82,13 +82,15 @@ describe('HighlightedPromptText', () => {
             </div>
         );
 
-        const marks = Array.from(container.querySelectorAll('mark')).map(mark => mark.textContent);
+        const marks = Array.from(container.querySelectorAll('mark')).map((mark) => mark.textContent);
         expect(marks).toEqual(['c++', '[brackets]']);
     });
 
     it('renders plain text when terms are empty, too short, duplicate, or unmatched', () => {
         const { container, rerender } = render(
-            <div><HighlightedPromptText text="plain prompt" /></div>
+            <div>
+                <HighlightedPromptText text="plain prompt" />
+            </div>
         );
         expect(container.querySelector('mark')).toBeNull();
 
@@ -100,24 +102,22 @@ describe('HighlightedPromptText', () => {
         expect(container.textContent).toBe('plain prompt');
         expect(container.querySelector('mark')).toBeNull();
 
-        rerender(<div><HighlightedPromptText text="" terms={['prompt']} /></div>);
+        rerender(
+            <div>
+                <HighlightedPromptText text="" terms={['prompt']} />
+            </div>
+        );
         expect(container.textContent).toBe('');
     });
 
     it('prefers the longest overlapping term and highlights repeated boundary matches', () => {
         const { container } = render(
             <div>
-                <HighlightedPromptText
-                    text="foobar middle foobar"
-                    terms={['foo', 'FOOBAR', 'bar']}
-                />
+                <HighlightedPromptText text="foobar middle foobar" terms={['foo', 'FOOBAR', 'bar']} />
             </div>
         );
 
-        expect(Array.from(container.querySelectorAll('mark')).map(mark => mark.textContent)).toEqual([
-            'foobar',
-            'foobar',
-        ]);
+        expect(Array.from(container.querySelectorAll('mark')).map((mark) => mark.textContent)).toEqual(['foobar', 'foobar']);
         expect(container.textContent).toBe('foobar middle foobar');
     });
 });

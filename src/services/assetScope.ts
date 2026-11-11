@@ -1,13 +1,7 @@
 import { appLocalDataDir } from '@tauri-apps/api/path';
 import { commands } from '../bindings';
 import { AppSettings } from '../types';
-import {
-    getDirectoryPath,
-    isPathWithinDirectory,
-    normalizeInvokeRoot,
-    normalizePath,
-    urlToPath,
-} from '../utils/pathUtils';
+import { getDirectoryPath, isPathWithinDirectory, normalizeInvokeRoot, normalizePath, urlToPath } from '../utils/pathUtils';
 import { isBrowserMockMode } from './runtime';
 
 const registeredDirectories = new Map<string, Promise<void>>();
@@ -60,9 +54,7 @@ export const ensureAssetPathAccessible = async (
         return;
     }
 
-    const targetDirectory = normalizePath(
-        options?.assumeDirectory ? resolvedPath : getDirectoryPath(resolvedPath)
-    );
+    const targetDirectory = normalizePath(options?.assumeDirectory ? resolvedPath : getDirectoryPath(resolvedPath));
 
     if (!targetDirectory) return;
 
@@ -73,7 +65,8 @@ export const ensureAssetPathAccessible = async (
         return;
     }
 
-    const registration = commands.registerLibraryPath(targetDirectory)
+    const registration = commands
+        .registerLibraryPath(targetDirectory)
         .then((result) => {
             if (result.status === 'error') {
                 throw new Error(result.error);

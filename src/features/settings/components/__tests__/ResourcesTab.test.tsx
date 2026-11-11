@@ -5,21 +5,65 @@ import { ResourcesTab } from '../ResourcesTab';
 
 const mocks = vi.hoisted(() => ({ logic: {} as Record<string, unknown> }));
 vi.mock('../../hooks/useResourcesTabLogic', () => ({ useResourcesTabLogic: () => mocks.logic }));
-vi.mock('../ResourceDiscoverySection', () => ({ ResourceDiscoverySection: ({ onBrowse, onAdd, onRemove, onScanNow }: { onBrowse: () => void; onAdd: () => void; onRemove: (path: string) => void; onScanNow: () => void }) => <><button onClick={onBrowse}>browse</button><button onClick={onAdd}>add-folder</button><button onClick={() => onRemove('path')}>remove-folder</button><button onClick={onScanNow}>scan</button></> }));
-vi.mock('../../../../components/ui/ConfirmDialog', () => ({ ConfirmDialog: ({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) => <><button onClick={onCancel}>cancel-confirm</button><button onClick={onConfirm}>confirm-resolve</button></> }));
+vi.mock('../ResourceDiscoverySection', () => ({
+    ResourceDiscoverySection: ({
+        onBrowse,
+        onAdd,
+        onRemove,
+        onScanNow,
+    }: {
+        onBrowse: () => void;
+        onAdd: () => void;
+        onRemove: (path: string) => void;
+        onScanNow: () => void;
+    }) => (
+        <>
+            <button onClick={onBrowse}>browse</button>
+            <button onClick={onAdd}>add-folder</button>
+            <button onClick={() => onRemove('path')}>remove-folder</button>
+            <button onClick={onScanNow}>scan</button>
+        </>
+    ),
+}));
+vi.mock('../../../../components/ui/ConfirmDialog', () => ({
+    ConfirmDialog: ({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) => (
+        <>
+            <button onClick={onCancel}>cancel-confirm</button>
+            <button onClick={onConfirm}>confirm-resolve</button>
+        </>
+    ),
+}));
 
 const fn = () => vi.fn();
 const baseLogic = () => ({
-    resourceFolders: [], isScanningDiscovery: false, discoveryScanProgress: null, isPopulatingThumbnails: false,
-    removingResourcePath: null, newResourcePath: '', setNewResourcePath: fn(), resourceInputRef: { current: null },
-    handleBrowseResource: fn(), handleAddResourceFolder: fn(), handleRemoveResourceFolder: fn(), handleScanNow: fn(),
-    isResolving: false, resolutionProgress: null, resolutionProgressPercent: 0, resolutionResult: null,
-    isHashResolutionBlocked: false, isResolveConfirmOpen: false, requestResolveOnline: fn(), confirmResolveOnline: fn(),
-    cancelResolveOnline: fn(), cancelResolveConfirmation: fn()
+    resourceFolders: [],
+    isScanningDiscovery: false,
+    discoveryScanProgress: null,
+    isPopulatingThumbnails: false,
+    removingResourcePath: null,
+    newResourcePath: '',
+    setNewResourcePath: fn(),
+    resourceInputRef: { current: null },
+    handleBrowseResource: fn(),
+    handleAddResourceFolder: fn(),
+    handleRemoveResourceFolder: fn(),
+    handleScanNow: fn(),
+    isResolving: false,
+    resolutionProgress: null,
+    resolutionProgressPercent: 0,
+    resolutionResult: null,
+    isHashResolutionBlocked: false,
+    isResolveConfirmOpen: false,
+    requestResolveOnline: fn(),
+    confirmResolveOnline: fn(),
+    cancelResolveOnline: fn(),
+    cancelResolveConfirmation: fn(),
 });
 
 describe('ResourcesTab', () => {
-    beforeEach(() => { mocks.logic = baseLogic(); });
+    beforeEach(() => {
+        mocks.logic = baseLogic();
+    });
 
     it('routes discovery, resolve, and confirmation actions', () => {
         const logic = mocks.logic as ReturnType<typeof baseLogic>;
@@ -29,7 +73,8 @@ describe('ResourcesTab', () => {
         expect(resolveButton.className).toContain('min-h-10');
         expect(resolveButton.className).toContain('text-sm');
         expect(resolutionHeader?.className).not.toContain('mb-6');
-        for (const label of ['browse', 'add-folder', 'remove-folder', 'scan', 'Resolve Online', 'cancel-confirm', 'confirm-resolve']) fireEvent.click(screen.getByText(label));
+        for (const label of ['browse', 'add-folder', 'remove-folder', 'scan', 'Resolve Online', 'cancel-confirm', 'confirm-resolve'])
+            fireEvent.click(screen.getByText(label));
         expect(logic.handleBrowseResource).toHaveBeenCalled();
         expect(logic.handleAddResourceFolder).toHaveBeenCalled();
         expect(logic.handleRemoveResourceFolder).toHaveBeenCalledWith('path');
@@ -41,7 +86,14 @@ describe('ResourcesTab', () => {
 
     it('shows blocked, resolving, progress, and both result states', () => {
         const cancelResolveOnline = vi.fn();
-        mocks.logic = { ...baseLogic(), isResolving: true, resolutionProgress: { message: 'Hash 2 of 4' }, resolutionProgressPercent: 50, resolutionResult: { success: true, message: 'Resolved' }, cancelResolveOnline };
+        mocks.logic = {
+            ...baseLogic(),
+            isResolving: true,
+            resolutionProgress: { message: 'Hash 2 of 4' },
+            resolutionProgressPercent: 50,
+            resolutionResult: { success: true, message: 'Resolved' },
+            cancelResolveOnline,
+        };
         const { container, rerender } = render(<ResourcesTab settings={{} as AppSettings} setSettings={vi.fn()} />);
         expect(screen.getByText('Online Model Hash Resolution').parentElement?.parentElement?.parentElement?.className).toContain('mb-6');
         expect(screen.getByText('Hash 2 of 4')).toBeTruthy();

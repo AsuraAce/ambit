@@ -10,23 +10,12 @@ import { refreshFacetCacheForResourcesStrict, rebuildFacetCacheIncremental } fro
 import { isBrowserMockMode } from '../../../services/runtime';
 import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
-import {
-    createEmptyTouchedFacetResources,
-    hasTouchedFacetResources,
-    type TouchedFacetResources
-} from '../../../utils/touchedFacetTypes';
+import { createEmptyTouchedFacetResources, hasTouchedFacetResources, type TouchedFacetResources } from '../../../utils/touchedFacetTypes';
 import { formatHashResolutionMessage, isHashResolutionPartial } from '../utils/hashResolution';
 
-const RESOURCE_TOUCH_KEYS = [
-    'checkpoints',
-    'loras',
-    'embeddings',
-    'hypernetworks',
-    'controlNets',
-    'ipAdapters'
-] as const;
+const RESOURCE_TOUCH_KEYS = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'] as const;
 
-type ResourceTouchKey = typeof RESOURCE_TOUCH_KEYS[number];
+type ResourceTouchKey = (typeof RESOURCE_TOUCH_KEYS)[number];
 
 const RESOURCE_INDEX_LABELS: Record<ResourceTouchKey, string> = {
     checkpoints: 'checkpoint',
@@ -34,7 +23,7 @@ const RESOURCE_INDEX_LABELS: Record<ResourceTouchKey, string> = {
     embeddings: 'embedding',
     hypernetworks: 'hypernetwork',
     controlNets: 'ControlNet',
-    ipAdapters: 'IP-Adapter'
+    ipAdapters: 'IP-Adapter',
 };
 
 const RESOURCE_FILE_LABELS: Record<ResourceTouchKey, string> = {
@@ -43,7 +32,7 @@ const RESOURCE_FILE_LABELS: Record<ResourceTouchKey, string> = {
     embeddings: 'embedding files',
     hypernetworks: 'hypernetwork files',
     controlNets: 'ControlNet files',
-    ipAdapters: 'IP-Adapter files'
+    ipAdapters: 'IP-Adapter files',
 };
 
 const RESOURCE_SCAN_COMPLETE_VISIBLE_MS = 1200;
@@ -52,7 +41,7 @@ const resourcesForScanResult = (result: ThumbnailScanResult): TouchedFacetResour
     result.resources ?? createEmptyTouchedFacetResources();
 
 const touchedResourceKeys = (resources: TouchedFacetResources): ResourceTouchKey[] =>
-    RESOURCE_TOUCH_KEYS.filter(key => resources[key].length > 0);
+    RESOURCE_TOUCH_KEYS.filter((key) => resources[key].length > 0);
 
 const resourceFileLabel = (result: ThumbnailScanResult): string => {
     const keys = touchedResourceKeys(resourcesForScanResult(result));
@@ -109,27 +98,26 @@ const formatResourceIndexPhase = (resources: TouchedFacetResources): string => {
     return 'Updating local asset index';
 };
 
-const waitForResourceScanCompletionState = () =>
-    new Promise<void>(resolve => setTimeout(resolve, RESOURCE_SCAN_COMPLETE_VISIBLE_MS));
+const waitForResourceScanCompletionState = () => new Promise<void>((resolve) => setTimeout(resolve, RESOURCE_SCAN_COMPLETE_VISIBLE_MS));
 
-const getErrorMessage = (error: unknown): string =>
-    error instanceof Error ? error.message : String(error);
+const getErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const isCancellationError = (error: unknown): boolean =>
-    getErrorMessage(error).toLowerCase().includes('cancel');
+const isCancellationError = (error: unknown): boolean => getErrorMessage(error).toLowerCase().includes('cancel');
 
 const isLibraryBusyForHashResolution = () => {
     const state = useLibraryStore.getState();
-    return state.syncStatus === 'syncing'
-        || state.isImporting
-        || state.isLiveSyncing
-        || state.isRegeneratingThumbnails
-        || state.isRefreshingMetadata
-        || state.isScanningDiscovery
-        || state.isScanningDuplicates
-        || state.isScanningMissingFiles
-        || state.isPopulatingThumbnails
-        || state.isBackgroundHealingActive;
+    return (
+        state.syncStatus === 'syncing' ||
+        state.isImporting ||
+        state.isLiveSyncing ||
+        state.isRegeneratingThumbnails ||
+        state.isRefreshingMetadata ||
+        state.isScanningDiscovery ||
+        state.isScanningDuplicates ||
+        state.isScanningMissingFiles ||
+        state.isPopulatingThumbnails ||
+        state.isBackgroundHealingActive
+    );
 };
 
 interface UseResourcesTabLogicProps {
@@ -137,10 +125,7 @@ interface UseResourcesTabLogicProps {
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
 }
 
-export const useResourcesTabLogic = ({
-    settings,
-    setSettings
-}: UseResourcesTabLogicProps) => {
+export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabLogicProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const [newResourcePath, setNewResourcePath] = React.useState('');
@@ -155,73 +140,84 @@ export const useResourcesTabLogic = ({
         modelResolutionProgress: resolutionProgress,
         setModelResolutionProgress: setResolutionProgress,
         lastModelResolutionResult: resolutionResult,
-        setLastModelResolutionResult: setResolutionResult
+        setLastModelResolutionResult: setResolutionResult,
     } = useLibraryContext();
 
-    const {
-        isScanningDiscovery, setIsScanningDiscovery,
-        discoveryScanProgress, setDiscoveryScanProgress, isPopulatingThumbnails
-    } = useLibraryStore();
-    const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
-    const isHashResolutionBlocked = useLibraryStore(state => state.syncStatus === 'syncing'
-        || state.isImporting
-        || state.isLiveSyncing
-        || state.isRegeneratingThumbnails
-        || state.isRefreshingMetadata
-        || state.isScanningDiscovery
-        || state.isScanningDuplicates
-        || state.isScanningMissingFiles
-        || state.isPopulatingThumbnails
-        || state.isBackgroundHealingActive);
+    const { isScanningDiscovery, setIsScanningDiscovery, discoveryScanProgress, setDiscoveryScanProgress, isPopulatingThumbnails } =
+        useLibraryStore();
+    const incrementFacetCacheVersion = useLibraryStore((state) => state.incrementFacetCacheVersion);
+    const isHashResolutionBlocked = useLibraryStore(
+        (state) =>
+            state.syncStatus === 'syncing' ||
+            state.isImporting ||
+            state.isLiveSyncing ||
+            state.isRegeneratingThumbnails ||
+            state.isRefreshingMetadata ||
+            state.isScanningDiscovery ||
+            state.isScanningDuplicates ||
+            state.isScanningMissingFiles ||
+            state.isPopulatingThumbnails ||
+            state.isBackgroundHealingActive
+    );
 
-    const resolutionProgressPercent = resolutionProgress && resolutionProgress.total > 0
-        ? Math.min(100, Math.max(0, Math.round((resolutionProgress.current / resolutionProgress.total) * 100)))
-        : 0;
+    const resolutionProgressPercent =
+        resolutionProgress && resolutionProgress.total > 0
+            ? Math.min(100, Math.max(0, Math.round((resolutionProgress.current / resolutionProgress.total) * 100)))
+            : 0;
 
-    const refreshResourceFacetCache = React.useCallback(async (scanResult: ThumbnailScanResult): Promise<number> => {
-        const resources = resourcesForScanResult(scanResult);
-        if (!hasTouchedFacetResources(resources)) {
-            if (scanResult.found > 0) {
-                addToast('Resource scan found model files, but none could be classified for indexing', 'warning');
+    const refreshResourceFacetCache = React.useCallback(
+        async (scanResult: ThumbnailScanResult): Promise<number> => {
+            const resources = resourcesForScanResult(scanResult);
+            if (!hasTouchedFacetResources(resources)) {
+                if (scanResult.found > 0) {
+                    addToast('Resource scan found model files, but none could be classified for indexing', 'warning');
+                }
+                useLibraryStore.getState().incrementFacetCacheVersion();
+                return 0;
             }
+
+            const startedAt = useLibraryStore.getState().discoveryScanProgress?.startedAt ?? Date.now();
+            setDiscoveryScanProgress({
+                current: scanResult.found,
+                total: 0,
+                message: formatResourceIndexMessage(resources),
+                phase: formatResourceIndexPhase(resources),
+                mode: 'indeterminate',
+                detail: formatResourceScanDetail(scanResult),
+                startedAt,
+            });
+            const indexedRows = await refreshFacetCacheForResourcesStrict(resources);
             useLibraryStore.getState().incrementFacetCacheVersion();
-            return 0;
-        }
+            return indexedRows;
+        },
+        [addToast, setDiscoveryScanProgress]
+    );
 
-        const startedAt = useLibraryStore.getState().discoveryScanProgress?.startedAt ?? Date.now();
-        setDiscoveryScanProgress({
-            current: scanResult.found,
-            total: 0,
-            message: formatResourceIndexMessage(resources),
-            phase: formatResourceIndexPhase(resources),
-            mode: 'indeterminate',
-            detail: formatResourceScanDetail(scanResult),
-            startedAt
-        });
-        const indexedRows = await refreshFacetCacheForResourcesStrict(resources);
-        useLibraryStore.getState().incrementFacetCacheVersion();
-        return indexedRows;
-    }, [addToast, setDiscoveryScanProgress]);
+    const showResourceScanComplete = React.useCallback(
+        async (scanResult: ThumbnailScanResult, indexedRows: number) => {
+            const startedAt = useLibraryStore.getState().discoveryScanProgress?.startedAt ?? Date.now();
+            setDiscoveryScanProgress({
+                current: scanResult.found,
+                total: scanResult.found,
+                message: 'Resource scan complete',
+                phase: 'Complete',
+                mode: 'complete',
+                detail: formatResourceScanDetail(scanResult, indexedRows),
+                startedAt,
+            });
+            await waitForResourceScanCompletionState();
+        },
+        [setDiscoveryScanProgress]
+    );
 
-    const showResourceScanComplete = React.useCallback(async (scanResult: ThumbnailScanResult, indexedRows: number) => {
-        const startedAt = useLibraryStore.getState().discoveryScanProgress?.startedAt ?? Date.now();
-        setDiscoveryScanProgress({
-            current: scanResult.found,
-            total: scanResult.found,
-            message: 'Resource scan complete',
-            phase: 'Complete',
-            mode: 'complete',
-            detail: formatResourceScanDetail(scanResult, indexedRows),
-            startedAt
-        });
-        await waitForResourceScanCompletionState();
-    }, [setDiscoveryScanProgress]);
-
-    const runResourceDiscoveryScan = React.useCallback(async (paths: string[]) => {
-        const result = await scanResourceThumbnails(paths);
-        const indexedRows = await refreshResourceFacetCache(result);
-        return { result, indexedRows };
-    }, [refreshResourceFacetCache]);
+    const runResourceDiscoveryScan = React.useCallback(
+        async (paths: string[]) => {
+            const result = await scanResourceThumbnails(paths);
+            const indexedRows = await refreshResourceFacetCache(result);
+            return { result, indexedRows };
+        },
+        [refreshResourceFacetCache]
+    );
 
     const handleBrowseResource = React.useCallback(async () => {
         if (removingResourcePathRef.current) return;
@@ -237,92 +233,91 @@ export const useResourcesTabLogic = ({
         }
     }, []);
 
-    const handleAddResourceFolder = React.useCallback(async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (removingResourcePathRef.current) return;
-        if (!newResourcePath.trim()) return;
+    const handleAddResourceFolder = React.useCallback(
+        async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (removingResourcePathRef.current) return;
+            if (!newResourcePath.trim()) return;
 
-        const pathToAdd = normalizePath(newResourcePath.trim());
-        const existing = (settings.resourceFolders || []).some(path => normalizePath(path) === pathToAdd);
-        if (existing) {
-            addToast('Resource folder is already added', 'info');
-            setNewResourcePath('');
-            return;
-        }
-
-        const nextResourceFolders = [...(settings.resourceFolders || []), pathToAdd];
-        setSettings(prev => ({
-            ...prev,
-            resourceFolders: nextResourceFolders
-        }));
-        setNewResourcePath('');
-        addToast('Added resource folder', 'success');
-        setIsScanningDiscovery(true);
-        try {
-            const { result, indexedRows } = await runResourceDiscoveryScan([pathToAdd]);
-            await showResourceScanComplete(result, indexedRows);
-            addToast(formatResourceScanToast(result, indexedRows), 'success');
-        } catch (e) {
-            console.error('Resource scan failed', e);
-            addToast(
-                isCancellationError(e) ? 'Resource scan cancelled' : 'Resource scan failed',
-                isCancellationError(e) ? 'info' : 'error'
-            );
-        } finally {
-            setIsScanningDiscovery(false);
-            setDiscoveryScanProgress(null);
-        }
-    }, [
-        addToast,
-        newResourcePath,
-        runResourceDiscoveryScan,
-        setDiscoveryScanProgress,
-        setIsScanningDiscovery,
-        setSettings,
-        settings.resourceFolders,
-        showResourceScanComplete
-    ]);
-
-    const handleRemoveResourceFolder = React.useCallback(async (path: string) => {
-        if (isScanningDiscovery || isPopulatingThumbnails || removingResourcePathRef.current) return;
-
-        const normalizedPath = normalizePath(path);
-        const remainingPaths = (settings.resourceFolders || [])
-            .map(normalizePath)
-            .filter(configuredPath => configuredPath !== normalizedPath);
-
-        removingResourcePathRef.current = normalizedPath;
-        setRemovingResourcePath(path);
-
-        try {
-            let purgeResult: ResourcePurgeResult | null = null;
-            if (!isBrowserMockMode()) {
-                purgeResult = await unwrap(commands.purgeResourceFolderAssets(path, remainingPaths));
-                incrementFacetCacheVersion();
+            const pathToAdd = normalizePath(newResourcePath.trim());
+            const existing = (settings.resourceFolders || []).some((path) => normalizePath(path) === pathToAdd);
+            if (existing) {
+                addToast('Resource folder is already added', 'info');
+                setNewResourcePath('');
+                return;
             }
 
-            setSettings(prev => ({
+            const nextResourceFolders = [...(settings.resourceFolders || []), pathToAdd];
+            setSettings((prev) => ({
                 ...prev,
-                resourceFolders: (prev.resourceFolders || []).filter(
-                    configuredPath => normalizePath(configuredPath) !== normalizedPath
-                )
+                resourceFolders: nextResourceFolders,
             }));
-            addToast(purgeResult ? formatResourcePurgeToast(purgeResult) : 'Removed resource folder', 'success');
-        } catch (error) {
-            console.error('Failed to remove resource folder', error);
-            addToast('Failed to remove resource folder', 'error');
-        } finally {
-            removingResourcePathRef.current = null;
-            setRemovingResourcePath(null);
-        }
-    }, [
-        addToast,
-        incrementFacetCacheVersion,
-        isPopulatingThumbnails,
-        isScanningDiscovery,
-        setSettings,
-        settings.resourceFolders
-    ]);
+            setNewResourcePath('');
+            addToast('Added resource folder', 'success');
+            setIsScanningDiscovery(true);
+            try {
+                const { result, indexedRows } = await runResourceDiscoveryScan([pathToAdd]);
+                await showResourceScanComplete(result, indexedRows);
+                addToast(formatResourceScanToast(result, indexedRows), 'success');
+            } catch (e) {
+                console.error('Resource scan failed', e);
+                addToast(
+                    isCancellationError(e) ? 'Resource scan cancelled' : 'Resource scan failed',
+                    isCancellationError(e) ? 'info' : 'error'
+                );
+            } finally {
+                setIsScanningDiscovery(false);
+                setDiscoveryScanProgress(null);
+            }
+        },
+        [
+            addToast,
+            newResourcePath,
+            runResourceDiscoveryScan,
+            setDiscoveryScanProgress,
+            setIsScanningDiscovery,
+            setSettings,
+            settings.resourceFolders,
+            showResourceScanComplete,
+        ]
+    );
+
+    const handleRemoveResourceFolder = React.useCallback(
+        async (path: string) => {
+            if (isScanningDiscovery || isPopulatingThumbnails || removingResourcePathRef.current) return;
+
+            const normalizedPath = normalizePath(path);
+            const remainingPaths = (settings.resourceFolders || [])
+                .map(normalizePath)
+                .filter((configuredPath) => configuredPath !== normalizedPath);
+
+            removingResourcePathRef.current = normalizedPath;
+            setRemovingResourcePath(path);
+
+            try {
+                let purgeResult: ResourcePurgeResult | null = null;
+                if (!isBrowserMockMode()) {
+                    purgeResult = await unwrap(commands.purgeResourceFolderAssets(path, remainingPaths));
+                    incrementFacetCacheVersion();
+                }
+
+                setSettings((prev) => ({
+                    ...prev,
+                    resourceFolders: (prev.resourceFolders || []).filter(
+                        (configuredPath) => normalizePath(configuredPath) !== normalizedPath
+                    ),
+                }));
+                addToast(purgeResult ? formatResourcePurgeToast(purgeResult) : 'Removed resource folder', 'success');
+            } catch (error) {
+                console.error('Failed to remove resource folder', error);
+                addToast('Failed to remove resource folder', 'error');
+            } finally {
+                removingResourcePathRef.current = null;
+                setRemovingResourcePath(null);
+            }
+        },
+        [addToast, incrementFacetCacheVersion, isPopulatingThumbnails, isScanningDiscovery, setSettings, settings.resourceFolders]
+    );
 
     const handleScanNow = React.useCallback(async () => {
         if (removingResourcePathRef.current) return;
@@ -348,7 +343,7 @@ export const useResourcesTabLogic = ({
         setDiscoveryScanProgress,
         setIsScanningDiscovery,
         settings.resourceFolders,
-        showResourceScanComplete
+        showResourceScanComplete,
     ]);
 
     const requestResolveOnline = React.useCallback(() => {
@@ -364,7 +359,7 @@ export const useResourcesTabLogic = ({
         if (isLibraryBusyForHashResolution()) {
             setResolutionResult({
                 success: false,
-                message: 'Resolution paused: wait for the current sync, import, scan, or cache rebuild to finish, then run it again.'
+                message: 'Resolution paused: wait for the current sync, import, scan, or cache rebuild to finish, then run it again.',
             });
             addToast('Hash resolution is paused while the library is busy', 'warning');
             return;
@@ -374,7 +369,7 @@ export const useResourcesTabLogic = ({
         setResolutionProgress({
             current: 0,
             total: 100,
-            message: 'Starting hash resolution...'
+            message: 'Starting hash resolution...',
         });
         setResolutionResult(null);
         addToast('Resolving unknown hashes...', 'info');
@@ -388,7 +383,7 @@ export const useResourcesTabLogic = ({
             setResolutionProgress({
                 current: 95,
                 total: 100,
-                message: 'Refreshing checkpoint filters...'
+                message: 'Refreshing checkpoint filters...',
             });
 
             try {
@@ -396,7 +391,7 @@ export const useResourcesTabLogic = ({
                 incrementFacetCacheVersion();
                 await Promise.all([
                     queryClient.invalidateQueries({ queryKey: ['images'] }),
-                    queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
+                    queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
                 ]);
             } catch (refreshError: unknown) {
                 refreshFailed = true;
@@ -408,7 +403,7 @@ export const useResourcesTabLogic = ({
 
             setResolutionResult({
                 success: !isPartial,
-                message
+                message,
             });
 
             if (!refreshFailed) {
@@ -431,14 +426,7 @@ export const useResourcesTabLogic = ({
             setIsResolving(false);
             setResolutionProgress(null);
         }
-    }, [
-        addToast,
-        incrementFacetCacheVersion,
-        queryClient,
-        setIsResolving,
-        setResolutionProgress,
-        setResolutionResult
-    ]);
+    }, [addToast, incrementFacetCacheVersion, queryClient, setIsResolving, setResolutionProgress, setResolutionResult]);
 
     const cancelResolveOnline = React.useCallback(async () => {
         await commands.cancelModelResolution().catch(console.error);

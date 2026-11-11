@@ -24,23 +24,21 @@ export const getInvokeConnectionDraft = (settings: AppSettings): InvokeConnectio
 });
 
 export const isSameInvokeConnectionSource = (left: string, right: string): boolean =>
-    !!left.trim() && !!right.trim()
-    && isSameInvokePath(resolveInvokePaths(left.trim()).dbPath, resolveInvokePaths(right.trim()).dbPath);
+    !!left.trim() && !!right.trim() && isSameInvokePath(resolveInvokePaths(left.trim()).dbPath, resolveInvokePaths(right.trim()).dbPath);
 
-export const isSameInvokeOwnerSelection = (
-    left?: InvokeOwnerSelection,
-    right?: InvokeOwnerSelection,
-): boolean => left === undefined ? right === undefined : right !== undefined
-    && isSameInvokePath(left.dbPath, right.dbPath)
-    && left.mode === right.mode
-    && (left.mode !== 'owner' || (right.mode === 'owner' && left.ownerId === right.ownerId));
+export const isSameInvokeOwnerSelection = (left?: InvokeOwnerSelection, right?: InvokeOwnerSelection): boolean =>
+    left === undefined
+        ? right === undefined
+        : right !== undefined &&
+          isSameInvokePath(left.dbPath, right.dbPath) &&
+          left.mode === right.mode &&
+          (left.mode !== 'owner' || (right.mode === 'owner' && left.ownerId === right.ownerId));
 
 export const isSameInvokeConnectionDraft = (left: InvokeConnectionDraft, right: InvokeConnectionDraft): boolean =>
-    (left.invokeAiPath.trim() === right.invokeAiPath.trim()
-        || isSameInvokeConnectionSource(left.invokeAiPath, right.invokeAiPath))
-    && isSameInvokeOwnerSelection(left.invokeOwnerSelection, right.invokeOwnerSelection)
-    && left.invokeSyncFavorites === right.invokeSyncFavorites
-    && left.invokeSyncBoards === right.invokeSyncBoards
-    && left.starredAs === right.starredAs
-    && left.importIntermediates === right.importIntermediates
-    && left.importOrphans === right.importOrphans;
+    (left.invokeAiPath.trim() === right.invokeAiPath.trim() || isSameInvokeConnectionSource(left.invokeAiPath, right.invokeAiPath)) &&
+    isSameInvokeOwnerSelection(left.invokeOwnerSelection, right.invokeOwnerSelection) &&
+    left.invokeSyncFavorites === right.invokeSyncFavorites &&
+    left.invokeSyncBoards === right.invokeSyncBoards &&
+    left.starredAs === right.starredAs &&
+    left.importIntermediates === right.importIntermediates &&
+    left.importOrphans === right.importOrphans;

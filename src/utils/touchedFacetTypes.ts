@@ -7,7 +7,7 @@ const FACET_TYPE_ORDER: readonly FacetType[] = [
     'hypernetworks',
     'controlNets',
     'ipAdapters',
-    'tools'
+    'tools',
 ];
 
 export interface TouchedFacetResources {
@@ -20,10 +20,12 @@ export interface TouchedFacetResources {
     tools: string[];
 }
 
-type MetadataLike = Partial<Pick<
-    ImageMetadata,
-    'tool' | 'model' | 'overrideModel' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters'
->> | null | undefined;
+type MetadataLike =
+    | Partial<
+          Pick<ImageMetadata, 'tool' | 'model' | 'overrideModel' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters'>
+      >
+    | null
+    | undefined;
 
 export const createEmptyTouchedFacetResources = (): TouchedFacetResources => ({
     checkpoints: [],
@@ -32,16 +34,14 @@ export const createEmptyTouchedFacetResources = (): TouchedFacetResources => ({
     hypernetworks: [],
     controlNets: [],
     ipAdapters: [],
-    tools: []
+    tools: [],
 });
 
 const cleanResourceName = (value: string): string => {
     let name = value.trim();
     const weightedIndex = name.indexOf(' (');
     const colonIndex = name.indexOf(':');
-    const cutIndex = [weightedIndex, colonIndex]
-        .filter(index => index > 0)
-        .sort((a, b) => a - b)[0];
+    const cutIndex = [weightedIndex, colonIndex].filter((index) => index > 0).sort((a, b) => a - b)[0];
 
     if (cutIndex !== undefined) {
         name = name.slice(0, cutIndex).trim();
@@ -79,7 +79,7 @@ export const orderFacetTypes = (types: Iterable<string>): FacetType[] => {
         }
     }
 
-    return FACET_TYPE_ORDER.filter(type => unique.has(type));
+    return FACET_TYPE_ORDER.filter((type) => unique.has(type));
 };
 
 export const collectTouchedFacetTypesFromMetadata = (metadata: MetadataLike): FacetType[] => {
@@ -108,35 +108,33 @@ export const collectTouchedFacetResourcesFromMetadata = (metadata: MetadataLike)
     addUnique(touched.checkpoints, normalizeName(metadata?.overrideModel || metadata?.model, 'Unknown'));
     addUnique(touched.tools, normalizeName(metadata?.tool, 'Unknown'));
 
-    metadata?.loras?.forEach(value => addUnique(touched.loras, normalizeName(value)));
-    metadata?.embeddings?.forEach(value => addUnique(touched.embeddings, normalizeName(value)));
-    metadata?.hypernetworks?.forEach(value => addUnique(touched.hypernetworks, normalizeName(value)));
-    metadata?.controlNets?.forEach(value => addUnique(touched.controlNets, normalizeName(value)));
-    metadata?.ipAdapters?.forEach(value => addUnique(touched.ipAdapters, normalizeName(value)));
+    metadata?.loras?.forEach((value) => addUnique(touched.loras, normalizeName(value)));
+    metadata?.embeddings?.forEach((value) => addUnique(touched.embeddings, normalizeName(value)));
+    metadata?.hypernetworks?.forEach((value) => addUnique(touched.hypernetworks, normalizeName(value)));
+    metadata?.controlNets?.forEach((value) => addUnique(touched.controlNets, normalizeName(value)));
+    metadata?.ipAdapters?.forEach((value) => addUnique(touched.ipAdapters, normalizeName(value)));
 
     return touched;
 };
 
-export const mergeTouchedFacetResources = (
-    ...resources: TouchedFacetResources[]
-): TouchedFacetResources => {
+export const mergeTouchedFacetResources = (...resources: TouchedFacetResources[]): TouchedFacetResources => {
     const merged = createEmptyTouchedFacetResources();
 
-    resources.forEach(resource => {
-        resource.checkpoints.forEach(value => addUnique(merged.checkpoints, value));
-        resource.loras.forEach(value => addUnique(merged.loras, value));
-        resource.embeddings.forEach(value => addUnique(merged.embeddings, value));
-        resource.hypernetworks.forEach(value => addUnique(merged.hypernetworks, value));
-        resource.controlNets.forEach(value => addUnique(merged.controlNets, value));
-        resource.ipAdapters.forEach(value => addUnique(merged.ipAdapters, value));
-        resource.tools.forEach(value => addUnique(merged.tools, value));
+    resources.forEach((resource) => {
+        resource.checkpoints.forEach((value) => addUnique(merged.checkpoints, value));
+        resource.loras.forEach((value) => addUnique(merged.loras, value));
+        resource.embeddings.forEach((value) => addUnique(merged.embeddings, value));
+        resource.hypernetworks.forEach((value) => addUnique(merged.hypernetworks, value));
+        resource.controlNets.forEach((value) => addUnique(merged.controlNets, value));
+        resource.ipAdapters.forEach((value) => addUnique(merged.ipAdapters, value));
+        resource.tools.forEach((value) => addUnique(merged.tools, value));
     });
 
     return merged;
 };
 
 export const hasTouchedFacetResources = (resources: TouchedFacetResources): boolean => {
-    return (Object.values(resources) as string[][]).some(values => values.length > 0);
+    return (Object.values(resources) as string[][]).some((values) => values.length > 0);
 };
 
 export const touchedFacetResourcesToTypes = (resources: TouchedFacetResources): FacetType[] => {
@@ -153,22 +151,10 @@ export const touchedFacetResourcesToTypes = (resources: TouchedFacetResources): 
     return orderFacetTypes(types);
 };
 
-export const collectTouchedFacetTypesFromMetadataDiff = (
-    previous: MetadataLike,
-    next: MetadataLike
-): FacetType[] => {
-    return orderFacetTypes([
-        ...collectTouchedFacetTypesFromMetadata(previous),
-        ...collectTouchedFacetTypesFromMetadata(next)
-    ]);
+export const collectTouchedFacetTypesFromMetadataDiff = (previous: MetadataLike, next: MetadataLike): FacetType[] => {
+    return orderFacetTypes([...collectTouchedFacetTypesFromMetadata(previous), ...collectTouchedFacetTypesFromMetadata(next)]);
 };
 
-export const collectTouchedFacetResourcesFromMetadataDiff = (
-    previous: MetadataLike,
-    next: MetadataLike
-): TouchedFacetResources => {
-    return mergeTouchedFacetResources(
-        collectTouchedFacetResourcesFromMetadata(previous),
-        collectTouchedFacetResourcesFromMetadata(next)
-    );
+export const collectTouchedFacetResourcesFromMetadataDiff = (previous: MetadataLike, next: MetadataLike): TouchedFacetResources => {
+    return mergeTouchedFacetResources(collectTouchedFacetResourcesFromMetadata(previous), collectTouchedFacetResourcesFromMetadata(next));
 };

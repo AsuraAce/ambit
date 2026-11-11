@@ -3,13 +3,24 @@ import { describeInvokeRepairDecision } from '../repairDecision';
 import type { InvokeSourceFingerprint } from '../../../types';
 
 const fingerprint: InvokeSourceFingerprint = {
-    schemaVersion: 1, imageCount: 150000, imageUpdatedAt: 'private-timestamp',
-    boardCount: 1, boardUpdatedAt: null, membershipCount: 0, membershipMaxRowId: null,
+    schemaVersion: 1,
+    imageCount: 150000,
+    imageUpdatedAt: 'private-timestamp',
+    boardCount: 1,
+    boardUpdatedAt: null,
+    membershipCount: 0,
+    membershipMaxRowId: null,
 };
 const input: Parameters<typeof describeInvokeRepairDecision>[0] = {
-    scope: 'all', forcedRefresh: false, snapshotPresent: true, snapshotCompatible: true,
-    savedFingerprint: fingerprint, currentFingerprint: fingerprint, fingerprintCurrent: true,
-    reconcileSourceFacts: false, canCatchUpAllUsers: true,
+    scope: 'all',
+    forcedRefresh: false,
+    snapshotPresent: true,
+    snapshotCompatible: true,
+    savedFingerprint: fingerprint,
+    currentFingerprint: fingerprint,
+    fingerprintCurrent: true,
+    reconcileSourceFacts: false,
+    canCatchUpAllUsers: true,
 };
 
 describe('repair decision description is not an admission policy', () => {
@@ -25,14 +36,16 @@ describe('repair decision description is not an admission policy', () => {
     });
     it('distinguishes missing evidence from actual decrease and absent timestamps', () => {
         expect(describeInvokeRepairDecision({ ...input, currentFingerprint: undefined })).toMatchObject({
-            currentFingerprint: 'unavailable', countComparison: 'unavailable',
-            timestampComparison: 'unavailable', fingerprintCurrent: null,
+            currentFingerprint: 'unavailable',
+            countComparison: 'unavailable',
+            timestampComparison: 'unavailable',
+            fingerprintCurrent: null,
         });
-        expect(describeInvokeRepairDecision({ ...input,
-            currentFingerprint: { ...fingerprint, imageCount: 149999, imageUpdatedAt: null },
-        })).toMatchObject({ countComparison: 'decreased', timestampComparison: 'current-absent' });
-        expect(describeInvokeRepairDecision({ ...input,
-            savedFingerprint: { ...fingerprint, imageUpdatedAt: null },
-        })).toMatchObject({ timestampComparison: 'saved-absent' });
+        expect(
+            describeInvokeRepairDecision({ ...input, currentFingerprint: { ...fingerprint, imageCount: 149999, imageUpdatedAt: null } })
+        ).toMatchObject({ countComparison: 'decreased', timestampComparison: 'current-absent' });
+        expect(describeInvokeRepairDecision({ ...input, savedFingerprint: { ...fingerprint, imageUpdatedAt: null } })).toMatchObject({
+            timestampComparison: 'saved-absent',
+        });
     });
 });

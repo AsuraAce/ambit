@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { renderHook, act } from '@testing-library/react';
@@ -44,7 +43,8 @@ vi.mock('../../services/db/exactDuplicateRepo', () => ({
 }));
 
 vi.mock('../../stores/libraryStore', () => ({
-    useLibraryStore: (selector: (state: { incrementFacetCacheVersion: typeof mockIncrementFacetCacheVersion }) => unknown) => selector({ incrementFacetCacheVersion: mockIncrementFacetCacheVersion }),
+    useLibraryStore: (selector: (state: { incrementFacetCacheVersion: typeof mockIncrementFacetCacheVersion }) => unknown) =>
+        selector({ incrementFacetCacheVersion: mockIncrementFacetCacheVersion }),
 }));
 
 describe('useAppHandlers', () => {
@@ -69,9 +69,9 @@ describe('useAppHandlers', () => {
                 negativePrompt: 'low res',
                 model: 'Model A',
                 tool: GeneratorTool.AUTOMATIC1111,
-                steps: 20
-            } as any
-        }
+                steps: 20,
+            } as any,
+        },
     ];
 
     const props = {
@@ -100,8 +100,13 @@ describe('useAppHandlers', () => {
             notFoundIds: [],
             membershipWarningIds: [],
             touchedResources: {
-                checkpoints: ['Unknown'], loras: [], embeddings: [], hypernetworks: [],
-                controlNets: [], ipAdapters: [], tools: ['Unknown'],
+                checkpoints: ['Unknown'],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: ['Unknown'],
             },
         });
         mockRemoveImagesFromLibrary.mockImplementation(async (ids: string[]) => lifecycleResult(ids));
@@ -123,13 +128,11 @@ describe('useAppHandlers', () => {
         });
     });
 
-    const renderHandlers = () => renderHook(() => useAppHandlers(props), {
-        wrapper: ({ children }: { children: React.ReactNode }) => React.createElement(
-            QueryClientProvider,
-            { client: queryClient },
-            children,
-        ),
-    });
+    const renderHandlers = () =>
+        renderHook(() => useAppHandlers(props), {
+            wrapper: ({ children }: { children: React.ReactNode }) =>
+                React.createElement(QueryClientProvider, { client: queryClient }, children),
+        });
 
     it('should update positive prompt and call DB', async () => {
         const { result } = renderHandlers();
@@ -192,9 +195,11 @@ describe('useAppHandlers', () => {
         expect(mockRemoveImagesFromLibrary).toHaveBeenCalledWith(['img1']);
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
-        expect(queryClient.getQueryData<{
-            pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
-        }>(queryKey)?.pages[0]).toMatchObject({ images: [], totalCount: 0, globalCount: 0 });
+        expect(
+            queryClient.getQueryData<{
+                pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
+            }>(queryKey)?.pages[0]
+        ).toMatchObject({ images: [], totalCount: 0, globalCount: 0 });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['invoke-image-references'] });
     });
@@ -211,10 +216,7 @@ describe('useAppHandlers', () => {
             });
 
             expect(mockSetImages).not.toHaveBeenCalled();
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Could not remove the selected items. The library was left unchanged.',
-                'error'
-            );
+            expect(mockAddToast).toHaveBeenCalledWith('Could not remove the selected items. The library was left unchanged.', 'error');
         } finally {
             errorSpy.mockRestore();
         }
@@ -231,10 +233,7 @@ describe('useAppHandlers', () => {
 
             expect(dispatchedImages).toEqual([]);
             expect(mockAddToast).toHaveBeenCalledWith('Removed 1 item from the library', 'success');
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Items were removed, but some views may need a refresh.',
-                'warning'
-            );
+            expect(mockAddToast).toHaveBeenCalledWith('Items were removed, but some views may need a refresh.', 'warning');
         } finally {
             errorSpy.mockRestore();
         }
@@ -256,7 +255,15 @@ describe('useAppHandlers', () => {
                     affectedIds: ids,
                     notFoundIds: [],
                     membershipWarningIds: [],
-                    touchedResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] },
+                    touchedResources: {
+                        checkpoints: [],
+                        loras: [],
+                        embeddings: [],
+                        hypernetworks: [],
+                        controlNets: [],
+                        ipAdapters: [],
+                        tools: [],
+                    },
                 };
             });
             const queryKey = ['images', { showInvokeImageAssets }] as const;
@@ -270,11 +277,13 @@ describe('useAppHandlers', () => {
             const observer = new QueryObserver(queryClient, {
                 queryKey,
                 queryFn: async () => ({
-                    pages: [{
-                        images: isRestored && showInvokeImageAssets ? [restoredAsset] : [],
-                        totalCount: isRestored && showInvokeImageAssets ? 1 : 0,
-                        globalCount: 1,
-                    }],
+                    pages: [
+                        {
+                            images: isRestored && showInvokeImageAssets ? [restoredAsset] : [],
+                            totalCount: isRestored && showInvokeImageAssets ? 1 : 0,
+                            globalCount: 1,
+                        },
+                    ],
                     pageParams: [undefined],
                 }),
                 initialData: emptyResult,
@@ -290,9 +299,7 @@ describe('useAppHandlers', () => {
 
                 const refreshed = queryClient.getQueryData<typeof emptyResult>(queryKey);
                 expect(mockRestoreRemovedImages).toHaveBeenCalledWith(['invoke-control']);
-                expect(refreshed?.pages[0].images.map(image => image.id)).toEqual(
-                    showInvokeImageAssets ? ['invoke-control'] : []
-                );
+                expect(refreshed?.pages[0].images.map((image) => image.id)).toEqual(showInvokeImageAssets ? ['invoke-control'] : []);
                 expect(mockSetImages).not.toHaveBeenCalled();
                 expect(mockRefreshHiddenAvailability).toHaveBeenCalledOnce();
             } finally {
@@ -315,9 +322,11 @@ describe('useAppHandlers', () => {
 
         expect(mockDeleteRemovedImagesFromDisk).toHaveBeenCalledWith(['img1']);
         expect(dispatchedImages).toEqual([]);
-        expect(queryClient.getQueryData<{
-            pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
-        }>(queryKey)?.pages[0]).toMatchObject({ images: [], totalCount: 0, globalCount: 0 });
+        expect(
+            queryClient.getQueryData<{
+                pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
+            }>(queryKey)?.pages[0]
+        ).toMatchObject({ images: [], totalCount: 0, globalCount: 0 });
     });
 
     it('keeps a committed disk deletion successful when gallery refresh fails', async () => {
@@ -334,14 +343,8 @@ describe('useAppHandlers', () => {
             });
 
             expect(dispatchedImages).toEqual([]);
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Moved 1 file to OS trash and removed it from Ambit',
-                'success'
-            );
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Files were deleted, but some views may need a refresh.',
-                'warning'
-            );
+            expect(mockAddToast).toHaveBeenCalledWith('Moved 1 file to OS trash and removed it from Ambit', 'success');
+            expect(mockAddToast).toHaveBeenCalledWith('Files were deleted, but some views may need a refresh.', 'warning');
             expect(mockAddToast).not.toHaveBeenCalledWith(
                 'Could not finish deleting the selected files. The Removed entries were kept.',
                 'error'
@@ -453,7 +456,7 @@ describe('useAppHandlers', () => {
         dispatchedImages = [mockImages[0], { ...mockImages[0], id: 'img2' }];
         const { result } = renderHandlers();
         await act(async () => result.current.handleUpdateNotes('img1', 'note'));
-        expect(dispatchedImages.map(image => image.notes)).toEqual(['note', undefined]);
+        expect(dispatchedImages.map((image) => image.notes)).toEqual(['note', undefined]);
         expect(mockUpdateImageNotesCol).toHaveBeenCalledWith('img1', 'note');
         expect(mockAddToast).toHaveBeenCalledWith('Saved', 'success');
     });
@@ -466,7 +469,7 @@ describe('useAppHandlers', () => {
 
         await act(async () => result.current.handleUpdateNotes('img1', 'note'));
 
-        expect(dispatchedImages.map(image => image.notes)).toEqual([undefined, undefined]);
+        expect(dispatchedImages.map((image) => image.notes)).toEqual([undefined, undefined]);
         expect(mockAddToast).toHaveBeenCalledWith('Failed to save notes', 'error');
         expect(error).toHaveBeenCalledWith('[Notes] Failed to persist notes', expect.any(Error));
         error.mockRestore();
@@ -479,7 +482,7 @@ describe('useAppHandlers', () => {
             filename: 'hidden-control.png',
         };
         const activeImageState = {
-            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            getImage: (id: string) => (id === directImage.id ? directImage : undefined),
             updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
                 if (id === directImage.id) directImage = updater(directImage);
             },
@@ -494,11 +497,13 @@ describe('useAppHandlers', () => {
         await act(async () => result.current.handleUpdateTool(directImage.id, GeneratorTool.INVOKEAI));
         await act(async () => result.current.handleUpdateNotes(directImage.id, 'Direct note'));
 
-        expect(directImage.metadata).toEqual(expect.objectContaining({
-            positivePrompt: 'Direct prompt',
-            overrideModel: 'Direct model',
-            tool: GeneratorTool.INVOKEAI,
-        }));
+        expect(directImage.metadata).toEqual(
+            expect.objectContaining({
+                positivePrompt: 'Direct prompt',
+                overrideModel: 'Direct model',
+                tool: GeneratorTool.INVOKEAI,
+            })
+        );
         expect(directImage.notes).toBe('Direct note');
         expect(mockSetImages).not.toHaveBeenCalled();
     });
@@ -521,9 +526,11 @@ describe('useAppHandlers', () => {
         expect(mockResolveExactDuplicateGroups).toHaveBeenCalledWith(resolutions);
         expect(dispatchedImages).toHaveLength(1);
         expect(dispatchedImages[0]).toMatchObject({ id: 'img1', isFavorite: true, isPinned: true, userMasked: undefined });
-        expect(queryClient.getQueryData<{
-            pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
-        }>(queryKey)?.pages[0]).toMatchObject({
+        expect(
+            queryClient.getQueryData<{
+                pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
+            }>(queryKey)?.pages[0]
+        ).toMatchObject({
             images: [expect.objectContaining({ id: 'img1', isFavorite: true, isPinned: true, userMasked: undefined })],
             totalCount: 1,
             globalCount: 1,
@@ -551,8 +558,7 @@ describe('useAppHandlers', () => {
         const { result } = renderHandlers();
 
         await act(async () => {
-            await expect(result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2'] }]))
-                .rejects.toThrow('stale group');
+            await expect(result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2'] }])).rejects.toThrow('stale group');
         });
 
         expect(dispatchedImages).toEqual(mockImages);
@@ -571,10 +577,7 @@ describe('useAppHandlers', () => {
 
         expect(dispatchedImages).toEqual([expect.objectContaining({ id: 'img1', isFavorite: true })]);
         expect(mockAddToast).toHaveBeenCalledWith('Moved 1 duplicate to Removed', 'success');
-        expect(error).toHaveBeenCalledWith(
-            'Failed to refresh image queries after resolving duplicates',
-            expect.any(Error)
-        );
+        expect(error).toHaveBeenCalledWith('Failed to refresh image queries after resolving duplicates', expect.any(Error));
         error.mockRestore();
     });
 
@@ -615,14 +618,8 @@ describe('useAppHandlers', () => {
             expect(mockAddToast).toHaveBeenCalledWith('Restored 1 item to the library', 'success');
             expect(mockRefreshMaintenanceCounts).toHaveBeenCalledOnce();
             expect(mockRefreshFacetCacheForResourcesStrict).toHaveBeenCalledOnce();
-            expect(errorSpy).toHaveBeenCalledWith(
-                '[Restore] Restored images, but failed to refresh dependent views',
-                refreshError
-            );
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Items were restored, but some views may need a refresh.',
-                'warning'
-            );
+            expect(errorSpy).toHaveBeenCalledWith('[Restore] Restored images, but failed to refresh dependent views', refreshError);
+            expect(mockAddToast).toHaveBeenCalledWith('Items were restored, but some views may need a refresh.', 'warning');
         } finally {
             errorSpy.mockRestore();
         }
@@ -641,10 +638,7 @@ describe('useAppHandlers', () => {
 
             expect(mockRefreshMaintenanceCounts).not.toHaveBeenCalled();
             expect(mockRefreshFacetCacheForResourcesStrict).not.toHaveBeenCalled();
-            expect(mockAddToast).toHaveBeenCalledWith(
-                'Could not restore the selected items. Their Removed entries were kept.',
-                'error'
-            );
+            expect(mockAddToast).toHaveBeenCalledWith('Could not restore the selected items. Their Removed entries were kept.', 'error');
         } finally {
             errorSpy.mockRestore();
         }
@@ -652,15 +646,39 @@ describe('useAppHandlers', () => {
 
     it('covers successful plural deletion, warning cleanup, and total failure', async () => {
         const { result } = renderHandlers();
-        mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({ clearedIds: ['a', 'b'], trashedIds: ['a', 'b'], alreadyMissingIds: [], failedIds: [], cleanupPendingIds: [], thumbnailWarningIds: [], notFoundIds: [] });
+        mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({
+            clearedIds: ['a', 'b'],
+            trashedIds: ['a', 'b'],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        });
         await act(async () => result.current.handleDeleteFile(['a', 'b']));
         expect(mockAddToast).toHaveBeenCalledWith('Moved 2 files to OS trash and removed them from Ambit', 'success');
 
-        mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({ clearedIds: ['a'], trashedIds: ['a'], alreadyMissingIds: [], failedIds: [], cleanupPendingIds: [], thumbnailWarningIds: ['a'], notFoundIds: [] });
+        mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({
+            clearedIds: ['a'],
+            trashedIds: ['a'],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: ['a'],
+            notFoundIds: [],
+        });
         await act(async () => result.current.handleDeleteFile(['a']));
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('thumbnail cleanup warnings'), 'warning');
 
-        mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({ clearedIds: [], trashedIds: [], alreadyMissingIds: [], failedIds: ['a'], cleanupPendingIds: [], thumbnailWarningIds: [], notFoundIds: [] });
+        mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({
+            clearedIds: [],
+            trashedIds: [],
+            alreadyMissingIds: [],
+            failedIds: ['a'],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        });
         await act(async () => result.current.handleDeleteFile(['a']));
         expect(mockAddToast).toHaveBeenCalledWith('Failed to move selected files to OS trash. The Removed entries were kept.', 'error');
     });
@@ -679,10 +697,7 @@ describe('useAppHandlers', () => {
 
         await act(async () => result.current.handleDeleteFile(['stale-entry']));
 
-        expect(mockAddToast).toHaveBeenCalledWith(
-            'Removed 0 entries from Ambit; 1 selected entry was already unavailable.',
-            'warning'
-        );
+        expect(mockAddToast).toHaveBeenCalledWith('Removed 0 entries from Ambit; 1 selected entry was already unavailable.', 'warning');
     });
 
     it('explains the Removed-tab trash workflow', async () => {
@@ -724,7 +739,13 @@ describe('useAppHandlers', () => {
 
     it('uses plural warning wording for partially deleted multiple files', async () => {
         mockDeleteRemovedImagesFromDisk.mockResolvedValueOnce({
-            clearedIds: ['a', 'b'], trashedIds: ['a', 'b'], alreadyMissingIds: [], failedIds: ['c'], cleanupPendingIds: [], thumbnailWarningIds: [], notFoundIds: []
+            clearedIds: ['a', 'b'],
+            trashedIds: ['a', 'b'],
+            alreadyMissingIds: [],
+            failedIds: ['c'],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
         });
         const { result } = renderHandlers();
         await act(async () => result.current.handleDeleteFile(['a', 'b', 'c']));

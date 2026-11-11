@@ -17,7 +17,7 @@ const createFilters = (overrides: Partial<FilterState> = {}): FilterState => ({
     dateRange: 'all',
     favoritesOnly: false,
     collectionId: null,
-    ...overrides
+    ...overrides,
 });
 
 const createHarness = (initialFilters: FilterState) => {
@@ -28,7 +28,7 @@ const createHarness = (initialFilters: FilterState) => {
 
     return {
         getCurrentFilters: () => currentFilters,
-        setFilters
+        setFilters,
     };
 };
 
@@ -37,7 +37,7 @@ const dateButtonLabel = (value: string): string => {
     return new Date(year, month - 1, day).toLocaleDateString(undefined, {
         month: 'long',
         day: 'numeric',
-        year: 'numeric'
+        year: 'numeric',
     });
 };
 
@@ -45,42 +45,34 @@ const monthLabel = (value: string): string => {
     const [year, month, day] = value.split('-').map(Number);
     return new Intl.DateTimeFormat(undefined, {
         month: 'long',
-        year: 'numeric'
+        year: 'numeric',
     }).format(new Date(year, month - 1, day));
 };
 
 describe('DateRangeSection', () => {
     it('selects presets and clears custom date fields', () => {
-        const harness = createHarness(createFilters({
-            dateRange: 'custom',
-            dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
-        }));
-
-        render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
+        const harness = createHarness(
+            createFilters({
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30',
+            })
         );
+
+        render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         fireEvent.click(screen.getByRole('button', { name: /week/i }));
 
         expect(harness.getCurrentFilters()).toMatchObject({
             dateRange: 'week',
             dateFrom: undefined,
-            dateTo: undefined
+            dateTo: undefined,
         });
     });
 
     it('opens the calendar from the custom range control', () => {
         const harness = createHarness(createFilters());
-        render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
-        );
+        render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         expect(screen.queryByLabelText('Filter from date')).toBeNull();
         expect(screen.queryByRole('dialog', { name: /custom date range/i })).toBeNull();
@@ -92,17 +84,14 @@ describe('DateRangeSection', () => {
     });
 
     it('selects dates from the calendar and commits only after Apply', () => {
-        const harness = createHarness(createFilters({
-            dateRange: 'custom',
-            dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
-        }));
-        const { rerender } = render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
+        const harness = createHarness(
+            createFilters({
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30',
+            })
         );
+        const { rerender } = render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         fireEvent.click(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i }));
         fireEvent.click(screen.getByRole('button', { name: dateButtonLabel('2026-04-10') }));
@@ -115,33 +104,25 @@ describe('DateRangeSection', () => {
         expect(harness.getCurrentFilters()).toMatchObject({
             dateRange: 'custom',
             dateFrom: '2026-04-10',
-            dateTo: '2026-04-15'
+            dateTo: '2026-04-15',
         });
 
-        rerender(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
-        );
+        rerender(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         expect(screen.getByRole('button', { name: /apr 10, 2026 to apr 15, 2026/i })).toBeTruthy();
         expect(screen.queryByRole('dialog', { name: /custom date range/i })).toBeNull();
     });
 
     it('normalizes an inverted calendar selection', () => {
-        const harness = createHarness(createFilters({
-            dateRange: 'custom',
-            dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
-        }));
-
-        render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
+        const harness = createHarness(
+            createFilters({
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30',
+            })
         );
+
+        render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         fireEvent.click(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i }));
         fireEvent.click(screen.getByRole('button', { name: dateButtonLabel('2026-04-30') }));
@@ -151,23 +132,20 @@ describe('DateRangeSection', () => {
         expect(harness.getCurrentFilters()).toMatchObject({
             dateRange: 'custom',
             dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
+            dateTo: '2026-04-30',
         });
     });
 
     it('navigates months without committing draft state', () => {
-        const harness = createHarness(createFilters({
-            dateRange: 'custom',
-            dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
-        }));
-
-        render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
+        const harness = createHarness(
+            createFilters({
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30',
+            })
         );
+
+        render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         fireEvent.click(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i }));
         const currentMonth = screen.getByLabelText('Current calendar month');
@@ -180,18 +158,15 @@ describe('DateRangeSection', () => {
     });
 
     it('clears a custom range from the popover', () => {
-        const harness = createHarness(createFilters({
-            dateRange: 'custom',
-            dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
-        }));
-
-        render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
+        const harness = createHarness(
+            createFilters({
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30',
+            })
         );
+
+        render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         fireEvent.click(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i }));
         fireEvent.click(screen.getByRole('button', { name: /^clear$/i }));
@@ -199,22 +174,19 @@ describe('DateRangeSection', () => {
         expect(harness.getCurrentFilters()).toMatchObject({
             dateRange: 'all',
             dateFrom: undefined,
-            dateTo: undefined
+            dateTo: undefined,
         });
     });
 
     it('closes the popover with Escape without applying draft edits', () => {
-        const harness = createHarness(createFilters({
-            dateRange: 'custom',
-            dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
-        }));
-        render(
-            <DateRangeSection
-                filters={harness.getCurrentFilters()}
-                setFilters={harness.setFilters}
-            />
+        const harness = createHarness(
+            createFilters({
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30',
+            })
         );
+        render(<DateRangeSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} />);
 
         fireEvent.click(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i }));
         fireEvent.click(screen.getByRole('button', { name: dateButtonLabel('2026-04-15') }));
@@ -225,7 +197,7 @@ describe('DateRangeSection', () => {
         expect(harness.getCurrentFilters()).toMatchObject({
             dateRange: 'custom',
             dateFrom: '2026-04-01',
-            dateTo: '2026-04-30'
+            dateTo: '2026-04-30',
         });
     });
 
@@ -286,7 +258,9 @@ describe('DateRangeSection', () => {
         first.unmount();
         vi.unstubAllGlobals();
 
-        const localeSpy = vi.spyOn(Intl, 'Locale').mockImplementation(() => { throw new Error('unsupported'); });
+        const localeSpy = vi.spyOn(Intl, 'Locale').mockImplementation(() => {
+            throw new Error('unsupported');
+        });
         const second = render(<DateRangeSection filters={createFilters()} setFilters={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /custom range/i }));
         expect(screen.getAllByText('Su')[0]).toBeTruthy();

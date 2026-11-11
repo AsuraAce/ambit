@@ -5,12 +5,12 @@ import { createInitialLiveWatchSessionState, useLibraryStore } from '../libraryS
 vi.mock('../../bindings', () => ({
     commands: {
         cancelModelDiscovery: vi.fn().mockResolvedValue(undefined),
-        cancelImageFileHashBackfill: vi.fn().mockResolvedValue(undefined)
-    }
+        cancelImageFileHashBackfill: vi.fn().mockResolvedValue(undefined),
+    },
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn().mockResolvedValue(undefined)
+    invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
 const resetLibraryStore = () => {
@@ -18,7 +18,7 @@ const resetLibraryStore = () => {
     useLibraryStore.setState({
         liveWatchSession: createInitialLiveWatchSessionState(),
         isActivityDockDismissed: false,
-        facetCacheVersion: 0
+        facetCacheVersion: 0,
     });
 };
 
@@ -66,7 +66,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
-                message: 'Checking InvokeAI for completed images.'
+                message: 'Checking InvokeAI for completed images.',
             });
             useLibraryStore.getState().reportLiveImagesReceived(1, { source: 'invoke' });
         });
@@ -82,7 +82,7 @@ describe('libraryStore live watch session', () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
                 phase: 'watching',
-                message: 'Checking monitored folders.'
+                message: 'Checking monitored folders.',
             });
         });
 
@@ -107,7 +107,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'summary',
-                message: '1 image added this session.'
+                message: '1 image added this session.',
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -122,7 +122,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'Syncing completed InvokeAI images...'
+                message: 'Syncing completed InvokeAI images...',
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -136,7 +136,7 @@ describe('libraryStore live watch session', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: '1 image added this session.',
-                progress: null
+                progress: null,
             });
         });
 
@@ -149,7 +149,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
-                message: 'Checking InvokeAI for completed images...'
+                message: 'Checking InvokeAI for completed images...',
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -163,7 +163,7 @@ describe('libraryStore live watch session', () => {
                 source: 'invoke',
                 phase: 'summary',
                 message: 'Watching for new images...',
-                progress: null
+                progress: null,
             });
         });
 
@@ -176,7 +176,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('generic', {
                 phase: 'importing',
-                message: 'Importing new images...'
+                message: 'Importing new images...',
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -196,7 +196,7 @@ describe('libraryStore live watch session', () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
-                message: 'Waiting for completed images...'
+                message: 'Waiting for completed images...',
             });
         });
 
@@ -212,14 +212,14 @@ describe('libraryStore live watch session', () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'Syncing completed InvokeAI images...'
+                message: 'Syncing completed InvokeAI images...',
             });
             useLibraryStore.getState().setIsActivityDockDismissed(true);
             useLibraryStore.getState().updateLiveWatchSession({
                 source: 'invoke',
                 phase: 'syncing',
                 message: 'Still syncing...',
-                progress: { current: 1, total: 2, message: undefined }
+                progress: { current: 1, total: 2, message: undefined },
             });
         });
 
@@ -228,7 +228,7 @@ describe('libraryStore live watch session', () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'New live activity...'
+                message: 'New live activity...',
             });
             useLibraryStore.getState().reportLiveImagesReceived(1, { source: 'invoke' });
         });
@@ -242,7 +242,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setDuplicateScanProgress({
                 current: 1,
                 total: 10,
-                message: 'Hashing images...'
+                message: 'Hashing images...',
             });
             useLibraryStore.getState().setIsImporting(true);
         });
@@ -262,7 +262,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setMissingScanProgress({
                 current: 1,
                 total: 10,
-                message: 'Checking file paths...'
+                message: 'Checking file paths...',
             });
             useLibraryStore.getState().setIsImporting(true);
         });
@@ -280,21 +280,21 @@ describe('libraryStore live watch session', () => {
                 total: 0,
                 message: 'Scanning resource folders...',
                 mode: 'indeterminate',
-                startedAt: 12345
+                startedAt: 12345,
             });
             useLibraryStore.getState().setDiscoveryScanProgress({
                 current: 12,
                 total: 100,
                 message: 'Updating local asset index...',
                 mode: 'determinate',
-                detail: '8 indexed'
+                detail: '8 indexed',
             });
         });
 
         expect(useLibraryStore.getState().discoveryScanProgress).toMatchObject({
             current: 12,
             total: 100,
-            startedAt: 12345
+            startedAt: 12345,
         });
     });
 
@@ -303,12 +303,12 @@ describe('libraryStore live watch session', () => {
 
         act(() => {
             runId = useLibraryStore.getState().beginImportRun({
-                owner: 'test-import'
+                owner: 'test-import',
             });
             useLibraryStore.getState().setImportProgressForRun('stale-run', {
                 current: 9,
                 total: 10,
-                message: 'Stale progress'
+                message: 'Stale progress',
             });
         });
 
@@ -319,14 +319,14 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setImportProgressForRun(runId!, {
                 current: 1,
                 total: 10,
-                message: 'Active progress'
+                message: 'Active progress',
             });
         });
 
         expect(useLibraryStore.getState().importProgress).toMatchObject({
             current: 1,
             total: 10,
-            message: 'Active progress'
+            message: 'Active progress',
         });
     });
 
@@ -336,7 +336,7 @@ describe('libraryStore live watch session', () => {
         act(() => {
             runId = useLibraryStore.getState().beginImportRun({
                 owner: 'test-import',
-                progress: { current: 1, total: 3, message: 'Running' }
+                progress: { current: 1, total: 3, message: 'Running' },
             });
             useLibraryStore.getState().finishImportRun('stale-run');
         });
@@ -377,7 +377,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().beginImportRun({
                 owner: 'test-import',
                 abortController,
-                progress: { current: 1, total: 2, message: 'Running' }
+                progress: { current: 1, total: 2, message: 'Running' },
             });
             useLibraryStore.getState().cancelImport();
         });
@@ -390,9 +390,12 @@ describe('libraryStore live watch session', () => {
     });
 
     it('contains unavailable debug storage and emits import diagnostics when enabled', () => {
-        const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => {
-            throw new Error('storage unavailable');
-        }).mockReturnValue('1');
+        const getItem = vi
+            .spyOn(Storage.prototype, 'getItem')
+            .mockImplementationOnce(() => {
+                throw new Error('storage unavailable');
+            })
+            .mockReturnValue('1');
         const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
 
         act(() => {

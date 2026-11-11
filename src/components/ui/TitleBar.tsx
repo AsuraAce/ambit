@@ -1,24 +1,22 @@
-import { useState, useEffect } from "react";
-import type { Window as TauriWindow } from "@tauri-apps/api/window";
-import { Minus, Square, X } from "lucide-react";
-import { APP_NAME } from "../../constants/app";
-import { useSettingsStore } from "../../stores/settingsStore";
-import { isTauriRuntime } from "../../services/runtime";
-import { areDeveloperFeaturesEnabled } from "../../utils/settingsUtils";
-import { isCaptureMode } from "../../utils/buildFlags";
+import { useState, useEffect } from 'react';
+import type { Window as TauriWindow } from '@tauri-apps/api/window';
+import { Minus, Square, X } from 'lucide-react';
+import { APP_NAME } from '../../constants/app';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { isTauriRuntime } from '../../services/runtime';
+import { areDeveloperFeaturesEnabled } from '../../utils/settingsUtils';
+import { isCaptureMode } from '../../utils/buildFlags';
 
-const BRAND_GLYPH_SRC = "/branding/ambit-glyph.svg";
-const BRAND_WINDOW_ICON_SRC = "/branding/ambit-window-icon.png";
+const BRAND_GLYPH_SRC = '/branding/ambit-glyph.svg';
+const BRAND_WINDOW_ICON_SRC = '/branding/ambit-window-icon.png';
 
 export const TitleBar = () => {
     const [appWindow, setAppWindow] = useState<TauriWindow | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showOnHover, setShowOnHover] = useState(false);
-    const developerFeaturesEnabled = useSettingsStore(s => areDeveloperFeaturesEnabled(s.settings));
-    const profileBadge = import.meta.env.VITE_AMBIT_PROFILE === 'qa'
-        ? 'QA'
-        : developerFeaturesEnabled ? 'DEV' : null;
+    const developerFeaturesEnabled = useSettingsStore((s) => areDeveloperFeaturesEnabled(s.settings));
+    const profileBadge = import.meta.env.VITE_AMBIT_PROFILE === 'qa' ? 'QA' : developerFeaturesEnabled ? 'DEV' : null;
 
     useEffect(() => {
         if (!isTauriRuntime()) return;
@@ -27,14 +25,14 @@ export const TitleBar = () => {
 
         const initWindow = async () => {
             try {
-                const { getCurrentWindow } = await import("@tauri-apps/api/window");
+                const { getCurrentWindow } = await import('@tauri-apps/api/window');
                 const win = getCurrentWindow();
                 setAppWindow(win);
 
                 try {
                     await win.setIcon(BRAND_WINDOW_ICON_SRC);
                 } catch (iconError) {
-                    console.warn("TitleBar: Failed to set window icon", iconError);
+                    console.warn('TitleBar: Failed to set window icon', iconError);
                 }
 
                 setIsMaximized(await win.isMaximized());
@@ -45,7 +43,7 @@ export const TitleBar = () => {
                     setIsFullscreen(await win.isFullscreen());
                 };
                 const unlistenResize = await win.listen('tauri://resize', () => {
-                    syncWindowState().catch(error => console.warn('TitleBar: Failed to read window state', error));
+                    syncWindowState().catch((error) => console.warn('TitleBar: Failed to read window state', error));
                 });
 
                 // F11 Handler
@@ -57,7 +55,7 @@ export const TitleBar = () => {
                 const handleKeyDown = (e: KeyboardEvent) => {
                     if (e.key === 'F11') {
                         e.preventDefault();
-                        toggleFullscreen().catch(error => console.warn('TitleBar: Failed to toggle fullscreen', error));
+                        toggleFullscreen().catch((error) => console.warn('TitleBar: Failed to toggle fullscreen', error));
                     }
                 };
 
@@ -73,7 +71,7 @@ export const TitleBar = () => {
                     cleanup = disposeListeners;
                 }
             } catch {
-                console.warn("TitleBar: Not in Tauri environment");
+                console.warn('TitleBar: Not in Tauri environment');
             }
         };
         void initWindow();
@@ -107,12 +105,7 @@ export const TitleBar = () => {
     return (
         <>
             {/* Hover Trigger for Fullscreen */}
-            {isRetracting && (
-                <div
-                    className="fixed top-0 left-0 right-0 h-4 z-[99]"
-                    onMouseEnter={() => setShowOnHover(true)}
-                />
-            )}
+            {isRetracting && <div className="fixed top-0 left-0 right-0 h-4 z-[99]" onMouseEnter={() => setShowOnHover(true)} />}
 
             <header
                 data-tauri-drag-region
@@ -120,11 +113,7 @@ export const TitleBar = () => {
                 className={`${containerClasses} flex items-center justify-between px-4 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border-b border-gray-200 dark:border-white/10 select-none transition-all duration-300 shadow-xl`}
             >
                 <div className="flex items-center gap-3 pointer-events-none">
-                    <img
-                        src={BRAND_GLYPH_SRC}
-                        alt=""
-                        className="h-7 w-7 shrink-0 drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
-                    />
+                    <img src={BRAND_GLYPH_SRC} alt="" className="h-7 w-7 shrink-0 drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]" />
                     <span className="text-[13px] font-semibold tracking-[0.18em] text-zinc-700 dark:text-zinc-300">
                         {APP_NAME.toUpperCase()}
                     </span>
@@ -146,7 +135,7 @@ export const TitleBar = () => {
                     </button>
                     <button
                         type="button"
-                        aria-label={isMaximized ? "Restore Window" : "Maximize Window"}
+                        aria-label={isMaximized ? 'Restore Window' : 'Maximize Window'}
                         onClick={handleMaximize}
                         className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/70 focus-visible:bg-gray-100 dark:focus-visible:bg-white/10"
                     >

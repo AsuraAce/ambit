@@ -9,14 +9,10 @@ const ExportFocusHarness = () => {
 
     return (
         <>
-            <button type="button" onClick={() => setIsOpen(true)}>Open export</button>
-            <ExportModal
-                isOpen={isOpen}
-                onClose={() => setIsOpen(false)}
-                count={1}
-                onConfirm={vi.fn()}
-                isExporting={false}
-            />
+            <button type="button" onClick={() => setIsOpen(true)}>
+                Open export
+            </button>
+            <ExportModal isOpen={isOpen} onClose={() => setIsOpen(false)} count={1} onConfirm={vi.fn()} isExporting={false} />
         </>
     );
 };
@@ -26,13 +22,10 @@ const RecoveryFocusHarness = () => {
 
     return (
         <>
-            <button type="button" onClick={() => setIsOpen(true)}>Open metadata recovery</button>
-            <MetadataRecoveryModal
-                isOpen={isOpen}
-                onClose={() => setIsOpen(false)}
-                onConfirm={vi.fn()}
-                isProcessing={false}
-            />
+            <button type="button" onClick={() => setIsOpen(true)}>
+                Open metadata recovery
+            </button>
+            <MetadataRecoveryModal isOpen={isOpen} onClose={() => setIsOpen(false)} onConfirm={vi.fn()} isProcessing={false} />
         </>
     );
 };

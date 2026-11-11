@@ -14,9 +14,7 @@ interface MetadataModelFieldProps {
 }
 
 const normalizeOptions = (options: readonly string[], presentation: ModelPresentation): string[] => {
-    const values = presentation.isHashFallback || presentation.value === 'Unknown'
-        ? options
-        : [presentation.value, ...options];
+    const values = presentation.isHashFallback || presentation.value === 'Unknown' ? options : [presentation.value, ...options];
     const unique = new Map<string, string>();
     for (const value of values) {
         const trimmed = value.trim();
@@ -26,13 +24,7 @@ const normalizeOptions = (options: readonly string[], presentation: ModelPresent
     return Array.from(unique.values());
 };
 
-export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
-    presentation,
-    options,
-    source,
-    modified,
-    onSave,
-}) => {
+export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({ presentation, options, source, modified, onSave }) => {
     const availableOptions = React.useMemo(
         () => normalizeOptions(options, presentation),
         // eslint-disable-next-line react-hooks/exhaustive-deps -- normalizeOptions reads only presentation.isHashFallback and presentation.value, both listed
@@ -51,7 +43,7 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
     const filteredOptions = React.useMemo(() => {
         const normalizedQuery = query.trim().toLocaleLowerCase();
         if (!normalizedQuery) return availableOptions;
-        return availableOptions.filter(option => option.toLocaleLowerCase().includes(normalizedQuery));
+        return availableOptions.filter((option) => option.toLocaleLowerCase().includes(normalizedQuery));
     }, [availableOptions, query]);
 
     React.useEffect(() => {
@@ -117,11 +109,11 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
         if (event.key === 'ArrowDown') {
             event.preventDefault();
             setIsOpen(true);
-            setActiveIndex(index => (index + 1) % itemCount);
+            setActiveIndex((index) => (index + 1) % itemCount);
         } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             setIsOpen(true);
-            setActiveIndex(index => (index - 1 + itemCount) % itemCount);
+            setActiveIndex((index) => (index - 1 + itemCount) % itemCount);
         } else if (event.key === 'Enter' && isOpen) {
             event.preventDefault();
             if (activeIndex < filteredOptions.length) chooseOption(filteredOptions[activeIndex]);
@@ -136,7 +128,12 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
         <MetadataField label="Model" icon={Box} source={source} modified={modified}>
             <div ref={editorRef} className="group relative">
                 {onSave && !isEditing ? (
-                    <button type="button" aria-label="Edit Model" onClick={startEditing} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-gray-400 opacity-0 transition-opacity hover:text-gray-700 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-500 dark:hover:text-white">
+                    <button
+                        type="button"
+                        aria-label="Edit Model"
+                        onClick={startEditing}
+                        className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-gray-400 opacity-0 transition-opacity hover:text-gray-700 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-500 dark:hover:text-white"
+                    >
                         <Pencil className="h-3.5 w-3.5" />
                     </button>
                 ) : null}
@@ -147,8 +144,8 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                                 ref={inputRef}
                                 aria-label="Custom model name"
                                 value={draft}
-                                onChange={event => setDraft(event.target.value)}
-                                onKeyDown={event => {
+                                onChange={(event) => setDraft(event.target.value)}
+                                onKeyDown={(event) => {
                                     if (event.key === 'Escape') {
                                         event.preventDefault();
                                         cancel();
@@ -169,14 +166,23 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                                     aria-activedescendant={isOpen ? `${listboxId}-option-${activeIndex}` : undefined}
                                     value={query}
                                     onFocus={() => setIsOpen(true)}
-                                    onChange={event => { setQuery(event.target.value); setDraft(''); setIsOpen(true); setActiveIndex(0); }}
+                                    onChange={(event) => {
+                                        setQuery(event.target.value);
+                                        setDraft('');
+                                        setIsOpen(true);
+                                        setActiveIndex(0);
+                                    }}
                                     onKeyDown={handleSearchKeyDown}
                                     placeholder="Search library models…"
                                     autoFocus
                                     className="w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
                                 />
                                 {isOpen ? (
-                                    <ul id={listboxId} role="listbox" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-2xl dark:border-white/10 dark:bg-zinc-900">
+                                    <ul
+                                        id={listboxId}
+                                        role="listbox"
+                                        className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-2xl dark:border-white/10 dark:bg-zinc-900"
+                                    >
                                         {filteredOptions.map((option, index) => (
                                             <li
                                                 id={`${listboxId}-option-${index}`}
@@ -203,23 +209,41 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                             </div>
                         )}
                         <div className="flex justify-end gap-2">
-                            <button type="button" onClick={cancel} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white">Cancel</button>
-                            <button type="button" disabled={!draft.trim()} onClick={save} className="flex items-center gap-1 rounded bg-sage-600 px-2 py-1 text-xs text-white hover:bg-sage-500 disabled:cursor-not-allowed disabled:opacity-40"><Check className="h-3 w-3" /> Save</button>
+                            <button
+                                type="button"
+                                onClick={cancel}
+                                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!draft.trim()}
+                                onClick={save}
+                                className="flex items-center gap-1 rounded bg-sage-600 px-2 py-1 text-xs text-white hover:bg-sage-500 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <Check className="h-3 w-3" /> Save
+                            </button>
                         </div>
                     </div>
                 ) : (
                     <div className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5 pr-9 dark:border-white/10 dark:bg-black">
-                        <div className={`truncate text-sm font-medium text-gray-900 dark:text-gray-100 ${presentation.isHashFallback ? 'font-mono' : 'font-sans'}`} title={presentation.value}>
+                        <div
+                            className={`truncate text-sm font-medium text-gray-900 dark:text-gray-100 ${presentation.isHashFallback ? 'font-mono' : 'font-sans'}`}
+                            title={presentation.value}
+                        >
                             {presentation.isHashFallback ? presentation.value : formatModelName(presentation.value)}
                         </div>
-                        {presentation.isHashFallback ? <TooltipButton
-                            label="About unresolved model hash"
-                            content="Model name unresolved. Use Settings → Connections → Resources → Resolve Online to look it up through CivitAI. Only the hash is sent."
-                            persistOnClick
-                            className="shrink-0 rounded border border-harbor-200 bg-harbor-50 px-1.5 py-0.5 text-[10px] text-harbor-600 hover:border-harbor-300 hover:text-harbor-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/70 dark:border-harbor-800 dark:bg-harbor-900/30 dark:text-harbor-300 dark:hover:border-harbor-600 dark:hover:text-harbor-300"
-                        >
-                            Unresolved hash
-                        </TooltipButton> : null}
+                        {presentation.isHashFallback ? (
+                            <TooltipButton
+                                label="About unresolved model hash"
+                                content="Model name unresolved. Use Settings → Connections → Resources → Resolve Online to look it up through CivitAI. Only the hash is sent."
+                                persistOnClick
+                                className="shrink-0 rounded border border-harbor-200 bg-harbor-50 px-1.5 py-0.5 text-[10px] text-harbor-600 hover:border-harbor-300 hover:text-harbor-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/70 dark:border-harbor-800 dark:bg-harbor-900/30 dark:text-harbor-300 dark:hover:border-harbor-600 dark:hover:text-harbor-300"
+                            >
+                                Unresolved hash
+                            </TooltipButton>
+                        ) : null}
                     </div>
                 )}
             </div>

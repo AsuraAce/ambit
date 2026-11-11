@@ -32,7 +32,9 @@ const SlideshowFocusHarness = () => {
 
     return (
         <>
-            <button type="button" onClick={() => setIsOpen(true)}>Open slideshow</button>
+            <button type="button" onClick={() => setIsOpen(true)}>
+                Open slideshow
+            </button>
             <SlideshowModal
                 isOpen={isOpen}
                 images={[createImage('one'), createImage('two')]}
@@ -48,7 +50,9 @@ const CompareFocusHarness = () => {
 
     return (
         <>
-            <button type="button" onClick={() => setIsOpen(true)}>Open comparison</button>
+            <button type="button" onClick={() => setIsOpen(true)}>
+                Open comparison
+            </button>
             {isOpen && (
                 <CompareModal
                     imageA={createImage('one')}
@@ -97,14 +101,7 @@ describe('specialized viewer action tooltips', () => {
     });
 
     it('exposes slideshow shuffle state while keeping conventional transport controls named', () => {
-        render(
-            <SlideshowModal
-                isOpen
-                images={[createImage('one'), createImage('two')]}
-                initialIndex={0}
-                onClose={vi.fn()}
-            />
-        );
+        render(<SlideshowModal isOpen images={[createImage('one'), createImage('two')]} initialIndex={0} onClose={vi.fn()} />);
 
         expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Slideshow' }));
         const shuffleButton = screen.getByRole('button', { name: 'Enable Shuffle' });
@@ -120,14 +117,7 @@ describe('specialized viewer action tooltips', () => {
     });
 
     it('keeps Space activation local to the focused slideshow control', () => {
-        render(
-            <SlideshowModal
-                isOpen
-                images={[createImage('one'), createImage('two')]}
-                initialIndex={0}
-                onClose={vi.fn()}
-            />
-        );
+        render(<SlideshowModal isOpen images={[createImage('one'), createImage('two')]} initialIndex={0} onClose={vi.fn()} />);
         const onWindowKeyDown = vi.fn();
         window.addEventListener('keydown', onWindowKeyDown);
 
@@ -157,12 +147,7 @@ describe('specialized viewer action tooltips', () => {
     it('keeps the focused HUD visible after its inactivity timeout', () => {
         vi.useFakeTimers();
         const { unmount } = render(
-            <SlideshowModal
-                isOpen
-                images={[createImage('one'), createImage('two')]}
-                initialIndex={0}
-                onClose={vi.fn()}
-            />
+            <SlideshowModal isOpen images={[createImage('one'), createImage('two')]} initialIndex={0} onClose={vi.fn()} />
         );
 
         try {

@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-    isInvokeOwnerScopeAdmitted,
-    useInvokeOwnerScopeStore,
-    type InvokeOwnerScopeState,
-} from '../invokeOwnerScopeStore';
+import { isInvokeOwnerScopeAdmitted, useInvokeOwnerScopeStore, type InvokeOwnerScopeState } from '../invokeOwnerScopeStore';
 
 describe('InvokeAI owner admission state', () => {
     beforeEach(() => {
@@ -26,16 +22,18 @@ describe('InvokeAI owner admission state', () => {
     });
 
     it.each(['ready', 'offline_ready'] as const)('admits an exact %s root', (status) => {
-        expect(isInvokeOwnerScopeAdmitted('D:/Invoke/databases', {
-            status,
-            rootPath: 'D:\\Invoke',
-        })).toBe(true);
+        expect(
+            isInvokeOwnerScopeAdmitted('D:/Invoke/databases', {
+                status,
+                rootPath: 'D:\\Invoke',
+            })
+        ).toBe(true);
     });
 
     it('supports functional updates without persisting owner admission', () => {
         const store = useInvokeOwnerScopeStore.getState();
         store.setOwnerScopeState({ status: 'discovering', rootPath: 'D:/Invoke' });
-        store.setOwnerScopeState(previous => ({ ...previous, status: 'ready' }));
+        store.setOwnerScopeState((previous) => ({ ...previous, status: 'ready' }));
 
         expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toEqual({
             status: 'ready',

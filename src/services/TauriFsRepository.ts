@@ -59,8 +59,7 @@ interface ResolvedStateJournal {
     after: PersistedStateCandidate;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const isNotFoundFsError = (error: unknown): boolean => {
     if (isRecord(error)) {
@@ -71,196 +70,207 @@ const isNotFoundFsError = (error: unknown): boolean => {
 
     const message = error instanceof Error ? error.message : String(error);
     const normalized = message.toLowerCase();
-    return normalized === 'not found'
-        || normalized.includes('no such file or directory')
-        || normalized.includes('path not found')
-        || /\benoent\b/.test(normalized)
-        || /\bos error 2\b/.test(normalized);
+    return (
+        normalized === 'not found' ||
+        normalized.includes('no such file or directory') ||
+        normalized.includes('path not found') ||
+        /\benoent\b/.test(normalized) ||
+        /\bos error 2\b/.test(normalized)
+    );
 };
 
-const isStringArray = (value: unknown): value is string[] =>
-    Array.isArray(value) && value.every(item => typeof item === 'string');
+const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
 
-const hasValidOptionalValue = (
-    record: Record<string, unknown>,
-    key: string,
-    validate: (value: unknown) => boolean
-): boolean => record[key] === undefined || validate(record[key]);
+const hasValidOptionalValue = (record: Record<string, unknown>, key: string, validate: (value: unknown) => boolean): boolean =>
+    record[key] === undefined || validate(record[key]);
 
 const isEnumValue = (value: unknown, allowedValues: readonly string[]): boolean =>
     typeof value === 'string' && allowedValues.includes(value);
 
-const isRecordWithValues = (
-    value: unknown,
-    validate: (item: unknown) => boolean,
-    allowedKeys?: readonly string[]
-): boolean => isRecord(value)
-    && (!allowedKeys || Object.keys(value).every(key => allowedKeys.includes(key)))
-    && Object.values(value).every(validate);
+const isRecordWithValues = (value: unknown, validate: (item: unknown) => boolean, allowedKeys?: readonly string[]): boolean =>
+    isRecord(value) &&
+    (!allowedKeys || Object.keys(value).every((key) => allowedKeys.includes(key))) &&
+    Object.values(value).every(validate);
 
 const isPersistedMonitoredFolder = (value: unknown): boolean => {
     if (!isRecord(value)) return false;
 
-    return typeof value.id === 'string'
-        && typeof value.path === 'string'
-        && typeof value.isActive === 'boolean'
-        && typeof value.imageCount === 'number'
-        && hasValidOptionalValue(value, 'isManaged', item => typeof item === 'boolean')
-        && hasValidOptionalValue(value, 'pathRaw', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'lastScanned', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'variant', item =>
-            typeof item === 'string' && isValidGeneratorTool(item))
-        && hasValidOptionalValue(value, 'initialScanPending', item => typeof item === 'boolean')
-        && hasValidOptionalValue(value, 'initialScanCancelled', item => typeof item === 'boolean');
+    return (
+        typeof value.id === 'string' &&
+        typeof value.path === 'string' &&
+        typeof value.isActive === 'boolean' &&
+        typeof value.imageCount === 'number' &&
+        hasValidOptionalValue(value, 'isManaged', (item) => typeof item === 'boolean') &&
+        hasValidOptionalValue(value, 'pathRaw', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'lastScanned', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'variant', (item) => typeof item === 'string' && isValidGeneratorTool(item)) &&
+        hasValidOptionalValue(value, 'initialScanPending', (item) => typeof item === 'boolean') &&
+        hasValidOptionalValue(value, 'initialScanCancelled', (item) => typeof item === 'boolean')
+    );
 };
 
 const isPersistedFilterState = (value: unknown): boolean => {
     if (!isRecord(value)) return false;
 
-    const stringArrayKeys = [
-        'models', 'loras', 'embeddings', 'hypernetworks', 'samplers', 'generationTypes',
-        'controlNets', 'ipAdapters'
-    ];
+    const stringArrayKeys = ['models', 'loras', 'embeddings', 'hypernetworks', 'samplers', 'generationTypes', 'controlNets', 'ipAdapters'];
     const numberKeys = ['minSteps', 'maxSteps', 'minCfg', 'maxCfg'];
     const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids', 'showInvokeImageAssets'];
     const aliasKeys = ['models', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
 
-    return hasValidOptionalValue(value, 'searchQuery', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'sourceKind', item =>
-            isEnumValue(item, ['all', 'generated', 'photograph', 'other']))
-        && stringArrayKeys.every(key => hasValidOptionalValue(value, key, isStringArray))
-        && hasValidOptionalValue(value, 'tools', item =>
-            Array.isArray(item)
-            && item.every(tool => typeof tool === 'string' && isValidGeneratorTool(tool)))
-        && hasValidOptionalValue(value, 'dateRange', item =>
-            isEnumValue(item, ['all', 'today', 'week', 'month', 'custom']))
-        && hasValidOptionalValue(value, 'dateFrom', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'dateTo', item => typeof item === 'string')
-        && booleanKeys.every(key => hasValidOptionalValue(value, key, item => typeof item === 'boolean'))
-        && hasValidOptionalValue(value, 'collectionId', item => item === null || typeof item === 'string')
-        && numberKeys.every(key => hasValidOptionalValue(value, key, item => typeof item === 'number'))
-        && hasValidOptionalValue(value, 'sortOption', item =>
-            isEnumValue(item, ['date_desc', 'date_asc', 'name_asc', 'name_desc', 'size_desc', 'size_asc']))
-        && hasValidOptionalValue(value, 'matchModes', item =>
-            isRecordWithValues(item, mode => isEnumValue(mode, ['any', 'all'])))
-        && hasValidOptionalValue(value, 'assetFilterAliases', item =>
-            isRecordWithValues(
-                item,
-                aliases => isRecordWithValues(aliases, isStringArray),
-                aliasKeys
-            ));
+    return (
+        hasValidOptionalValue(value, 'searchQuery', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'sourceKind', (item) => isEnumValue(item, ['all', 'generated', 'photograph', 'other'])) &&
+        stringArrayKeys.every((key) => hasValidOptionalValue(value, key, isStringArray)) &&
+        hasValidOptionalValue(
+            value,
+            'tools',
+            (item) => Array.isArray(item) && item.every((tool) => typeof tool === 'string' && isValidGeneratorTool(tool))
+        ) &&
+        hasValidOptionalValue(value, 'dateRange', (item) => isEnumValue(item, ['all', 'today', 'week', 'month', 'custom'])) &&
+        hasValidOptionalValue(value, 'dateFrom', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'dateTo', (item) => typeof item === 'string') &&
+        booleanKeys.every((key) => hasValidOptionalValue(value, key, (item) => typeof item === 'boolean')) &&
+        hasValidOptionalValue(value, 'collectionId', (item) => item === null || typeof item === 'string') &&
+        numberKeys.every((key) => hasValidOptionalValue(value, key, (item) => typeof item === 'number')) &&
+        hasValidOptionalValue(value, 'sortOption', (item) =>
+            isEnumValue(item, ['date_desc', 'date_asc', 'name_asc', 'name_desc', 'size_desc', 'size_asc'])
+        ) &&
+        hasValidOptionalValue(value, 'matchModes', (item) => isRecordWithValues(item, (mode) => isEnumValue(mode, ['any', 'all']))) &&
+        hasValidOptionalValue(value, 'assetFilterAliases', (item) =>
+            isRecordWithValues(item, (aliases) => isRecordWithValues(aliases, isStringArray), aliasKeys)
+        )
+    );
 };
 
 const isPersistedCollection = (value: unknown, requireFilters = false): boolean => {
     if (!isRecord(value)) return false;
 
-    return typeof value.id === 'string'
-        && typeof value.name === 'string'
-        && hasValidOptionalValue(value, 'description', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'imageIds', isStringArray)
-        && hasValidOptionalValue(value, 'count', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'thumbnail', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'customThumbnail', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'safeThumbnail', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'thumbnailIsSensitive', item => typeof item === 'boolean')
-        && hasValidOptionalValue(value, 'thumbnailSourceKind', item =>
-            isEnumValue(item, ['dynamic', 'customImage', 'customPath']))
-        && hasValidOptionalValue(value, 'color', item => typeof item === 'string')
-        && hasValidOptionalValue(value, 'createdAt', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'updatedAt', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'isArchived', item => typeof item === 'boolean')
-        && hasValidOptionalValue(value, 'isPinned', item => typeof item === 'boolean')
-        && hasValidOptionalValue(value, 'manualExclusions', isStringArray)
-        && hasValidOptionalValue(value, 'source', item => isEnumValue(item, ['ambit', 'invoke']))
-        && (requireFilters
+    return (
+        typeof value.id === 'string' &&
+        typeof value.name === 'string' &&
+        hasValidOptionalValue(value, 'description', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'imageIds', isStringArray) &&
+        hasValidOptionalValue(value, 'count', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'thumbnail', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'customThumbnail', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'safeThumbnail', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'thumbnailIsSensitive', (item) => typeof item === 'boolean') &&
+        hasValidOptionalValue(value, 'thumbnailSourceKind', (item) => isEnumValue(item, ['dynamic', 'customImage', 'customPath'])) &&
+        hasValidOptionalValue(value, 'color', (item) => typeof item === 'string') &&
+        hasValidOptionalValue(value, 'createdAt', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'updatedAt', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'isArchived', (item) => typeof item === 'boolean') &&
+        hasValidOptionalValue(value, 'isPinned', (item) => typeof item === 'boolean') &&
+        hasValidOptionalValue(value, 'manualExclusions', isStringArray) &&
+        hasValidOptionalValue(value, 'source', (item) => isEnumValue(item, ['ambit', 'invoke'])) &&
+        (requireFilters
             ? value.filters !== undefined && isPersistedFilterState(value.filters)
-            : hasValidOptionalValue(value, 'filters', isPersistedFilterState));
+            : hasValidOptionalValue(value, 'filters', isPersistedFilterState))
+    );
 };
 
 const isStringRecord = (value: unknown, allowedValues?: readonly string[]): boolean =>
-    isRecordWithValues(value, item =>
-        typeof item === 'string' && (!allowedValues || allowedValues.includes(item)));
+    isRecordWithValues(value, (item) => typeof item === 'string' && (!allowedValues || allowedValues.includes(item)));
 
-const isPersistedInvokeSourceFingerprint = (value: unknown): boolean => isRecord(value)
-    && value.schemaVersion === 1
-    && typeof value.imageCount === 'number'
-    && (value.imageUpdatedAt === null || typeof value.imageUpdatedAt === 'string')
-    && typeof value.boardCount === 'number'
-    && (value.boardUpdatedAt === null || typeof value.boardUpdatedAt === 'string')
-    && typeof value.membershipCount === 'number'
-    && (value.membershipMaxRowId === null || typeof value.membershipMaxRowId === 'string');
+const isPersistedInvokeSourceFingerprint = (value: unknown): boolean =>
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    typeof value.imageCount === 'number' &&
+    (value.imageUpdatedAt === null || typeof value.imageUpdatedAt === 'string') &&
+    typeof value.boardCount === 'number' &&
+    (value.boardUpdatedAt === null || typeof value.boardUpdatedAt === 'string') &&
+    typeof value.membershipCount === 'number' &&
+    (value.membershipMaxRowId === null || typeof value.membershipMaxRowId === 'string');
 
 const isPersistedInvokeSnapshot = (value: unknown): boolean => {
     if (!isRecord(value) || !Array.isArray(value.files)) return false;
 
-    return typeof value.dbPath === 'string'
-        && (value.lastSyncedAt === null || typeof value.lastSyncedAt === 'number')
-        && typeof value.importIntermediates === 'boolean'
-        && typeof value.importOrphans === 'boolean'
-        && typeof value.syncBoardsToCollections === 'boolean'
-        && hasValidOptionalValue(value, 'scopeMode', item => isEnumValue(item, ['legacy', 'all', 'owner']))
-        && hasValidOptionalValue(value, 'scopeOwnerId', item => item === null || typeof item === 'string')
-        && hasValidOptionalValue(value, 'pathRepairVersion', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'importSchemaVersion', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'boardOwnerSchemaVersion', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'sourceFingerprint', isPersistedInvokeSourceFingerprint)
-        && value.files.every(file => isRecord(file)
-            && typeof file.path === 'string'
-            && typeof file.exists === 'boolean'
-            && typeof file.size === 'number'
-            && (file.modifiedMs === null || typeof file.modifiedMs === 'number'));
+    return (
+        typeof value.dbPath === 'string' &&
+        (value.lastSyncedAt === null || typeof value.lastSyncedAt === 'number') &&
+        typeof value.importIntermediates === 'boolean' &&
+        typeof value.importOrphans === 'boolean' &&
+        typeof value.syncBoardsToCollections === 'boolean' &&
+        hasValidOptionalValue(value, 'scopeMode', (item) => isEnumValue(item, ['legacy', 'all', 'owner'])) &&
+        hasValidOptionalValue(value, 'scopeOwnerId', (item) => item === null || typeof item === 'string') &&
+        hasValidOptionalValue(value, 'pathRepairVersion', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'importSchemaVersion', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'boardOwnerSchemaVersion', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'sourceFingerprint', isPersistedInvokeSourceFingerprint) &&
+        value.files.every(
+            (file) =>
+                isRecord(file) &&
+                typeof file.path === 'string' &&
+                typeof file.exists === 'boolean' &&
+                typeof file.size === 'number' &&
+                (file.modifiedMs === null || typeof file.modifiedMs === 'number')
+        )
+    );
 };
 
 const isPersistedSettings = (value: unknown): boolean => {
     if (!isRecord(value)) return false;
 
     const booleanKeys = [
-        'hasCompletedOnboarding', 'autoCheckForUpdates', 'confirmDelete', 'defaultTheaterMode',
-        'enableAI', 'syncBoardsToCollections', 'invokeSyncFavorites', 'invokeSyncBoards',
-        'importIntermediates', 'importOrphans', 'libraryShowGrids', 'libraryShowIntermediates',
+        'hasCompletedOnboarding',
+        'autoCheckForUpdates',
+        'confirmDelete',
+        'defaultTheaterMode',
+        'enableAI',
+        'syncBoardsToCollections',
+        'invokeSyncFavorites',
+        'invokeSyncBoards',
+        'importIntermediates',
+        'importOrphans',
+        'libraryShowGrids',
+        'libraryShowIntermediates',
         'libraryShowInvokeImageAssets',
-        'devMode', 'enableAutoThumbnailHealing', 'enforceHighQualityThumbnails',
-        'promptMaskingEnabled'
+        'devMode',
+        'enableAutoThumbnailHealing',
+        'enforceHighQualityThumbnails',
+        'promptMaskingEnabled',
     ];
-    const stringKeys = [
-        'googleGeminiApiKey', 'aiModel', 'invokeAiPath', 'a1111Path', 'comfyUiPath'
-    ];
+    const stringKeys = ['googleGeminiApiKey', 'aiModel', 'invokeAiPath', 'a1111Path', 'comfyUiPath'];
 
-    return booleanKeys.every(key => hasValidOptionalValue(value, key, item => typeof item === 'boolean'))
-        && stringKeys.every(key => hasValidOptionalValue(value, key, item => typeof item === 'string'))
-        && hasValidOptionalValue(value, 'theme', item => item === 'dark' || item === 'light')
-        && hasValidOptionalValue(value, 'thumbnailSize', item => typeof item === 'number')
-        && hasValidOptionalValue(value, 'maskedKeywords', isStringArray)
-        && hasValidOptionalValue(value, 'maskingMode', item => item === 'blur' || item === 'hide')
-        && hasValidOptionalValue(value, 'aiThinkingMode', item =>
-            ['default', 'minimal', 'low', 'medium', 'high', 'off', 'dynamic'].includes(String(item)))
-        && hasValidOptionalValue(value, 'lastSyncedAt', item => item === null || typeof item === 'number')
-        && hasValidOptionalValue(value, 'starredAs', item =>
-            ['favorite', 'pin', 'both', 'none'].includes(String(item)))
-        && hasValidOptionalValue(value, 'libraryLayoutMode', item =>
-            ['grid', 'masonry', 'justified'].includes(String(item)))
-        && hasValidOptionalValue(value, 'librarySourceKind', item =>
-            ['all', 'generated', 'photograph', 'other'].includes(String(item)))
-        && hasValidOptionalValue(value, 'libraryMediaType', item =>
-            item === 'all' || item === 'image' || item === 'video')
-        && hasValidOptionalValue(value, 'viewerPreferredTab', item =>
-            item === 'details' || item === 'metadata' || item === 'workflow')
-        && hasValidOptionalValue(value, 'thumbnailOptimizationProfile', item =>
-            ['quiet', 'balanced', 'fast'].includes(String(item)))
-        && hasValidOptionalValue(value, 'logLevel', item =>
-            ['debug', 'info', 'warn', 'error', 'none'].includes(String(item)))
-        && hasValidOptionalValue(value, 'monitoredFolders', item =>
-            Array.isArray(item) && item.every(isPersistedMonitoredFolder))
-        && hasValidOptionalValue(value, 'resourceFolders', isStringArray)
-        && hasValidOptionalValue(value, 'resourceViewModes', item => isStringRecord(item, ['grid', 'list']))
-        && hasValidOptionalValue(value, 'resourceSortOptions', item => isStringRecord(item, [
-            'count_desc', 'count_asc', 'name_asc', 'name_desc', 'recent_desc', 'recent_asc',
-            'added_desc', 'added_asc', 'date_desc', 'date_asc'
-        ]))
-        && hasValidOptionalValue(value, 'systemPrompts', item => isStringRecord(item))
-        && hasValidOptionalValue(value, 'invokeDbSnapshot', isPersistedInvokeSnapshot)
-        && hasValidOptionalValue(value, 'invokeDbSnapshots', item =>
-            Array.isArray(item) && item.every(isPersistedInvokeSnapshot));
+    return (
+        booleanKeys.every((key) => hasValidOptionalValue(value, key, (item) => typeof item === 'boolean')) &&
+        stringKeys.every((key) => hasValidOptionalValue(value, key, (item) => typeof item === 'string')) &&
+        hasValidOptionalValue(value, 'theme', (item) => item === 'dark' || item === 'light') &&
+        hasValidOptionalValue(value, 'thumbnailSize', (item) => typeof item === 'number') &&
+        hasValidOptionalValue(value, 'maskedKeywords', isStringArray) &&
+        hasValidOptionalValue(value, 'maskingMode', (item) => item === 'blur' || item === 'hide') &&
+        hasValidOptionalValue(value, 'aiThinkingMode', (item) =>
+            ['default', 'minimal', 'low', 'medium', 'high', 'off', 'dynamic'].includes(String(item))
+        ) &&
+        hasValidOptionalValue(value, 'lastSyncedAt', (item) => item === null || typeof item === 'number') &&
+        hasValidOptionalValue(value, 'starredAs', (item) => ['favorite', 'pin', 'both', 'none'].includes(String(item))) &&
+        hasValidOptionalValue(value, 'libraryLayoutMode', (item) => ['grid', 'masonry', 'justified'].includes(String(item))) &&
+        hasValidOptionalValue(value, 'librarySourceKind', (item) => ['all', 'generated', 'photograph', 'other'].includes(String(item))) &&
+        hasValidOptionalValue(value, 'libraryMediaType', (item) => item === 'all' || item === 'image' || item === 'video') &&
+        hasValidOptionalValue(value, 'viewerPreferredTab', (item) => item === 'details' || item === 'metadata' || item === 'workflow') &&
+        hasValidOptionalValue(value, 'thumbnailOptimizationProfile', (item) => ['quiet', 'balanced', 'fast'].includes(String(item))) &&
+        hasValidOptionalValue(value, 'logLevel', (item) => ['debug', 'info', 'warn', 'error', 'none'].includes(String(item))) &&
+        hasValidOptionalValue(value, 'monitoredFolders', (item) => Array.isArray(item) && item.every(isPersistedMonitoredFolder)) &&
+        hasValidOptionalValue(value, 'resourceFolders', isStringArray) &&
+        hasValidOptionalValue(value, 'resourceViewModes', (item) => isStringRecord(item, ['grid', 'list'])) &&
+        hasValidOptionalValue(value, 'resourceSortOptions', (item) =>
+            isStringRecord(item, [
+                'count_desc',
+                'count_asc',
+                'name_asc',
+                'name_desc',
+                'recent_desc',
+                'recent_asc',
+                'added_desc',
+                'added_asc',
+                'date_desc',
+                'date_asc',
+            ])
+        ) &&
+        hasValidOptionalValue(value, 'systemPrompts', (item) => isStringRecord(item)) &&
+        hasValidOptionalValue(value, 'invokeDbSnapshot', isPersistedInvokeSnapshot) &&
+        hasValidOptionalValue(value, 'invokeDbSnapshots', (item) => Array.isArray(item) && item.every(isPersistedInvokeSnapshot))
+    );
 };
 
 export class TauriFsRepository implements IRepository {
@@ -303,26 +313,26 @@ export class TauriFsRepository implements IRepository {
                 version: 1,
                 transactionId,
                 before: this.createCandidate(currentState).state,
-                after: this.createCandidate(nextState).state
+                after: this.createCandidate(nextState).state,
             };
-            const result = await commands.schedulePurgeTransaction(
-                transactionId,
-                JSON.stringify(journal, null, 2)
-            );
+            const result = await commands.schedulePurgeTransaction(transactionId, JSON.stringify(journal, null, 2));
             if (result.status === 'error') {
                 throw new Error(result.error);
             }
             return {
                 transactionId,
                 state: nextState,
-                message: result.data
+                message: result.data,
             };
         });
     }
 
     private enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
         const result = this.operationQueue.then(operation, operation);
-        this.operationQueue = result.then(() => undefined, () => undefined);
+        this.operationQueue = result.then(
+            () => undefined,
+            () => undefined
+        );
         return result;
     }
 
@@ -352,9 +362,11 @@ export class TauriFsRepository implements IRepository {
         }
         if (journal) {
             const recoveryCandidate = journal.phase === 'committed' ? journal.after : journal.before;
-            console.warn(journal.phase === 'committed'
-                ? '[TauriFsRepository] Materializing committed library.json write.'
-                : '[TauriFsRepository] Rolling back interrupted library.json write.');
+            console.warn(
+                journal.phase === 'committed'
+                    ? '[TauriFsRepository] Materializing committed library.json write.'
+                    : '[TauriFsRepository] Rolling back interrupted library.json write.'
+            );
             await this.restoreCandidate(recoveryCandidate);
             return this.prepareLoadedState(recoveryCandidate.state);
         }
@@ -365,10 +377,7 @@ export class TauriFsRepository implements IRepository {
             await this.ensureBackupExists(saved.content);
             const preparedState = this.prepareLoadedState(saved.state);
 
-            if (cleanupLegacyImages
-                && saved.state.images
-                && Array.isArray(saved.state.images)
-                && saved.state.images.length > 0) {
+            if (cleanupLegacyImages && saved.state.images && Array.isArray(saved.state.images) && saved.state.images.length > 0) {
                 console.log('[TauriFsRepository] Detected legacy images in library.json. Cleaning up to improve startup...');
                 try {
                     await this.saveUnlocked(preparedState);
@@ -401,22 +410,18 @@ export class TauriFsRepository implements IRepository {
         let journal: PersistedPurgeJournal;
         let completion: PersistedCommitMarker;
         try {
-            const parsedJournal: unknown = JSON.parse(await readTextFile(
-                this.purgeJournalFileName,
-                { baseDir: this.baseDir }
-            ));
-            const parsedCompletion: unknown = JSON.parse(await readTextFile(
-                this.purgeCompletionFileName,
-                { baseDir: this.baseDir }
-            ));
-            if (!isRecord(parsedJournal)
-                || parsedJournal.version !== 1
-                || typeof parsedJournal.transactionId !== 'string'
-                || !this.isPersistedAppState(parsedJournal.before)
-                || !this.isPersistedAppState(parsedJournal.after)
-                || !isRecord(parsedCompletion)
-                || parsedCompletion.version !== 1
-                || parsedCompletion.transactionId !== parsedJournal.transactionId) {
+            const parsedJournal: unknown = JSON.parse(await readTextFile(this.purgeJournalFileName, { baseDir: this.baseDir }));
+            const parsedCompletion: unknown = JSON.parse(await readTextFile(this.purgeCompletionFileName, { baseDir: this.baseDir }));
+            if (
+                !isRecord(parsedJournal) ||
+                parsedJournal.version !== 1 ||
+                typeof parsedJournal.transactionId !== 'string' ||
+                !this.isPersistedAppState(parsedJournal.before) ||
+                !this.isPersistedAppState(parsedJournal.after) ||
+                !isRecord(parsedCompletion) ||
+                parsedCompletion.version !== 1 ||
+                parsedCompletion.transactionId !== parsedJournal.transactionId
+            ) {
                 throw new Error('Factory reset recovery artifacts do not match.');
             }
             journal = parsedJournal as unknown as PersistedPurgeJournal;
@@ -433,7 +438,7 @@ export class TauriFsRepository implements IRepository {
         } catch (error) {
             console.warn('[TauriFsRepository] Factory reset was materialized, but recovery cleanup was incomplete:', {
                 transactionId: completion.transactionId,
-                error
+                error,
             });
         }
         return recoveredState;
@@ -441,7 +446,7 @@ export class TauriFsRepository implements IRepository {
 
     private async readPendingJournal(): Promise<ResolvedStateJournal | null> {
         try {
-            if (!await exists(this.pendingFileName, { baseDir: this.baseDir })) return null;
+            if (!(await exists(this.pendingFileName, { baseDir: this.baseDir }))) return null;
         } catch (error) {
             if (isNotFoundFsError(error)) return null;
             throw new Error(`Failed to validate ${this.pendingFileName}. Recovery artifacts were preserved.`, { cause: error });
@@ -464,29 +469,28 @@ export class TauriFsRepository implements IRepository {
                 return {
                     phase: 'committed',
                     before: legacyCandidate,
-                    after: legacyCandidate
+                    after: legacyCandidate,
                 };
             }
 
-            if (!isRecord(parsed)
-                || parsed.version !== 1
-                || typeof parsed.transactionId !== 'string'
-                || (parsed.phase !== 'prepared' && parsed.phase !== 'committed')
-                || !this.isPersistedAppState(parsed.before)
-                || !this.isPersistedAppState(parsed.after)) {
+            if (
+                !isRecord(parsed) ||
+                parsed.version !== 1 ||
+                typeof parsed.transactionId !== 'string' ||
+                (parsed.phase !== 'prepared' && parsed.phase !== 'committed') ||
+                !this.isPersistedAppState(parsed.before) ||
+                !this.isPersistedAppState(parsed.after)
+            ) {
                 throw new Error('Persisted settings journal has an invalid shape.');
             }
 
             const commitMarker = await this.readCommitMarker();
-            const phase = parsed.phase === 'committed'
-                || commitMarker?.transactionId === parsed.transactionId
-                ? 'committed'
-                : 'prepared';
+            const phase = parsed.phase === 'committed' || commitMarker?.transactionId === parsed.transactionId ? 'committed' : 'prepared';
 
             return {
                 phase,
                 before: this.createCandidate(parsed.before),
-                after: this.createCandidate(parsed.after)
+                after: this.createCandidate(parsed.after),
             };
         } catch (error) {
             throw new Error(`Failed to validate ${this.pendingFileName}. Recovery artifacts were preserved.`, { cause: error });
@@ -495,7 +499,7 @@ export class TauriFsRepository implements IRepository {
 
     private async readCommitMarker(): Promise<PersistedCommitMarker | null> {
         try {
-            if (!await exists(this.commitFileName, { baseDir: this.baseDir })) return null;
+            if (!(await exists(this.commitFileName, { baseDir: this.baseDir }))) return null;
         } catch (error) {
             if (isNotFoundFsError(error)) return null;
             throw new Error(`Failed to validate ${this.commitFileName}. Recovery artifacts were preserved.`, { cause: error });
@@ -511,15 +515,17 @@ export class TauriFsRepository implements IRepository {
 
         try {
             const parsed: unknown = JSON.parse(content);
-            if (!isRecord(parsed)
-                || parsed.version !== 1
-                || typeof parsed.transactionId !== 'string'
-                || parsed.transactionId.length === 0) {
+            if (
+                !isRecord(parsed) ||
+                parsed.version !== 1 ||
+                typeof parsed.transactionId !== 'string' ||
+                parsed.transactionId.length === 0
+            ) {
                 throw new Error('Persisted settings commit marker has an invalid shape.');
             }
             return {
                 version: 1,
-                transactionId: parsed.transactionId
+                transactionId: parsed.transactionId,
             };
         } catch (error) {
             throw new Error(`Failed to validate ${this.commitFileName}. Recovery artifacts were preserved.`, { cause: error });
@@ -528,7 +534,7 @@ export class TauriFsRepository implements IRepository {
 
     private async readCandidate(fileName: string): Promise<PersistedStateCandidate | null> {
         try {
-            if (!await exists(fileName, { baseDir: this.baseDir })) return null;
+            if (!(await exists(fileName, { baseDir: this.baseDir }))) return null;
         } catch (error) {
             if (isNotFoundFsError(error)) return null;
             throw error;
@@ -557,15 +563,17 @@ export class TauriFsRepository implements IRepository {
         if (!isRecord(state)) return false;
 
         const candidate = state;
-        return Array.isArray(candidate.images)
-            && candidate.images.every(isRecord)
-            && Array.isArray(candidate.collections)
-            && candidate.collections.every(collection => isPersistedCollection(collection))
-            && Array.isArray(candidate.smartCollections)
-            && candidate.smartCollections.every(collection => isPersistedCollection(collection, true))
-            && isPersistedSettings(candidate.settings)
-            && isStringArray(candidate.recentSearches)
-            && hasValidOptionalValue(candidate, 'collectionStorageVersion', value => typeof value === 'number');
+        return (
+            Array.isArray(candidate.images) &&
+            candidate.images.every(isRecord) &&
+            Array.isArray(candidate.collections) &&
+            candidate.collections.every((collection) => isPersistedCollection(collection)) &&
+            Array.isArray(candidate.smartCollections) &&
+            candidate.smartCollections.every((collection) => isPersistedCollection(collection, true)) &&
+            isPersistedSettings(candidate.settings) &&
+            isStringArray(candidate.recentSearches) &&
+            hasValidOptionalValue(candidate, 'collectionStorageVersion', (value) => typeof value === 'number')
+        );
     }
 
     private prepareLoadedState(saved: PersistedAppState): AppState {
@@ -576,27 +584,27 @@ export class TauriFsRepository implements IRepository {
                 ...persistedFields,
                 imageIds: collection.imageIds ?? [],
                 createdAt: collection.createdAt ?? fallbackCreatedAt,
-                ...(filters ? { filters: createDefaultFilters(filters) } : {})
+                ...(filters ? { filters: createDefaultFilters(filters) } : {}),
             };
         };
         const prepareSmartCollection = (collection: PersistedSmartCollection): SmartCollection => ({
             ...collection,
             imageIds: collection.imageIds ?? [],
             createdAt: collection.createdAt ?? fallbackCreatedAt,
-            filters: createDefaultFilters(collection.filters)
+            filters: createDefaultFilters(collection.filters),
         });
         const savedSettings = saved.settings;
         const invokeDbSnapshot = savedSettings.invokeDbSnapshot
             ? {
-                ...savedSettings.invokeDbSnapshot,
-                scopeMode: savedSettings.invokeDbSnapshot.scopeMode ?? 'legacy',
-                scopeOwnerId: savedSettings.invokeDbSnapshot.scopeOwnerId ?? null,
-                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0,
-                importSchemaVersion: savedSettings.invokeDbSnapshot.importSchemaVersion ?? 0,
-                boardOwnerSchemaVersion: savedSettings.invokeDbSnapshot.boardOwnerSchemaVersion ?? 0,
-            }
+                  ...savedSettings.invokeDbSnapshot,
+                  scopeMode: savedSettings.invokeDbSnapshot.scopeMode ?? 'legacy',
+                  scopeOwnerId: savedSettings.invokeDbSnapshot.scopeOwnerId ?? null,
+                  pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0,
+                  importSchemaVersion: savedSettings.invokeDbSnapshot.importSchemaVersion ?? 0,
+                  boardOwnerSchemaVersion: savedSettings.invokeDbSnapshot.boardOwnerSchemaVersion ?? 0,
+              }
             : undefined;
-        const invokeDbSnapshots = savedSettings.invokeDbSnapshots?.map(snapshot => ({
+        const invokeDbSnapshots = savedSettings.invokeDbSnapshots?.map((snapshot) => ({
             ...snapshot,
             scopeMode: snapshot.scopeMode ?? 'legacy',
             scopeOwnerId: snapshot.scopeOwnerId ?? null,
@@ -619,8 +627,8 @@ export class TauriFsRepository implements IRepository {
                 libraryShowInvokeImageAssets: savedSettings.libraryShowInvokeImageAssets ?? false,
                 resourceFolders: savedSettings.resourceFolders ?? [],
                 invokeDbSnapshot,
-                invokeDbSnapshots
-            })
+                invokeDbSnapshots,
+            }),
         };
     }
 
@@ -635,16 +643,20 @@ export class TauriFsRepository implements IRepository {
                 transactionId,
                 phase: 'prepared',
                 before: before.state,
-                after: after.state
+                after: after.state,
             };
 
             await writeTextFile(this.pendingFileName, JSON.stringify(preparedJournal, null, 2), { baseDir: this.baseDir });
             await writeTextFile(this.fileName, after.content, { baseDir: this.baseDir });
             await writeTextFile(this.backupFileName, after.content, { baseDir: this.baseDir });
-            await writeTextFile(this.commitFileName, JSON.stringify({
-                version: 1,
-                transactionId
-            } satisfies PersistedCommitMarker), { baseDir: this.baseDir });
+            await writeTextFile(
+                this.commitFileName,
+                JSON.stringify({
+                    version: 1,
+                    transactionId,
+                } satisfies PersistedCommitMarker),
+                { baseDir: this.baseDir }
+            );
             await this.removeCompletedJournalIfPresent();
         } catch (error) {
             console.error('Failed to save state to filesystem:', error);
@@ -670,11 +682,11 @@ export class TauriFsRepository implements IRepository {
     private createCandidate(state: AppState | PersistedAppState): PersistedStateCandidate {
         const persistedState: PersistedAppState = {
             ...state,
-            images: []
+            images: [],
         };
         return {
             content: JSON.stringify(persistedState, null, 2),
-            state: persistedState
+            state: persistedState,
         };
     }
 
@@ -690,7 +702,7 @@ export class TauriFsRepository implements IRepository {
 
     private async ensureBackupExists(content: string): Promise<void> {
         try {
-            if (!await exists(this.backupFileName, { baseDir: this.baseDir })) {
+            if (!(await exists(this.backupFileName, { baseDir: this.baseDir }))) {
                 await writeTextFile(this.backupFileName, content, { baseDir: this.baseDir });
             }
         } catch (error) {

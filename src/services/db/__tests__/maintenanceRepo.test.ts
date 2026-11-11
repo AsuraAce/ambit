@@ -119,11 +119,31 @@ describe('maintenanceRepo', () => {
             { id: 'missing', isMissing: true, isDeleted: false, isIntermediate: false, metadata: { positivePrompt: 'prompt' } },
             { id: 'deleted', isMissing: false, isDeleted: true, isIntermediate: false, metadata: { positivePrompt: 'prompt' } },
             { id: 'intermediate', isMissing: false, isDeleted: false, isIntermediate: true, metadata: { positivePrompt: 'prompt' } },
-            { id: 'metadata-intermediate', isMissing: false, isDeleted: false, isIntermediate: false, metadata: { positivePrompt: 'prompt', isIntermediate: true } },
+            {
+                id: 'metadata-intermediate',
+                isMissing: false,
+                isDeleted: false,
+                isIntermediate: false,
+                metadata: { positivePrompt: 'prompt', isIntermediate: true },
+            },
             { id: 'untagged', isMissing: false, isDeleted: false, isIntermediate: false, metadata: {} },
             { id: 'regular', isMissing: false, isDeleted: false, isIntermediate: false, metadata: { positivePrompt: 'prompt' } },
-            { id: 'asset-untagged', isMissing: false, isDeleted: false, isIntermediate: false, invokeImageCategory: 'control', metadata: {} },
-            { id: 'unknown-untagged', isMissing: false, isDeleted: false, isIntermediate: false, invokeImageCategory: 'future-category', metadata: {} },
+            {
+                id: 'asset-untagged',
+                isMissing: false,
+                isDeleted: false,
+                isIntermediate: false,
+                invokeImageCategory: 'control',
+                metadata: {},
+            },
+            {
+                id: 'unknown-untagged',
+                isMissing: false,
+                isDeleted: false,
+                isIntermediate: false,
+                invokeImageCategory: 'future-category',
+                metadata: {},
+            },
         ];
         mocks.getBrowserMockImages.mockReturnValue(browserImages);
 
@@ -224,9 +244,7 @@ describe('maintenanceRepo', () => {
             path: `C:/library/${index}.png`,
         }));
         mocks.getDb.mockResolvedValue({ select: vi.fn().mockResolvedValue(rows), execute: vi.fn() });
-        mocks.commands.verifyImagePaths
-            .mockResolvedValueOnce(rows.slice(0, 10).map(row => row.path))
-            .mockResolvedValueOnce([]);
+        mocks.commands.verifyImagePaths.mockResolvedValueOnce(rows.slice(0, 10).map((row) => row.path)).mockResolvedValueOnce([]);
         const { verifyLibraryIntegrity } = await import('../maintenanceRepo');
 
         const result = await verifyLibraryIntegrity();
@@ -326,7 +344,8 @@ describe('maintenanceRepo', () => {
 
     it('loads missing and deleted maintenance buckets with their dedicated row mappings', async () => {
         const db = {
-            select: vi.fn()
+            select: vi
+                .fn()
                 .mockResolvedValueOnce([{ id: 'missing', path: 'C:/library/missing.png' }])
                 .mockResolvedValueOnce([{ id: 'deleted', path: 'C:/library/deleted.png' }]),
             execute: vi.fn(),
@@ -334,18 +353,22 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getMissingImages, getDeletedImages } = await import('../maintenanceRepo');
-        await expect(getMissingImages()).resolves.toEqual([{
-            id: 'missing',
-            url: 'C:/library/missing.png',
-            thumbnailUrl: '',
-            metadata: {},
-        }]);
-        await expect(getDeletedImages()).resolves.toEqual([{
-            id: 'deleted',
-            url: 'C:/library/deleted.png',
-            thumbnailUrl: '',
-            metadata: {},
-        }]);
+        await expect(getMissingImages()).resolves.toEqual([
+            {
+                id: 'missing',
+                url: 'C:/library/missing.png',
+                thumbnailUrl: '',
+                metadata: {},
+            },
+        ]);
+        await expect(getDeletedImages()).resolves.toEqual([
+            {
+                id: 'deleted',
+                url: 'C:/library/deleted.png',
+                thumbnailUrl: '',
+                metadata: {},
+            },
+        ]);
 
         expect(db.select.mock.calls[0][0]).toContain('WHERE is_missing = 1');
         expect(db.select.mock.calls[1][0]).toContain('FROM scoped_removed_images');
@@ -402,12 +425,14 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getIntermediateImages } = await import('../maintenanceRepo');
-        await expect(getIntermediateImages('WHERE model_name = ?', ['model-a'])).resolves.toEqual([{
-            id: 'id-a',
-            url: 'C:/library/a.png',
-            thumbnailUrl: '',
-            metadata: {},
-        }]);
+        await expect(getIntermediateImages('WHERE model_name = ?', ['model-a'])).resolves.toEqual([
+            {
+                id: 'id-a',
+                url: 'C:/library/a.png',
+                thumbnailUrl: '',
+                metadata: {},
+            },
+        ]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
         expect(query).toMatch(/AND\s+model_name = \?/);
@@ -423,12 +448,14 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getUntaggedImages } = await import('../maintenanceRepo');
-        await expect(getUntaggedImages('rating >= ?', [4])).resolves.toEqual([{
-            id: 'untagged',
-            url: 'C:/library/untagged.png',
-            thumbnailUrl: '',
-            metadata: {},
-        }]);
+        await expect(getUntaggedImages('rating >= ?', [4])).resolves.toEqual([
+            {
+                id: 'untagged',
+                url: 'C:/library/untagged.png',
+                thumbnailUrl: '',
+                metadata: {},
+            },
+        ]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
         expect(query).toContain("(positive_prompt IS NULL OR positive_prompt = '')");
@@ -444,12 +471,14 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getUnoptimizedImages } = await import('../maintenanceRepo');
-        await expect(getUnoptimizedImages('WHERE model_name = ?', ['model-a'])).resolves.toEqual([{
-            id: 'needs-thumb',
-            url: 'C:/library/a.png',
-            thumbnailUrl: '',
-            metadata: {},
-        }]);
+        await expect(getUnoptimizedImages('WHERE model_name = ?', ['model-a'])).resolves.toEqual([
+            {
+                id: 'needs-thumb',
+                url: 'C:/library/a.png',
+                thumbnailUrl: '',
+                metadata: {},
+            },
+        ]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
         expect(query).toContain('FROM thumbnail_repair_required AS images');
@@ -498,12 +527,7 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getUnoptimizedImageEntries } = await import('../maintenanceRepo');
-        await expect(getUnoptimizedImageEntries(
-            { timestamp: 500, id: 'id-before' },
-            150,
-            'model_name = ?',
-            ['model-a']
-        )).resolves.toEqual([
+        await expect(getUnoptimizedImageEntries({ timestamp: 500, id: 'id-before' }, 150, 'model_name = ?', ['model-a'])).resolves.toEqual([
             { id: 'id-a', path: 'C:/library/a.png', timestamp: 400 },
         ]);
 
@@ -539,13 +563,8 @@ describe('maintenanceRepo', () => {
             execute: vi.fn(),
         };
         mocks.getDb.mockResolvedValue(db);
-        const {
-            getIntermediateImages,
-            getUntaggedImages,
-            getUnoptimizedImages,
-            getUnoptimizedImagesCount,
-            getUnoptimizedImageEntries,
-        } = await import('../maintenanceRepo');
+        const { getIntermediateImages, getUntaggedImages, getUnoptimizedImages, getUnoptimizedImagesCount, getUnoptimizedImageEntries } =
+            await import('../maintenanceRepo');
 
         await getIntermediateImages();
         await getIntermediateImages('rating >= ?', [1]);
@@ -615,12 +634,14 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getDuplicateCandidates } = await import('../maintenanceRepo');
-        await expect(getDuplicateCandidates()).resolves.toEqual([{
-            id: 'dupe-a',
-            url: 'C:/library/a.png',
-            thumbnailUrl: '',
-            metadata: {},
-        }]);
+        await expect(getDuplicateCandidates()).resolves.toEqual([
+            {
+                id: 'dupe-a',
+                url: 'C:/library/a.png',
+                thumbnailUrl: '',
+                metadata: {},
+            },
+        ]);
 
         const [query] = db.select.mock.calls[0] as [string];
         expect(query).toContain('duplicate_hashes');
@@ -659,10 +680,12 @@ describe('maintenanceRepo', () => {
         ]);
 
         const { resolveExactDuplicateGroups } = await import('../exactDuplicateRepo');
-        await expect(resolveExactDuplicateGroups([
-            { keepId: 'keep-a', removeIds: ['remove-a'] },
-            { keepId: 'keep-b', removeIds: ['remove-b'] },
-        ])).rejects.toThrow('Duplicate set changed');
+        await expect(
+            resolveExactDuplicateGroups([
+                { keepId: 'keep-a', removeIds: ['remove-a'] },
+                { keepId: 'keep-b', removeIds: ['remove-b'] },
+            ])
+        ).rejects.toThrow('Duplicate set changed');
 
         expect(mocks.updateBrowserMockImage).not.toHaveBeenCalled();
         expect(mocks.upsertBrowserMockCollection).not.toHaveBeenCalled();

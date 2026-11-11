@@ -43,31 +43,23 @@ interface StartRefreshOptions {
 const STARTUP_REFRESH_INITIAL_DELAY_MS = 3000;
 const STARTUP_REFRESH_RETRY_DELAY_MS = 15000;
 const STARTUP_REFRESH_MAX_ATTEMPTS = 20;
-const METADATA_REFRESH_FACET_TYPES = [
-    'checkpoints',
-    'loras',
-    'embeddings',
-    'hypernetworks',
-    'controlNets',
-    'ipAdapters',
-    'tools'
-];
+const METADATA_REFRESH_FACET_TYPES = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 const ACTIVE_REFRESH_PROGRESS_PHASES = new Set(['counting', 'starting', 'processing']);
 
-const getErrorMessage = (err: unknown): string => (
-    err instanceof Error ? err.message : String(err)
-);
+const getErrorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const refreshVideoMetadata = (filterRoot: string | null, forceReparse: boolean) =>
     invoke<RefreshResult>('refresh_video_metadata', { filterRoot, forceReparse });
 
 const isTransientDatabaseLock = (err: unknown): boolean => {
     const message = getErrorMessage(err).toLowerCase();
-    return message.includes('database is locked')
-        || message.includes('database table is locked')
-        || message.includes('database schema is locked')
-        || message.includes('database busy')
-        || message.includes('sqlite_busy');
+    return (
+        message.includes('database is locked') ||
+        message.includes('database table is locked') ||
+        message.includes('database schema is locked') ||
+        message.includes('database busy') ||
+        message.includes('sqlite_busy')
+    );
 };
 
 export function useMetadataRefresh(startupReady = false) {
@@ -81,98 +73,104 @@ export function useMetadataRefresh(startupReady = false) {
     const startupRefreshCompletedRef = useRef(false);
     const startupRefreshInFlightRef = useRef(false);
 
-    const {
-        setMetadataRefreshPending,
-        setIsRefreshingMetadata,
-        setRefreshProgress,
-    } = useLibraryStore();
+    const { setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress } = useLibraryStore();
 
-    const refreshFacetsAfterMetadataUpdate = useCallback(async (result: RefreshResult) => {
-        if (result.updated <= 0 || metadataFacetRefreshHandledRef.current) return;
-        metadataFacetRefreshHandledRef.current = true;
+    const refreshFacetsAfterMetadataUpdate = useCallback(
+        async (result: RefreshResult) => {
+            if (result.updated <= 0 || metadataFacetRefreshHandledRef.current) return;
+            metadataFacetRefreshHandledRef.current = true;
 
-        try {
-            const refreshed = await rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES);
-            useLibraryStore.getState().incrementFacetCacheVersion();
-            console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
-        } catch (err) {
-            console.error('[Refresh] Failed to refresh metadata facet cache after reparse', err);
-            addToast('Metadata refresh finished, but asset counts may be stale until the next refresh.', 'warning');
-        }
-    }, [addToast]);
-
-    const completeRefresh = useCallback((result: RefreshResult) => {
-        const { processed, updated, errors, wasCancelled } = result;
-        setIsRefreshingMetadata(false);
-        setMetadataRefreshPending(false);
-        setRefreshProgress(null);
-        startupAnnouncementCountRef.current = null;
-        startupAnnouncementShownRef.current = false;
-        deferStartupVisibilityUntilProcessingRef.current = false;
-
-        if (wasCancelled) {
-            addToast(`Refresh cancelled: ${processed.toLocaleString()} processed before stop`, 'info');
-        } else if (processed > 0) {
-            addToast(
-                `Refresh complete: ${updated.toLocaleString()} updated, ${errors} errors`,
-                errors > 0 ? 'warning' : 'success'
-            );
-        }
-
-        console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
-        void refreshFacetsAfterMetadataUpdate(result);
-    }, [addToast, refreshFacetsAfterMetadataUpdate, setIsRefreshingMetadata, setMetadataRefreshPending, setRefreshProgress]);
-
-    const runCombinedRefresh = useCallback(async (
-        forceReparse: boolean,
-        filterRoot: string | null,
-        filterTool: string | null,
-        refreshPhotoMetadata: boolean
-    ): Promise<RefreshResult> => {
-        combinedRefreshInFlightRef.current = true;
-        try {
-            const result = await measureStartupPhase('metadata-maintenance', () => invoke<RefreshResult>('start_reparse_job', {
-                forceReparse,
-                filterRoot,
-                filterTool,
-                refreshPhotoMetadata
-            }));
-            if (!result.wasCancelled) {
-                deferStartupVisibilityUntilProcessingRef.current = false;
-                setMetadataRefreshPending(false);
-                setIsRefreshingMetadata(true);
-                setRefreshProgress({
-                    current: result.processed,
-                    total: Math.max(result.processed, startupAnnouncementCountRef.current ?? 0),
-                    updated: result.updated,
-                    errors: result.errors,
-                    phase: 'processing',
-                    message: 'Refreshing video metadata...'
-                });
-                const startupCount = startupAnnouncementCountRef.current;
-                if (startupCount !== null && !startupAnnouncementShownRef.current) {
-                    startupAnnouncementShownRef.current = true;
-                    addToast(
-                        `Ambit is updating metadata for ${startupCount.toLocaleString()} items after a parser update. Your library remains available.`,
-                        'info'
-                    );
-                }
-                const videoResult = await measureStartupPhase('metadata-maintenance', () => refreshVideoMetadata(filterRoot, forceReparse)) ?? {
-                    processed: 0,
-                    updated: 0,
-                    errors: 0,
-                    wasCancelled: false
-                };
-                result.processed += videoResult.processed;
-                result.updated += videoResult.updated;
-                result.errors += videoResult.errors;
-                result.wasCancelled ||= videoResult.wasCancelled;
+            try {
+                const refreshed = await rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES);
+                useLibraryStore.getState().incrementFacetCacheVersion();
+                console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
+            } catch (err) {
+                console.error('[Refresh] Failed to refresh metadata facet cache after reparse', err);
+                addToast('Metadata refresh finished, but asset counts may be stale until the next refresh.', 'warning');
             }
-            return result;
-        } finally {
-            combinedRefreshInFlightRef.current = false;
-        }
-    }, [addToast, setIsRefreshingMetadata, setMetadataRefreshPending, setRefreshProgress]);
+        },
+        [addToast]
+    );
+
+    const completeRefresh = useCallback(
+        (result: RefreshResult) => {
+            const { processed, updated, errors, wasCancelled } = result;
+            setIsRefreshingMetadata(false);
+            setMetadataRefreshPending(false);
+            setRefreshProgress(null);
+            startupAnnouncementCountRef.current = null;
+            startupAnnouncementShownRef.current = false;
+            deferStartupVisibilityUntilProcessingRef.current = false;
+
+            if (wasCancelled) {
+                addToast(`Refresh cancelled: ${processed.toLocaleString()} processed before stop`, 'info');
+            } else if (processed > 0) {
+                addToast(`Refresh complete: ${updated.toLocaleString()} updated, ${errors} errors`, errors > 0 ? 'warning' : 'success');
+            }
+
+            console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
+            void refreshFacetsAfterMetadataUpdate(result);
+        },
+        [addToast, refreshFacetsAfterMetadataUpdate, setIsRefreshingMetadata, setMetadataRefreshPending, setRefreshProgress]
+    );
+
+    const runCombinedRefresh = useCallback(
+        async (
+            forceReparse: boolean,
+            filterRoot: string | null,
+            filterTool: string | null,
+            refreshPhotoMetadata: boolean
+        ): Promise<RefreshResult> => {
+            combinedRefreshInFlightRef.current = true;
+            try {
+                const result = await measureStartupPhase('metadata-maintenance', () =>
+                    invoke<RefreshResult>('start_reparse_job', {
+                        forceReparse,
+                        filterRoot,
+                        filterTool,
+                        refreshPhotoMetadata,
+                    })
+                );
+                if (!result.wasCancelled) {
+                    deferStartupVisibilityUntilProcessingRef.current = false;
+                    setMetadataRefreshPending(false);
+                    setIsRefreshingMetadata(true);
+                    setRefreshProgress({
+                        current: result.processed,
+                        total: Math.max(result.processed, startupAnnouncementCountRef.current ?? 0),
+                        updated: result.updated,
+                        errors: result.errors,
+                        phase: 'processing',
+                        message: 'Refreshing video metadata...',
+                    });
+                    const startupCount = startupAnnouncementCountRef.current;
+                    if (startupCount !== null && !startupAnnouncementShownRef.current) {
+                        startupAnnouncementShownRef.current = true;
+                        addToast(
+                            `Ambit is updating metadata for ${startupCount.toLocaleString()} items after a parser update. Your library remains available.`,
+                            'info'
+                        );
+                    }
+                    const videoResult = (await measureStartupPhase('metadata-maintenance', () =>
+                        refreshVideoMetadata(filterRoot, forceReparse)
+                    )) ?? {
+                        processed: 0,
+                        updated: 0,
+                        errors: 0,
+                        wasCancelled: false,
+                    };
+                    result.processed += videoResult.processed;
+                    result.updated += videoResult.updated;
+                    result.errors += videoResult.errors;
+                    result.wasCancelled ||= videoResult.wasCancelled;
+                }
+                return result;
+            } finally {
+                combinedRefreshInFlightRef.current = false;
+            }
+        },
+        [addToast, setIsRefreshingMetadata, setMetadataRefreshPending, setRefreshProgress]
+    );
 
     // Listen to progress events from backend
     useEffect(() => {
@@ -182,10 +180,7 @@ export function useMetadataRefresh(startupReady = false) {
             'refresh-progress',
             (event) => {
                 if (combinedRefreshInFlightRef.current && event.payload.phase === 'complete') return;
-                if (
-                    deferStartupVisibilityUntilProcessingRef.current
-                    && event.payload.phase !== 'processing'
-                ) {
+                if (deferStartupVisibilityUntilProcessingRef.current && event.payload.phase !== 'processing') {
                     setMetadataRefreshPending(true);
                     setIsRefreshingMetadata(false);
                     setRefreshProgress(null);
@@ -234,46 +229,54 @@ export function useMetadataRefresh(startupReady = false) {
     }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, completeRefresh]);
 
     // Start refresh job
-    const startRefresh = useCallback(async (
-        filterTool?: string,
-        options: StartRefreshOptions = {}
-    ): Promise<RefreshStartResult> => {
-        const { showFailureToast = true, deferActiveUntilProgress = false } = options;
+    const startRefresh = useCallback(
+        async (filterTool?: string, options: StartRefreshOptions = {}): Promise<RefreshStartResult> => {
+            const { showFailureToast = true, deferActiveUntilProgress = false } = options;
 
-        if (browserMockMode) {
-            addToast('Unavailable in browser mock mode.', 'info');
-            return { ok: false };
-        }
-
-        console.log(`[Refresh] Starting backend refresh job${filterTool ? ` (Tool: ${filterTool})` : ''}`);
-        metadataFacetRefreshHandledRef.current = false;
-        deferStartupVisibilityUntilProcessingRef.current = deferActiveUntilProgress;
-        if (!deferActiveUntilProgress) {
-            startupAnnouncementCountRef.current = null;
-            startupAnnouncementShownRef.current = false;
-            setMetadataRefreshPending(false);
-            setIsRefreshingMetadata(true);
-        }
-
-        try {
-            const result = await runCombinedRefresh(false, null, filterTool || null, false);
-            console.log('[Refresh] Job returned:', result);
-            completeRefresh(result);
-            return { ok: true };
-        } catch (err) {
-            console.error('[Refresh] Exception:', err);
-            if (showFailureToast) {
-                addToast(`Failed to start refresh: ${getErrorMessage(err)}`, 'error');
+            if (browserMockMode) {
+                addToast('Unavailable in browser mock mode.', 'info');
+                return { ok: false };
             }
-            setMetadataRefreshPending(false);
-            setIsRefreshingMetadata(false);
-            setRefreshProgress(null);
-            startupAnnouncementCountRef.current = null;
-            startupAnnouncementShownRef.current = false;
-            deferStartupVisibilityUntilProcessingRef.current = false;
-            return { ok: false, error: err };
-        }
-    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, completeRefresh, runCombinedRefresh]);
+
+            console.log(`[Refresh] Starting backend refresh job${filterTool ? ` (Tool: ${filterTool})` : ''}`);
+            metadataFacetRefreshHandledRef.current = false;
+            deferStartupVisibilityUntilProcessingRef.current = deferActiveUntilProgress;
+            if (!deferActiveUntilProgress) {
+                startupAnnouncementCountRef.current = null;
+                startupAnnouncementShownRef.current = false;
+                setMetadataRefreshPending(false);
+                setIsRefreshingMetadata(true);
+            }
+
+            try {
+                const result = await runCombinedRefresh(false, null, filterTool || null, false);
+                console.log('[Refresh] Job returned:', result);
+                completeRefresh(result);
+                return { ok: true };
+            } catch (err) {
+                console.error('[Refresh] Exception:', err);
+                if (showFailureToast) {
+                    addToast(`Failed to start refresh: ${getErrorMessage(err)}`, 'error');
+                }
+                setMetadataRefreshPending(false);
+                setIsRefreshingMetadata(false);
+                setRefreshProgress(null);
+                startupAnnouncementCountRef.current = null;
+                startupAnnouncementShownRef.current = false;
+                deferStartupVisibilityUntilProcessingRef.current = false;
+                return { ok: false, error: err };
+            }
+        },
+        [
+            setMetadataRefreshPending,
+            setIsRefreshingMetadata,
+            setRefreshProgress,
+            addToast,
+            browserMockMode,
+            completeRefresh,
+            runCombinedRefresh,
+        ]
+    );
 
     // Cancel refresh job
     const cancelRefresh = useCallback(async () => {
@@ -288,33 +291,44 @@ export function useMetadataRefresh(startupReady = false) {
     }, [browserMockMode]);
 
     // Force refresh (can be targeted to a folder or tool)
-    const forceRefresh = useCallback(async (rootPath?: string, force: boolean = false, filterTool?: string) => {
-        if (browserMockMode) {
-            addToast('Unavailable in browser mock mode.', 'info');
-            return;
-        }
+    const forceRefresh = useCallback(
+        async (rootPath?: string, force: boolean = false, filterTool?: string) => {
+            if (browserMockMode) {
+                addToast('Unavailable in browser mock mode.', 'info');
+                return;
+            }
 
-        console.log(`[Refresh] Job requested. Root: ${rootPath || 'ALL'}, Force: ${force}${filterTool ? `, Tool: ${filterTool}` : ''}`);
-        metadataFacetRefreshHandledRef.current = false;
-        deferStartupVisibilityUntilProcessingRef.current = false;
-        startupAnnouncementCountRef.current = null;
-        startupAnnouncementShownRef.current = false;
-        setMetadataRefreshPending(false);
-        setIsRefreshingMetadata(true);
-
-        try {
-            const result = await runCombinedRefresh(force, rootPath || null, filterTool || null, !filterTool);
-            console.log('[Refresh] Job returned:', result);
-            completeRefresh(result);
-        } catch (err) {
-            console.error('[Refresh] Exception:', err);
-            addToast(`Failed to force refresh: ${getErrorMessage(err)}`, 'error');
-            setMetadataRefreshPending(false);
-            setIsRefreshingMetadata(false);
-            setRefreshProgress(null);
+            console.log(`[Refresh] Job requested. Root: ${rootPath || 'ALL'}, Force: ${force}${filterTool ? `, Tool: ${filterTool}` : ''}`);
+            metadataFacetRefreshHandledRef.current = false;
             deferStartupVisibilityUntilProcessingRef.current = false;
-        }
-    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, completeRefresh, runCombinedRefresh]);
+            startupAnnouncementCountRef.current = null;
+            startupAnnouncementShownRef.current = false;
+            setMetadataRefreshPending(false);
+            setIsRefreshingMetadata(true);
+
+            try {
+                const result = await runCombinedRefresh(force, rootPath || null, filterTool || null, !filterTool);
+                console.log('[Refresh] Job returned:', result);
+                completeRefresh(result);
+            } catch (err) {
+                console.error('[Refresh] Exception:', err);
+                addToast(`Failed to force refresh: ${getErrorMessage(err)}`, 'error');
+                setMetadataRefreshPending(false);
+                setIsRefreshingMetadata(false);
+                setRefreshProgress(null);
+                deferStartupVisibilityUntilProcessingRef.current = false;
+            }
+        },
+        [
+            setMetadataRefreshPending,
+            setIsRefreshingMetadata,
+            setRefreshProgress,
+            addToast,
+            browserMockMode,
+            completeRefresh,
+            runCombinedRefresh,
+        ]
+    );
 
     // Auto-detect stale metadata on startup
     useEffect(() => {
@@ -326,7 +340,9 @@ export function useMetadataRefresh(startupReady = false) {
         const runStartupRefresh = async (attempt: number) => {
             if (isCancelled || startupRefreshCompletedRef.current) return;
             if (startupRefreshInFlightRef.current) {
-                retryTimer = window.setTimeout(() => { void runStartupRefresh(attempt); }, STARTUP_REFRESH_RETRY_DELAY_MS);
+                retryTimer = window.setTimeout(() => {
+                    void runStartupRefresh(attempt);
+                }, STARTUP_REFRESH_RETRY_DELAY_MS);
                 return;
             }
             startupRefreshInFlightRef.current = true;
@@ -355,7 +371,7 @@ export function useMetadataRefresh(startupReady = false) {
                 startupAnnouncementShownRef.current = false;
                 const result = await startRefresh(undefined, {
                     showFailureToast: false,
-                    deferActiveUntilProgress: true
+                    deferActiveUntilProgress: true,
                 });
                 if (result.ok) startupRefreshCompletedRef.current = true;
                 if (result.ok || isCancelled) return;

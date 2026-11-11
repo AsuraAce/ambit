@@ -75,7 +75,7 @@ const createProps = (overrides: Partial<React.ComponentProps<typeof PinnedShelf>
     selectedIds: new Set(['image-1']),
     maskedKeywords: ['secret'],
     thumbnailSize: 100,
-    isActiveThumbnail: image => image.id === 'image-2',
+    isActiveThumbnail: (image) => image.id === 'image-2',
     ...callbacks,
     ...overrides,
 });
@@ -151,7 +151,7 @@ describe('PinnedShelf', () => {
     it('expands the shelf and defaults optional thumbnail checks to false', () => {
         const fiveImages = images.slice(0, 5);
         const { container } = render(
-            <PinnedShelf {...createProps({ images: fiveImages, isCollapsed: false, isActiveThumbnail: undefined })} />,
+            <PinnedShelf {...createProps({ images: fiveImages, isCollapsed: false, isActiveThumbnail: undefined })} />
         );
         const shelfContainer = getShelfContainer();
 
@@ -159,7 +159,7 @@ describe('PinnedShelf', () => {
         expect(shelfContainer.style.maxHeight).toBe('60vh');
         expect(shelfContainer.className).toContain('overflow-y-auto');
         expect(container.querySelector('.bg-gradient-to-t')).toBeNull();
-        expect(gridItemCapture.props.every(item => item.isThumbnail === false)).toBe(true);
+        expect(gridItemCapture.props.every((item) => item.isThumbnail === false)).toBe(true);
 
         fireEvent.click(screen.getByText('Pinned').parentElement?.parentElement as HTMLElement);
         expect(callbacks.onToggleCollapse).toHaveBeenCalledOnce();
@@ -217,12 +217,8 @@ describe('PinnedShelf', () => {
         const latestRange = vi.fn();
         const firstBackground = vi.fn();
         const latestBackground = vi.fn();
-        const { rerender } = render(
-            <PinnedShelf {...createProps({ onRangeSelection: firstRange, onBackgroundClick: firstBackground })} />,
-        );
-        rerender(
-            <PinnedShelf {...createProps({ onRangeSelection: latestRange, onBackgroundClick: latestBackground })} />,
-        );
+        const { rerender } = render(<PinnedShelf {...createProps({ onRangeSelection: firstRange, onBackgroundClick: firstBackground })} />);
+        rerender(<PinnedShelf {...createProps({ onRangeSelection: latestRange, onBackgroundClick: latestBackground })} />);
         const shelfContainer = getShelfContainer();
         setGeometry(shelfContainer);
 

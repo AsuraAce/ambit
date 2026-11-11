@@ -20,17 +20,17 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // Connect to Store
-    const settings = useSettingsStore(s => s.settings);
-    const isLoaded = useSettingsStore(s => s.isLoaded);
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
-    const setSettings = useSettingsStore(s => s.setSettings);
-    const setPrivacyEnabled = useSettingsStore(s => s.setPrivacyEnabled);
-    const flushSettings = useSettingsStore(s => s.flushSettings);
-    const initialize = useSettingsStore(s => s.initialize);
+    const settings = useSettingsStore((s) => s.settings);
+    const isLoaded = useSettingsStore((s) => s.isLoaded);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
+    const setSettings = useSettingsStore((s) => s.setSettings);
+    const setPrivacyEnabled = useSettingsStore((s) => s.setPrivacyEnabled);
+    const flushSettings = useSettingsStore((s) => s.flushSettings);
+    const initialize = useSettingsStore((s) => s.initialize);
 
     // Initialize Store
     useEffect(() => {
-        initialize().catch(error => console.error('[Settings] Failed to initialize settings', error));
+        initialize().catch((error) => console.error('[Settings] Failed to initialize settings', error));
     }, [initialize]);
 
     useEffect(() => {
@@ -103,14 +103,16 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     // Note: Auto-save logic is now inside the Store.
 
     return (
-        <SettingsContext.Provider value={{
-            settings,
-            setSettings,
-            settingsRef,
-            privacyEnabled,
-            setPrivacyEnabled,
-            isLoaded
-        }}>
+        <SettingsContext.Provider
+            value={{
+                settings,
+                setSettings,
+                settingsRef,
+                privacyEnabled,
+                setPrivacyEnabled,
+                isLoaded,
+            }}
+        >
             {children}
         </SettingsContext.Provider>
     );

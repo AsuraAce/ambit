@@ -71,9 +71,7 @@ const renderAdvanced = (settings = createSettings(), overrides: AdvancedOverride
         onClose: vi.fn(),
         ...overrides,
     };
-    const renderResult = render(
-        <AdvancedTab {...props} />
-    );
+    const renderResult = render(<AdvancedTab {...props} />);
     return { setSettings, props, ...renderResult };
 };
 
@@ -168,10 +166,7 @@ describe('AdvancedTab', () => {
 
         await waitFor(() => expect(libraryContextMock.cleanLibrary).toHaveBeenCalledOnce());
         expect(setBackgroundHealingPausedMock.mock.calls).toEqual([[true], [false]]);
-        expect(addToastMock).toHaveBeenCalledWith(
-            'Purge scheduled. Please restart application manually.',
-            'success',
-        );
+        expect(addToastMock).toHaveBeenCalledWith('Purge scheduled. Please restart application manually.', 'success');
     });
 
     it('restores background healing and reports a failed purge', async () => {
@@ -324,9 +319,11 @@ describe('AdvancedTab', () => {
 
     it('ignores diagnostics that resolve after the tab unmounts', async () => {
         let resolveDiagnostics!: (value: Awaited<ReturnType<typeof getDbDiagnosticsMock>>) => void;
-        getDbDiagnosticsMock.mockReturnValueOnce(new Promise((resolve) => {
-            resolveDiagnostics = resolve;
-        }));
+        getDbDiagnosticsMock.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveDiagnostics = resolve;
+            })
+        );
         const view = renderAdvanced();
         fireEvent.click(screen.getByRole('button', { name: /support/i }));
         view.unmount();
@@ -339,9 +336,11 @@ describe('AdvancedTab', () => {
 
     it('ignores diagnostics errors raised after the tab unmounts', async () => {
         let rejectDiagnostics!: (reason: unknown) => void;
-        getDbDiagnosticsMock.mockReturnValueOnce(new Promise((_resolve, reject) => {
-            rejectDiagnostics = reject;
-        }));
+        getDbDiagnosticsMock.mockReturnValueOnce(
+            new Promise((_resolve, reject) => {
+                rejectDiagnostics = reject;
+            })
+        );
         const view = renderAdvanced();
         fireEvent.click(screen.getByRole('button', { name: /support/i }));
         view.unmount();

@@ -9,9 +9,7 @@ const collectionRepoMocks = vi.hoisted(() => ({ getCollectionsForImage: vi.fn() 
 
 vi.mock('../../../../../services/db/collectionRepo', () => collectionRepoMocks);
 vi.mock('../../../../../components/ui/PrivacyAwareThumbnail', () => ({
-    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => (
-        <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />
-    ),
+    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />,
 }));
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
@@ -199,9 +197,7 @@ describe('MetadataEditTab', () => {
     });
 
     it('clears a collapsed collection search and keeps its open state across asset navigation', async () => {
-        collectionRepoMocks.getCollectionsForImage
-            .mockResolvedValueOnce(['one'])
-            .mockResolvedValueOnce([]);
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['one']).mockResolvedValueOnce([]);
         const { rerender } = render(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />);
         await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
 
@@ -230,7 +226,7 @@ describe('MetadataEditTab', () => {
             name: 'Favorite Images',
             imageIds: [],
             createdAt: 4,
-            filters: createDefaultFilters({ favoritesOnly: true })
+            filters: createDefaultFilters({ favoritesOnly: true }),
         };
         render(<EditorHarness collectionItems={[...collections, smartCollection]} />);
 
@@ -239,10 +235,14 @@ describe('MetadataEditTab', () => {
     });
 
     it('shows collection thumbnails, folder fallbacks, and a clear empty search state', async () => {
-        render(<EditorHarness collectionItems={[
-            { ...collections[0], thumbnail: 'asset://portrait.webp', safeThumbnail: 'asset://portrait-safe.webp' },
-            collections[1],
-        ]} />);
+        render(
+            <EditorHarness
+                collectionItems={[
+                    { ...collections[0], thumbnail: 'asset://portrait.webp', safeThumbnail: 'asset://portrait-safe.webp' },
+                    collections[1],
+                ]}
+            />
+        );
 
         await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
         expect(screen.getByTestId('privacy-aware-thumbnail').getAttribute('data-src')).toBe('asset://portrait.webp');
@@ -294,17 +294,21 @@ describe('MetadataEditTab', () => {
     it('does not apply a late rollback to a different image', async () => {
         const pending = deferred<boolean>();
         const onSetCollectionMembership = vi.fn().mockReturnValue(pending.promise);
-        collectionRepoMocks.getCollectionsForImage
-            .mockResolvedValueOnce(['one'])
-            .mockResolvedValueOnce([]);
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['one']).mockResolvedValueOnce([]);
         const { rerender } = render(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
         fireEvent.click(screen.getByRole('button', { name: 'Portraits' }));
 
         rerender(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).not.toContain('bg-sage-100'));
@@ -322,17 +326,26 @@ describe('MetadataEditTab', () => {
             .mockResolvedValueOnce([])
             .mockReturnValueOnce(staleRefetch.promise);
         const { rerender } = render(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
         fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
 
         rerender(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
         rerender(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledTimes(3));
         expect(screen.getByRole('button', { name: 'Landscapes' }).className).toContain('bg-sage-100');
@@ -348,28 +361,37 @@ describe('MetadataEditTab', () => {
         const failedAdd = deferred<boolean>();
         const successfulRemoval = deferred<boolean>();
         const staleRefetch = deferred<string[]>();
-        const onSetCollectionMembership = vi.fn((_: string, collectionId: string) => (
+        const onSetCollectionMembership = vi.fn((_: string, collectionId: string) =>
             collectionId === 'two' ? failedAdd.promise : successfulRemoval.promise
-        ));
+        );
         collectionRepoMocks.getCollectionsForImage
             .mockResolvedValueOnce(['one'])
             .mockResolvedValueOnce([])
             .mockReturnValueOnce(staleRefetch.promise);
         const { rerender } = render(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
 
         fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
         fireEvent.click(screen.getByRole('button', { name: 'Portraits' }));
         rerender(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
         await act(async () => failedAdd.resolve(false));
 
         rerender(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+            <EditorHarness
+                image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')}
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
         );
         await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledTimes(3));
         await act(async () => successfulRemoval.resolve(true));
@@ -385,9 +407,7 @@ describe('MetadataEditTab', () => {
             .mockResolvedValueOnce(['one'])
             .mockResolvedValueOnce([])
             .mockReturnValueOnce(reloadedMembership.promise);
-        const { rerender } = render(
-            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />,
-        );
+        const { rerender } = render(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('true'));
 
         rerender(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} />);
@@ -426,7 +446,12 @@ describe('MetadataEditTab', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         collectionRepoMocks.getCollectionsForImage.mockRejectedValueOnce(new Error('read failed'));
         const first = render(<EditorHarness />);
-        await waitFor(() => expect(consoleError).toHaveBeenCalledWith('[CollectionMembershipPicker] Failed to load collection membership', expect.any(Error)));
+        await waitFor(() =>
+            expect(consoleError).toHaveBeenCalledWith(
+                '[CollectionMembershipPicker] Failed to load collection membership',
+                expect.any(Error)
+            )
+        );
         expect(first.container.querySelector('.animate-spin')).toBeNull();
         expect(screen.getByRole('alert').textContent).toContain('Could not load collection membership.');
         first.unmount();
@@ -443,12 +468,7 @@ describe('MetadataEditTab', () => {
     it('suggests matching tags, applies a suggestion, and saves both dirty prompts', async () => {
         const onUpdatePrompt = vi.fn();
         const onUpdateNegativePrompt = vi.fn();
-        render(
-            <EditorHarness
-                onUpdatePrompt={onUpdatePrompt}
-                onUpdateNegativePrompt={onUpdateNegativePrompt}
-            />,
-        );
+        render(<EditorHarness onUpdatePrompt={onUpdatePrompt} onUpdateNegativePrompt={onUpdateNegativePrompt} />);
         await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalled());
         const positive = screen.getByPlaceholderText('Enter positive prompt...');
         const negative = screen.getByPlaceholderText('Enter negative prompt...');
@@ -491,34 +511,26 @@ describe('MetadataEditTab', () => {
     it('parses multiline Automatic1111 generation text from the clipboard', async () => {
         const onUpdatePrompt = vi.fn();
         const onUpdateNegativePrompt = vi.fn();
-        clipboardReadText.mockResolvedValueOnce([
-            'first positive line',
-            '',
-            'second positive line',
-            'Negative prompt: first negative',
-            'second negative',
-            'Steps: 30, Sampler: Euler',
-            'ignored parameter continuation',
-        ].join('\n'));
-        render(
-            <EditorHarness
-                onUpdatePrompt={onUpdatePrompt}
-                onUpdateNegativePrompt={onUpdateNegativePrompt}
-            />,
+        clipboardReadText.mockResolvedValueOnce(
+            [
+                'first positive line',
+                '',
+                'second positive line',
+                'Negative prompt: first negative',
+                'second negative',
+                'Steps: 30, Sampler: Euler',
+                'ignored parameter continuation',
+            ].join('\n')
         );
+        render(<EditorHarness onUpdatePrompt={onUpdatePrompt} onUpdateNegativePrompt={onUpdateNegativePrompt} />);
 
         fireEvent.click(screen.getByTitle('Paste & Parse from Clipboard (Auto1111 format)'));
 
-        await waitFor(() => expect(onUpdatePrompt).toHaveBeenCalledWith(
-            'image-1',
-            'first positive line\nsecond positive line',
-        ));
-        expect(onUpdateNegativePrompt).toHaveBeenCalledWith(
-            'image-1',
-            'first negative\nsecond negative',
+        await waitFor(() => expect(onUpdatePrompt).toHaveBeenCalledWith('image-1', 'first positive line\nsecond positive line'));
+        expect(onUpdateNegativePrompt).toHaveBeenCalledWith('image-1', 'first negative\nsecond negative');
+        expect((screen.getByPlaceholderText('Enter positive prompt...') as HTMLTextAreaElement).value).toBe(
+            'first positive line\nsecond positive line'
         );
-        expect((screen.getByPlaceholderText('Enter positive prompt...') as HTMLTextAreaElement).value)
-            .toBe('first positive line\nsecond positive line');
     });
 
     it('ignores invalid clipboard text and reports clipboard read failures', async () => {
@@ -543,17 +555,8 @@ describe('MetadataEditTab', () => {
     it('parses valid clipboard payloads when only one prompt side is present', async () => {
         const onUpdatePrompt = vi.fn();
         const onUpdateNegativePrompt = vi.fn();
-        clipboardReadText.mockResolvedValueOnce([
-            'Negative prompt:',
-            'negative only',
-            'Steps: 20',
-        ].join('\n'));
-        render(
-            <EditorHarness
-                onUpdatePrompt={onUpdatePrompt}
-                onUpdateNegativePrompt={onUpdateNegativePrompt}
-            />,
-        );
+        clipboardReadText.mockResolvedValueOnce(['Negative prompt:', 'negative only', 'Steps: 20'].join('\n'));
+        render(<EditorHarness onUpdatePrompt={onUpdatePrompt} onUpdateNegativePrompt={onUpdateNegativePrompt} />);
         const pasteButton = screen.getByTitle('Paste & Parse from Clipboard (Auto1111 format)');
 
         fireEvent.click(pasteButton);

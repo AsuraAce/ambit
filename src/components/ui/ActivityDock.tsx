@@ -1,17 +1,12 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search, CheckCircle2, AlertTriangle, RotateCw } from 'lucide-react';
-import {
-    useLibraryStore,
-    type LiveWatchSessionSource,
-    type LiveWatchSessionState,
-    type SyncProgress
-} from '../../stores/libraryStore';
+import { useLibraryStore, type LiveWatchSessionSource, type LiveWatchSessionState, type SyncProgress } from '../../stores/libraryStore';
 import { commands } from '../../bindings';
 import {
     THUMBNAIL_QUEUE_COMPLETE_FOOTER,
     THUMBNAIL_QUEUE_FAILURE_FOOTER,
-    THUMBNAIL_QUEUE_RUNNING_FOOTER
+    THUMBNAIL_QUEUE_RUNNING_FOOTER,
 } from '../../hooks/thumbnailQueueProgress';
 import { TooltipButton } from './InfoTooltip';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
@@ -23,7 +18,8 @@ const LIVE_WATCH_DOCK_REVEAL_MS = 2500;
 const LIVE_WATCH_DOCK_MIN_VISIBLE_MS = 2200;
 const LIVE_WATCH_DOCK_CLOSE_GRACE_MS = 1500;
 const LIVE_WATCH_ACTIVE_MESSAGE = 'Updating your library...';
-const LIVE_WATCH_SOURCE_CHIP_CLASS = 'inline-flex h-5 w-[4.75rem] shrink-0 items-center justify-center rounded-md bg-sage-500/10 px-1.5 text-[10px] font-black uppercase tracking-wider text-sage-600 dark:text-sage-300';
+const LIVE_WATCH_SOURCE_CHIP_CLASS =
+    'inline-flex h-5 w-[4.75rem] shrink-0 items-center justify-center rounded-md bg-sage-500/10 px-1.5 text-[10px] font-black uppercase tracking-wider text-sage-600 dark:text-sage-300';
 
 interface LiveWatchPresentation {
     mode: 'hidden' | 'expanded-active';
@@ -49,11 +45,13 @@ const formatElapsed = (elapsedMs: number): string | null => {
     return seconds > 0 ? `${minutes}m ${seconds}s elapsed` : `${minutes}m elapsed`;
 };
 
-const splitDetailItems = (detail?: string): string[] => (
+const splitDetailItems = (detail?: string): string[] =>
     detail
-        ? detail.split('|').map(item => item.trim()).filter(Boolean)
-        : []
-);
+        ? detail
+              .split('|')
+              .map((item) => item.trim())
+              .filter(Boolean)
+        : [];
 
 const formatProgressNumber = (value: number): string => value.toLocaleString();
 
@@ -62,10 +60,7 @@ const formatMetadataRefreshMessage = (progress: SyncProgress | null, percent: nu
         return progress?.message || progress?.phase || 'Preparing metadata refresh...';
     }
 
-    const pieces = [
-        `${formatProgressNumber(progress.current)} / ${formatProgressNumber(progress.total)} images`,
-        `${percent}%`
-    ];
+    const pieces = [`${formatProgressNumber(progress.current)} / ${formatProgressNumber(progress.total)} images`, `${percent}%`];
 
     if (typeof progress.updated === 'number') {
         pieces.push(`${formatProgressNumber(progress.updated)} updated`);
@@ -85,9 +80,7 @@ const getLiveWatchSourceLabel = (source: LiveWatchSessionSource | null): LiveWat
     return null;
 };
 
-const isLiveWatchDockWorkPhase = (session: LiveWatchSessionState): boolean => (
-    session.phase === 'syncing' || session.phase === 'importing'
-);
+const isLiveWatchDockWorkPhase = (session: LiveWatchSessionState): boolean => session.phase === 'syncing' || session.phase === 'importing';
 
 const useLiveWatchPresentation = (
     session: LiveWatchSessionState,
@@ -102,7 +95,7 @@ const useLiveWatchPresentation = (
     }>({
         key: null,
         visible: false,
-        revealedAt: null
+        revealedAt: null,
     });
 
     React.useEffect(() => {
@@ -113,9 +106,7 @@ const useLiveWatchPresentation = (
 
         if (!isActiveWork) {
             if (!presentation.visible) {
-                setPresentation(prev => (
-                    prev.key === null ? prev : { key: null, visible: false, revealedAt: null }
-                ));
+                setPresentation((prev) => (prev.key === null ? prev : { key: null, visible: false, revealedAt: null }));
                 return;
             }
 
@@ -138,7 +129,7 @@ const useLiveWatchPresentation = (
 
         if (presentationKey === dismissedPresentationKey) {
             if (presentation.visible) {
-                setPresentation(prev => ({ ...prev, visible: false, revealedAt: null }));
+                setPresentation((prev) => ({ ...prev, visible: false, revealedAt: null }));
             }
             return;
         }
@@ -158,7 +149,7 @@ const useLiveWatchPresentation = (
         presentation.key,
         presentation.revealedAt,
         presentation.visible,
-        session.source
+        session.source,
     ]);
 
     const sourceLabel = getLiveWatchSourceLabel(session.source);
@@ -170,19 +161,27 @@ const useLiveWatchPresentation = (
         sourceLabel,
         presentationKey: presentation.key,
         isActiveWork: isActiveWork && presentation.visible,
-        isExpanded: mode === 'expanded-active'
+        isExpanded: mode === 'expanded-active',
     };
 };
 
 export const ActivityDock: React.FC = () => {
     const {
-        isImporting, importProgress, importAbortController,
-        syncStatus, syncProgress, invokeSyncActivityKind,
+        isImporting,
+        importProgress,
+        importAbortController,
+        syncStatus,
+        syncProgress,
+        invokeSyncActivityKind,
         liveWatchSession,
-        isRegeneratingThumbnails, thumbnailProgress,
-        isResolvingModels, modelResolutionProgress,
-        isActivityDockDismissed, setIsActivityDockDismissed,
-        isActivityDockMinimized, setIsActivityDockMinimized,
+        isRegeneratingThumbnails,
+        thumbnailProgress,
+        isResolvingModels,
+        modelResolutionProgress,
+        isActivityDockDismissed,
+        setIsActivityDockDismissed,
+        isActivityDockMinimized,
+        setIsActivityDockMinimized,
         isPopulatingThumbnails,
         isScanningDiscovery,
         discoveryScanProgress,
@@ -194,27 +193,35 @@ export const ActivityDock: React.FC = () => {
         missingScanProgress,
         cancelMissingScan,
         setIsResolvingModels,
-        isBackgroundHealingActive, backgroundHealingProgress, backgroundHealingPaused,
-        isRefreshingMetadata, refreshProgress,
+        isBackgroundHealingActive,
+        backgroundHealingProgress,
+        backgroundHealingPaused,
+        isRefreshingMetadata,
+        refreshProgress,
         cancelImport,
         cancelThumbnailRegeneration,
         requestThumbnailOptimizationCancel,
         cancelSync,
-        cancelRefresh
+        cancelRefresh,
     } = useLibraryStore();
-    const invokeOperation = useInvokeOwnerScopeStore(state => state.operation);
-    const setInvokeOperation = useInvokeOwnerScopeStore(state => state.setOperation);
+    const invokeOperation = useInvokeOwnerScopeStore((state) => state.operation);
+    const setInvokeOperation = useInvokeOwnerScopeStore((state) => state.setOperation);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
-    const invokePresentation = useInvokeDockPresentation(
-        invokeOperation,
-        !isImporting && !isActivityDockDismissed
-    );
+    const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed);
     const isInvokeOperationActive = invokePresentation.isActiveVisible;
     const isManualSyncing = isInvokeOperationActive || (invokeOperation === null && syncStatus === 'syncing');
 
     // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Missing Audit > Populating > Background Healing > Reparsing > Live Watch
-    const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isScanningDuplicates || isScanningMissingFiles || isPopulatingThumbnails;
+    const isHighPriorityActive =
+        isImporting ||
+        isManualSyncing ||
+        isRegeneratingThumbnails ||
+        isResolvingModels ||
+        isScanningDiscovery ||
+        isScanningDuplicates ||
+        isScanningMissingFiles ||
+        isPopulatingThumbnails;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
@@ -224,74 +231,80 @@ export const ActivityDock: React.FC = () => {
     const isLiveWatchVisible = isLiveWatchActive && liveWatchPresentation.mode !== 'hidden';
     const isLiveWatchTone = isLiveWatchVisible;
 
-    const isInvokeResult = invokePresentation.isResultVisible
-        && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive
-        && !(isLiveWatchActive && (isLiveWatchDockWorkPhase(liveWatchSession) || isLiveWatchVisible));
+    const isInvokeResult =
+        invokePresentation.isResultVisible &&
+        !isHighPriorityActive &&
+        !isBackgroundActive &&
+        !isRefreshActive &&
+        !(isLiveWatchActive && (isLiveWatchDockWorkPhase(liveWatchSession) || isLiveWatchVisible));
     const isInvokePresentation = (!isImporting && isInvokeOperationActive) || isInvokeResult;
     const isInvokeCancelling = isInvokePresentation && invokeOperation?.phase === 'cancelling';
     const isInvokeSettling = isInvokePresentation && invokeOperation?.phase === 'settling';
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult;
 
     let progress: SyncProgress | null = null;
-    let label = "";
+    let label = '';
     let isLowPriority = false;
     let supportsCancel = false;
-    let footerMessage = "Tracking continues in the top header.";
+    let footerMessage = 'Tracking continues in the top header.';
 
     if (isImporting) {
         progress = importProgress;
-        label = "Importing";
+        label = 'Importing';
         supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
         progress = isInvokePresentation ? invokeOperation!.progress : syncProgress;
         label = isInvokePresentation
             ? `InvokeAI · ${invokeOperation!.targetLabel}`
-            : invokeSyncActivityKind === 'startup' ? "InvokeAI Catch-up" : "InvokeAI Sync";
+            : invokeSyncActivityKind === 'startup'
+              ? 'InvokeAI Catch-up'
+              : 'InvokeAI Sync';
         supportsCancel = isInvokePresentation ? Boolean(invokeOperation!.cancel) || isInvokeCancelling || isInvokeSettling : true;
-        footerMessage = invokeSyncActivityKind === 'startup'
-            ? "You can keep using the library while Ambit catches up."
-            : "You can keep using the library while Ambit synchronizes InvokeAI.";
+        footerMessage =
+            invokeSyncActivityKind === 'startup'
+                ? 'You can keep using the library while Ambit catches up.'
+                : 'You can keep using the library while Ambit synchronizes InvokeAI.';
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;
-        label = "Optimizing";
+        label = 'Optimizing';
         supportsCancel = true;
     } else if (isResolvingModels) {
         progress = modelResolutionProgress;
-        label = "Resolving Models";
+        label = 'Resolving Models';
         supportsCancel = true;
     } else if (isScanningDiscovery) {
         progress = discoveryScanProgress;
-        label = "Discovery Scan";
+        label = 'Discovery Scan';
         supportsCancel = true;
     } else if (isScanningDuplicates) {
         progress = duplicateScanProgress;
-        label = "Duplicate Scan";
+        label = 'Duplicate Scan';
         supportsCancel = true;
-        footerMessage = "You can keep using Ambit while this scans.";
+        footerMessage = 'You can keep using Ambit while this scans.';
     } else if (isScanningMissingFiles) {
         progress = missingScanProgress;
-        label = "Missing File Audit";
+        label = 'Missing File Audit';
         supportsCancel = true;
-        footerMessage = "You can keep using Ambit while this audit runs.";
+        footerMessage = 'You can keep using Ambit while this audit runs.';
     } else if (isPopulatingThumbnails) {
-        progress = { current: 0, total: 0, message: "Matching images to models..." };
-        label = "Smart Fill";
+        progress = { current: 0, total: 0, message: 'Matching images to models...' };
+        label = 'Smart Fill';
     } else if (isBackgroundActive) {
         progress = backgroundHealingProgress;
-        label = "Smart Thumbnails";
+        label = 'Smart Thumbnails';
         isLowPriority = true;
         supportsCancel = true;
         footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
-        label = "Updating Metadata";
+        label = 'Updating Metadata';
         isLowPriority = false;
         supportsCancel = true;
     } else if (isLiveWatchVisible) {
         progress = liveWatchSession.progress || {
             current: 0,
             total: 0,
-            message: liveWatchSession.message
+            message: liveWatchSession.message,
         };
         label = 'Live Watch';
         isLowPriority = true;
@@ -310,7 +323,11 @@ export const ActivityDock: React.FC = () => {
     const total = progress?.total ?? 0;
     const mode = progress?.mode;
     const isCompleteProgress = mode === 'complete' || isInvokeResult;
-    const showIndeterminateProgress = !isInvokeResult && (liveWatchPresentation.isActiveWork || mode === 'indeterminate' || (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
+    const showIndeterminateProgress =
+        !isInvokeResult &&
+        (liveWatchPresentation.isActiveWork ||
+            mode === 'indeterminate' ||
+            (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
     const showProgressBar = !isInvokeResult && (!isLiveWatchVisible || liveWatchPresentation.isExpanded);
 
     const [elapsedNow, setElapsedNow] = React.useState(() => Date.now());
@@ -327,68 +344,77 @@ export const ActivityDock: React.FC = () => {
 
     const percent = isLiveWatchVisible ? 0 : isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
     const message = isInvokeResult
-        ? invokeOperation!.message || (invokeOperation!.phase === 'completed' ? 'Synchronization completed.' : invokeOperation!.phase === 'cancelled' ? 'Synchronization cancelled.' : 'Synchronization failed.')
+        ? invokeOperation!.message ||
+          (invokeOperation!.phase === 'completed'
+              ? 'Synchronization completed.'
+              : invokeOperation!.phase === 'cancelled'
+                ? 'Synchronization cancelled.'
+                : 'Synchronization failed.')
         : isInvokeCancelling
-            ? 'Cancelling… Waiting for current work to finish safely.'
-        : isLiveWatchVisible
-        ? liveWatchPresentation.message
-        : isRefreshActive
-            ? formatMetadataRefreshMessage(progress, percent)
-            : (progress?.message || progress?.phase || '');
-    const showCounts = total > 0 && !isLiveWatchVisible && !isBackgroundActive && !isRefreshActive && !showIndeterminateProgress && !isCompleteProgress;
+          ? 'Cancelling… Waiting for current work to finish safely.'
+          : isLiveWatchVisible
+            ? liveWatchPresentation.message
+            : isRefreshActive
+              ? formatMetadataRefreshMessage(progress, percent)
+              : progress?.message || progress?.phase || '';
+    const showCounts =
+        total > 0 && !isLiveWatchVisible && !isBackgroundActive && !isRefreshActive && !showIndeterminateProgress && !isCompleteProgress;
     const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
     const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
     const visibleFooterMessage = smartThumbnailHasFailures
         ? THUMBNAIL_QUEUE_FAILURE_FOOTER
-        : (smartThumbnailIsComplete ? THUMBNAIL_QUEUE_COMPLETE_FOOTER : footerMessage);
-    const elapsedLabel = progress?.startedAt && active && showIndeterminateProgress && !isCompleteProgress
-        ? formatElapsed(elapsedNow - progress.startedAt)
-        : null;
+        : smartThumbnailIsComplete
+          ? THUMBNAIL_QUEUE_COMPLETE_FOOTER
+          : footerMessage;
+    const elapsedLabel =
+        progress?.startedAt && active && showIndeterminateProgress && !isCompleteProgress
+            ? formatElapsed(elapsedNow - progress.startedAt)
+            : null;
     const secondaryDetails = isLiveWatchVisible
         ? []
         : [
-            ...splitDetailItems(progress?.detail),
-            ...(isInvokePresentation && typeof invokeOperation?.imported === 'number'
-                ? [`${formatProgressNumber(invokeOperation.imported)} added`]
-                : []),
-            ...(isInvokePresentation && typeof invokeOperation?.updated === 'number'
-                ? [`${formatProgressNumber(invokeOperation.updated)} updated`]
-                : []),
-            ...(isInvokePresentation && typeof invokeOperation?.pathsRepaired === 'number' && invokeOperation.pathsRepaired > 0
-                ? [`${formatProgressNumber(invokeOperation.pathsRepaired)} paths repaired`]
-                : []),
-            elapsedLabel
-        ].filter((item): item is string => Boolean(item));
+              ...splitDetailItems(progress?.detail),
+              ...(isInvokePresentation && typeof invokeOperation?.imported === 'number'
+                  ? [`${formatProgressNumber(invokeOperation.imported)} added`]
+                  : []),
+              ...(isInvokePresentation && typeof invokeOperation?.updated === 'number'
+                  ? [`${formatProgressNumber(invokeOperation.updated)} updated`]
+                  : []),
+              ...(isInvokePresentation && typeof invokeOperation?.pathsRepaired === 'number' && invokeOperation.pathsRepaired > 0
+                  ? [`${formatProgressNumber(invokeOperation.pathsRepaired)} paths repaired`]
+                  : []),
+              elapsedLabel,
+          ].filter((item): item is string => Boolean(item));
     const hasMultipleSecondaryDetails = secondaryDetails.length > 1;
     const shouldUseSparkles = isLiveWatchTone || isLowPriority;
     const shouldPulseSparkles = isLowPriority && !isLiveWatchTone;
     const accentClasses = isLiveWatchTone
         ? {
-            iconText: 'text-sage-600 dark:text-sage-300',
-            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
-            fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.32)]',
-            pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.2)]',
-            percentText: 'text-sage-600 dark:text-sage-300'
-        }
+              iconText: 'text-sage-600 dark:text-sage-300',
+              iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
+              fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.32)]',
+              pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.2)]',
+              percentText: 'text-sage-600 dark:text-sage-300',
+          }
         : isLowPriority
-        ? {
-            iconText: 'text-harbor-600 dark:text-harbor-300',
-            iconBg: 'bg-harbor-500/10 text-harbor-600 dark:text-harbor-300',
-            fill: 'bg-harbor-400 shadow-[0_0_12px_rgba(104,127,140,0.3)]',
-            pillHover: 'hover:shadow-[0_0_15px_rgba(104,127,140,0.2)]',
-            percentText: 'text-harbor-600 dark:text-harbor-300'
-        }
-        : {
-            iconText: 'text-sage-600 dark:text-sage-300',
-            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
-            fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]',
-            pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.3)]',
-            percentText: 'text-sage-600 dark:text-sage-300'
-        };
+          ? {
+                iconText: 'text-harbor-600 dark:text-harbor-300',
+                iconBg: 'bg-harbor-500/10 text-harbor-600 dark:text-harbor-300',
+                fill: 'bg-harbor-400 shadow-[0_0_12px_rgba(104,127,140,0.3)]',
+                pillHover: 'hover:shadow-[0_0_15px_rgba(104,127,140,0.2)]',
+                percentText: 'text-harbor-600 dark:text-harbor-300',
+            }
+          : {
+                iconText: 'text-sage-600 dark:text-sage-300',
+                iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
+                fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]',
+                pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.3)]',
+                percentText: 'text-sage-600 dark:text-sage-300',
+            };
 
     const dismissDock = React.useCallback(() => {
         if (isInvokeResult) {
-            setInvokeOperation(current => current?.id === invokeOperation?.id ? null : current);
+            setInvokeOperation((current) => (current?.id === invokeOperation?.id ? null : current));
             return;
         }
         if (isLiveWatchVisible) {
@@ -397,16 +423,23 @@ export const ActivityDock: React.FC = () => {
         }
 
         setIsActivityDockDismissed(true);
-    }, [isInvokeResult, invokeOperation?.id, setInvokeOperation, isLiveWatchVisible, liveWatchPresentation.presentationKey, setIsActivityDockDismissed]);
+    }, [
+        isInvokeResult,
+        invokeOperation?.id,
+        setInvokeOperation,
+        isLiveWatchVisible,
+        liveWatchPresentation.presentationKey,
+        setIsActivityDockDismissed,
+    ]);
 
     const shouldShow = active && (isInvokeResult || isLiveWatchVisible || !isActivityDockDismissed);
     React.useEffect(() => {
         if (!invokeSyncTrace.enabled) return;
         // Observe a committed display on a paint opportunity, independently of
         // the coordinator callback. Tracing never changes focus or presentation.
-        const frame = window.requestAnimationFrame(() => invokeSyncTrace.dockCommitted(
-            invokeOperation, isInvokePresentation && shouldShow && !isActivityDockMinimized
-        ));
+        const frame = window.requestAnimationFrame(() =>
+            invokeSyncTrace.dockCommitted(invokeOperation, isInvokePresentation && shouldShow && !isActivityDockMinimized)
+        );
         return () => window.cancelAnimationFrame(frame);
     }, [invokeOperation, isInvokePresentation, shouldShow, isActivityDockMinimized]);
     const invokeResultInteractions = useInvokeResultDismissal(
@@ -415,11 +448,15 @@ export const ActivityDock: React.FC = () => {
         shouldShow,
         invokePresentation.isDocumentVisible
     );
-    const resultIcon = isInvokeResult
-        ? invokeOperation!.phase === 'completed' ? <CheckCircle2 className="h-4 w-4" />
-            : invokeOperation!.phase === 'failed' ? <AlertTriangle className="h-4 w-4" />
-                : <Info className="h-4 w-4" />
-        : null;
+    const resultIcon = isInvokeResult ? (
+        invokeOperation!.phase === 'completed' ? (
+            <CheckCircle2 className="h-4 w-4" />
+        ) : invokeOperation!.phase === 'failed' ? (
+            <AlertTriangle className="h-4 w-4" />
+        ) : (
+            <Info className="h-4 w-4" />
+        )
+    ) : null;
 
     return (
         <AnimatePresence>
@@ -430,7 +467,7 @@ export const ActivityDock: React.FC = () => {
                     initial={{ y: 100, opacity: 0, scale: 0.95 }}
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     className="fixed bottom-8 right-8 z-[100]"
                 >
                     {isActivityDockMinimized ? (
@@ -442,9 +479,17 @@ export const ActivityDock: React.FC = () => {
                                 className={`group bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/20 dark:border-white/10 p-2.5 rounded-full shadow-xl flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform ${accentClasses.pillHover}`}
                             >
                                 <motion.div layout="position" className={accentClasses.iconText}>
-                                    {resultIcon ?? (shouldUseSparkles ? <Sparkles className={`w-5 h-5 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-5 h-5 animate-spin" />)}
+                                    {resultIcon ??
+                                        (shouldUseSparkles ? (
+                                            <Sparkles className={`w-5 h-5 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} />
+                                        ) : (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                        ))}
                                 </motion.div>
-                                <motion.div layout="position" className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1">
+                                <motion.div
+                                    layout="position"
+                                    className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1"
+                                >
                                     <div
                                         className={`h-full ${isLiveWatchTone || !isLowPriority ? 'bg-sage-500' : 'bg-harbor-500'}`}
                                         style={{ width: `${percent}%` }}
@@ -460,10 +505,21 @@ export const ActivityDock: React.FC = () => {
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
-                                        {resultIcon ?? (isScanningDuplicates ? <Fingerprint className="w-4 h-4" /> : isScanningMissingFiles ? <Search className="w-4 h-4" /> : shouldUseSparkles ? <Sparkles className={`w-4 h-4 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-4 h-4 animate-spin" />)}
+                                        {resultIcon ??
+                                            (isScanningDuplicates ? (
+                                                <Fingerprint className="w-4 h-4" />
+                                            ) : isScanningMissingFiles ? (
+                                                <Search className="w-4 h-4" />
+                                            ) : shouldUseSparkles ? (
+                                                <Sparkles className={`w-4 h-4 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} />
+                                            ) : (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ))}
                                     </motion.div>
                                     <motion.div layout="position">
-                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">{isLiveWatchVisible ? 'Live Watch' : 'Background Activity'}</h4>
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">
+                                            {isLiveWatchVisible ? 'Live Watch' : 'Background Activity'}
+                                        </h4>
                                         <p className="text-sm font-bold text-gray-900 dark:text-white flex min-w-0 flex-wrap items-center gap-2">
                                             {isLiveWatchVisible ? (
                                                 liveWatchPresentation.sourceLabel && (
@@ -474,13 +530,15 @@ export const ActivityDock: React.FC = () => {
                                             ) : (
                                                 <>
                                                     {label}
-                                                    {showCounts && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
+                                                    {showCounts && (
+                                                        <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">
+                                                            {current.toLocaleString()} / {total.toLocaleString()}
+                                                        </span>
+                                                    )}
                                                 </>
                                             )}
                                             {isLiveWatchVisible && !liveWatchPresentation.sourceLabel && (
-                                                <span className={LIVE_WATCH_SOURCE_CHIP_CLASS}>
-                                                    Watch
-                                                </span>
+                                                <span className={LIVE_WATCH_SOURCE_CHIP_CLASS}>Watch</span>
                                             )}
                                         </p>
                                     </motion.div>
@@ -507,32 +565,44 @@ export const ActivityDock: React.FC = () => {
 
                             <motion.div layout="position" className="space-y-1.5">
                                 {showProgressBar && (
-                                    <div data-testid="activity-dock-progress-rail" className="w-full h-2 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden relative">
+                                    <div
+                                        data-testid="activity-dock-progress-rail"
+                                        className="w-full h-2 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden relative"
+                                    >
                                         <motion.div
                                             initial={{ width: 0 }}
                                             animate={{ width: `${percent}%` }}
-                                            transition={{ duration: 0.5, ease: "easeOut" }}
+                                            transition={{ duration: 0.5, ease: 'easeOut' }}
                                             className={`h-full ${accentClasses.fill}`}
                                         />
                                         {showIndeterminateProgress && (
                                             <motion.div
-                                                initial={{ x: "-100%" }}
-                                                animate={{ x: "200%" }}
-                                                transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                                                initial={{ x: '-100%' }}
+                                                animate={{ x: '200%' }}
+                                                transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
                                                 className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent w-full"
                                             />
                                         )}
                                     </div>
                                 )}
                                 <div className="flex justify-between items-center px-0.5">
-                                    <p role={isInvokePresentation ? 'status' : undefined} aria-live={isInvokePresentation ? 'polite' : undefined} aria-atomic={isInvokePresentation ? true : undefined} className="text-[11px] font-medium text-gray-500 dark:text-gray-400 flex-1 pr-4 leading-4">
-                                        {message || "Starting work..."}
+                                    <p
+                                        role={isInvokePresentation ? 'status' : undefined}
+                                        aria-live={isInvokePresentation ? 'polite' : undefined}
+                                        aria-atomic={isInvokePresentation ? true : undefined}
+                                        className="text-[11px] font-medium text-gray-500 dark:text-gray-400 flex-1 pr-4 leading-4"
+                                    >
+                                        {message || 'Starting work...'}
                                     </p>
-                                    {!showIndeterminateProgress && !isLiveWatchActive && !isBackgroundActive && !isRefreshActive && !isCompleteProgress && (
-                                        <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
-                                            {percent}%
-                                        </span>
-                                    )}
+                                    {!showIndeterminateProgress &&
+                                        !isLiveWatchActive &&
+                                        !isBackgroundActive &&
+                                        !isRefreshActive &&
+                                        !isCompleteProgress && (
+                                            <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
+                                                {percent}%
+                                            </span>
+                                        )}
                                 </div>
                                 {secondaryDetails.length > 0 && hasMultipleSecondaryDetails && (
                                     <div className="flex flex-wrap gap-1.5 px-0.5">
@@ -554,7 +624,10 @@ export const ActivityDock: React.FC = () => {
                                 )}
                             </motion.div>
 
-                            <motion.div layout="position" className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
+                            <motion.div
+                                layout="position"
+                                className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2"
+                            >
                                 <div className="flex items-center gap-2">
                                     <Info className="w-3 h-3 text-gray-400" />
                                     <span className="text-[9px] text-gray-500 font-medium">{visibleFooterMessage}</span>

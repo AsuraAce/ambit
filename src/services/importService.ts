@@ -15,7 +15,7 @@ import {
     createEmptyTouchedFacetResources,
     mergeTouchedFacetResources,
     orderFacetTypes,
-    TouchedFacetResources
+    TouchedFacetResources,
 } from '../utils/touchedFacetTypes';
 import {
     createLiveWatchPerfId,
@@ -50,7 +50,7 @@ const getExistingPaths = async (paths: string[]): Promise<Set<string>> => {
              SELECT id FROM removed_images WHERE id IN (${placeholders})`,
             [...chunk, ...chunk]
         );
-        rows.forEach(r => existingSet.add(r.id));
+        rows.forEach((r) => existingSet.add(r.id));
     }
 
     return existingSet;
@@ -86,12 +86,7 @@ export interface ImportProgressMeta {
     rawMessage?: string;
 }
 
-export type ImportProgressCallback = (
-    current: number,
-    total: number,
-    message?: string,
-    meta?: ImportProgressMeta
-) => void;
+export type ImportProgressCallback = (current: number, total: number, message?: string, meta?: ImportProgressMeta) => void;
 
 export interface ImportOptions {
     onProgress?: ImportProgressCallback;
@@ -127,7 +122,7 @@ const pushUniquePath = (paths: string[], path: string) => {
 };
 
 const pushUniquePaths = (paths: string[], nextPaths: string[]) => {
-    nextPaths.forEach(path => pushUniquePath(paths, path));
+    nextPaths.forEach((path) => pushUniquePath(paths, path));
 };
 
 let nativeProgressRunCounter = 0;
@@ -141,13 +136,9 @@ const FILE_STABILITY_POLL_MS = 500;
 const FILE_STABILITY_MAX_POLLS = 12;
 const FILE_STABILITY_REQUIRED_POLLS = 2;
 
-const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-async function waitForStableFileSizes(
-    paths: string[],
-    onProgress?: ImportProgressCallback,
-    abortSignal?: AbortSignal
-): Promise<boolean> {
+async function waitForStableFileSizes(paths: string[], onProgress?: ImportProgressCallback, abortSignal?: AbortSignal): Promise<boolean> {
     const states = new Map<string, { size: number; stablePolls: number }>();
     let pendingPaths = [...paths];
 
@@ -167,9 +158,7 @@ async function waitForStableFileSizes(
         pendingPaths = pendingPaths.filter((path, index) => {
             const size = sizes[index] ?? 0;
             const previous = states.get(path);
-            const stablePolls = size > 0 && previous?.size === size
-                ? previous.stablePolls + 1
-                : 0;
+            const stablePolls = size > 0 && previous?.size === size ? previous.stablePolls + 1 : 0;
 
             states.set(path, { size, stablePolls });
             return stablePolls < FILE_STABILITY_REQUIRED_POLLS;
@@ -206,7 +195,14 @@ async function processImageFileEntries(
     stats: ImportStats,
     options: ImportOptions,
     defaultTool?: GeneratorTool
-): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean }> {
+): Promise<{
+    images: AIImage[];
+    handledPaths: string[];
+    failedPaths: string[];
+    touchedFacetTypes: FacetType[];
+    touchedFacetResources: TouchedFacetResources;
+    wasCancelled: boolean;
+}> {
     const { onProgress, abortSignal, forceRescan, skipThumbnail = true, waitForStableFiles, perfContext } = options;
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
@@ -220,7 +216,7 @@ async function processImageFileEntries(
     // Sort by Modified Date (Newest First)
     entries.sort((a, b) => b.modified - a.modified);
 
-    const allPaths = entries.map(e => e.path);
+    const allPaths = entries.map((e) => e.path);
     if (abortSignal?.aborted) {
         wasCancelled = true;
     }
@@ -235,14 +231,14 @@ async function processImageFileEntries(
         if (abortSignal?.aborted) {
             wasCancelled = true;
         }
-        pathsToProcess = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
-        stats.skipped += (allPaths.length - pathsToProcess.length);
+        pathsToProcess = allPaths.filter((p) => !existingPaths.has(normalizePath(p)));
+        stats.skipped += allPaths.length - pathsToProcess.length;
         debugLiveWatchPerf('Import duplicate check complete', {
             cycleId,
             candidatePathCount: allPaths.length,
             existingPathCount: existingPaths.size,
             skippedPathCount: allPaths.length - pathsToProcess.length,
-            duplicateCheckMs: elapsedMs(existingLookupStartedAt)
+            duplicateCheckMs: elapsedMs(existingLookupStartedAt),
         });
     }
 
@@ -257,7 +253,7 @@ async function processImageFileEntries(
             errorCount: stats.errors,
             handledPathCount: handledPaths.length,
             failedPathCount: failedPaths.length,
-            totalMs: elapsedMs(importStartedAt)
+            totalMs: elapsedMs(importStartedAt),
         });
         return {
             images: [],
@@ -265,7 +261,7 @@ async function processImageFileEntries(
             failedPaths,
             touchedFacetTypes: [],
             touchedFacetResources: createEmptyTouchedFacetResources(),
-            wasCancelled
+            wasCancelled,
         };
     }
 
@@ -320,7 +316,6 @@ async function processImageFileEntries(
                 break;
             }
 
-
             const batchImages: AIImage[] = [];
 
             for (let j = 0; j < results.length; j++) {
@@ -361,12 +356,16 @@ async function processImageFileEntries(
                     photoMetadata: info.photoMetadata,
                     photoMetadataError: info.photoMetadataError,
                     captureWallTimeMs: info.captureWallTimeMs,
-                    displayTimestamp: info.detectedSourceKind === 'photograph'
-                        ? (info.captureWallTimeMs ?? info.timestamp ?? Date.now())
-                        : (info.timestamp ?? Date.now()),
+                    displayTimestamp:
+                        info.detectedSourceKind === 'photograph'
+                            ? (info.captureWallTimeMs ?? info.timestamp ?? Date.now())
+                            : (info.timestamp ?? Date.now()),
                 };
                 if (j === 0) {
-                    console.log(`[ImportDebug] Img ${path} - OrigChunks keys:`, info.originalChunks ? Object.keys(info.originalChunks) : 'undefined');
+                    console.log(
+                        `[ImportDebug] Img ${path} - OrigChunks keys:`,
+                        info.originalChunks ? Object.keys(info.originalChunks) : 'undefined'
+                    );
                 }
                 batchImages.push(img);
             }
@@ -374,7 +373,7 @@ async function processImageFileEntries(
             if (batchImages.length > 0) {
                 // DB Insert/Update
                 // console.time(`insertBatch-${i}`);
-                const ids = batchImages.map(img => img.id);
+                const ids = batchImages.map((img) => img.id);
                 const existingMetaStartedAt = liveWatchNow();
                 if (abortSignal?.aborted) {
                     wasCancelled = true;
@@ -387,7 +386,7 @@ async function processImageFileEntries(
                     break;
                 }
 
-                batchImages.forEach(img => {
+                batchImages.forEach((img) => {
                     const existing = existingMeta.get(img.id);
                     if (!existing) return;
 
@@ -408,12 +407,10 @@ async function processImageFileEntries(
                         }
                     }
 
-                    img.displayTimestamp = img.sourceKind === 'photograph'
-                        ? (img.captureWallTimeMs ?? img.timestamp)
-                        : img.timestamp;
+                    img.displayTimestamp = img.sourceKind === 'photograph' ? (img.captureWallTimeMs ?? img.timestamp) : img.timestamp;
                 });
 
-                const imagesToUpdate = batchImages.filter(img => {
+                const imagesToUpdate = batchImages.filter((img) => {
                     const existing = existingMeta.get(img.id);
                     if (!existing) return true; // New
 
@@ -424,13 +421,13 @@ async function processImageFileEntries(
                     if (existing.detectedSourceKind !== img.detectedSourceKind) return true;
                     if (JSON.stringify(existing.photoMetadata) !== JSON.stringify(img.photoMetadata)) return true;
 
-                    // For robust import, we might check canonical metadata if needed, 
+                    // For robust import, we might check canonical metadata if needed,
                     // but usually timestamp update is sufficient for FS changes.
                     // Keeping the deep check disabled for raw speed unless necessary.
                     return false;
                 });
 
-                imagesToUpdate.forEach(img => {
+                imagesToUpdate.forEach((img) => {
                     const existing = existingMeta.get(img.id);
                     let previousMetadata: Partial<ImageMetadata> | undefined;
 
@@ -442,7 +439,7 @@ async function processImageFileEntries(
                         }
                     }
 
-                    collectTouchedFacetTypesFromMetadataDiff(previousMetadata, img.metadata).forEach(type => {
+                    collectTouchedFacetTypesFromMetadataDiff(previousMetadata, img.metadata).forEach((type) => {
                         touchedFacetTypes.add(type);
                     });
                     touchedFacetResources = mergeTouchedFacetResources(
@@ -475,7 +472,7 @@ async function processImageFileEntries(
                     scanMs,
                     existingMetadataMs,
                     upsertMs,
-                    batchMs: elapsedMs(batchStartedAt)
+                    batchMs: elapsedMs(batchStartedAt),
                 });
                 // console.timeEnd(`insertBatch-${i}`);
             } else {
@@ -489,18 +486,17 @@ async function processImageFileEntries(
                     scanMs,
                     existingMetadataMs: 0,
                     upsertMs: 0,
-                    batchMs: elapsedMs(batchStartedAt)
+                    batchMs: elapsedMs(batchStartedAt),
                 });
             }
 
             newImages.push(...batchImages);
-            handledPaths.push(...batchImages.map(img => img.id));
+            handledPaths.push(...batchImages.map((img) => img.id));
             stats.processed += chunk.length;
 
             if (onProgress) {
                 onProgress(Math.min(i + BATCH_SIZE, totalToProcess), totalToProcess, `Importing images...`);
             }
-
         } catch (e) {
             if (abortSignal?.aborted) {
                 wasCancelled = true;
@@ -508,7 +504,7 @@ async function processImageFileEntries(
             }
             console.error('Import batch error:', e);
             stats.errors += chunk.length;
-            failedPaths.push(...chunk.map(path => normalizePath(path)));
+            failedPaths.push(...chunk.map((path) => normalizePath(path)));
         } finally {
             unlisten?.();
         }
@@ -524,7 +520,7 @@ async function processImageFileEntries(
         errorCount: stats.errors,
         handledPathCount: handledPaths.length,
         failedPathCount: failedPaths.length,
-        totalMs: elapsedMs(importStartedAt)
+        totalMs: elapsedMs(importStartedAt),
     });
 
     return {
@@ -533,7 +529,7 @@ async function processImageFileEntries(
         failedPaths,
         touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
         touchedFacetResources,
-        wasCancelled: wasCancelled || !!abortSignal?.aborted
+        wasCancelled: wasCancelled || !!abortSignal?.aborted,
     };
 }
 
@@ -548,20 +544,20 @@ const isVideoSidecarPath = (path: string): boolean => /\.workflow\.json$/i.test(
 
 const resolveVideoSidecarPaths = async (paths: string[]): Promise<string[]> => {
     const normalizedPaths = paths.map(normalizePath);
-    const directPaths = normalizedPaths.filter(path => !isVideoSidecarPath(path));
+    const directPaths = normalizedPaths.filter((path) => !isVideoSidecarPath(path));
     const sidecarPaths = normalizedPaths.filter(isVideoSidecarPath);
     if (sidecarPaths.length === 0) return directPaths;
 
     const db = await getDb();
     for (const sidecarPath of sidecarPaths) {
         const basePath = sidecarPath.replace(/\.workflow\.json$/i, '');
-        const candidates = ['mp4', 'webm', 'mov', 'm4v', 'mkv'].map(ext => `${basePath}.${ext}`);
+        const candidates = ['mp4', 'webm', 'mov', 'm4v', 'mkv'].map((ext) => `${basePath}.${ext}`);
         const placeholders = candidates.map(() => '?').join(',');
         const rows = await db.select<Array<{ id: string }>>(
             `SELECT id FROM images WHERE media_type = 'video' AND id COLLATE NOCASE IN (${placeholders})`,
             candidates
         );
-        directPaths.push(...rows.map(row => row.id));
+        directPaths.push(...rows.map((row) => row.id));
     }
     return Array.from(new Set(directPaths));
 };
@@ -574,13 +570,10 @@ const emptyVideoSummary = (): VideoImportSummary => ({
     posterFailures: 0,
     assets: [],
     handledPaths: [],
-    failedPaths: []
+    failedPaths: [],
 });
 
-const mergeVideoSummaries = (
-    current: VideoImportSummary | undefined,
-    next: VideoImportSummary
-): VideoImportSummary => {
+const mergeVideoSummaries = (current: VideoImportSummary | undefined, next: VideoImportSummary): VideoImportSummary => {
     const merged = current ?? emptyVideoSummary();
     return {
         imported: merged.imported + next.imported,
@@ -590,7 +583,7 @@ const mergeVideoSummaries = (
         posterFailures: merged.posterFailures + next.posterFailures,
         assets: [...merged.assets, ...next.assets],
         handledPaths: [...merged.handledPaths, ...next.handledPaths],
-        failedPaths: [...merged.failedPaths, ...next.failedPaths]
+        failedPaths: [...merged.failedPaths, ...next.failedPaths],
     };
 };
 
@@ -598,15 +591,23 @@ async function processVideoFileEntries(
     entries: FileEntry[],
     stats: ImportStats,
     options: ImportOptions
-): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean; videoSummary: VideoImportSummary }> {
+): Promise<{
+    images: AIImage[];
+    handledPaths: string[];
+    failedPaths: string[];
+    touchedFacetTypes: FacetType[];
+    touchedFacetResources: TouchedFacetResources;
+    wasCancelled: boolean;
+    videoSummary: VideoImportSummary;
+}> {
     const { abortSignal, forceRescan, onProgress, waitForStableFiles } = options;
-    const allPaths = entries.map(entry => normalizePath(entry.path));
+    const allPaths = entries.map((entry) => normalizePath(entry.path));
     let pathsToProcess = allPaths;
 
     if (!forceRescan && !abortSignal?.aborted) {
         onProgress?.(0, allPaths.length, 'Checking for duplicates...');
         const existingPaths = await getExistingPaths(allPaths);
-        pathsToProcess = allPaths.filter(path => !existingPaths.has(path));
+        pathsToProcess = allPaths.filter((path) => !existingPaths.has(path));
         stats.skipped += allPaths.length - pathsToProcess.length;
     }
 
@@ -618,7 +619,7 @@ async function processVideoFileEntries(
             touchedFacetTypes: [],
             touchedFacetResources: createEmptyTouchedFacetResources(),
             wasCancelled: !!abortSignal?.aborted,
-            videoSummary: emptyVideoSummary()
+            videoSummary: emptyVideoSummary(),
         };
     }
 
@@ -632,7 +633,7 @@ async function processVideoFileEntries(
                 touchedFacetTypes: [],
                 touchedFacetResources: createEmptyTouchedFacetResources(),
                 wasCancelled: true,
-                videoSummary: emptyVideoSummary()
+                videoSummary: emptyVideoSummary(),
             };
         }
     }
@@ -647,7 +648,7 @@ async function processVideoFileEntries(
         const previousMetadata = await getExistingMetadata(pathsToProcess);
         const summary = await importVideoPaths(
             pathsToProcess,
-            operationId => {
+            (operationId) => {
                 activeOperationId = operationId;
                 if (abortSignal?.aborted) void cancelVideoImport(operationId);
             },
@@ -661,7 +662,7 @@ async function processVideoFileEntries(
         const nextMetadata = await getExistingMetadata(summary.handledPaths);
         const touchedFacetTypes = new Set<FacetType>();
         let touchedFacetResources = createEmptyTouchedFacetResources();
-        summary.handledPaths.forEach(path => {
+        summary.handledPaths.forEach((path) => {
             const previousJson = previousMetadata.get(path)?.metadataJson;
             const nextJson = nextMetadata.get(path)?.metadataJson;
             if (previousJson === nextJson || !nextJson) return;
@@ -669,13 +670,13 @@ async function processVideoFileEntries(
             let previous: Partial<ImageMetadata> | undefined;
             let next: Partial<ImageMetadata> | undefined;
             try {
-                previous = previousJson ? JSON.parse(previousJson) as Partial<ImageMetadata> : undefined;
+                previous = previousJson ? (JSON.parse(previousJson) as Partial<ImageMetadata>) : undefined;
                 next = JSON.parse(nextJson) as Partial<ImageMetadata>;
             } catch (error) {
                 console.warn('[VideoImport] Failed to parse metadata during facet diff', error);
                 return;
             }
-            collectTouchedFacetTypesFromMetadataDiff(previous, next).forEach(type => touchedFacetTypes.add(type));
+            collectTouchedFacetTypesFromMetadataDiff(previous, next).forEach((type) => touchedFacetTypes.add(type));
             touchedFacetResources = mergeTouchedFacetResources(
                 touchedFacetResources,
                 collectTouchedFacetResourcesFromMetadataDiff(previous, next)
@@ -688,7 +689,7 @@ async function processVideoFileEntries(
             touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
             touchedFacetResources,
             wasCancelled: summary.cancelled > 0 || !!abortSignal?.aborted,
-            videoSummary: summary
+            videoSummary: summary,
         };
     } finally {
         abortSignal?.removeEventListener('abort', cancelActive);
@@ -700,14 +701,27 @@ async function processMediaFileEntries(
     stats: ImportStats,
     options: ImportOptions,
     defaultTool?: GeneratorTool
-): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean; videoSummary?: VideoImportSummary }> {
-    const imageEntries = entries.filter(entry => candidateMediaType(entry) === 'image');
-    const videoEntries = entries.filter(entry => candidateMediaType(entry) === 'video');
+): Promise<{
+    images: AIImage[];
+    handledPaths: string[];
+    failedPaths: string[];
+    touchedFacetTypes: FacetType[];
+    touchedFacetResources: TouchedFacetResources;
+    wasCancelled: boolean;
+    videoSummary?: VideoImportSummary;
+}> {
+    const imageEntries = entries.filter((entry) => candidateMediaType(entry) === 'image');
+    const videoEntries = entries.filter((entry) => candidateMediaType(entry) === 'video');
     const total = imageEntries.length + videoEntries.length;
-    const images = await processImageFileEntries(imageEntries, stats, {
-        ...options,
-        onProgress: (current, _imageTotal, message) => options.onProgress?.(current, total, message)
-    }, defaultTool);
+    const images = await processImageFileEntries(
+        imageEntries,
+        stats,
+        {
+            ...options,
+            onProgress: (current, _imageTotal, message) => options.onProgress?.(current, total, message),
+        },
+        defaultTool
+    );
 
     if (images.wasCancelled || options.abortSignal?.aborted || videoEntries.length === 0) {
         return images;
@@ -715,27 +729,17 @@ async function processMediaFileEntries(
 
     const videos = await processVideoFileEntries(videoEntries, stats, {
         ...options,
-        onProgress: (current, _videoTotal, message) => options.onProgress?.(
-            imageEntries.length + current,
-            total,
-            message
-        )
+        onProgress: (current, _videoTotal, message) => options.onProgress?.(imageEntries.length + current, total, message),
     });
 
     return {
         images: [...images.images, ...videos.images],
         handledPaths: [...images.handledPaths, ...videos.handledPaths],
         failedPaths: [...images.failedPaths, ...videos.failedPaths],
-        touchedFacetTypes: orderFacetTypes([
-            ...images.touchedFacetTypes,
-            ...videos.touchedFacetTypes
-        ]),
-        touchedFacetResources: mergeTouchedFacetResources(
-            images.touchedFacetResources,
-            videos.touchedFacetResources
-        ),
+        touchedFacetTypes: orderFacetTypes([...images.touchedFacetTypes, ...videos.touchedFacetTypes]),
+        touchedFacetResources: mergeTouchedFacetResources(images.touchedFacetResources, videos.touchedFacetResources),
         wasCancelled: videos.wasCancelled,
-        videoSummary: videos.videoSummary
+        videoSummary: videos.videoSummary,
     };
 }
 
@@ -745,7 +749,7 @@ export async function processFoldersUnified(
     folders: { path: string; variant?: GeneratorTool }[],
     options: ImportOptions = {}
 ): Promise<ImportResult> {
-    const sourcePaths = folders.map(folder => normalizePath(folder.path));
+    const sourcePaths = folders.map((folder) => normalizePath(folder.path));
     const result: ImportResult = {
         images: [],
         stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
@@ -755,7 +759,7 @@ export async function processFoldersUnified(
         touchedFacetResources: createEmptyTouchedFacetResources(),
         wasCancelled: false,
         completedSourcePaths: [],
-        cancelledSourcePaths: []
+        cancelledSourcePaths: [],
     };
 
     const { onProgress, abortSignal, deferFacetCacheRefresh = false, preserveSourceBoundaries = true } = options;
@@ -766,7 +770,7 @@ export async function processFoldersUnified(
     if (onProgress) {
         onProgress(0, 0, `Analyzing ${folders.length} sources...`, {
             phase: 'scanning',
-            sourceCount: folders.length
+            sourceCount: folders.length,
         });
     }
 
@@ -793,7 +797,7 @@ export async function processFoldersUnified(
                     phase: 'scanning',
                     sourceIndex: folderIndex + 1,
                     sourceCount: folders.length,
-                    sourcePath
+                    sourcePath,
                 });
             }
 
@@ -853,15 +857,12 @@ export async function processFoldersUnified(
     console.log(`[ImportUnified] Discovery Complete. Total files to process: ${grandTotalFiles}`);
 
     if (result.wasCancelled) {
-        const cancelledSourcePaths = sourcePaths.filter(sourcePath => !result.completedSourcePaths.includes(sourcePath));
-        pushUniquePaths(
-            result.cancelledSourcePaths,
-            cancelledSourcePaths
-        );
+        const cancelledSourcePaths = sourcePaths.filter((sourcePath) => !result.completedSourcePaths.includes(sourcePath));
+        pushUniquePaths(result.cancelledSourcePaths, cancelledSourcePaths);
         console.info('[ImportUnified] Import cancelled before processing.', {
             sourceCount: sourcePaths.length,
             completedSourceCount: result.completedSourcePaths.length,
-            cancelledSourceCount: cancelledSourcePaths.length
+            cancelledSourceCount: cancelledSourcePaths.length,
         });
         return result;
     }
@@ -871,7 +872,7 @@ export async function processFoldersUnified(
         if (onProgress) {
             onProgress(0, 0, 'No supported media found.', {
                 phase: 'scanning',
-                sourceCount: folders.length
+                sourceCount: folders.length,
             });
         }
         return result;
@@ -880,20 +881,24 @@ export async function processFoldersUnified(
     // 2. PROCESSING PHASE: Import files with Global Progress
     const processingTasks = preserveSourceBoundaries
         ? tasks
-        : Array.from(tasks.reduce((byVariant, task) => {
-            const existing = byVariant.get(task.variant);
-            if (existing) {
-                existing.sourcePaths.push(...task.sourcePaths);
-                existing.files.push(...task.files);
-            } else {
-                byVariant.set(task.variant, {
-                    sourcePaths: [...task.sourcePaths],
-                    variant: task.variant,
-                    files: [...task.files]
-                });
-            }
-            return byVariant;
-        }, new Map<GeneratorTool | undefined, ImportTask>()).values());
+        : Array.from(
+              tasks
+                  .reduce((byVariant, task) => {
+                      const existing = byVariant.get(task.variant);
+                      if (existing) {
+                          existing.sourcePaths.push(...task.sourcePaths);
+                          existing.files.push(...task.files);
+                      } else {
+                          byVariant.set(task.variant, {
+                              sourcePaths: [...task.sourcePaths],
+                              variant: task.variant,
+                              files: [...task.files],
+                          });
+                      }
+                      return byVariant;
+                  }, new Map<GeneratorTool | undefined, ImportTask>())
+                  .values()
+          );
 
     let globalProcessed = 0;
 
@@ -901,7 +906,10 @@ export async function processFoldersUnified(
         const task = processingTasks[taskIndex];
         if (abortSignal?.aborted) {
             result.wasCancelled = true;
-            pushUniquePaths(result.cancelledSourcePaths, processingTasks.slice(taskIndex).flatMap(t => t.sourcePaths));
+            pushUniquePaths(
+                result.cancelledSourcePaths,
+                processingTasks.slice(taskIndex).flatMap((t) => t.sourcePaths)
+            );
             break;
         }
 
@@ -917,7 +925,7 @@ export async function processFoldersUnified(
                     sourceIndex: taskIndex + 1,
                     sourceCount: processingTasks.length,
                     sourcePath: task.sourcePaths[0],
-                    rawMessage: message
+                    rawMessage: message,
                 });
             }
         };
@@ -927,27 +935,24 @@ export async function processFoldersUnified(
             result.stats,
             {
                 ...options,
-                onProgress: progressAdapter
+                onProgress: progressAdapter,
             },
             task.variant
         );
 
         if (imported.wasCancelled) {
             result.wasCancelled = true;
-            pushUniquePaths(result.cancelledSourcePaths, processingTasks.slice(taskIndex).flatMap(t => t.sourcePaths));
+            pushUniquePaths(
+                result.cancelledSourcePaths,
+                processingTasks.slice(taskIndex).flatMap((t) => t.sourcePaths)
+            );
         }
 
         result.images.push(...imported.images);
         result.handledPaths.push(...imported.handledPaths);
         result.failedPaths.push(...imported.failedPaths);
-        result.touchedFacetTypes = orderFacetTypes([
-            ...result.touchedFacetTypes,
-            ...imported.touchedFacetTypes
-        ]);
-        result.touchedFacetResources = mergeTouchedFacetResources(
-            result.touchedFacetResources,
-            imported.touchedFacetResources
-        );
+        result.touchedFacetTypes = orderFacetTypes([...result.touchedFacetTypes, ...imported.touchedFacetTypes]);
+        result.touchedFacetResources = mergeTouchedFacetResources(result.touchedFacetResources, imported.touchedFacetResources);
         if (imported.videoSummary) {
             result.videoSummary = mergeVideoSummaries(result.videoSummary, imported.videoSummary);
         }
@@ -967,7 +972,7 @@ export async function processFoldersUnified(
             cancelledSourceCount: result.cancelledSourcePaths.length,
             processed: result.stats.processed,
             imported: result.stats.imported,
-            failed: result.failedPaths.length
+            failed: result.failedPaths.length,
         });
     }
 
@@ -977,12 +982,12 @@ export async function processFoldersUnified(
     if (!deferFacetCacheRefresh && !result.wasCancelled) {
         void rebuildFacetCache()
             .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
-            .catch(e => console.error('[Import] Failed cleanup', e));
+            .catch((e) => console.error('[Import] Failed cleanup', e));
     } else if (deferFacetCacheRefresh) {
         console.info('[ImportUnified] Deferred facet cache refresh to startup catch-up coordinator.', {
             processed: result.stats.processed,
             imported: result.stats.imported,
-            touchedFacetTypes: result.touchedFacetTypes
+            touchedFacetTypes: result.touchedFacetTypes,
         });
     }
 
@@ -1004,7 +1009,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
 
             const img = new Image();
             img.src = objectUrl;
-            await new Promise(r => img.onload = r);
+            await new Promise((r) => (img.onload = r));
 
             newImages.push({
                 id: `imported_${Date.now()}_${i}`,
@@ -1022,7 +1027,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
                 isIntermediate: false, // Added missing prop
                 metadata: mapMetadata(meta),
                 thumbnailSource: 'generated',
-                microThumbnail: undefined
+                microThumbnail: undefined,
             });
         } catch (e) {
             console.error(`Error processing file ${file.name}:`, e);
@@ -1036,7 +1041,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
             processed: files.length,
             imported: newImages.length,
             skipped,
-            errors
+            errors,
         },
         handledPaths: [],
         failedPaths: [],
@@ -1044,7 +1049,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
         touchedFacetResources: createEmptyTouchedFacetResources(),
         wasCancelled: false,
         completedSourcePaths: [],
-        cancelledSourcePaths: []
+        cancelledSourcePaths: [],
     };
 };
 
@@ -1060,11 +1065,10 @@ export const processNativePaths = async (
     waitForStableFiles: boolean = isStartup,
     deferFacetCacheRefresh: boolean = false
 ): Promise<ImportResult> => {
-
     // Convert string[] list to typed inputs for unified processor
-    const foldersInput = paths.map(p => ({
+    const foldersInput = paths.map((p) => ({
         path: p,
-        variant: defaultTool
+        variant: defaultTool,
     }));
 
     return processFoldersUnified(foldersInput, {
@@ -1075,7 +1079,7 @@ export const processNativePaths = async (
         waitForStableFiles,
         deferFacetCacheRefresh,
         skipThumbnail: false,
-        preserveSourceBoundaries: false
+        preserveSourceBoundaries: false,
     });
 };
 
@@ -1093,7 +1097,7 @@ export const processTargetedFiles = async (
         touchedFacetResources: createEmptyTouchedFacetResources(),
         wasCancelled: false,
         completedSourcePaths: [],
-        cancelledSourcePaths: []
+        cancelledSourcePaths: [],
     };
 
     if (paths.length === 0) return result;
@@ -1122,11 +1126,11 @@ export const processTargetedFiles = async (
     const targetedImportStartedAt = liveWatchNow();
 
     const targetedImportTimestamp = Date.now();
-    const entries: FileEntry[] = resolvedPaths.map(p => ({
-        path: p, 
+    const entries: FileEntry[] = resolvedPaths.map((p) => ({
+        path: p,
         modified: targetedImportTimestamp,
         size: 0, // Will be read by rust metadata extractor anyway
-        mediaType: candidateMediaType({ path: p, modified: 0, size: 0 }) ?? undefined
+        mediaType: candidateMediaType({ path: p, modified: 0, size: 0 }) ?? undefined,
     }));
 
     console.log(`[Import] Processing ${resolvedPaths.length} targeted paths...`);
@@ -1153,7 +1157,7 @@ export const processTargetedFiles = async (
         handledPathCount: result.handledPaths.length,
         failedPathCount: result.failedPaths.length,
         importedCount: result.stats.imported,
-        totalMs: elapsedMs(targetedImportStartedAt)
+        totalMs: elapsedMs(targetedImportStartedAt),
     });
     return result;
 };

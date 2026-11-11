@@ -8,8 +8,15 @@ const smartImageMocks = vi.hoisted(() => ({ props: [] as Array<Record<string, un
 vi.mock('../SmartImage', () => ({
     SmartImage: (props: Record<string, unknown>) => {
         smartImageMocks.props.push(props);
-        return <img src={String(props.src)} alt={String(props.alt)} className={String(props.className)} onError={() => (props.onImageError as (() => void) | undefined)?.()} />;
-    }
+        return (
+            <img
+                src={String(props.src)}
+                alt={String(props.alt)}
+                className={String(props.className)}
+                onError={() => (props.onImageError as (() => void) | undefined)?.()}
+            />
+        );
+    },
 }));
 
 const image = (overrides: Partial<AIImage> = {}): AIImage => ({
@@ -31,9 +38,9 @@ const image = (overrides: Partial<AIImage> = {}): AIImage => ({
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: '',
-        negativePrompt: ''
+        negativePrompt: '',
     },
-    ...overrides
+    ...overrides,
 });
 
 const setup = (overrides: Partial<React.ComponentProps<typeof ImageCard>> = {}) => {
@@ -50,7 +57,7 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ImageCard>> = {}) 
         onDragEnd: vi.fn(),
         onMouseDown: vi.fn(),
         onImageError: vi.fn(),
-        ...overrides
+        ...overrides,
     };
     const result = render(<ImageCard {...props} />);
     return { ...result, props };
@@ -65,7 +72,7 @@ const video = (overrides: Partial<VideoAsset> = {}): VideoAsset => ({
     rotationDegrees: 0,
     probeStatus: 'ready',
     playbackStatus: 'unknown',
-    ...overrides
+    ...overrides,
 });
 
 describe('ImageCard', () => {
@@ -176,8 +183,8 @@ describe('ImageCard', () => {
         setup({
             image: video({
                 thumbnailUrl: 'poster.webp',
-                thumbnailSource: 'ambit-video-v1'
-            })
+                thumbnailSource: 'ambit-video-v1',
+            }),
         });
 
         expect(smartImageMocks.props[0]).toMatchObject({ src: 'poster.webp', fallbackSrc: undefined });
@@ -191,7 +198,7 @@ describe('ImageCard', () => {
             isThumbnail: true,
             onTogglePin: undefined,
             onDragStart: undefined,
-            onToggleFavorite: favorite
+            onToggleFavorite: favorite,
         });
         const root = container.firstElementChild as HTMLElement;
         expect(root.draggable).toBe(false);
@@ -205,7 +212,17 @@ describe('ImageCard', () => {
         expect(screen.queryByRole('button', { name: 'Pin to Top' })).toBeNull();
         fireEvent.dragStart(root);
 
-        rerender(<ImageCard image={image({ isDeleted: true, isPinned: true, isFavorite: true })} isSelected={false} isThumbnail onClick={vi.fn()} onToggleSelection={vi.fn()} onToggleFavorite={favorite} onTogglePin={vi.fn()} />);
+        rerender(
+            <ImageCard
+                image={image({ isDeleted: true, isPinned: true, isFavorite: true })}
+                isSelected={false}
+                isThumbnail
+                onClick={vi.fn()}
+                onToggleSelection={vi.fn()}
+                onToggleFavorite={favorite}
+                onTogglePin={vi.fn()}
+            />
+        );
         expect(screen.getByText('Trash')).toBeTruthy();
         expect(screen.getByTitle('Pinned')).toBeTruthy();
         expect(screen.getByRole('img', { name: 'Favorite' })).toBeTruthy();
@@ -218,27 +235,55 @@ describe('ImageCard', () => {
 
     it('uses override, object, hash, and generic model labels in priority order', () => {
         const callbacks = { onClick: vi.fn(), onToggleSelection: vi.fn(), onToggleFavorite: vi.fn() };
-        const { rerender } = render(<ImageCard image={image({ metadata: { ...image().metadata, overrideModel: 'override_model' } })} isSelected={false} {...callbacks} />);
+        const { rerender } = render(
+            <ImageCard
+                image={image({ metadata: { ...image().metadata, overrideModel: 'override_model' } })}
+                isSelected={false}
+                {...callbacks}
+            />
+        );
         expect(screen.getByText('override_model')).toBeTruthy();
 
-        rerender(<ImageCard image={image({ metadata: { ...image().metadata, model: { name: 'object-model' } as unknown as string } })} isSelected={false} {...callbacks} />);
+        rerender(
+            <ImageCard
+                image={image({ metadata: { ...image().metadata, model: { name: 'object-model' } as unknown as string } })}
+                isSelected={false}
+                {...callbacks}
+            />
+        );
         expect(screen.getByText('object-model')).toBeTruthy();
 
-        rerender(<ImageCard image={image({ metadata: { ...image().metadata, model: 'Unknown', modelHash: '1234567890abcdef' } })} isSelected={false} {...callbacks} />);
+        rerender(
+            <ImageCard
+                image={image({ metadata: { ...image().metadata, model: 'Unknown', modelHash: '1234567890abcdef' } })}
+                isSelected={false}
+                {...callbacks}
+            />
+        );
         expect(screen.getByText('Hash: 12345678')).toBeTruthy();
 
-        rerender(<ImageCard image={image({ metadata: { ...image().metadata, model: { name: '' } as unknown as string } })} isSelected={false} {...callbacks} />);
+        rerender(
+            <ImageCard
+                image={image({ metadata: { ...image().metadata, model: { name: '' } as unknown as string } })}
+                isSelected={false}
+                {...callbacks}
+            />
+        );
         expect(screen.getByText('Model')).toBeTruthy();
 
-        rerender(<ImageCard image={image({ metadata: { ...image().metadata, model: null as unknown as string } })} isSelected={false} {...callbacks} />);
+        rerender(
+            <ImageCard
+                image={image({ metadata: { ...image().metadata, model: null as unknown as string } })}
+                isSelected={false}
+                {...callbacks}
+            />
+        );
         expect(screen.getByText('Model')).toBeTruthy();
     });
 
     it('labels only known InvokeAI image asset categories', () => {
         const callbacks = { onClick: vi.fn(), onToggleSelection: vi.fn(), onToggleFavorite: vi.fn() };
-        const { rerender } = render(
-            <ImageCard image={image({ invokeImageCategory: ' CONTROL ' })} isSelected={false} {...callbacks} />
-        );
+        const { rerender } = render(<ImageCard image={image({ invokeImageCategory: ' CONTROL ' })} isSelected={false} {...callbacks} />);
 
         const marker = screen.getByText('Asset · Control');
         expect(marker.getAttribute('title')).toBe('InvokeAI image asset category: Control');

@@ -3,11 +3,9 @@ import type { InvokeImageReferenceInput, InvokeImageReferenceRole } from '../../
 type MetadataRecord = Record<string, unknown>;
 
 export type InvokeImageReferenceExtraction =
-    | { status: 'valid'; references: InvokeImageReferenceInput[] }
-    | { status: 'invalid'; references: [] };
+    { status: 'valid'; references: InvokeImageReferenceInput[] } | { status: 'invalid'; references: [] };
 
-const isRecord = (value: unknown): value is MetadataRecord =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is MetadataRecord => !!value && typeof value === 'object' && !Array.isArray(value);
 
 const parseJsonValue = (value: unknown): { valid: boolean; value: unknown } => {
     if (typeof value !== 'string') return { valid: true, value };
@@ -19,31 +17,22 @@ const parseJsonValue = (value: unknown): { valid: boolean; value: unknown } => {
     }
 };
 
-type ImageNameRead =
-    | { status: 'empty' }
-    | { status: 'valid'; imageName: string }
-    | { status: 'invalid' };
+type ImageNameRead = { status: 'empty' } | { status: 'valid'; imageName: string } | { status: 'invalid' };
 
 const readImageName = (value: unknown): ImageNameRead => {
     if (value === null || value === undefined) return { status: 'empty' };
     if (typeof value === 'string') {
-        return value.trim().length > 0
-            ? { status: 'valid', imageName: value }
-            : { status: 'empty' };
+        return value.trim().length > 0 ? { status: 'valid', imageName: value } : { status: 'empty' };
     }
     if (!isRecord(value) || !('image_name' in value)) return { status: 'invalid' };
 
     const imageName = value.image_name;
     if (imageName === null || imageName === undefined) return { status: 'empty' };
     if (typeof imageName !== 'string') return { status: 'invalid' };
-    return imageName.trim().length > 0
-        ? { status: 'valid', imageName }
-        : { status: 'empty' };
+    return imageName.trim().length > 0 ? { status: 'valid', imageName } : { status: 'empty' };
 };
 
-export const extractInvokeImageReferences = (
-    rawMetadata: unknown
-): InvokeImageReferenceExtraction => {
+export const extractInvokeImageReferences = (rawMetadata: unknown): InvokeImageReferenceExtraction => {
     if (rawMetadata === null || rawMetadata === undefined) {
         return { status: 'valid', references: [] };
     }
@@ -67,9 +56,7 @@ export const extractInvokeImageReferences = (
 
     if (!isRecord(root)) return { status: 'invalid', references: [] };
 
-    const payload = isRecord(root.image)
-        ? root.image
-        : (isRecord(root.generation) ? root.generation : root);
+    const payload = isRecord(root.image) ? root.image : isRecord(root.generation) ? root.generation : root;
     const roots = payload === root ? [root] : [payload, root];
     const references: InvokeImageReferenceInput[] = [];
     const seen = new Set<string>();
@@ -117,23 +104,9 @@ export const extractInvokeImageReferences = (
 
     roots.forEach((record) => {
         addReference('init_image', record.init_image);
-        readAdapters(
-            record,
-            ['controlnets', 'control_nets', 'control_adapters'],
-            'controlnet_image',
-            'controlnet_processed_image'
-        );
-        readAdapters(
-            record,
-            ['ipAdapters', 'ip_adapters', 'ip_adapter'],
-            'ip_adapter_image'
-        );
-        readAdapters(
-            record,
-            ['t2iAdapters', 't2i_adapters', 't2i_adapter'],
-            't2i_adapter_image',
-            't2i_adapter_processed_image'
-        );
+        readAdapters(record, ['controlnets', 'control_nets', 'control_adapters'], 'controlnet_image', 'controlnet_processed_image');
+        readAdapters(record, ['ipAdapters', 'ip_adapters', 'ip_adapter'], 'ip_adapter_image');
+        readAdapters(record, ['t2iAdapters', 't2i_adapters', 't2i_adapter'], 't2i_adapter_image', 't2i_adapter_processed_image');
     });
 
     if (hasInvalidReference) return { status: 'invalid', references: [] };

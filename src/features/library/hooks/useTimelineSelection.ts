@@ -8,24 +8,16 @@ interface UseTimelineSelectionProps {
     onBackgroundClick?: () => void;
 }
 
-export const useTimelineSelection = ({
-    containerRef,
-    layoutItems,
-    onRangeSelection,
-    onBackgroundClick
-}: UseTimelineSelectionProps) => {
-    const [dragBox, setDragBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
-    const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+export const useTimelineSelection = ({ containerRef, layoutItems, onRangeSelection, onBackgroundClick }: UseTimelineSelectionProps) => {
+    const [dragBox, setDragBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+    const dragStartRef = useRef<{ x: number; y: number } | null>(null);
     const isDraggingRef = useRef(false);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0) return;
 
         const target = e.target as HTMLElement;
-        const isOverItem = !!(
-            target.closest('[data-drag-source="true"]') ||
-            target.tagName === 'IMG'
-        );
+        const isOverItem = !!(target.closest('[data-drag-source="true"]') || target.tagName === 'IMG');
 
         if (isOverItem) {
             return;
@@ -58,7 +50,7 @@ export const useTimelineSelection = ({
                     x: Math.min(dragStartRef.current.x, currentX),
                     y: Math.min(dragStartRef.current.y, currentY),
                     w: Math.abs(currentX - dragStartRef.current.x),
-                    h: Math.abs(currentY - dragStartRef.current.y)
+                    h: Math.abs(currentY - dragStartRef.current.y),
                 });
             }
         };
@@ -79,7 +71,7 @@ export const useTimelineSelection = ({
 
                 const selectedIndexes: number[] = [];
 
-                layoutItems.forEach(item => {
+                layoutItems.forEach((item) => {
                     if (item.type === 'row') {
                         item.items?.forEach((subItem) => {
                             const itemX = subItem.x;
@@ -87,12 +79,7 @@ export const useTimelineSelection = ({
                             const itemW = subItem.width;
                             const itemH = subItem.height;
 
-                            const overlap = (
-                                itemX < bx + bw &&
-                                itemX + itemW > bx &&
-                                itemY < by + bh &&
-                                itemY + itemH > by
-                            );
+                            const overlap = itemX < bx + bw && itemX + itemW > bx && itemY < by + bh && itemY + itemH > by;
 
                             if (overlap) selectedIndexes.push(subItem.globalIndex);
                         });

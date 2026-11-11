@@ -33,7 +33,11 @@ describe('useAppVersion', () => {
 
     it('shares native requests and reuses the resolved cache', async () => {
         let resolveVersion!: (version: string) => void;
-        getVersionMock.mockReturnValue(new Promise(resolve => { resolveVersion = resolve; }));
+        getVersionMock.mockReturnValue(
+            new Promise((resolve) => {
+                resolveVersion = resolve;
+            })
+        );
         const { useAppVersion } = await import('../useAppVersion');
         const first = renderHook(() => useAppVersion());
         const second = renderHook(() => useAppVersion());
@@ -50,15 +54,16 @@ describe('useAppVersion', () => {
 
     it('reports native failures without updating an unmounted hook', async () => {
         let rejectVersion!: (error: Error) => void;
-        getVersionMock.mockReturnValue(new Promise((_resolve, reject) => { rejectVersion = reject; }));
+        getVersionMock.mockReturnValue(
+            new Promise((_resolve, reject) => {
+                rejectVersion = reject;
+            })
+        );
         const { useAppVersion } = await import('../useAppVersion');
         const hook = renderHook(() => useAppVersion());
         hook.unmount();
 
         await act(async () => rejectVersion(new Error('runtime unavailable')));
-        expect(console.error).toHaveBeenCalledWith(
-            '[AppVersion] Failed to load runtime version:',
-            expect.any(Error)
-        );
+        expect(console.error).toHaveBeenCalledWith('[AppVersion] Failed to load runtime version:', expect.any(Error));
     });
 });

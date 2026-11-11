@@ -8,7 +8,7 @@ import { GlobalModals } from '../GlobalModals';
 
 const captures = vi.hoisted(() => ({
     props: {} as Record<string, Record<string, unknown>>,
-    confirms: [] as Record<string, unknown>[]
+    confirms: [] as Record<string, unknown>[],
 }));
 
 const modalButton = (name: string, props: Record<string, unknown>) => {
@@ -19,19 +19,37 @@ const modalButton = (name: string, props: Record<string, unknown>) => {
 vi.mock('../ui/ConfirmDialog', () => ({
     ConfirmDialog: (props: Record<string, unknown>) => {
         captures.confirms.push(props);
-        return <div>{String(props.title)}: {String(props.message)}</div>;
-    }
+        return (
+            <div>
+                {String(props.title)}: {String(props.message)}
+            </div>
+        );
+    },
 }));
-vi.mock('../../features/settings/components/SettingsModal', () => ({ SettingsModal: (props: Record<string, unknown>) => modalButton('settings', props) }));
-vi.mock('../../features/library/components/ExportModal', () => ({ ExportModal: (props: Record<string, unknown>) => modalButton('export', props) }));
-vi.mock('../../features/viewer/components/SlideshowModal', () => ({ SlideshowModal: (props: Record<string, unknown>) => modalButton('slideshow', props) }));
-vi.mock('../../features/library/components/MetadataRecoveryModal', () => ({ MetadataRecoveryModal: (props: Record<string, unknown>) => modalButton('recovery', props) }));
-vi.mock('../../features/collections/components/AddToCollectionModal', () => ({ AddToCollectionModal: (props: Record<string, unknown>) => modalButton('addToCollection', props) }));
+vi.mock('../../features/settings/components/SettingsModal', () => ({
+    SettingsModal: (props: Record<string, unknown>) => modalButton('settings', props),
+}));
+vi.mock('../../features/library/components/ExportModal', () => ({
+    ExportModal: (props: Record<string, unknown>) => modalButton('export', props),
+}));
+vi.mock('../../features/viewer/components/SlideshowModal', () => ({
+    SlideshowModal: (props: Record<string, unknown>) => modalButton('slideshow', props),
+}));
+vi.mock('../../features/library/components/MetadataRecoveryModal', () => ({
+    MetadataRecoveryModal: (props: Record<string, unknown>) => modalButton('recovery', props),
+}));
+vi.mock('../../features/collections/components/AddToCollectionModal', () => ({
+    AddToCollectionModal: (props: Record<string, unknown>) => modalButton('addToCollection', props),
+}));
 vi.mock('../ui/CommandPalette', () => ({ CommandPalette: (props: Record<string, unknown>) => modalButton('commandPalette', props) }));
 vi.mock('../ui/ShortcutsModal', () => ({ ShortcutsModal: (props: Record<string, unknown>) => modalButton('shortcuts', props) }));
-vi.mock('../../features/viewer/components/CompareModal', () => ({ CompareModal: (props: Record<string, unknown>) => modalButton('compare', props) }));
+vi.mock('../../features/viewer/components/CompareModal', () => ({
+    CompareModal: (props: Record<string, unknown>) => modalButton('compare', props),
+}));
 vi.mock('../ui/DonationModal', () => ({ DonationModal: (props: Record<string, unknown>) => modalButton('donation', props) }));
-vi.mock('../../features/collections/components/CollectionEditorModal', () => ({ CollectionEditorModal: (props: Record<string, unknown>) => modalButton('collectionEditor', props) }));
+vi.mock('../../features/collections/components/CollectionEditorModal', () => ({
+    CollectionEditorModal: (props: Record<string, unknown>) => modalButton('collectionEditor', props),
+}));
 
 const image = (id: string): AIImage => ({
     id,
@@ -49,8 +67,8 @@ const image = (id: string): AIImage => ({
         cfg: 1,
         sampler: 'euler',
         positivePrompt: '',
-        negativePrompt: ''
-    }
+        negativePrompt: '',
+    },
 });
 
 const collection = (id: string, filters?: ReturnType<typeof createDefaultFilters>): Collection => ({
@@ -58,7 +76,7 @@ const collection = (id: string, filters?: ReturnType<typeof createDefaultFilters
     name: id,
     imageIds: [],
     createdAt: 1,
-    filters
+    filters,
 });
 
 const allOpen: Record<string, boolean> = {
@@ -73,7 +91,7 @@ const allOpen: Record<string, boolean> = {
     shortcuts: true,
     compare: true,
     donation: true,
-    collectionEditor: true
+    collectionEditor: true,
 };
 
 const setup = (overrides: Partial<React.ComponentProps<typeof GlobalModals>> = {}) => {
@@ -110,7 +128,7 @@ const setup = (overrides: Partial<React.ComponentProps<typeof GlobalModals>> = {
             onImport: vi.fn(),
             onCreateCollection: vi.fn(),
             onToggleAI: vi.fn(),
-            settings
+            settings,
         },
         collections: [collection('regular')],
         smartCollections: [collection('smart', createDefaultFilters())],
@@ -129,7 +147,7 @@ const setup = (overrides: Partial<React.ComponentProps<typeof GlobalModals>> = {
         onCheckForUpdates: vi.fn(),
         onOpenUpdatePrompt: vi.fn(),
         onNavigateToMaintenance: vi.fn(),
-        ...overrides
+        ...overrides,
     };
     render(<GlobalModals {...props} />);
     return props;
@@ -169,13 +187,12 @@ describe('GlobalModals', () => {
         expect(props.setModals).toHaveBeenCalledTimes(10);
         expect(props.onCloseExport).toHaveBeenCalledOnce();
 
-        const updates = vi.mocked(props.setModals).mock.calls.map(([update]) =>
-            (update as (value: Record<string, boolean>) => Record<string, boolean>)(allOpen)
+        const updates = vi
+            .mocked(props.setModals)
+            .mock.calls.map(([update]) => (update as (value: Record<string, boolean>) => Record<string, boolean>)(allOpen));
+        expect(updates).toEqual(
+            expect.arrayContaining([expect.objectContaining({ settings: false }), expect.objectContaining({ collectionEditor: false })])
         );
-        expect(updates).toEqual(expect.arrayContaining([
-            expect.objectContaining({ settings: false }),
-            expect.objectContaining({ collectionEditor: false })
-        ]));
     });
 
     it('routes confirmation actions and uses selected-count delete copy', async () => {
@@ -197,13 +214,14 @@ describe('GlobalModals', () => {
 
     it('keeps image removal busy until completion and blocks duplicate confirmation', async () => {
         let resolveDelete: (() => void) | undefined;
-        const onDeleteConfirm = vi.fn(() => new Promise<void>(resolve => {
-            resolveDelete = resolve;
-        }));
+        const onDeleteConfirm = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveDelete = resolve;
+                })
+        );
         setup({ onDeleteConfirm });
-        const latestDeleteConfirm = () => [...captures.confirms]
-            .reverse()
-            .find(confirm => confirm.title === 'Remove from Library?');
+        const latestDeleteConfirm = () => [...captures.confirms].reverse().find((confirm) => confirm.title === 'Remove from Library?');
         const initialConfirm = latestDeleteConfirm();
         let firstConfirmation: Promise<void> | undefined;
         let duplicateConfirmation: Promise<void> | undefined;
@@ -225,13 +243,14 @@ describe('GlobalModals', () => {
 
     it('keeps collection deletion busy until completion and blocks duplicate confirmation', async () => {
         let resolveDelete: (() => void) | undefined;
-        const onDeleteCollectionConfirm = vi.fn(() => new Promise<void>(resolve => {
-            resolveDelete = resolve;
-        }));
+        const onDeleteCollectionConfirm = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveDelete = resolve;
+                })
+        );
         setup({ onDeleteCollectionConfirm });
-        const latestCollectionConfirm = () => [...captures.confirms]
-            .reverse()
-            .find(confirm => confirm.title === 'Delete Collection');
+        const latestCollectionConfirm = () => [...captures.confirms].reverse().find((confirm) => confirm.title === 'Delete Collection');
         const initialConfirm = latestCollectionConfirm();
         let firstConfirmation: Promise<void> | undefined;
         let duplicateConfirmation: Promise<void> | undefined;
@@ -258,7 +277,7 @@ describe('GlobalModals', () => {
             filteredImages: images,
             exportIds: new Set(['x', 'y', 'z']),
             pendingViewerDeleteId: 'viewer',
-            sourceCollectionId: null
+            sourceCollectionId: null,
         });
         await waitFor(() => expect(captures.props.compare).toBeTruthy());
         expect(captures.props.export.count).toBe(3);
@@ -272,13 +291,24 @@ describe('GlobalModals', () => {
     it('suppresses conditional modals and supplies collection-editor defaults', async () => {
         const onSave = vi.fn();
         setup({
-            modals: { ...allOpen, settings: false, export: false, slideshow: false, recovery: false, addToCollection: false, commandPalette: false, shortcuts: false, donation: false, compare: true },
+            modals: {
+                ...allOpen,
+                settings: false,
+                export: false,
+                slideshow: false,
+                recovery: false,
+                addToCollection: false,
+                commandPalette: false,
+                shortcuts: false,
+                donation: false,
+                compare: true,
+            },
             selectedIds: new Set(['a']),
             filteredImages: [image('a')],
             smartCollections: undefined,
             filters: undefined,
             collectionToEditId: 'missing',
-            onSaveCollectionFilters: undefined
+            onSaveCollectionFilters: undefined,
         });
         await waitFor(() => expect(captures.props.collectionEditor).toBeTruthy());
         expect(captures.props.compare).toBeUndefined();

@@ -10,7 +10,7 @@ interface ImportMeta {
 
 declare module '*?worker' {
     const workerConstructor: {
-        new(): Worker;
+        new (): Worker;
     };
     export default workerConstructor;
 }

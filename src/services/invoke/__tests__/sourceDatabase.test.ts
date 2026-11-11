@@ -19,13 +19,23 @@ describe('openInvokeSourceDatabase', () => {
     it('reads InvokeAI through the read-only command and never opens a plugin handle', async () => {
         vi.mocked(commands.selectInvokeSource)
             .mockResolvedValueOnce({ status: 'ok', data: { columns: ['1'], rows: [[1]] } })
-            .mockResolvedValueOnce({ status: 'ok', data: {
-                columns: ['image_name', 'width', 'user_id'],
-                rows: [['a.png', 512, null], ['b.png', 640, 'alice']],
-            } });
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: {
+                    columns: ['image_name', 'width', 'user_id'],
+                    rows: [
+                        ['a.png', 512, null],
+                        ['b.png', 640, 'alice'],
+                    ],
+                },
+            });
 
         const db = await openInvokeSourceDatabase('D:/Invoke/databases/invokeai.db');
-        const rows = await db.select('SELECT image_name, width, user_id FROM images WHERE user_id = ? AND starred = ? AND width > ?', ['alice', true, 1.5]);
+        const rows = await db.select('SELECT image_name, width, user_id FROM images WHERE user_id = ? AND starred = ? AND width > ?', [
+            'alice',
+            true,
+            1.5,
+        ]);
 
         expect(rows).toEqual([
             { image_name: 'a.png', width: 512, user_id: null },
@@ -36,7 +46,7 @@ describe('openInvokeSourceDatabase', () => {
             2,
             'D:/Invoke/databases/invokeai.db',
             'SELECT image_name, width, user_id FROM images WHERE user_id = ? AND starred = ? AND width > ?',
-            ['alice', 1, 1.5],
+            ['alice', 1, 1.5]
         );
         expect(Database.load).not.toHaveBeenCalled();
     });

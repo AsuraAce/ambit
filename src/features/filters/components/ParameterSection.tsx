@@ -11,16 +11,15 @@ interface ParameterSectionProps {
     onToggle: () => void;
 }
 
-
 /** Format generation type for display */
 const formatGenType = (type: string): string => {
     const labels: Record<string, string> = {
-        'txt2img': 'Text to Image',
-        'img2img': 'Image to Image',
-        'extras': 'Extras/Upscale',
-        'grid': 'Grid',
-        'saved': 'Saved',
-        'unknown': 'Unknown'
+        txt2img: 'Text to Image',
+        img2img: 'Image to Image',
+        extras: 'Extras/Upscale',
+        grid: 'Grid',
+        saved: 'Saved',
+        unknown: 'Unknown',
     };
     return labels[type] || type;
 };
@@ -29,20 +28,20 @@ const formatGenType = (type: string): string => {
 
 const groupSamplers = (samplers: string[]) => {
     const groups: Record<string, string[]> = {
-        'Euler': [],
-        'DPM': [],
-        'LMS': [],
-        'Heun': [],
-        'DDIM': [],
-        'UniPC': [],
-        'Deis': [],
-        'Other': []
+        Euler: [],
+        DPM: [],
+        LMS: [],
+        Heun: [],
+        DDIM: [],
+        UniPC: [],
+        Deis: [],
+        Other: [],
     };
 
     // Use a Set to keep track of unique canonical names per group
     const canonicalSeen = new Set<string>();
 
-    samplers.forEach(s => {
+    samplers.forEach((s) => {
         const canonical = normalizeSampler(s);
         if (canonicalSeen.has(canonical)) return;
         canonicalSeen.add(canonical);
@@ -60,19 +59,15 @@ const groupSamplers = (samplers: string[]) => {
 
     return Object.entries(groups)
         .map(([label, items]) => ({ label, items: items.sort() }))
-        .filter(g => g.items.length > 0)
-        .sort((a, b) => (
-            ['DDIM', 'Deis', 'DPM', 'Euler', 'Heun', 'LMS', 'UniPC', 'Other'].indexOf(a.label)
-            - ['DDIM', 'Deis', 'DPM', 'Euler', 'Heun', 'LMS', 'UniPC', 'Other'].indexOf(b.label)
-        ));
+        .filter((g) => g.items.length > 0)
+        .sort(
+            (a, b) =>
+                ['DDIM', 'Deis', 'DPM', 'Euler', 'Heun', 'LMS', 'UniPC', 'Other'].indexOf(a.label) -
+                ['DDIM', 'Deis', 'DPM', 'Euler', 'Heun', 'LMS', 'UniPC', 'Other'].indexOf(b.label)
+        );
 };
 
-export const ParameterSection: React.FC<ParameterSectionProps> = ({
-    filters,
-    setFilters,
-    isOpen,
-    onToggle
-}) => {
+export const ParameterSection: React.FC<ParameterSectionProps> = ({ filters, setFilters, isOpen, onToggle }) => {
     const { data: ranges, isLoading } = useParameterRangesQuery(filters);
 
     // Check if any parameters have data to show
@@ -110,7 +105,7 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
                         max={Math.ceil(ranges.steps.max)}
                         minValue={filters.minSteps}
                         maxValue={filters.maxSteps}
-                        onChange={(min, max) => setFilters(prev => ({ ...prev, minSteps: min, maxSteps: max }))}
+                        onChange={(min, max) => setFilters((prev) => ({ ...prev, minSteps: min, maxSteps: max }))}
                     />
                 )}
 
@@ -123,7 +118,7 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
                         step={0.5}
                         minValue={filters.minCfg}
                         maxValue={filters.maxCfg}
-                        onChange={(min, max) => setFilters(prev => ({ ...prev, minCfg: min, maxCfg: max }))}
+                        onChange={(min, max) => setFilters((prev) => ({ ...prev, minCfg: min, maxCfg: max }))}
                     />
                 )}
 
@@ -133,7 +128,7 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
                         label="Sampler"
                         groups={groupSamplers(ranges.samplers)}
                         selected={filters.samplers || []}
-                        onChange={(samplers) => setFilters(prev => ({ ...prev, samplers }))}
+                        onChange={(samplers) => setFilters((prev) => ({ ...prev, samplers }))}
                         placeholder="Search samplers..."
                     />
                 )}
@@ -144,7 +139,7 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
                         label="Generation Type"
                         options={ranges.generationTypes}
                         selected={filters.generationTypes || []}
-                        onChange={(generationTypes) => setFilters(prev => ({ ...prev, generationTypes }))}
+                        onChange={(generationTypes) => setFilters((prev) => ({ ...prev, generationTypes }))}
                         formatLabel={formatGenType}
                     />
                 )}

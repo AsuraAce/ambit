@@ -20,7 +20,7 @@ export const createStartupLifecycleDiagnostics = ({
     const recordedStages = new Set<StartupLifecycleStage>();
 
     try {
-        subscribe(resolvedLaunchId => {
+        subscribe((resolvedLaunchId) => {
             launchId = resolvedLaunchId;
         });
     } catch {
@@ -28,7 +28,7 @@ export const createStartupLifecycleDiagnostics = ({
     }
 
     return {
-        record: stage => {
+        record: (stage) => {
             if (!launchId || recordedStages.has(stage) || recordedStages.size >= MAX_LIFECYCLE_STAGES) return;
             recordedStages.add(stage);
             try {

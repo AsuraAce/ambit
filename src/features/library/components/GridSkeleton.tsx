@@ -16,19 +16,21 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }
     const items = Array.from({ length: 24 });
 
     // Memoize randomized heights/widths to prevent flicker on re-renders
-    const randomSizes = React.useMemo<SkeletonSize[]>(() =>
-        items.map(() => {
-            if (layout === 'masonry') {
-                // Random height between 200px and 400px for masonry
-                return { height: Math.floor(Math.random() * 200) + 200 + 'px' };
-            } else if (layout === 'justified') {
-                // Random width for flex rows
-                return { width: Math.floor(Math.random() * 200) + 200 + 'px', flexGrow: Math.random() + 0.5 };
-            }
-            return {}; // Grid uses aspect-square
-        }),
+    const randomSizes = React.useMemo<SkeletonSize[]>(
+        () =>
+            items.map(() => {
+                if (layout === 'masonry') {
+                    // Random height between 200px and 400px for masonry
+                    return { height: Math.floor(Math.random() * 200) + 200 + 'px' };
+                } else if (layout === 'justified') {
+                    // Random width for flex rows
+                    return { width: Math.floor(Math.random() * 200) + 200 + 'px', flexGrow: Math.random() + 0.5 };
+                }
+                return {}; // Grid uses aspect-square
+            }),
         // eslint-disable-next-line react-hooks/exhaustive-deps -- items is a new array every render; adding it would re-randomise the sizes this memo keeps stable
-        [layout]);
+        [layout]
+    );
 
     if (layout === 'masonry') {
         return (
@@ -40,7 +42,7 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }
                         style={{
                             height: randomSizes[i].height,
                             animation: `pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
-                            animationDelay: `${i * 50}ms`
+                            animationDelay: `${i * 50}ms`,
                         }}
                     >
                         <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />
@@ -61,7 +63,7 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }
                             width: randomSizes[i].width,
                             flexGrow: randomSizes[i].flexGrow,
                             animation: `pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
-                            animationDelay: `${i * 50}ms`
+                            animationDelay: `${i * 50}ms`,
                         }}
                     >
                         <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />
@@ -80,7 +82,7 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }
                     className="aspect-square rounded-xl bg-gray-200 dark:bg-white/5 overflow-hidden relative"
                     style={{
                         animation: `pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
-                        animationDelay: `${i * 50}ms`
+                        animationDelay: `${i * 50}ms`,
                     }}
                 >
                     <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />

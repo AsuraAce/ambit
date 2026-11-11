@@ -6,14 +6,9 @@ interface ManagedTauriListener {
     ready: Promise<boolean>;
 }
 
-const formatError = (error: unknown): string =>
-    error instanceof Error ? error.message : String(error);
+const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const listenWithCleanup = <T>(
-    eventName: string,
-    handler: (event: Event<T>) => void,
-    label = eventName
-): ManagedTauriListener => {
+export const listenWithCleanup = <T>(eventName: string, handler: (event: Event<T>) => void, label = eventName): ManagedTauriListener => {
     let disposed = false;
     let unlisten: UnlistenFn | null = null;
     let finished = false;

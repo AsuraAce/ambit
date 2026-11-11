@@ -40,7 +40,7 @@ const baseLightRow = {
     sampler: 'euler',
     generation_type: 'txt2img',
     positive_prompt: 'sunlit atrium',
-    negative_prompt: 'low quality'
+    negative_prompt: 'low quality',
 };
 
 describe('repoUtils lightweight image rows', () => {
@@ -229,13 +229,13 @@ describe('repoUtils lightweight image rows', () => {
                 ...originalMetadata,
                 positivePrompt: 'edited full prompt',
                 workflowJson: '{"nodes":[]}',
-                loras: ['detail.safetensors']
+                loras: ['detail.safetensors'],
             }),
             original_metadata_json: JSON.stringify({
-                invokeai_metadata: JSON.stringify({ positive_prompt: 'raw invoke prompt' })
+                invokeai_metadata: JSON.stringify({ positive_prompt: 'raw invoke prompt' }),
             }),
             original_parsed_json: JSON.stringify(originalMetadata),
-            original_state_json: JSON.stringify({ isFavorite: true, isPinned: false, boardId: 'board-a' })
+            original_state_json: JSON.stringify({ isFavorite: true, isPinned: false, boardId: 'board-a' }),
         });
 
         expect(image.metadata.positivePrompt).toBe('edited full prompt');
@@ -327,14 +327,16 @@ describe('repoUtils lightweight image rows', () => {
         expect(image.metadata).toMatchObject({ model: 'Unknown', steps: 20, cfg: 0, sampler: 'Unknown' });
     });
 
-    it.each(['https://example.com/thumb.webp', 'data:image/webp;base64,abc', 'blob:thumb']) (
+    it.each(['https://example.com/thumb.webp', 'data:image/webp;base64,abc', 'blob:thumb'])(
         'preserves the %s thumbnail scheme',
         (thumbnailPath) => {
-            expect(mapRowToImage({
-                ...baseLightRow,
-                thumbnail_path: thumbnailPath,
-                user_masked: 0,
-            })).toMatchObject({ thumbnailUrl: thumbnailPath, userMasked: false });
+            expect(
+                mapRowToImage({
+                    ...baseLightRow,
+                    thumbnail_path: thumbnailPath,
+                    user_masked: 0,
+                })
+            ).toMatchObject({ thumbnailUrl: thumbnailPath, userMasked: false });
         }
     );
 

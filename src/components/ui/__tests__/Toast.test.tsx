@@ -33,7 +33,7 @@ describe('ToastContainer', () => {
         expect(action).toHaveBeenCalledOnce();
         expect(removeToast).toHaveBeenCalledWith('success');
 
-        const dismissButtons = screen.getAllByRole('button').filter(item => item.textContent === '');
+        const dismissButtons = screen.getAllByRole('button').filter((item) => item.textContent === '');
         fireEvent.click(dismissButtons[1]);
         expect(removeToast).toHaveBeenCalledWith('error');
     });

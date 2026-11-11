@@ -13,10 +13,7 @@ interface PhotoDetailsTabProps {
 const formatCaptureTime = (image: AIImage): string | undefined => {
     const capture = image.photoMetadata?.capturedAt;
     if (!capture) return undefined;
-    const local = capture.local.replace(
-        /^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})$/,
-        '$1-$2-$3 $4'
-    );
+    const local = capture.local.replace(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})$/, '$1-$2-$3 $4');
     const subsecond = capture.subsecond ? `.${capture.subsecond}` : '';
     return `${local}${subsecond}${capture.offset ? ` ${capture.offset}` : ''}`;
 };
@@ -32,16 +29,18 @@ export const PhotoDetailsTab = ({ image, isLoading = false }: PhotoDetailsTabPro
     const isPhoto = getEffectiveSourceKind(image) === 'photograph';
     const cameraMake = photo?.cameraMake?.trim();
     const cameraModel = photo?.cameraModel?.trim();
-    const modelIncludesMake = cameraMake && cameraModel && (
-        cameraModel.toLowerCase() === cameraMake.toLowerCase()
-        || cameraModel.toLowerCase().startsWith(`${cameraMake.toLowerCase()} `)
-    );
+    const modelIncludesMake =
+        cameraMake &&
+        cameraModel &&
+        (cameraModel.toLowerCase() === cameraMake.toLowerCase() || cameraModel.toLowerCase().startsWith(`${cameraMake.toLowerCase()} `));
     const cameraLabel = modelIncludesMake ? cameraModel : [cameraMake, cameraModel].filter(Boolean).join(' ');
-    const fields = isPhoto ? [
-        { label: 'Captured', icon: Calendar, value: formatCaptureTime(image) },
-        { label: 'Camera', icon: Camera, value: cameraLabel },
-        { label: 'Lens', icon: Aperture, value: [photo?.lensMake, photo?.lensModel].filter(Boolean).join(' ') },
-    ].filter(field => field.value) : [];
+    const fields = isPhoto
+        ? [
+              { label: 'Captured', icon: Calendar, value: formatCaptureTime(image) },
+              { label: 'Camera', icon: Camera, value: cameraLabel },
+              { label: 'Lens', icon: Aperture, value: [photo?.lensMake, photo?.lensModel].filter(Boolean).join(' ') },
+          ].filter((field) => field.value)
+        : [];
     const rows: MetadataParameterRow[] = [];
     const addRow = (label: string, value?: string | number | null) => {
         if (value !== undefined && value !== null && value !== '') rows.push({ label, value: String(value) });
@@ -53,21 +52,25 @@ export const PhotoDetailsTab = ({ image, isLoading = false }: PhotoDetailsTabPro
         addRow('Shutter', photo?.exposureTimeSeconds ? formatShutter(photo.exposureTimeSeconds) : undefined);
         addRow('ISO', photo?.iso);
     }
-    const attribution = isPhoto ? [
-        { label: 'Artist', icon: User, value: photo?.artist },
-        { label: 'Copyright', icon: Copyright, value: photo?.copyright },
-    ].filter(field => field.value) : [];
+    const attribution = isPhoto
+        ? [
+              { label: 'Artist', icon: User, value: photo?.artist },
+              { label: 'Copyright', icon: Copyright, value: photo?.copyright },
+          ].filter((field) => field.value)
+        : [];
     const hasGps = isPhoto && photo?.gpsLatitude != null && photo.gpsLongitude != null;
 
     return (
         <div aria-busy={isLoading} className="custom-scrollbar h-full space-y-6 overflow-y-auto p-5">
-            {fields.map(field => (
+            {fields.map((field) => (
                 <MetadataField key={field.label} label={field.label} icon={field.icon}>
-                    <div className="w-full break-words rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm font-medium text-gray-700 dark:border-white/10 dark:bg-black dark:text-zinc-200">{field.value}</div>
+                    <div className="w-full break-words rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm font-medium text-gray-700 dark:border-white/10 dark:bg-black dark:text-zinc-200">
+                        {field.value}
+                    </div>
                 </MetadataField>
             ))}
             <MetadataParameterList rows={rows} ariaLabel="Exposure settings" />
-            {attribution.map(field => (
+            {attribution.map((field) => (
                 <MetadataField key={field.label} label={field.label} icon={field.icon}>
                     <p className="break-words text-sm text-gray-700 dark:text-zinc-200">{field.value}</p>
                 </MetadataField>

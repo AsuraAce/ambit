@@ -1,4 +1,3 @@
-
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { ImageMetadata } from '../types';
 import { GeneratorTool } from '../types';
@@ -41,38 +40,39 @@ describe('Metadata Worker Tests', () => {
 
     describe('parseA1111Parameters', () => {
         it('should parse basic A1111 parameters', () => {
-            const raw = "Positive prompt here\nNegative prompt: Negative content\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: v1-5-pruned, Model hash: abcde";
+            const raw =
+                'Positive prompt here\nNegative prompt: Negative content\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: v1-5-pruned, Model hash: abcde';
             const meta = parseA1111Parameters(raw);
 
-            expect(meta.positivePrompt).toBe("Positive prompt here");
-            expect(meta.negativePrompt).toBe("Negative content");
+            expect(meta.positivePrompt).toBe('Positive prompt here');
+            expect(meta.negativePrompt).toBe('Negative content');
             expect(meta.steps).toBe(20);
             expect(meta.cfg).toBe(7.0);
             expect(meta.seed).toBe(12345);
-            expect(meta.model).toBe("v1-5-pruned");
-            expect(meta.modelHash).toBe("abcde");
+            expect(meta.model).toBe('v1-5-pruned');
+            expect(meta.modelHash).toBe('abcde');
         });
 
         it('should preserve an explicit zero seed', () => {
-            const meta = parseA1111Parameters("Prompt\nSteps: 20, Seed: 0");
+            const meta = parseA1111Parameters('Prompt\nSteps: 20, Seed: 0');
 
             expect(meta.seed).toBe(0);
         });
 
         it('should detect SD.Next via App key', () => {
-            const raw = "Prompt\nSteps: 20, App: SD.Next";
+            const raw = 'Prompt\nSteps: 20, App: SD.Next';
             const meta = parseA1111Parameters(raw);
             expect(meta.tool).toBe('SD.Next');
         });
 
         it('should detect Forge via Version key', () => {
-            const raw = "Prompt\nSteps: 20, Version: forge";
+            const raw = 'Prompt\nSteps: 20, Version: forge';
             const meta = parseA1111Parameters(raw);
             expect(meta.tool).toBe('Forge');
         });
 
         it('should extract LoRAs', () => {
-            const raw = "A beautiful <lora:cool_style:0.8> painting";
+            const raw = 'A beautiful <lora:cool_style:0.8> painting';
             const meta = parseA1111Parameters(raw);
             expect(meta.loras).toContain('cool_style');
         });
@@ -80,8 +80,8 @@ describe('Metadata Worker Tests', () => {
 
     describe('parseFilenameMetadata', () => {
         it('should parse generic filename', () => {
-            const res = parseFilenameMetadata("image_0001.png");
-            expect(res.tool).toBe("Unknown");
+            const res = parseFilenameMetadata('image_0001.png');
+            expect(res.tool).toBe('Unknown');
         });
 
         // Add more filename parsing tests as needed
@@ -106,9 +106,7 @@ describe('Metadata Worker Tests', () => {
     describe('ComfyUI fallback', () => {
         it('should preserve workflow JSON without inferring graph fields', async () => {
             const workflow = JSON.stringify({
-                nodes: [
-                    { id: 1, type: 'KSampler', widgets_values: [123456, 'random', 20, 7.5, 'euler', 'normal', 1.0] }
-                ]
+                nodes: [{ id: 1, type: 'KSampler', widgets_values: [123456, 'random', 20, 7.5, 'euler', 'normal', 1.0] }],
             });
             const postMessage = vi.spyOn(self, 'postMessage').mockImplementation(() => undefined);
             const handler = self.onmessage;

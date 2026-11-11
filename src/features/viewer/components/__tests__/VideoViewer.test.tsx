@@ -21,33 +21,31 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../services/db/imageRepo', () => ({
     getImageWithFullMetadata: mocks.getImageWithFullMetadata,
-    updateVideoPlaybackStatus: mocks.updateVideoPlaybackStatus
+    updateVideoPlaybackStatus: mocks.updateVideoPlaybackStatus,
 }));
 vi.mock('../../../../services/db/collectionRepo', () => ({
-    getCollectionsForImage: mocks.getCollectionsForImage
+    getCollectionsForImage: mocks.getCollectionsForImage,
 }));
 vi.mock('../../../../services/osOpen', () => ({
-    openFileInDefaultApp: mocks.openFileInDefaultApp
+    openFileInDefaultApp: mocks.openFileInDefaultApp,
 }));
 vi.mock('../../../../hooks/useToast', () => ({
-    useToast: () => ({ addToast: mocks.addToast })
+    useToast: () => ({ addToast: mocks.addToast }),
 }));
 vi.mock('@tauri-apps/api/core', () => ({
-    convertFileSrc: mocks.convertFileSrc
+    convertFileSrc: mocks.convertFileSrc,
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({
-    open: mocks.open
+    open: mocks.open,
 }));
 vi.mock('../../../../stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: { collections: Array<{ id: string; name: string }> }) => unknown) =>
-        selector({ collections: [{ id: 'collection-1', name: 'Favorites set' }] })
+        selector({ collections: [{ id: 'collection-1', name: 'Favorites set' }] }),
 }));
 vi.mock('../../../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: {
-        settings: typeof mocks.settings;
-        isLoaded: boolean;
-        setSettings: typeof mocks.setViewerTab;
-    }) => unknown) => {
+    useSettingsStore: (
+        selector: (state: { settings: typeof mocks.settings; isLoaded: boolean; setSettings: typeof mocks.setViewerTab }) => unknown
+    ) => {
         const state = {
             settings: mocks.settings,
             isLoaded: true,
@@ -59,15 +57,15 @@ vi.mock('../../../../stores/settingsStore', () => ({
                 return () => mocks.settingsListeners.delete(listener);
             },
             () => selector(state),
-            () => selector(state),
+            () => selector(state)
         );
     },
 }));
 vi.mock('../../../../bindings', () => ({
     commands: {
         exportAssetOriginal: mocks.exportAssetOriginal,
-        prepareVideoPlayback: mocks.prepareVideoPlayback
-    }
+        prepareVideoPlayback: mocks.prepareVideoPlayback,
+    },
 }));
 
 const video: VideoAsset = {
@@ -103,9 +101,9 @@ const video: VideoAsset = {
             generationMode: 'trusted_sidecar',
             model: 'trusted_sidecar',
             positivePrompt: 'trusted_sidecar',
-            negativePrompt: 'trusted_sidecar'
-        }
-    }
+            negativePrompt: 'trusted_sidecar',
+        },
+    },
 };
 
 const setup = (isMasked = false, videoOverrides: Partial<VideoAsset> = {}, initiallyRevealed = false) => {
@@ -127,7 +125,7 @@ const setup = (isMasked = false, videoOverrides: Partial<VideoAsset> = {}, initi
         onUpdateGenerationMode: vi.fn(),
         onRevertMetadata: vi.fn(),
         onSearch: vi.fn(),
-        onSetCollectionMembership: vi.fn().mockResolvedValue(true)
+        onSetCollectionMembership: vi.fn().mockResolvedValue(true),
     };
     return { ...render(<VideoViewer {...props} />), props };
 };
@@ -143,7 +141,7 @@ describe('VideoViewer', () => {
         mocks.setViewerTab.mockReset();
         mocks.setViewerTab.mockImplementation((update: { viewerPreferredTab: 'details' | 'metadata' | 'workflow' }) => {
             mocks.settings.viewerPreferredTab = update.viewerPreferredTab;
-            mocks.settingsListeners.forEach(listener => listener());
+            mocks.settingsListeners.forEach((listener) => listener());
         });
     });
 
@@ -189,13 +187,15 @@ describe('VideoViewer', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reveal video' }));
         await waitFor(() => expect(document.querySelector('video')).not.toBeNull());
 
-        view.rerender(<VideoViewer
-            {...view.props}
-            video={{
-                ...view.props.video,
-                metadata: { ...view.props.video.metadata, generationMode: 'guided_video' },
-            }}
-        />);
+        view.rerender(
+            <VideoViewer
+                {...view.props}
+                video={{
+                    ...view.props.video,
+                    metadata: { ...view.props.video.metadata, generationMode: 'guided_video' },
+                }}
+            />
+        );
 
         expect(screen.queryByRole('button', { name: 'Reveal video' })).toBeNull();
         expect(document.querySelector('video')).not.toBeNull();
@@ -242,10 +242,7 @@ describe('VideoViewer', () => {
         fireEvent.click(disclosure);
         expect(disclosure.getAttribute('aria-expanded')).toBe('false');
 
-        view.rerender(<VideoViewer
-            {...view.props}
-            video={{ ...view.props.video, id: 'C:/videos/next.mp4', filename: 'next.mp4' }}
-        />);
+        view.rerender(<VideoViewer {...view.props} video={{ ...view.props.video, id: 'C:/videos/next.mp4', filename: 'next.mp4' }} />);
 
         expect(screen.getByRole('button', { name: 'Generation parameters' }).getAttribute('aria-expanded')).toBe('false');
     });
@@ -257,14 +254,16 @@ describe('VideoViewer', () => {
         fireEvent.click(screen.getByRole('tab', { name: 'Workflow' }));
         expect(screen.getAllByText('FirstVideoNode')).toHaveLength(2);
 
-        view.rerender(<VideoViewer
-            {...view.props}
-            video={{
-                ...view.props.video,
-                id: 'C:/videos/next.mp4',
-                metadata: { ...view.props.video.metadata, workflowJson: secondWorkflow },
-            }}
-        />);
+        view.rerender(
+            <VideoViewer
+                {...view.props}
+                video={{
+                    ...view.props.video,
+                    id: 'C:/videos/next.mp4',
+                    metadata: { ...view.props.video.metadata, workflowJson: secondWorkflow },
+                }}
+            />
+        );
 
         expect(screen.queryAllByText('FirstVideoNode')).toHaveLength(0);
         expect(screen.getAllByText('SecondVideoNode')).toHaveLength(2);
@@ -278,9 +277,12 @@ describe('VideoViewer', () => {
         await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain('clip.mp4'));
 
         let resolveNextPlayback: ((value: { status: 'ok'; data: string }) => void) | undefined;
-        mocks.prepareVideoPlayback.mockImplementationOnce(() => new Promise(resolve => {
-            resolveNextPlayback = resolve;
-        }));
+        mocks.prepareVideoPlayback.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveNextPlayback = resolve;
+                })
+        );
         const nextVideo: VideoAsset = {
             ...view.props.video,
             id: 'C:/videos/next.mp4',
@@ -322,15 +324,17 @@ describe('VideoViewer', () => {
     it('renders resource chips as inert when gallery search is unavailable', () => {
         setup(false, {
             metadata: { ...video.metadata, loras: ['motion-detail'] },
-        }).rerender(<VideoViewer
-            video={{ ...video, metadata: { ...video.metadata, loras: ['motion-detail'] } }}
-            isMasked={false}
-            onClose={vi.fn()}
-            onNext={vi.fn()}
-            onPrev={vi.fn()}
-            onToggleFavorite={vi.fn()}
-            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
-        />);
+        }).rerender(
+            <VideoViewer
+                video={{ ...video, metadata: { ...video.metadata, loras: ['motion-detail'] } }}
+                isMasked={false}
+                onClose={vi.fn()}
+                onNext={vi.fn()}
+                onPrev={vi.fn()}
+                onToggleFavorite={vi.fn()}
+                onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+            />
+        );
         fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
 
         expect(screen.getByText('motion-detail')).toBeTruthy();
@@ -398,8 +402,8 @@ describe('VideoViewer', () => {
             data: {
                 assetId: video.id,
                 outputPath: '//?/C:/exports/clip.mp4',
-                bytesCopied: 2_500
-            }
+                bytesCopied: 2_500,
+            },
         });
         setup();
 
@@ -420,11 +424,7 @@ describe('VideoViewer', () => {
         const membership = screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement;
         await waitFor(() => expect(membership.disabled).toBe(false));
         fireEvent.click(membership);
-        await waitFor(() => expect(props.onSetCollectionMembership).toHaveBeenCalledWith(
-            video.id,
-            'collection-1',
-            true
-        ));
+        await waitFor(() => expect(props.onSetCollectionMembership).toHaveBeenCalledWith(video.id, 'collection-1', true));
     });
 
     it('does not persist unchanged blur values as user edits', () => {
@@ -457,13 +457,15 @@ describe('VideoViewer', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(view.props.onUpdateModel).not.toHaveBeenCalled();
 
-        view.rerender(<VideoViewer
-            {...view.props}
-            video={{
-                ...view.props.video,
-                metadata: { ...view.props.video.metadata, model: 'Resolved model', modelHash: 'f8bb2922e1' },
-            }}
-        />);
+        view.rerender(
+            <VideoViewer
+                {...view.props}
+                video={{
+                    ...view.props.video,
+                    metadata: { ...view.props.video.metadata, model: 'Resolved model', modelHash: 'f8bb2922e1' },
+                }}
+            />
+        );
         await waitFor(() => expect(screen.getByText('Resolved model')).toBeTruthy());
         expect(screen.queryByText('Unresolved hash')).toBeNull();
         expect(screen.getByText('Model Hash').parentElement?.textContent).toContain('f8bb2922e1');
@@ -478,20 +480,14 @@ describe('VideoViewer', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy());
         fireEvent.click(screen.getByRole('button', { name: 'Edit Generation Tool' }));
         fireEvent.change(screen.getByRole('combobox', { name: 'Generator software' }), { target: { value: GeneratorTool.INVOKEAI } });
-        view.rerender(<VideoViewer
-            {...view.props}
-            video={{ ...view.props.video, id: 'C:/videos/next.mp4' }}
-        />);
+        view.rerender(<VideoViewer {...view.props} video={{ ...view.props.video, id: 'C:/videos/next.mp4' }} />);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy());
         expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
         fireEvent.click(screen.getByRole('option', { name: /Custom model/i }));
         fireEvent.change(screen.getByLabelText('Custom model name'), { target: { value: 'Unsaved Model' } });
-        view.rerender(<VideoViewer
-            {...view.props}
-            video={{ ...view.props.video, id: 'C:/videos/third.mp4' }}
-        />);
+        view.rerender(<VideoViewer {...view.props} video={{ ...view.props.video, id: 'C:/videos/third.mp4' }} />);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Model' })).toBeTruthy());
         expect(screen.queryByLabelText('Custom model name')).toBeNull();
         expect(view.props.onUpdateTool).not.toHaveBeenCalled();
@@ -521,8 +517,8 @@ describe('VideoViewer', () => {
                     cfg: 'trusted_sidecar',
                     sampler: 'trusted_sidecar',
                 },
-                diagnostics: [{ code: 'sidecar_media_mismatch', message: 'Ignored mismatched sidecar' }]
-            }
+                diagnostics: [{ code: 'sidecar_media_mismatch', message: 'Ignored mismatched sidecar' }],
+            },
         });
         fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
 
@@ -564,16 +560,18 @@ describe('VideoViewer', () => {
         fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
         expect(screen.queryByRole('button', { name: 'Revert user overrides' })).toBeNull();
 
-        rerender(<VideoViewer
-            {...props}
-            video={{
-                ...video,
-                metadata: {
-                    ...video.metadata,
-                    fieldSources: { ...video.metadata.fieldSources, positivePrompt: 'user_override' },
-                },
-            }}
-        />);
+        rerender(
+            <VideoViewer
+                {...props}
+                video={{
+                    ...video,
+                    metadata: {
+                        ...video.metadata,
+                        fieldSources: { ...video.metadata.fieldSources, positivePrompt: 'user_override' },
+                    },
+                }}
+            />
+        );
         expect(screen.getByRole('button', { name: 'Revert user overrides' })).toBeTruthy();
     });
 
@@ -582,29 +580,19 @@ describe('VideoViewer', () => {
         setup();
         fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
 
-        await waitFor(() =>
-            expect(
-                screen.getByRole('button', { name: 'Favorites set' }).getAttribute('aria-pressed'),
-            ).toBe('true'),
-        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Favorites set' }).getAttribute('aria-pressed')).toBe('true'));
         expect(mocks.getCollectionsForImage).toHaveBeenCalledWith(video.id);
     });
 
     it('shows a retryable error when collection membership cannot be loaded', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mocks.getCollectionsForImage
-            .mockRejectedValueOnce(new Error('sqlite busy'))
-            .mockResolvedValueOnce(['collection-1']);
+        mocks.getCollectionsForImage.mockRejectedValueOnce(new Error('sqlite busy')).mockResolvedValueOnce(['collection-1']);
         setup();
         fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
 
         expect((await screen.findByRole('alert')).textContent).toContain('Could not load collection membership.');
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        await waitFor(() =>
-            expect(
-                screen.getByRole('button', { name: 'Favorites set' }).getAttribute('aria-pressed'),
-            ).toBe('true'),
-        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Favorites set' }).getAttribute('aria-pressed')).toBe('true'));
         expect(mocks.getCollectionsForImage).toHaveBeenCalledTimes(2);
         expect(error).toHaveBeenCalled();
     });

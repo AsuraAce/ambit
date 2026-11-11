@@ -21,47 +21,47 @@ const mocks = vi.hoisted(() => ({
     refreshHiddenAvailability: vi.fn().mockResolvedValue(undefined),
     refreshMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
-    syncCollectionImages: vi.fn()
+    syncCollectionImages: vi.fn(),
 }));
 
 vi.mock('../../bindings', () => ({
     commands: {
         scanDirectorySince: mocks.scanDirectorySince,
-        scanDirectoryWithStats: mocks.scanDirectoryWithStats
-    }
+        scanDirectoryWithStats: mocks.scanDirectoryWithStats,
+    },
 }));
 
 vi.mock('../../services/importService', () => ({
     processNativePaths: mocks.processNativePaths,
     processWebFiles: mocks.processWebFiles,
-    processFoldersUnified: mocks.processFoldersUnified
+    processFoldersUnified: mocks.processFoldersUnified,
 }));
 
 vi.mock('../../services/thumbnailService', () => ({
-    getThumbnailDir: mocks.getThumbnailDir
+    getThumbnailDir: mocks.getThumbnailDir,
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCache: mocks.rebuildFacetCache,
-    syncCollectionImages: mocks.syncCollectionImages
+    syncCollectionImages: mocks.syncCollectionImages,
 }));
 
 vi.mock('../../contexts/SearchContext', () => ({
     useSearch: () => ({
         refreshHiddenAvailability: mocks.refreshHiddenAvailability,
-        refreshMetadata: mocks.refreshMetadata
-    })
+        refreshMetadata: mocks.refreshMetadata,
+    }),
 }));
 
 vi.mock('../useToast', () => ({
     useToast: () => ({
-        addToast: mocks.addToast
-    })
+        addToast: mocks.addToast,
+    }),
 }));
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>(res => {
+    const promise = new Promise<T>((res) => {
         resolve = res;
     });
     return { promise, resolve };
@@ -80,11 +80,11 @@ const emptyImportResult = (wasCancelled = false): ImportResult => ({
         hypernetworks: [],
         controlNets: [],
         ipAdapters: [],
-        tools: []
+        tools: [],
     },
     wasCancelled,
     completedSourcePaths: [],
-    cancelledSourcePaths: []
+    cancelledSourcePaths: [],
 });
 
 const importResult = (overrides: Partial<ImportResult> = {}): ImportResult => {
@@ -94,12 +94,12 @@ const importResult = (overrides: Partial<ImportResult> = {}): ImportResult => {
         ...overrides,
         stats: {
             ...base.stats,
-            ...overrides.stats
-        }
+            ...overrides.stats,
+        },
     };
 };
 
-const importedImage = (id: string): AIImage => ({ id } as AIImage);
+const importedImage = (id: string): AIImage => ({ id }) as AIImage;
 
 describe('useImportOps', () => {
     const manualCancellationMessage = 'Import cancelled. Imported items were kept; rescan to continue.';
@@ -113,24 +113,23 @@ describe('useImportOps', () => {
         maskedKeywords: [],
         maskingMode: 'blur',
         enableAI: false,
-        hasCompletedOnboarding: true
+        hasCompletedOnboarding: true,
     } as AppSettings;
 
-    const renderImportOps = (
-        settingsOverrides: Partial<AppSettings> = {},
-        images: AIImage[] = []
-    ) => {
+    const renderImportOps = (settingsOverrides: Partial<AppSettings> = {}, images: AIImage[] = []) => {
         const setImages = vi.fn<Dispatch<SetStateAction<AIImage[]>>>();
         const refreshCollections = vi.fn().mockResolvedValue(undefined);
-        const hook = renderHook(() => useImportOps({
-            images,
-            setImages,
-            refreshCollections,
-            settings: {
-                ...settings,
-                ...settingsOverrides
-            }
-        }));
+        const hook = renderHook(() =>
+            useImportOps({
+                images,
+                setImages,
+                refreshCollections,
+                settings: {
+                    ...settings,
+                    ...settingsOverrides,
+                },
+            })
+        );
         return { ...hook, setImages, refreshCollections };
     };
 
@@ -142,7 +141,7 @@ describe('useImportOps', () => {
             importAbortController: null,
             importRunId: null,
             importRunOwner: null,
-            facetCacheVersion: 0
+            facetCacheVersion: 0,
         });
         mocks.getThumbnailDir.mockResolvedValue('C:/thumbs');
         mocks.processNativePaths.mockResolvedValue(emptyImportResult());
@@ -208,7 +207,7 @@ describe('useImportOps', () => {
         const activeRunId = useLibraryStore.getState().beginImportRun({
             owner: 'other-import',
             abortController: new AbortController(),
-            progress: { current: 1, total: 2, message: 'Existing import' }
+            progress: { current: 1, total: 2, message: 'Existing import' },
         });
         const { result } = renderImportOps();
 
@@ -216,13 +215,10 @@ describe('useImportOps', () => {
             await result.current.handleImportPaths(['C:/watch/new.png']);
         });
 
-        expect(infoSpy).toHaveBeenCalledWith(
-            '[ImportOps] Path import skipped because another import is active.',
-            {
-                mode: 'manual',
-                pathCount: 1
-            }
-        );
+        expect(infoSpy).toHaveBeenCalledWith('[ImportOps] Path import skipped because another import is active.', {
+            mode: 'manual',
+            pathCount: 1,
+        });
         expect(activeRunId).toBeTruthy();
         expect(mocks.processNativePaths).not.toHaveBeenCalled();
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
@@ -235,17 +231,14 @@ describe('useImportOps', () => {
             stats: { processed: 2, imported: 1, skipped: 0, errors: 0 },
             wasCancelled: true,
             completedSourcePaths: ['C:/watch-a'],
-            cancelledSourcePaths: ['C:/watch-b']
+            cancelledSourcePaths: ['C:/watch-b'],
         });
         mocks.processFoldersUnified.mockResolvedValueOnce(partialCancel);
         const { result } = renderImportOps();
         let returned: ImportResult | void = undefined;
 
         await act(async () => {
-            returned = await result.current.handleImportFolders([
-                { path: 'C:/watch-a' },
-                { path: 'C:/watch-b' }
-            ]);
+            returned = await result.current.handleImportFolders([{ path: 'C:/watch-a' }, { path: 'C:/watch-b' }]);
         });
 
         expect(returned).toBe(partialCancel);
@@ -258,11 +251,13 @@ describe('useImportOps', () => {
     });
 
     it('does not rebuild facets for a cancelled folder import with no inserted images', async () => {
-        mocks.processFoldersUnified.mockResolvedValueOnce(importResult({
-            wasCancelled: true,
-            completedSourcePaths: [],
-            cancelledSourcePaths: ['C:/watch']
-        }));
+        mocks.processFoldersUnified.mockResolvedValueOnce(
+            importResult({
+                wasCancelled: true,
+                completedSourcePaths: [],
+                cancelledSourcePaths: ['C:/watch'],
+            })
+        );
         const { result } = renderImportOps();
 
         await act(async () => {
@@ -281,7 +276,7 @@ describe('useImportOps', () => {
             stats: { processed: 2, imported: 1, skipped: 0, errors: 0 },
             wasCancelled: true,
             completedSourcePaths: ['C:/watch-a'],
-            cancelledSourcePaths: ['C:/watch-b']
+            cancelledSourcePaths: ['C:/watch-b'],
         });
         mocks.processFoldersUnified.mockResolvedValueOnce(partialCancel);
         mocks.rebuildFacetCache.mockRejectedValueOnce(new Error('facet rebuild failed'));
@@ -289,10 +284,7 @@ describe('useImportOps', () => {
         let returned: ImportResult | void = undefined;
 
         await act(async () => {
-            returned = await result.current.handleImportFolders([
-                { path: 'C:/watch-a' },
-                { path: 'C:/watch-b' }
-            ]);
+            returned = await result.current.handleImportFolders([{ path: 'C:/watch-a' }, { path: 'C:/watch-b' }]);
         });
 
         expect(returned).toBeUndefined();
@@ -304,18 +296,23 @@ describe('useImportOps', () => {
     });
 
     it('warns when a manual folder import has imported images and failed files', async () => {
-        mocks.processFoldersUnified.mockResolvedValueOnce(importResult({
-            images: [importedImage('C:/watch/imported.png')],
-            stats: { processed: 2, imported: 1, skipped: 0, errors: 1 },
-            failedPaths: ['C:/watch/failed.png']
-        }));
+        mocks.processFoldersUnified.mockResolvedValueOnce(
+            importResult({
+                images: [importedImage('C:/watch/imported.png')],
+                stats: { processed: 2, imported: 1, skipped: 0, errors: 1 },
+                failedPaths: ['C:/watch/failed.png'],
+            })
+        );
         const { result } = renderImportOps();
 
         await act(async () => {
             await result.current.handleImportFolders([{ path: 'C:/watch' }]);
         });
 
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s), but 1 file(s) failed', 'warning');
+        expect(mocks.addToast).toHaveBeenCalledWith(
+            'Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s), but 1 file(s) failed',
+            'warning'
+        );
         expect(mocks.addToast).not.toHaveBeenCalledWith('Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s)', 'success');
     });
 
@@ -336,10 +333,12 @@ describe('useImportOps', () => {
     });
 
     it('shows success when a manual folder import has images and no failures', async () => {
-        mocks.processFoldersUnified.mockResolvedValueOnce(importResult({
-            images: [importedImage('C:/watch/imported.png')],
-            stats: { processed: 1, imported: 1, skipped: 0, errors: 0 }
-        }));
+        mocks.processFoldersUnified.mockResolvedValueOnce(
+            importResult({
+                images: [importedImage('C:/watch/imported.png')],
+                stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
+            })
+        );
         const { result } = renderImportOps();
 
         await act(async () => {
@@ -359,7 +358,7 @@ describe('useImportOps', () => {
                 sourceIndex: 1,
                 sourceCount: 2,
                 sourcePath: 'C:/watch-a',
-                rawMessage: 'Extracting metadata...'
+                rawMessage: 'Extracting metadata...',
             });
             messages.push(useLibraryStore.getState().importProgress?.message);
             return emptyImportResult();
@@ -367,16 +366,10 @@ describe('useImportOps', () => {
         const { result } = renderImportOps();
 
         await act(async () => {
-            await result.current.handleImportFolders([
-                { path: 'C:/watch-a' },
-                { path: 'C:/watch-b' }
-            ]);
+            await result.current.handleImportFolders([{ path: 'C:/watch-a' }, { path: 'C:/watch-b' }]);
         });
 
-        expect(messages).toEqual([
-            'Scanning 2 folders...',
-            'Importing images from 2 folders...'
-        ]);
+        expect(messages).toEqual(['Scanning 2 folders...', 'Importing images from 2 folders...']);
         expect(messages).not.toContain('Extracting metadata...');
     });
 
@@ -385,7 +378,7 @@ describe('useImportOps', () => {
         const activeRunId = useLibraryStore.getState().beginImportRun({
             owner: 'other-import',
             abortController: new AbortController(),
-            progress: { current: 1, total: 2, message: 'Existing import' }
+            progress: { current: 1, total: 2, message: 'Existing import' },
         });
         const { result } = renderImportOps();
 
@@ -396,13 +389,10 @@ describe('useImportOps', () => {
         expect(activeRunId).toBeTruthy();
         expect(mocks.processFoldersUnified).not.toHaveBeenCalled();
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
-        expect(infoSpy).toHaveBeenCalledWith(
-            '[ImportFolders] Folder import skipped because another import is active.',
-            {
-                mode: 'manual',
-                folderCount: 1
-            }
-        );
+        expect(infoSpy).toHaveBeenCalledWith('[ImportFolders] Folder import skipped because another import is active.', {
+            mode: 'manual',
+            folderCount: 1,
+        });
         expect(useLibraryStore.getState().importRunId).toBe(activeRunId);
         expect(useLibraryStore.getState().importProgress?.message).toBe('Existing import');
         infoSpy.mockRestore();
@@ -410,11 +400,11 @@ describe('useImportOps', () => {
 
     it('uses stable Activity Dock messages for single-folder folder imports', async () => {
         const progressStates: Array<{ message?: string; detail?: string }> = [];
-        const unsubscribe = useLibraryStore.subscribe(state => {
+        const unsubscribe = useLibraryStore.subscribe((state) => {
             if (state.importProgress) {
                 progressStates.push({
                     message: state.importProgress.message,
-                    detail: state.importProgress.detail
+                    detail: state.importProgress.detail,
                 });
             }
         });
@@ -422,18 +412,18 @@ describe('useImportOps', () => {
             options.onProgress(0, 0, 'Scanning C:/watch-a', {
                 phase: 'scanning',
                 sourceCount: 1,
-                sourcePath: 'C:/watch-a'
+                sourcePath: 'C:/watch-a',
             });
             options.onProgress(5, 10, 'Extracting metadata...', {
                 phase: 'importing',
                 sourceIndex: 1,
                 sourceCount: 1,
                 sourcePath: 'C:/watch-a',
-                rawMessage: 'Extracting metadata...'
+                rawMessage: 'Extracting metadata...',
             });
             return importResult({
                 images: [importedImage('C:/watch-a/imported.png')],
-                stats: { processed: 10, imported: 1, skipped: 0, errors: 0 }
+                stats: { processed: 10, imported: 1, skipped: 0, errors: 0 },
             });
         });
         const { result } = renderImportOps();
@@ -446,13 +436,15 @@ describe('useImportOps', () => {
             unsubscribe();
         }
 
-        expect(progressStates).toEqual(expect.arrayContaining([
-            { message: 'Scanning folder...', detail: 'C:/watch-a' },
-            { message: 'Importing images from folder...', detail: 'C:/watch-a' },
-            { message: 'Finalizing import...', detail: 'C:/watch-a' }
-        ]));
-        expect(progressStates.some(progress => progress.message === 'Extracting metadata...')).toBe(false);
-        expect(progressStates.some(progress => progress.message === 'Processing C:/watch-a/new.png')).toBe(false);
+        expect(progressStates).toEqual(
+            expect.arrayContaining([
+                { message: 'Scanning folder...', detail: 'C:/watch-a' },
+                { message: 'Importing images from folder...', detail: 'C:/watch-a' },
+                { message: 'Finalizing import...', detail: 'C:/watch-a' },
+            ])
+        );
+        expect(progressStates.some((progress) => progress.message === 'Extracting metadata...')).toBe(false);
+        expect(progressStates.some((progress) => progress.message === 'Processing C:/watch-a/new.png')).toBe(false);
     });
 
     it('does not advance folder cursor when incremental resync is cancelled before a zero-file scan result', async () => {
@@ -464,7 +456,7 @@ describe('useImportOps', () => {
             path: 'C:/watch',
             isActive: true,
             imageCount: 0,
-            lastScanned: 10
+            lastScanned: 10,
         };
         const { result } = renderImportOps();
         let resyncPromise!: Promise<{ newFiles: number; totalScanned: number }>;
@@ -496,7 +488,7 @@ describe('useImportOps', () => {
             path: 'C:/watch',
             isActive: true,
             imageCount: 0,
-            lastScanned: 10
+            lastScanned: 10,
         };
         const { result } = renderImportOps();
         let resyncPromise!: Promise<{ newFiles: number; totalScanned: number }>;
@@ -511,7 +503,7 @@ describe('useImportOps', () => {
         useLibraryStore.getState().importAbortController?.abort();
         scan.resolve({
             status: 'ok',
-            data: [{ path: 'C:/watch/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'C:/watch/new.png', modified: 100, size: 10 }],
         });
 
         await act(async () => {
@@ -526,10 +518,12 @@ describe('useImportOps', () => {
     it('imports browser files and commits only genuinely new images', async () => {
         const existing = importedImage('existing');
         const added = importedImage('added');
-        mocks.processWebFiles.mockResolvedValueOnce(importResult({
-            images: [existing, added],
-            stats: { processed: 2, imported: 0, skipped: 1, errors: 1 }
-        }));
+        mocks.processWebFiles.mockResolvedValueOnce(
+            importResult({
+                images: [existing, added],
+                stats: { processed: 2, imported: 0, skipped: 1, errors: 1 },
+            })
+        );
         const { result, setImages, refreshCollections } = renderImportOps({}, [existing]);
 
         await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
@@ -539,15 +533,20 @@ describe('useImportOps', () => {
         expect(update([existing])).toEqual([added, existing]);
         expect(update([added, existing])).toEqual([added, existing]);
         expect(refreshCollections).toHaveBeenCalledTimes(1);
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other). (Skipped 1 duplicates) Skipped 1 unchanged or ignored file. 1 failed.', 'info');
+        expect(mocks.addToast).toHaveBeenCalledWith(
+            'Imported 1 item (1 Generated, 0 Photos, 0 Other). (Skipped 1 duplicates) Skipped 1 unchanged or ignored file. 1 failed.',
+            'info'
+        );
         expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
     });
 
     it('uses metadata refresh for imported batches reported by the backend', async () => {
-        mocks.processWebFiles.mockResolvedValueOnce(importResult({
-            images: [importedImage('added')],
-            stats: { processed: 1, imported: 1, skipped: 0, errors: 0 }
-        }));
+        mocks.processWebFiles.mockResolvedValueOnce(
+            importResult({
+                images: [importedImage('added')],
+                stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
+            })
+        );
         const { result, setImages, refreshCollections } = renderImportOps();
 
         await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
@@ -591,7 +590,13 @@ describe('useImportOps', () => {
         const input = document.createElement('input');
         Object.defineProperty(input, 'files', { value: [native] });
         await act(async () => first.result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
-        expect(mocks.processNativePaths).toHaveBeenCalledWith(['C:/native.png'], 'C:/thumbs', expect.any(Function), undefined, expect.any(AbortSignal));
+        expect(mocks.processNativePaths).toHaveBeenCalledWith(
+            ['C:/native.png'],
+            'C:/thumbs',
+            expect.any(Function),
+            undefined,
+            expect.any(AbortSignal)
+        );
         expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
         expect(input.value).toBe('');
         first.unmount();
@@ -683,19 +688,29 @@ describe('useImportOps', () => {
         });
         const { result } = renderImportOps();
 
-        await act(async () => result.current.handleImportPaths(['C:/image.png'], GeneratorTool.AUTOMATIC1111, {
-            mode: 'startup',
-            skipStateManagement: true,
-            onProgress,
-            forceRescan: true,
-            waitForStableFiles: false,
-            deferFacetCacheRefresh: true,
-            abortSignal: new AbortController().signal
-        }));
+        await act(async () =>
+            result.current.handleImportPaths(['C:/image.png'], GeneratorTool.AUTOMATIC1111, {
+                mode: 'startup',
+                skipStateManagement: true,
+                onProgress,
+                forceRescan: true,
+                waitForStableFiles: false,
+                deferFacetCacheRefresh: true,
+                abortSignal: new AbortController().signal,
+            })
+        );
 
         expect(onProgress).toHaveBeenCalledWith(2, 4, 'Halfway', { phase: 'importing' });
         expect(mocks.processNativePaths).toHaveBeenCalledWith(
-            ['C:/image.png'], 'C:/thumbs', expect.any(Function), GeneratorTool.AUTOMATIC1111, expect.any(AbortSignal), true, true, false, true
+            ['C:/image.png'],
+            'C:/thumbs',
+            expect.any(Function),
+            GeneratorTool.AUTOMATIC1111,
+            expect.any(AbortSignal),
+            true,
+            true,
+            false,
+            true
         );
         expect(useLibraryStore.getState().isImporting).toBe(false);
     });
@@ -767,7 +782,7 @@ describe('useImportOps', () => {
         const cases: Array<[ImportResult, string, 'info' | 'warning']> = [
             [importResult({ stats: { processed: 2, imported: 0, skipped: 2, errors: 0 } }), 'Scan complete. No new items found.', 'info'],
             [importResult({ stats: { processed: 1, imported: 0, skipped: 0, errors: 1 } }), 'Scan complete with 1 errors.', 'warning'],
-            [emptyImportResult(), 'No supported media found in selected folders', 'info']
+            [emptyImportResult(), 'No supported media found in selected folders', 'info'],
         ];
         for (const [folderResult, message, level] of cases) {
             mocks.processFoldersUnified.mockResolvedValueOnce(folderResult);
@@ -839,29 +854,51 @@ describe('useImportOps', () => {
         const updateLastScanned = vi.fn();
         mocks.scanDirectoryWithStats.mockResolvedValueOnce({ status: 'ok', data: [] });
         const full = renderImportOps();
-        await act(async () => full.result.current.resyncFolder({ id: 'full', path: 'C:/full', isActive: true, imageCount: 0 }, updateLastScanned));
+        await act(async () =>
+            full.result.current.resyncFolder({ id: 'full', path: 'C:/full', isActive: true, imageCount: 0 }, updateLastScanned)
+        );
         expect(updateLastScanned).toHaveBeenCalledWith('full', expect.any(Number));
         full.unmount();
 
         mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch/new.png', modified: 1, size: 2 }] });
         mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('new')] }));
         const incremental = renderImportOps();
-        const completed = await act(async () => incremental.result.current.resyncFolder({ id: 'inc', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1, variant: GeneratorTool.AUTOMATIC1111 }, updateLastScanned));
+        const completed = await act(async () =>
+            incremental.result.current.resyncFolder(
+                { id: 'inc', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1, variant: GeneratorTool.AUTOMATIC1111 },
+                updateLastScanned
+            )
+        );
         expect(completed).toEqual({ newFiles: 1, totalScanned: 1 });
-        expect(mocks.processNativePaths).toHaveBeenCalledWith(expect.any(Array), 'C:/thumbs', expect.any(Function), GeneratorTool.AUTOMATIC1111, expect.any(AbortSignal), false, true);
+        expect(mocks.processNativePaths).toHaveBeenCalledWith(
+            expect.any(Array),
+            'C:/thumbs',
+            expect.any(Function),
+            GeneratorTool.AUTOMATIC1111,
+            expect.any(AbortSignal),
+            false,
+            true
+        );
         incremental.unmount();
 
         mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch/new.png', modified: 1, size: 2 }] });
         mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('partial')], wasCancelled: true }));
         const cancelled = renderImportOps();
-        const partial = await act(async () => cancelled.result.current.resyncFolder({ id: 'cancel', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }, updateLastScanned));
+        const partial = await act(async () =>
+            cancelled.result.current.resyncFolder(
+                { id: 'cancel', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 },
+                updateLastScanned
+            )
+        );
         expect(partial).toEqual({ newFiles: 1, totalScanned: 1 });
     });
 
     it('rejects contended resyncs and rethrows scan failures after releasing ownership', async () => {
         useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
         const busy = renderImportOps();
-        const blocked = await act(async () => busy.result.current.resyncFolder({ id: 'x', path: 'C:/x', isActive: true, imageCount: 0 }, vi.fn()));
+        const blocked = await act(async () =>
+            busy.result.current.resyncFolder({ id: 'x', path: 'C:/x', isActive: true, imageCount: 0 }, vi.fn())
+        );
         expect(blocked).toEqual({ newFiles: 0, totalScanned: 0 });
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
         busy.unmount();
@@ -870,7 +907,9 @@ describe('useImportOps', () => {
         mocks.scanDirectoryWithStats.mockRejectedValueOnce(new Error('scan failed'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const failed = renderImportOps();
-        await expect(failed.result.current.resyncFolder({ id: 'x', path: 'C:/x', isActive: true, imageCount: 0 }, vi.fn())).rejects.toThrow('scan failed');
+        await expect(failed.result.current.resyncFolder({ id: 'x', path: 'C:/x', isActive: true, imageCount: 0 }, vi.fn())).rejects.toThrow(
+            'scan failed'
+        );
         expect(useLibraryStore.getState().isImporting).toBe(false);
         errorSpy.mockRestore();
     });
@@ -878,7 +917,7 @@ describe('useImportOps', () => {
     it('performs a non-empty full resync and forwards native progress', async () => {
         mocks.scanDirectoryWithStats.mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'C:/full/image.png', modified: 1, size: 2 }]
+            data: [{ path: 'C:/full/image.png', modified: 1, size: 2 }],
         });
         mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
             progress(1, 1, 'Done');
@@ -887,14 +926,19 @@ describe('useImportOps', () => {
         const updateLastScanned = vi.fn();
         const { result } = renderImportOps();
 
-        const scanResult = await act(async () => result.current.resyncFolder(
-            { id: 'full', path: 'C:/full', isActive: true, imageCount: 0 },
-            updateLastScanned
-        ));
+        const scanResult = await act(async () =>
+            result.current.resyncFolder({ id: 'full', path: 'C:/full', isActive: true, imageCount: 0 }, updateLastScanned)
+        );
 
         expect(scanResult).toEqual({ newFiles: 1, totalScanned: 1 });
         expect(mocks.processNativePaths).toHaveBeenCalledWith(
-            ['C:/full/image.png'], 'C:/thumbs', expect.any(Function), undefined, expect.any(AbortSignal), false, false
+            ['C:/full/image.png'],
+            'C:/thumbs',
+            expect.any(Function),
+            undefined,
+            expect.any(AbortSignal),
+            false,
+            false
         );
         expect(updateLastScanned).toHaveBeenCalledWith('full', expect.any(Number));
     });

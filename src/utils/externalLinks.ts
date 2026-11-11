@@ -1,10 +1,4 @@
-import {
-    GITHUB_SPONSORS_URL,
-    ISSUES_URL,
-    KO_FI_URL,
-    RELEASES_URL,
-    REPOSITORY_URL,
-} from '../constants/support';
+import { GITHUB_SPONSORS_URL, ISSUES_URL, KO_FI_URL, RELEASES_URL, REPOSITORY_URL } from '../constants/support';
 
 export const GEMINI_API_KEY_URL = 'https://aistudio.google.com/apikey';
 
@@ -23,14 +17,9 @@ const normalizeAllowedExternalUrl = (value: string): string | null => {
 };
 
 const allowedExternalUrls = new Set(
-    [
-        REPOSITORY_URL,
-        ISSUES_URL,
-        RELEASES_URL,
-        GITHUB_SPONSORS_URL,
-        KO_FI_URL,
-        GEMINI_API_KEY_URL,
-    ].map((url) => normalizeAllowedExternalUrl(url)).filter((url): url is string => !!url)
+    [REPOSITORY_URL, ISSUES_URL, RELEASES_URL, GITHUB_SPONSORS_URL, KO_FI_URL, GEMINI_API_KEY_URL]
+        .map((url) => normalizeAllowedExternalUrl(url))
+        .filter((url): url is string => !!url)
 );
 
 export const isAllowedExternalUrl = (url: string): boolean => {

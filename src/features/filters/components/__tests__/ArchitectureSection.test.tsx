@@ -4,14 +4,36 @@ import type { FilterState } from '../../../../types';
 import { ArchitectureSection } from '../ArchitectureSection';
 
 vi.mock('../FilterPrimitives', () => ({
-    SectionHeader: ({ title, action, onToggle }: { title: string; action?: React.ReactNode; onToggle: () => void }) => <div><button onClick={onToggle}>{title}</button>{action}</div>,
-    SearchInput: ({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) => <input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} />,
-    SelectableRow: ({ label, isSelected, onClick }: { label: string; isSelected: boolean; onClick: () => void }) => <button data-selected={isSelected} onClick={onClick}>{label}</button>
+    SectionHeader: ({ title, action, onToggle }: { title: string; action?: React.ReactNode; onToggle: () => void }) => (
+        <div>
+            <button onClick={onToggle}>{title}</button>
+            {action}
+        </div>
+    ),
+    SearchInput: ({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) => (
+        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+    ),
+    SelectableRow: ({ label, isSelected, onClick }: { label: string; isSelected: boolean; onClick: () => void }) => (
+        <button data-selected={isSelected} onClick={onClick}>
+            {label}
+        </button>
+    ),
 }));
 
 const filters = (models: string[] = []): FilterState => ({
-    searchQuery: '', models, tools: [], loras: [], embeddings: [], hypernetworks: [], samplers: [],
-    generationTypes: [], controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null
+    searchQuery: '',
+    models,
+    tools: [],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    dateRange: 'all',
+    favoritesOnly: false,
+    collectionId: null,
 });
 
 describe('ArchitectureSection', () => {
@@ -29,7 +51,9 @@ describe('ArchitectureSection', () => {
             current = typeof update === 'function' ? update(current) : update;
         });
         const models = ['flux-dev', 'sdxl_base', ...Array.from({ length: 8 }, (_, index) => `model-${index}`)];
-        const { container } = render(<ArchitectureSection filters={current} setFilters={setFilters} models={models} isOpen onToggle={vi.fn()} />);
+        const { container } = render(
+            <ArchitectureSection filters={current} setFilters={setFilters} models={models} isOpen onToggle={vi.fn()} />
+        );
 
         expect(container.querySelector('.max-h-48')).toBeTruthy();
         fireEvent.click(screen.getByText('flux-dev'));

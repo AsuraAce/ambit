@@ -6,11 +6,11 @@ import { getDb } from '../../services/db/connection';
 import { isBrowserMockMode } from '../../services/runtime';
 
 vi.mock('../../services/db/connection', () => ({
-    getDb: vi.fn()
+    getDb: vi.fn(),
 }));
 
 vi.mock('../../services/runtime', () => ({
-    isBrowserMockMode: vi.fn()
+    isBrowserMockMode: vi.fn(),
 }));
 
 const addStaticLoader = () => {
@@ -81,10 +81,13 @@ describe('StartupMaintenanceGate', () => {
     it('reveals database maintenance for slow startup and keeps tracking phase updates', async () => {
         const staticLoader = addStaticLoader();
         let resolveDb!: () => void;
-        vi.mocked(getDb).mockImplementation(({ onPhase } = {}) => new Promise((resolve) => {
-            onPhase?.('Updating database schema');
-            resolveDb = () => resolve({} as Awaited<ReturnType<typeof getDb>>);
-        }));
+        vi.mocked(getDb).mockImplementation(
+            ({ onPhase } = {}) =>
+                new Promise((resolve) => {
+                    onPhase?.('Updating database schema');
+                    resolveDb = () => resolve({} as Awaited<ReturnType<typeof getDb>>);
+                })
+        );
 
         render(
             <StartupMaintenanceGate>
@@ -146,7 +149,9 @@ describe('StartupMaintenanceGate', () => {
         expect(staticLoader.style.pointerEvents).toBe('');
         expect(screen.getByText('Local database')).toBeTruthy();
         expect(screen.getByText('Database startup failed')).toBeTruthy();
-        expect(screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')).toBeTruthy();
+        expect(
+            screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')
+        ).toBeTruthy();
         expect(screen.getByText('migration failed')).toBeTruthy();
         expect(screen.queryByText('Library ready')).toBeNull();
         expect(errorSpy).toHaveBeenCalledWith('[Startup] Failed to prepare database', startupError);

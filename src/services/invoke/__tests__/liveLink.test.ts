@@ -28,11 +28,7 @@ describe('startLiveLink', () => {
         const onNewImage = vi.fn();
 
         expect(await startLiveLink('C:\\InvokeAI', onNewImage)).toBe(unwatch);
-        expect(mockedWatch).toHaveBeenCalledWith(
-            'C:/InvokeAI/outputs/images',
-            expect.any(Function),
-            { recursive: false }
-        );
+        expect(mockedWatch).toHaveBeenCalledWith('C:/InvokeAI/outputs/images', expect.any(Function), { recursive: false });
 
         handler?.({ type: 'create' });
         handler?.({ type: { Create: { kind: 'file' } } });
@@ -45,9 +41,6 @@ describe('startLiveLink', () => {
     it('returns null when the filesystem watcher cannot start', async () => {
         mockedWatch.mockRejectedValueOnce(new Error('scope denied'));
         expect(await startLiveLink('D:/InvokeAI', vi.fn())).toBeNull();
-        expect(console.error).toHaveBeenCalledWith(
-            '[LiveLink] Failed to start live watch:',
-            expect.any(Error)
-        );
+        expect(console.error).toHaveBeenCalledWith('[LiveLink] Failed to start live watch:', expect.any(Error));
     });
 });

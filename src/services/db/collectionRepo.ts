@@ -53,12 +53,10 @@ export interface DbCollection {
     dynamic_count?: number | null;
 }
 
-export const migrateLegacyCollections = async (
-    collections: Array<Partial<Collection> & { id: string; name: string }>
-): Promise<void> => {
+export const migrateLegacyCollections = async (collections: Array<Partial<Collection> & { id: string; name: string }>): Promise<void> => {
     if (isBrowserMockMode()) {
         collections.forEach((collection) => {
-            const existing = getBrowserMockCollections().find(item => item.id === collection.id);
+            const existing = getBrowserMockCollections().find((item) => item.id === collection.id);
             upsertBrowserMockCollection({
                 ...existing,
                 ...collection,
@@ -71,26 +69,24 @@ export const migrateLegacyCollections = async (
         return;
     }
 
-    await unwrap(commands.migrateLegacyCollections({
-        importKey: 'library-json-collections-v1',
-        collections: collections.map(collection => ({
-            id: collection.id,
-            name: collection.name,
-            color: collection.color ?? null,
-            isArchived: collection.isArchived ?? false,
-            isPinned: collection.isPinned ?? false,
-            createdAt: collection.createdAt ?? Date.now(),
-            updatedAt: collection.updatedAt ?? null,
-            filterState: collection.filters
-                ? JSON.stringify(createDefaultFilters(collection.filters))
-                : null,
-            manualExclusions: collection.manualExclusions
-                ? JSON.stringify(collection.manualExclusions)
-                : null,
-            customThumbnail: collection.customThumbnail ?? null,
-            imageIds: collection.imageIds?.map(normalizePath) ?? [],
-        })),
-    }));
+    await unwrap(
+        commands.migrateLegacyCollections({
+            importKey: 'library-json-collections-v1',
+            collections: collections.map((collection) => ({
+                id: collection.id,
+                name: collection.name,
+                color: collection.color ?? null,
+                isArchived: collection.isArchived ?? false,
+                isPinned: collection.isPinned ?? false,
+                createdAt: collection.createdAt ?? Date.now(),
+                updatedAt: collection.updatedAt ?? null,
+                filterState: collection.filters ? JSON.stringify(createDefaultFilters(collection.filters)) : null,
+                manualExclusions: collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
+                customThumbnail: collection.customThumbnail ?? null,
+                imageIds: collection.imageIds?.map(normalizePath) ?? [],
+            })),
+        })
+    );
 };
 
 interface CollectionThumbnailRow {
@@ -181,12 +177,7 @@ interface CollectionSchemaColumn {
 
 const toDisplayUrl = (rawPath?: string | null): string | undefined => {
     if (!rawPath) return undefined;
-    if (
-        rawPath.startsWith('http') ||
-        rawPath.startsWith('data:') ||
-        rawPath.startsWith('blob:') ||
-        rawPath.startsWith('asset:')
-    ) {
+    if (rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:') || rawPath.startsWith('asset:')) {
         return rawPath;
     }
     return convertFileSrc(normalizePath(rawPath));
@@ -199,7 +190,7 @@ const logStartupDuration = (label: string, startedAt: number) => {
     console.info(`[Startup] ${label} completed in ${elapsed}ms`);
 };
 
-const chunk = <T,>(items: T[], size: number): T[][] => {
+const chunk = <T>(items: T[], size: number): T[][] => {
     const chunks: T[][] = [];
     for (let i = 0; i < items.length; i += size) {
         chunks.push(items.slice(i, i + size));
@@ -256,14 +247,11 @@ const getCachedDynamicThumbnailSummary = (collection: DbCollection): CollectionT
         thumbnail: toDisplayUrl(collection.dynamic_thumbnail_path),
         safeThumbnail: toDisplayUrl(collection.dynamic_safe_thumbnail_path),
         thumbnailIsSensitive: collection.dynamic_thumbnail_is_sensitive === 1,
-        thumbnailSourceKind: 'dynamic'
+        thumbnailSourceKind: 'dynamic',
     };
 };
 
-const writeDynamicThumbnailCache = async (
-    db: Awaited<ReturnType<typeof getDb>>,
-    updates: DynamicThumbnailCacheUpdate[]
-) => {
+const writeDynamicThumbnailCache = async (db: Awaited<ReturnType<typeof getDb>>, updates: DynamicThumbnailCacheUpdate[]) => {
     if (updates.length === 0) return;
 
     const cachedAt = Date.now();
@@ -282,17 +270,13 @@ const writeDynamicThumbnailCache = async (
                 hasThumbnail ? update.safeThumbnailPath || null : null,
                 hasThumbnail ? (update.thumbnailIsSensitive ? 1 : 0) : null,
                 hasThumbnail ? cachedAt : null,
-                update.collectionId
+                update.collectionId,
             ]
         );
     }
 };
 
-export const cacheSmartCollectionCount = async (
-    collectionId: string,
-    count: number,
-    collectionUpdatedAt: number
-): Promise<void> => {
+export const cacheSmartCollectionCount = async (collectionId: string, count: number, collectionUpdatedAt: number): Promise<void> => {
     if (isBrowserMockMode()) return;
 
     const previousWrite = dynamicCountCacheWriteTails.get(collectionId) ?? Promise.resolve();
@@ -323,10 +307,7 @@ export const cacheSmartCollectionCount = async (
     }
 };
 
-const clearDynamicThumbnailCacheForCollections = async (
-    db: Awaited<ReturnType<typeof getDb>>,
-    collectionIds: string[]
-) => {
+const clearDynamicThumbnailCacheForCollections = async (db: Awaited<ReturnType<typeof getDb>>, collectionIds: string[]) => {
     const uniqueIds = [...new Set(collectionIds.filter(Boolean))];
     if (uniqueIds.length === 0) return;
 
@@ -366,7 +347,7 @@ export const clearCollectionThumbnailCacheForImages = async (imageIds: string[])
              WHERE image_id IN (${placeholders})`,
             idBatch
         );
-        collectionIds.push(...(rows ?? []).map(row => row.collection_id));
+        collectionIds.push(...(rows ?? []).map((row) => row.collection_id));
     }
 
     await clearDynamicThumbnailCacheForCollections(db, collectionIds);
@@ -422,17 +403,20 @@ const buildCollectionThumbnailSummaries = async (
 ): Promise<CollectionThumbnailBuildResult> => {
     if (collections.length === 0) return { summaries: {}, cacheUpdates: [] };
 
-    const ids = [...new Set(
-        collections
-            .filter((collection) => !collection.custom_thumbnail)
-            .map((collection) => collection.id)
-            .filter(Boolean)
-    )];
+    const ids = [
+        ...new Set(
+            collections
+                .filter((collection) => !collection.custom_thumbnail)
+                .map((collection) => collection.id)
+                .filter(Boolean)
+        ),
+    ];
     const thumbnailRows: CollectionThumbnailRow[] = [];
 
     for (const idBatch of chunk(ids, 900)) {
         const placeholders = idBatch.map(() => '?').join(',');
-        const rows = await db.select<CollectionThumbnailRow[]>(`
+        const rows = await db.select<CollectionThumbnailRow[]>(
+            `
             WITH ranked_thumbnails AS (
                 SELECT
                     ci.collection_id,
@@ -461,67 +445,72 @@ const buildCollectionThumbnailSummaries = async (
                 MAX(CASE WHEN privacy_hidden = 0 AND privacy_rank = 1 THEN thumbnail_path END) as safe_thumb
             FROM ranked_thumbnails
             GROUP BY collection_id
-        `, idBatch);
+        `,
+            idBatch
+        );
 
         thumbnailRows.push(...rows);
     }
 
     const thumbMap = new Map(thumbnailRows.map((row) => [row.collection_id, row]));
-    const customThumbValues = collections
-        .map((collection) => collection.custom_thumbnail)
-        .filter((value): value is string => !!value);
+    const customThumbValues = collections.map((collection) => collection.custom_thumbnail).filter((value): value is string => !!value);
     const customById = await loadImageThumbnailLookup(db, 'id', customThumbValues);
     const unresolvedCustomValues = customThumbValues.filter((value) => !customById.has(value));
     const customByPath = await loadImageThumbnailLookup(db, 'path', unresolvedCustomValues);
 
     const cacheUpdates: DynamicThumbnailCacheUpdate[] = [];
-    const summaries = Object.fromEntries(collections.map((collection) => {
-        const thumbRow = thumbMap.get(collection.id);
-        const customThumb = collection.custom_thumbnail
-            ? customById.get(collection.custom_thumbnail) ?? customByPath.get(collection.custom_thumbnail)
-            : undefined;
-        let rawThumb = thumbRow?.dynamic_thumb;
-        let safeThumb = thumbRow?.safe_thumb;
-        let thumbnailIsSensitive = thumbRow?.dynamic_privacy === 1;
-        let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
+    const summaries = Object.fromEntries(
+        collections.map((collection) => {
+            const thumbRow = thumbMap.get(collection.id);
+            const customThumb = collection.custom_thumbnail
+                ? (customById.get(collection.custom_thumbnail) ?? customByPath.get(collection.custom_thumbnail))
+                : undefined;
+            let rawThumb = thumbRow?.dynamic_thumb;
+            let safeThumb = thumbRow?.safe_thumb;
+            let thumbnailIsSensitive = thumbRow?.dynamic_privacy === 1;
+            let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
 
-        if (collection.custom_thumbnail) {
-            if (customThumb?.ownerHidden) {
-                rawThumb = undefined;
-                safeThumb = undefined;
-                thumbnailIsSensitive = false;
-                thumbnailSourceKind = 'customImage';
-            } else if (customThumb) {
-                rawThumb = customThumb.thumb || (customThumb.isVideo ? undefined : collection.custom_thumbnail);
-                safeThumb = undefined;
-                thumbnailIsSensitive = customThumb.privacyHidden === 1;
-                thumbnailSourceKind = 'customImage';
-            } else {
-                rawThumb = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i.test(collection.custom_thumbnail)
-                    ? undefined
-                    : collection.custom_thumbnail;
-                safeThumb = undefined;
-                thumbnailIsSensitive = false;
-                thumbnailSourceKind = 'customPath';
+            if (collection.custom_thumbnail) {
+                if (customThumb?.ownerHidden) {
+                    rawThumb = undefined;
+                    safeThumb = undefined;
+                    thumbnailIsSensitive = false;
+                    thumbnailSourceKind = 'customImage';
+                } else if (customThumb) {
+                    rawThumb = customThumb.thumb || (customThumb.isVideo ? undefined : collection.custom_thumbnail);
+                    safeThumb = undefined;
+                    thumbnailIsSensitive = customThumb.privacyHidden === 1;
+                    thumbnailSourceKind = 'customImage';
+                } else {
+                    rawThumb = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i.test(collection.custom_thumbnail)
+                        ? undefined
+                        : collection.custom_thumbnail;
+                    safeThumb = undefined;
+                    thumbnailIsSensitive = false;
+                    thumbnailSourceKind = 'customPath';
+                }
             }
-        }
 
-        if (!collection.custom_thumbnail) {
-            cacheUpdates.push({
-                collectionId: collection.id,
-                thumbnailPath: rawThumb || null,
-                safeThumbnailPath: rawThumb ? safeThumb || null : null,
-                thumbnailIsSensitive: rawThumb ? thumbnailIsSensitive : null
-            });
-        }
+            if (!collection.custom_thumbnail) {
+                cacheUpdates.push({
+                    collectionId: collection.id,
+                    thumbnailPath: rawThumb || null,
+                    safeThumbnailPath: rawThumb ? safeThumb || null : null,
+                    thumbnailIsSensitive: rawThumb ? thumbnailIsSensitive : null,
+                });
+            }
 
-        return [collection.id, {
-            thumbnail: toDisplayUrl(rawThumb),
-            safeThumbnail: collection.custom_thumbnail ? undefined : toDisplayUrl(safeThumb),
-            thumbnailIsSensitive,
-            thumbnailSourceKind
-        }];
-    }));
+            return [
+                collection.id,
+                {
+                    thumbnail: toDisplayUrl(rawThumb),
+                    safeThumbnail: collection.custom_thumbnail ? undefined : toDisplayUrl(safeThumb),
+                    thumbnailIsSensitive,
+                    thumbnailSourceKind,
+                },
+            ];
+        })
+    );
 
     return { summaries, cacheUpdates };
 };
@@ -549,13 +538,9 @@ export const ensureCollectionSchema = async () => {
         const db = await getDb();
         try {
             const columns = await db.select<CollectionSchemaColumn[]>('PRAGMA table_info(collections)');
-            const existingColumns = new Set(columns.map(c => c.name));
+            const existingColumns = new Set(columns.map((c) => c.name));
 
-            const addColumnIfMissing = async (
-                columnName: string,
-                alterSql: string,
-                afterAdd?: () => Promise<unknown>
-            ) => {
+            const addColumnIfMissing = async (columnName: string, alterSql: string, afterAdd?: () => Promise<unknown>) => {
                 if (existingColumns.has(columnName)) return;
 
                 console.log(`[DB] Migrating collections table: adding ${columnName} column`);
@@ -575,19 +560,11 @@ export const ensureCollectionSchema = async () => {
                 }
             };
 
-            await addColumnIfMissing(
-                'updated_at',
-                'ALTER TABLE collections ADD COLUMN updated_at INTEGER',
-                () => db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL')
+            await addColumnIfMissing('updated_at', 'ALTER TABLE collections ADD COLUMN updated_at INTEGER', () =>
+                db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL')
             );
-            await addColumnIfMissing(
-                'dynamic_thumbnail_path',
-                'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_path TEXT'
-            );
-            await addColumnIfMissing(
-                'dynamic_safe_thumbnail_path',
-                'ALTER TABLE collections ADD COLUMN dynamic_safe_thumbnail_path TEXT'
-            );
+            await addColumnIfMissing('dynamic_thumbnail_path', 'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_path TEXT');
+            await addColumnIfMissing('dynamic_safe_thumbnail_path', 'ALTER TABLE collections ADD COLUMN dynamic_safe_thumbnail_path TEXT');
             await addColumnIfMissing(
                 'dynamic_thumbnail_is_sensitive',
                 'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_is_sensitive INTEGER'
@@ -596,35 +573,29 @@ export const ensureCollectionSchema = async () => {
                 'dynamic_thumbnail_cached_at',
                 'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_cached_at INTEGER'
             );
-            await addColumnIfMissing(
-                'dynamic_count',
-                'ALTER TABLE collections ADD COLUMN dynamic_count INTEGER'
-            );
-            await addColumnIfMissing(
-                'invoke_owner_id',
-                'ALTER TABLE collections ADD COLUMN invoke_owner_id TEXT'
-            );
+            await addColumnIfMissing('dynamic_count', 'ALTER TABLE collections ADD COLUMN dynamic_count INTEGER');
+            await addColumnIfMissing('invoke_owner_id', 'ALTER TABLE collections ADD COLUMN invoke_owner_id TEXT');
         } catch (e) {
             console.error('[DB] Failed to ensure collection schema', e);
         }
     });
 };
 
-export const upsertCollection = async (collection: Partial<Collection> & { id: string, name: string }) => {
+export const upsertCollection = async (collection: Partial<Collection> & { id: string; name: string }) => {
     if (isBrowserMockMode()) {
-        const existing = getBrowserMockCollections().find(item => item.id === collection.id);
-        upsertBrowserMockCollection(existing?.source === 'invoke'
-            ? { ...collection, name: existing.name, invokeNameOverridden: existing.invokeNameOverridden ?? false }
-            : collection);
+        const existing = getBrowserMockCollections().find((item) => item.id === collection.id);
+        upsertBrowserMockCollection(
+            existing?.source === 'invoke'
+                ? { ...collection, name: existing.name, invokeNameOverridden: existing.invokeNameOverridden ?? false }
+                : collection
+        );
         return;
     }
 
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         const now = Date.now();
-        const filterState = collection.filters
-            ? JSON.stringify(createDefaultFilters(collection.filters))
-            : null;
+        const filterState = collection.filters ? JSON.stringify(createDefaultFilters(collection.filters)) : null;
 
         try {
             const result = await db.execute(
@@ -666,7 +637,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                     collection.invokeOwnerId || null,
                     collection.invokeSourceId || null,
                     collection.updatedAt || now,
-                    now
+                    now,
                 ]
             );
             assertMutationMatched(result, collection.id, 'Saving collection', 'collection');
@@ -679,7 +650,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
 
 export const renameCollectionInDb = async (id: string, newName: string): Promise<void> => {
     if (isBrowserMockMode()) {
-        const collection = getBrowserMockCollections().find(item => item.id === id);
+        const collection = getBrowserMockCollections().find((item) => item.id === id);
         if (!collection) throw new Error(`Renaming collection failed: collection was not found (${id})`);
         upsertBrowserMockCollection({
             ...collection,
@@ -705,14 +676,16 @@ export const renameCollectionInDb = async (id: string, newName: string): Promise
 
 export const hasInvokeBoardCollectionsForSource = async (dbPath: string): Promise<boolean> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockCollections().some(collection => collection.source === 'invoke'
-            && !!collection.invokeSourceId && isSameInvokePath(collection.invokeSourceId, dbPath));
+        return getBrowserMockCollections().some(
+            (collection) =>
+                collection.source === 'invoke' && !!collection.invokeSourceId && isSameInvokePath(collection.invokeSourceId, dbPath)
+        );
     }
     const db = await getDb();
     const rows = await db.select<Array<{ invoke_source_id: string }>>(
         "SELECT DISTINCT invoke_source_id FROM collections WHERE source = 'invoke' AND invoke_source_id IS NOT NULL"
     );
-    return rows.some(row => isSameInvokePath(row.invoke_source_id, dbPath));
+    return rows.some((row) => isSameInvokePath(row.invoke_source_id, dbPath));
 };
 
 export interface AmbitCollectionScopeTarget {
@@ -721,12 +694,9 @@ export interface AmbitCollectionScopeTarget {
     ownerId?: string;
 }
 
-export const updateAmbitCollectionScope = async (
-    collectionId: string,
-    target: AmbitCollectionScopeTarget
-): Promise<void> => {
+export const updateAmbitCollectionScope = async (collectionId: string, target: AmbitCollectionScopeTarget): Promise<void> => {
     if (isBrowserMockMode()) {
-        const collection = getBrowserMockCollections().find(item => item.id === collectionId);
+        const collection = getBrowserMockCollections().find((item) => item.id === collectionId);
         if (!collection || collection.source === 'invoke') return;
         upsertBrowserMockCollection({
             ...collection,
@@ -736,12 +706,14 @@ export const updateAmbitCollectionScope = async (
         return;
     }
 
-    await unwrap(commands.updateAmbitCollectionScope({
-        collectionId,
-        mode: target.mode,
-        dbPath: target.dbPath,
-        ownerId: target.mode === 'owner' ? target.ownerId ?? null : null,
-    }));
+    await unwrap(
+        commands.updateAmbitCollectionScope({
+            collectionId,
+            mode: target.mode,
+            dbPath: target.dbPath,
+            ownerId: target.mode === 'owner' ? (target.ownerId ?? null) : null,
+        })
+    );
 };
 
 export interface InvokeBoardCollectionInput {
@@ -762,14 +734,14 @@ export interface SuppressedInvokeCollection {
 
 export const upsertInvokeBoardCollection = async (board: InvokeBoardCollectionInput) => {
     if (isBrowserMockMode()) {
-        const existing = getBrowserMockCollections().find(collection => collection.id === board.id);
-        const nameOverridden = !!existing && (
-            existing.invokeNameOverridden === true
-            || existing.source !== 'invoke'
-            || existing.invokeSourceId == null
-            || existing.invokeSourceName == null
-            || existing.name !== existing.invokeSourceName
-        );
+        const existing = getBrowserMockCollections().find((collection) => collection.id === board.id);
+        const nameOverridden =
+            !!existing &&
+            (existing.invokeNameOverridden === true ||
+                existing.source !== 'invoke' ||
+                existing.invokeSourceId == null ||
+                existing.invokeSourceName == null ||
+                existing.name !== existing.invokeSourceName);
         upsertBrowserMockCollection({
             ...existing,
             ...board,
@@ -829,34 +801,23 @@ export const upsertInvokeBoardCollection = async (board: InvokeBoardCollectionIn
                     THEN collections.updated_at
                     ELSE MAX(COALESCE(collections.updated_at, 0) + 1, ?)
                 END`,
-            [
-                board.id,
-                board.name,
-                board.createdAt,
-                board.invokeOwnerId || null,
-                board.invokeSourceId,
-                board.name,
-                now,
-                now,
-            ]
+            [board.id, board.name, board.createdAt, board.invokeOwnerId || null, board.invokeSourceId, board.name, now, now]
         );
     });
 };
 
-export const upsertInvokeBoardCollections = async (
-    boards: InvokeBoardCollectionInput[]
-): Promise<number> => {
+export const upsertInvokeBoardCollections = async (boards: InvokeBoardCollectionInput[]): Promise<number> => {
     if (boards.length === 0) return 0;
     if (isBrowserMockMode()) {
-        boards.forEach(board => {
-            const existing = getBrowserMockCollections().find(collection => collection.id === board.id);
-            const nameOverridden = !!existing && (
-                existing.invokeNameOverridden === true
-                || existing.source !== 'invoke'
-                || existing.invokeSourceId == null
-                || existing.invokeSourceName == null
-                || existing.name !== existing.invokeSourceName
-            );
+        boards.forEach((board) => {
+            const existing = getBrowserMockCollections().find((collection) => collection.id === board.id);
+            const nameOverridden =
+                !!existing &&
+                (existing.invokeNameOverridden === true ||
+                    existing.source !== 'invoke' ||
+                    existing.invokeSourceId == null ||
+                    existing.invokeSourceName == null ||
+                    existing.name !== existing.invokeSourceName);
             upsertBrowserMockCollection({
                 ...existing,
                 ...board,
@@ -879,7 +840,7 @@ export const upsertInvokeBoardCollections = async (
         for (let offset = 0; offset < boards.length; offset += 100) {
             const batch = boards.slice(offset, offset + 100);
             const values = batch.map(() => "(?, ?, 0, 0, ?, 'invoke', ?, ?, ?, 1, 0, ?)").join(', ');
-            const params = batch.flatMap(board => [
+            const params = batch.flatMap((board) => [
                 board.id,
                 board.name,
                 board.createdAt,
@@ -944,9 +905,7 @@ export const upsertInvokeBoardCollections = async (
     });
 };
 
-export const reconcileInvokeBoardSnapshot = async (
-    input: InvokeBoardSnapshotInput
-): Promise<InvokeBoardSnapshotResult> => {
+export const reconcileInvokeBoardSnapshot = async (input: InvokeBoardSnapshotInput): Promise<InvokeBoardSnapshotResult> => {
     if (isBrowserMockMode()) {
         if (input.ownershipOnly) {
             if (!input.dbPath.trim()) throw new Error('InvokeAI database path is required');
@@ -956,7 +915,7 @@ export const reconcileInvokeBoardSnapshot = async (
             if (input.mode !== 'all' && input.mode !== 'legacy') {
                 throw new Error('Ownership-only board reconciliation requires an all-owner catalog');
             }
-            const boards = new Map<string, typeof input.boards[number]>();
+            const boards = new Map<string, (typeof input.boards)[number]>();
             for (const board of input.boards) {
                 const id = board.id.trim();
                 if (!id) throw new Error('InvokeAI board IDs cannot be empty');
@@ -965,27 +924,32 @@ export const reconcileInvokeBoardSnapshot = async (
             }
             let collectionsUpdated = 0;
             for (const existing of getBrowserMockCollections()) {
-                if (existing.source !== 'invoke' || !existing.invokeSourceId
-                    || !isSameInvokePath(existing.invokeSourceId, input.dbPath)) continue;
+                if (existing.source !== 'invoke' || !existing.invokeSourceId || !isSameInvokePath(existing.invokeSourceId, input.dbPath))
+                    continue;
                 const board = boards.get(existing.id);
                 const invokeOwnerId = board ? board.ownerId?.trim() || undefined : existing.invokeOwnerId;
                 const invokeSourcePresent = !!board;
-                if (existing.invokeOwnerId === invokeOwnerId
-                    && (existing.invokeSourcePresent !== false) === invokeSourcePresent) continue;
+                if (existing.invokeOwnerId === invokeOwnerId && (existing.invokeSourcePresent !== false) === invokeSourcePresent) continue;
                 upsertBrowserMockCollection({ ...existing, invokeOwnerId, invokeSourcePresent });
                 collectionsUpdated += 1;
             }
-            return { collectionsUpdated, collectionsDeleted: 0, imagesUpdated: 0,
-                membershipsDeleted: 0, membershipsInserted: 0 };
+            return { collectionsUpdated, collectionsDeleted: 0, imagesUpdated: 0, membershipsDeleted: 0, membershipsInserted: 0 };
         }
         const images = getBrowserMockImages();
         let collectionsUpdated = 0;
         for (const board of input.boards) {
-            await upsertInvokeBoardCollection({ id: board.id, name: board.name, createdAt: board.createdAt,
-                invokeOwnerId: board.ownerId ?? undefined, invokeSourceId: input.dbPath });
+            await upsertInvokeBoardCollection({
+                id: board.id,
+                name: board.name,
+                createdAt: board.createdAt,
+                invokeOwnerId: board.ownerId ?? undefined,
+                invokeSourceId: input.dbPath,
+            });
             if (input.reconcileMemberships) {
-                const sourceIds = new Set(input.memberships.filter(item => item.boardId === board.id).map(item => item.imageName));
-                const imageIds = images.filter(image => !!image.invokeImageName && sourceIds.has(image.invokeImageName)).map(image => image.id);
+                const sourceIds = new Set(input.memberships.filter((item) => item.boardId === board.id).map((item) => item.imageName));
+                const imageIds = images
+                    .filter((image) => !!image.invokeImageName && sourceIds.has(image.invokeImageName))
+                    .map((image) => image.id);
                 setBrowserMockInvokeMembershipSnapshot(board.id, imageIds);
             }
             collectionsUpdated += 1;
@@ -1017,7 +981,7 @@ export const setCollectionCustomThumbnail = async (collectionId: string, imageId
 
 export const deleteCollectionFromDb = async (id: string) => {
     if (isBrowserMockMode()) {
-        const collection = getBrowserMockCollections().find(item => item.id === id);
+        const collection = getBrowserMockCollections().find((item) => item.id === id);
         if (collection?.source === 'invoke') {
             upsertBrowserMockCollection({ ...collection, invokeSuppressed: true });
         } else {
@@ -1027,10 +991,7 @@ export const deleteCollectionFromDb = async (id: string) => {
     }
 
     const db = await getDb();
-    const [collection] = await db.select<Array<{ source: 'ambit' | 'invoke' }>>(
-        'SELECT source FROM scoped_collections WHERE id = ?',
-        [id]
-    );
+    const [collection] = await db.select<Array<{ source: 'ambit' | 'invoke' }>>('SELECT source FROM scoped_collections WHERE id = ?', [id]);
     if (!collection) {
         throw new Error(`Deleting collection failed: collection was not found (${id})`);
     }
@@ -1038,18 +999,20 @@ export const deleteCollectionFromDb = async (id: string) => {
         await unwrap(commands.updateInvokeCollectionOwnership(id, 'suppress'));
         return;
     }
-    const result = await db.execute(
-        'DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)',
-        [id]
-    );
+    const result = await db.execute('DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)', [id]);
     assertMutationMatched(result, id, 'Deleting collection', 'collection');
 };
 
 export const resetInvokeCollection = async (id: string): Promise<void> => {
     if (isBrowserMockMode()) {
-        const collection = getBrowserMockCollections().find(item => item.id === id);
+        const collection = getBrowserMockCollections().find((item) => item.id === id);
         if (collection?.source === 'invoke' && collection.invokeSourcePresent !== false && collection.invokeSourceName) {
-            upsertBrowserMockCollection({ ...collection, name: collection.invokeSourceName, invokeNameOverridden: false, imageIds: getBrowserMockInvokeMembershipSnapshot(id) });
+            upsertBrowserMockCollection({
+                ...collection,
+                name: collection.invokeSourceName,
+                invokeNameOverridden: false,
+                imageIds: getBrowserMockInvokeMembershipSnapshot(id),
+            });
         }
         return;
     }
@@ -1058,7 +1021,7 @@ export const resetInvokeCollection = async (id: string): Promise<void> => {
 
 export const restoreInvokeCollection = async (id: string): Promise<void> => {
     if (isBrowserMockMode()) {
-        const collection = getBrowserMockCollections().find(item => item.id === id);
+        const collection = getBrowserMockCollections().find((item) => item.id === id);
         if (collection?.source === 'invoke') {
             upsertBrowserMockCollection({ ...collection, invokeSuppressed: false });
         }
@@ -1070,8 +1033,8 @@ export const restoreInvokeCollection = async (id: string): Promise<void> => {
 export const getSuppressedInvokeCollections = async (): Promise<SuppressedInvokeCollection[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockCollections()
-            .filter(collection => collection.source === 'invoke' && collection.invokeSuppressed)
-            .map(collection => ({
+            .filter((collection) => collection.source === 'invoke' && collection.invokeSuppressed)
+            .map((collection) => ({
                 id: collection.id,
                 name: collection.name,
                 invokeSourceName: collection.invokeSourceName,
@@ -1081,13 +1044,15 @@ export const getSuppressedInvokeCollections = async (): Promise<SuppressedInvoke
     }
 
     const db = await getDb();
-    const rows = await db.select<Array<{
-        id: string;
-        name: string;
-        invoke_source_name?: string | null;
-        invoke_source_present: number;
-        invoke_owner_id?: string | null;
-    }>>(
+    const rows = await db.select<
+        Array<{
+            id: string;
+            name: string;
+            invoke_source_name?: string | null;
+            invoke_source_present: number;
+            invoke_owner_id?: string | null;
+        }>
+    >(
         `SELECT c.id, c.name, c.invoke_source_name, c.invoke_source_present, c.invoke_owner_id
          FROM collections c
          JOIN invoke_owner_scope_state s ON s.state_key = 'current'
@@ -1106,7 +1071,7 @@ export const getSuppressedInvokeCollections = async (): Promise<SuppressedInvoke
            )
          ORDER BY LOWER(c.name), c.id`
     );
-    return rows.map(row => ({
+    return rows.map((row) => ({
         id: row.id,
         name: row.name,
         invokeSourceName: row.invoke_source_name || undefined,
@@ -1125,38 +1090,36 @@ const browserMembershipResult = (
     targetCollectionId,
 });
 
-export const addImagesToCollection = async (
-    collectionId: string,
-    imageIds: string[]
-): Promise<CollectionMembershipMutationResult> => {
+export const addImagesToCollection = async (collectionId: string, imageIds: string[]): Promise<CollectionMembershipMutationResult> => {
     if (isBrowserMockMode()) {
         addBrowserMockImagesToCollection(collectionId, imageIds);
         return browserMembershipResult(imageIds, null, collectionId);
     }
 
-    return unwrap(commands.mutateCollectionMembership({
-        operation: 'add',
-        imageIds: imageIds.map(normalizePath),
-        sourceCollectionId: null,
-        targetCollectionId: collectionId,
-    }));
+    return unwrap(
+        commands.mutateCollectionMembership({
+            operation: 'add',
+            imageIds: imageIds.map(normalizePath),
+            sourceCollectionId: null,
+            targetCollectionId: collectionId,
+        })
+    );
 };
 
-export const removeImagesFromCollection = async (
-    collectionId: string,
-    imageIds: string[]
-): Promise<CollectionMembershipMutationResult> => {
+export const removeImagesFromCollection = async (collectionId: string, imageIds: string[]): Promise<CollectionMembershipMutationResult> => {
     if (isBrowserMockMode()) {
         removeBrowserMockImagesFromCollection(collectionId, imageIds);
         return browserMembershipResult(imageIds, collectionId, null);
     }
 
-    return unwrap(commands.mutateCollectionMembership({
-        operation: 'remove',
-        imageIds: imageIds.map(normalizePath),
-        sourceCollectionId: collectionId,
-        targetCollectionId: null,
-    }));
+    return unwrap(
+        commands.mutateCollectionMembership({
+            operation: 'remove',
+            imageIds: imageIds.map(normalizePath),
+            sourceCollectionId: collectionId,
+            targetCollectionId: null,
+        })
+    );
 };
 
 export const moveImagesBetweenCollections = async (
@@ -1170,27 +1133,31 @@ export const moveImagesBetweenCollections = async (
         return browserMembershipResult(imageIds, sourceCollectionId, targetCollectionId);
     }
 
-    return unwrap(commands.mutateCollectionMembership({
-        operation: 'move',
-        imageIds: imageIds.map(normalizePath),
-        sourceCollectionId,
-        targetCollectionId,
-    }));
+    return unwrap(
+        commands.mutateCollectionMembership({
+            operation: 'move',
+            imageIds: imageIds.map(normalizePath),
+            sourceCollectionId,
+            targetCollectionId,
+        })
+    );
 };
 
 export const getOrdinaryCollectionCounts = async (): Promise<Map<string, number>> => {
     const startedAt = nowMs();
     const db = await getDb();
-    const counts = await measureStartupPhase('collection-counts', () => db.select<{ collection_id: string, count: number }[]>(
-        `SELECT ci.collection_id, COUNT(*) as count
+    const counts = await measureStartupPhase('collection-counts', () =>
+        db.select<{ collection_id: string; count: number }[]>(
+            `SELECT ci.collection_id, COUNT(*) as count
          FROM scoped_collections c
          JOIN collection_images ci ON ci.collection_id = c.id
          JOIN scoped_images i ON i.id = ci.image_id
          WHERE i.invoke_scope_hidden = 0
          GROUP BY ci.collection_id`
-    ));
+        )
+    );
     logStartupDuration('ordinary collection counts', startedAt);
-    return new Map(counts.map(c => [c.collection_id, c.count]));
+    return new Map(counts.map((c) => [c.collection_id, c.count]));
 };
 
 export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {
@@ -1202,11 +1169,9 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     const startedAt = nowMs();
     const db = await getDb();
     const collections = await readScopedCollectionRows(db);
-    const countMap = options.includeCounts === false
-        ? undefined
-        : await (options.readCounts ?? getOrdinaryCollectionCounts)();
+    const countMap = options.includeCounts === false ? undefined : await (options.readCounts ?? getOrdinaryCollectionCounts)();
 
-    let mappedCollections: Collection[] = collections.map(c => {
+    let mappedCollections: Collection[] = collections.map((c) => {
         const filters = parsePersistedCollectionFilters(c.filter_state);
         const collection: Collection = {
             id: c.id,
@@ -1216,12 +1181,12 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
             isPinned: !!c.is_pinned,
             createdAt: c.created_at,
             updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
-            count: filters ? c.dynamic_count ?? undefined : countMap ? countMap.get(c.id) ?? 0 : undefined,
-            ...(!filters ? { countState: countMap ? 'ready' as const : 'pending' as const } : {}),
+            count: filters ? (c.dynamic_count ?? undefined) : countMap ? (countMap.get(c.id) ?? 0) : undefined,
+            ...(!filters ? { countState: countMap ? ('ready' as const) : ('pending' as const) } : {}),
             imageIds: [],
             customThumbnail: c.custom_thumbnail,
             filters,
-            manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) as string[] : undefined,
+            manualExclusions: c.manual_exclusions ? (JSON.parse(c.manual_exclusions) as string[]) : undefined,
             source: c.source,
             invokeOwnerId: c.invoke_owner_id || undefined,
             invokeSourceId: c.invoke_source_id || undefined,
@@ -1237,21 +1202,21 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     if (includeThumbnails) {
         const thumbnailStartedAt = nowMs();
         const thumbnailInputs = mappedCollections
-            .filter(collection => {
+            .filter((collection) => {
                 if (collection.customThumbnail) return true;
                 if (collection.filters || collection.thumbnail) return false;
 
                 return collection.countState === 'pending' || collection.count! > 0;
             })
-            .map(collection => ({
+            .map((collection) => ({
                 id: collection.id,
-                custom_thumbnail: collection.customThumbnail ?? null
+                custom_thumbnail: collection.customThumbnail ?? null,
             }));
         const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(db, thumbnailInputs);
         await writeDynamicThumbnailCache(db, cacheUpdates);
         mappedCollections = mappedCollections.map((collection) => ({
             ...collection,
-            ...summaries[collection.id]
+            ...summaries[collection.id],
         }));
         logStartupDuration('collection thumbnail hydration', thumbnailStartedAt);
     }
@@ -1260,9 +1225,8 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     return mappedCollections;
 };
 
-const readScopedCollectionRows = async (db: Awaited<ReturnType<typeof getDb>>): Promise<DbCollection[]> => (
-    measureStartupPhase('collection-rows', () => db.select<DbCollection[]>('SELECT * FROM scoped_collections'))
-);
+const readScopedCollectionRows = async (db: Awaited<ReturnType<typeof getDb>>): Promise<DbCollection[]> =>
+    measureStartupPhase('collection-rows', () => db.select<DbCollection[]>('SELECT * FROM scoped_collections'));
 
 export const getScopedCollectionRows = async (): Promise<ScopedCollectionRow[]> => {
     if (isBrowserMockMode()) {
@@ -1273,40 +1237,39 @@ export const getScopedCollectionRows = async (): Promise<ScopedCollectionRow[]> 
     return readScopedCollectionRows(db);
 };
 
-export const getCollectionThumbnailSummaries = async (
-    collections: Collection[]
-): Promise<Record<string, CollectionThumbnailSummary>> => {
+export const getCollectionThumbnailSummaries = async (collections: Collection[]): Promise<Record<string, CollectionThumbnailSummary>> => {
     if (isBrowserMockMode()) {
         const mockCollections = new Map(getBrowserMockCollections().map((collection) => [collection.id, collection]));
-        return Object.fromEntries(collections.map((collection) => {
-            const match = mockCollections.get(collection.id) ?? collection;
-            return [collection.id, {
-                thumbnail: match.thumbnail,
-                safeThumbnail: match.safeThumbnail,
-                thumbnailIsSensitive: match.thumbnailIsSensitive,
-                thumbnailSourceKind: match.thumbnailSourceKind
-            }];
-        }));
+        return Object.fromEntries(
+            collections.map((collection) => {
+                const match = mockCollections.get(collection.id) ?? collection;
+                return [
+                    collection.id,
+                    {
+                        thumbnail: match.thumbnail,
+                        safeThumbnail: match.safeThumbnail,
+                        thumbnailIsSensitive: match.thumbnailIsSensitive,
+                        thumbnailSourceKind: match.thumbnailSourceKind,
+                    },
+                ];
+            })
+        );
     }
 
     if (collections.length === 0) return {};
 
     const db = await getDb();
-    return timeDbCall(
-        'collectionThumbnails',
-        `${collections.length} collections`,
-        async () => {
-            const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(
-                db,
-                collections.map((collection) => ({
-                    id: collection.id,
-                    custom_thumbnail: collection.customThumbnail ?? null
-                }))
-            );
-            await writeDynamicThumbnailCache(db, cacheUpdates);
-            return summaries;
-        }
-    );
+    return timeDbCall('collectionThumbnails', `${collections.length} collections`, async () => {
+        const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(
+            db,
+            collections.map((collection) => ({
+                id: collection.id,
+                custom_thumbnail: collection.customThumbnail ?? null,
+            }))
+        );
+        await writeDynamicThumbnailCache(db, cacheUpdates);
+        return summaries;
+    });
 };
 
 /**
@@ -1324,15 +1287,20 @@ export const getSmartCollectionSummaries = async (
         return Object.fromEntries(
             smartCollections.map((collection) => {
                 const match = collections.find((item) => item.id === collection.id);
-                return [collection.id, {
-                    count: match?.count ?? 0,
-                    ...(includeThumbnails ? {
-                        thumbnail: match?.thumbnail,
-                        safeThumbnail: match?.safeThumbnail,
-                        thumbnailIsSensitive: match?.thumbnailIsSensitive,
-                    } : {}),
-                    thumbnailSourceKind: 'dynamic' as const
-                }];
+                return [
+                    collection.id,
+                    {
+                        count: match?.count ?? 0,
+                        ...(includeThumbnails
+                            ? {
+                                  thumbnail: match?.thumbnail,
+                                  safeThumbnail: match?.safeThumbnail,
+                                  thumbnailIsSensitive: match?.thumbnailIsSensitive,
+                              }
+                            : {}),
+                        thumbnailSourceKind: 'dynamic' as const,
+                    },
+                ];
             })
         );
     }
@@ -1341,13 +1309,11 @@ export const getSmartCollectionSummaries = async (
 
     const db = await getDb();
     const summaries: Record<string, SmartCollectionSummary> = {};
-    const customThumbnailById = new Map(
-        smartCollections.map(collection => [collection.id, collection.customThumbnail])
-    );
+    const customThumbnailById = new Map(smartCollections.map((collection) => [collection.id, collection.customThumbnail]));
     const cacheUpdates: DynamicThumbnailCacheUpdate[] = [];
 
     try {
-        const queries = smartCollections.map(c => {
+        const queries = smartCollections.map((c) => {
             const statsFilters: FilterState = {
                 mediaType: 'all',
                 collectionId: c.id,
@@ -1363,47 +1329,43 @@ export const getSmartCollectionSummaries = async (
                 ipAdapters: [],
                 samplers: [],
                 generationTypes: [],
-                searchQuery: ''
+                searchQuery: '',
             };
             const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c]);
             return { id: c.id, where, params };
         });
 
         // SQLite UNION ALL approach for batched counts - using denormalized columns, no JOIN needed
-        const unionSql = queries.map(q =>
-            `SELECT ? as id, (SELECT COUNT(*) FROM scoped_images AS images ${q.where}) as count`
-        ).join(' UNION ALL ');
-        const unionParams = queries.flatMap(q => [q.id, ...q.params]);
+        const unionSql = queries
+            .map((q) => `SELECT ? as id, (SELECT COUNT(*) FROM scoped_images AS images ${q.where}) as count`)
+            .join(' UNION ALL ');
+        const unionParams = queries.flatMap((q) => [q.id, ...q.params]);
 
-        const res = await timeDbCall(
-            'smartCollectionSummaries.counts',
-            `${smartCollections.length} collections`,
-            () => db.select<{ id: string, count: number }[]>(unionSql, unionParams)
+        const res = await timeDbCall('smartCollectionSummaries.counts', `${smartCollections.length} collections`, () =>
+            db.select<{ id: string; count: number }[]>(unionSql, unionParams)
         );
-        res.forEach(row => { summaries[row.id] = { count: row.count, thumbnailSourceKind: 'dynamic' }; });
+        res.forEach((row) => {
+            summaries[row.id] = { count: row.count, thumbnailSourceKind: 'dynamic' };
+        });
 
         if (!includeThumbnails) return summaries;
 
         for (const query of queries) {
-            const normalRows = await timeDbCall(
-                'smartCollectionSummaries.thumbnail',
-                query.id,
-                () => db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
-                `SELECT thumbnail_path, privacy_hidden
+            const normalRows = await timeDbCall('smartCollectionSummaries.thumbnail', query.id, () =>
+                db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
+                    `SELECT thumbnail_path, privacy_hidden
                  FROM scoped_images AS images
                  ${query.where}
                  AND thumbnail_path IS NOT NULL
                  AND thumbnail_path != ''
                  ORDER BY is_pinned DESC, timestamp DESC
                  LIMIT 1`,
-                query.params
+                    query.params
                 )
             );
-            const safeRows = await timeDbCall(
-                'smartCollectionSummaries.safeThumbnail',
-                query.id,
-                () => db.select<{ thumbnail_path?: string | null }[]>(
-                `SELECT thumbnail_path
+            const safeRows = await timeDbCall('smartCollectionSummaries.safeThumbnail', query.id, () =>
+                db.select<{ thumbnail_path?: string | null }[]>(
+                    `SELECT thumbnail_path
                  FROM scoped_images AS images
                  ${query.where}
                  AND privacy_hidden = 0
@@ -1411,7 +1373,7 @@ export const getSmartCollectionSummaries = async (
                  AND thumbnail_path != ''
                  ORDER BY is_pinned DESC, timestamp DESC
                  LIMIT 1`,
-                query.params
+                    query.params
                 )
             );
 
@@ -1423,7 +1385,7 @@ export const getSmartCollectionSummaries = async (
                 thumbnail: toDisplayUrl(thumbnailPath),
                 safeThumbnail: toDisplayUrl(safe?.thumbnail_path),
                 thumbnailIsSensitive: normal?.privacy_hidden === 1,
-                thumbnailSourceKind: 'dynamic'
+                thumbnailSourceKind: 'dynamic',
             };
 
             if (!customThumbnailById.get(query.id)) {
@@ -1431,14 +1393,14 @@ export const getSmartCollectionSummaries = async (
                     collectionId: query.id,
                     thumbnailPath,
                     safeThumbnailPath: thumbnailPath ? safe?.thumbnail_path || null : null,
-                    thumbnailIsSensitive: thumbnailPath ? normal?.privacy_hidden === 1 : null
+                    thumbnailIsSensitive: thumbnailPath ? normal?.privacy_hidden === 1 : null,
                 });
             }
         }
 
         await writeDynamicThumbnailCache(db, cacheUpdates);
     } catch (e) {
-        console.error("[DB] Failed smart collection summaries", e);
+        console.error('[DB] Failed smart collection summaries', e);
     }
 
     return summaries;
@@ -1446,15 +1408,13 @@ export const getSmartCollectionSummaries = async (
 
 export const getSmartCollectionCounts = async (smartCollections: Collection[]): Promise<Record<string, number>> => {
     const summaries = await getSmartCollectionSummaries(smartCollections);
-    return Object.fromEntries(
-        Object.entries(summaries).map(([id, summary]) => [id, summary.count])
-    );
+    return Object.fromEntries(Object.entries(summaries).map(([id, summary]) => [id, summary.count]));
 };
 
 export const getCollectionThumbnail = async (imageIds: string[]): Promise<string | undefined> => {
     if (isBrowserMockMode()) {
         const imageIdSet = new Set(imageIds);
-        return getBrowserMockImages().find(image => imageIdSet.has(image.id))?.thumbnailUrl;
+        return getBrowserMockImages().find((image) => imageIdSet.has(image.id))?.thumbnailUrl;
     }
 
     if (!imageIds || imageIds.length === 0) return undefined;
@@ -1464,7 +1424,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
         const BATCH_SIZE = 900;
         const normalizedIds = imageIds.map(normalizePath);
 
-        const candidates: Array<{ path: string | null, timestamp: number, is_pinned: number }> = [];
+        const candidates: Array<{ path: string | null; timestamp: number; is_pinned: number }> = [];
 
         for (let i = 0; i < normalizedIds.length; i += BATCH_SIZE) {
             const batch = normalizedIds.slice(i, i + BATCH_SIZE);
@@ -1480,12 +1440,15 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
                 LIMIT 1
             `;
 
-            const res = await db.select<Array<{ path: string | null; timestamp: number | null; is_pinned: number | null }>>(query, [...batch, ...batch]);
+            const res = await db.select<Array<{ path: string | null; timestamp: number | null; is_pinned: number | null }>>(query, [
+                ...batch,
+                ...batch,
+            ]);
             if (res && res.length > 0) {
                 candidates.push({
                     path: res[0].path,
                     timestamp: res[0].timestamp || 0,
-                    is_pinned: res[0].is_pinned ? 1 : 0
+                    is_pinned: res[0].is_pinned ? 1 : 0,
                 });
             }
         }
@@ -1499,10 +1462,9 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 
         const rawPath = candidates[0].path;
         if (!rawPath) return undefined;
-        return (rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:'))
+        return rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:')
             ? rawPath
             : convertFileSrc(normalizePath(rawPath));
-
     } catch (e) {
         console.error('[DB] Fail collection thumb', e);
         return undefined;
@@ -1511,7 +1473,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 
 export const getSmartCollectionThumbnail = async (whereClause: string, params: unknown[]): Promise<string | undefined> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockCollections().find(collection => collection.filters)?.thumbnail;
+        return getBrowserMockCollections().find((collection) => collection.filters)?.thumbnail;
     }
 
     const db = await getDb();
@@ -1524,11 +1486,14 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: u
             ORDER BY images.is_pinned DESC, images.timestamp DESC
             LIMIT 1
         `;
-        const res = await db.select<Array<{ thumbnail_path: string | null; timestamp: number | null; is_pinned: number | null }>>(query, params);
+        const res = await db.select<Array<{ thumbnail_path: string | null; timestamp: number | null; is_pinned: number | null }>>(
+            query,
+            params
+        );
         if (res && res.length > 0) {
             const rawPath = res[0].thumbnail_path;
             if (!rawPath) return undefined;
-            return (rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:'))
+            return rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:')
                 ? rawPath
                 : convertFileSrc(normalizePath(rawPath));
         }
@@ -1546,16 +1511,13 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: u
 export const getCollectionsForImage = async (imageId: string): Promise<string[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockCollections()
-            .filter(collection => collection.imageIds.includes(imageId))
-            .map(collection => collection.id);
+            .filter((collection) => collection.imageIds.includes(imageId))
+            .map((collection) => collection.id);
     }
 
     const db = await getDb();
-    const res = await db.select<{ collection_id: string }[]>(
-        'SELECT collection_id FROM collection_images WHERE image_id = ?',
-        [imageId]
-    );
-    return res.map(r => r.collection_id);
+    const res = await db.select<{ collection_id: string }[]>('SELECT collection_id FROM collection_images WHERE image_id = ?', [imageId]);
+    return res.map((r) => r.collection_id);
 };
 
 /**
@@ -1564,16 +1526,15 @@ export const getCollectionsForImage = async (imageId: string): Promise<string[]>
  */
 export const getCollectionImageIds = async (collectionId: string): Promise<string[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockCollections().find(collection => collection.id === collectionId)?.imageIds ?? [];
+        return getBrowserMockCollections().find((collection) => collection.id === collectionId)?.imageIds ?? [];
     }
 
     const db = await getDb();
     try {
-        const res = await db.select<{ image_id: string }[]>(
-            'SELECT image_id FROM collection_images WHERE collection_id = ?',
-            [collectionId]
-        );
-        return res.map(r => r.image_id);
+        const res = await db.select<{ image_id: string }[]>('SELECT image_id FROM collection_images WHERE collection_id = ?', [
+            collectionId,
+        ]);
+        return res.map((r) => r.image_id);
     } catch (e) {
         console.error('[DB] Failed to get collection image IDs', e);
         return [];
@@ -1582,22 +1543,19 @@ export const getCollectionImageIds = async (collectionId: string): Promise<strin
 
 export const getCollectionImageIdsStrict = async (collectionId: string): Promise<string[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockCollections().find(collection => collection.id === collectionId)?.imageIds ?? [];
+        return getBrowserMockCollections().find((collection) => collection.id === collectionId)?.imageIds ?? [];
     }
 
     const db = await getDb();
-    const res = await db.select<{ image_id: string }[]>(
-        'SELECT image_id FROM collection_images WHERE collection_id = ?',
-        [collectionId]
-    );
-    return res.map(row => row.image_id);
+    const res = await db.select<{ image_id: string }[]>('SELECT image_id FROM collection_images WHERE collection_id = ?', [collectionId]);
+    return res.map((row) => row.image_id);
 };
 
 // Legacy shim to satisfy existing imports
 export const hydrateCollections = async () => {
     const collections = await getAllCollectionsWithStats();
-    const map: Record<string, { count: number, thumbnail: string }> = {};
-    collections.forEach(c => {
+    const map: Record<string, { count: number; thumbnail: string }> = {};
+    collections.forEach((c) => {
         map[c.id] = { count: c.count || 0, thumbnail: c.thumbnail || '' };
     });
     return map;

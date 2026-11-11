@@ -4,17 +4,17 @@ import { commands } from '../../bindings';
 import { WatcherService } from '../WatcherService';
 
 const runtimeMocks = vi.hoisted(() => ({
-    isBrowserMockMode: vi.fn(() => false)
+    isBrowserMockMode: vi.fn(() => false),
 }));
 
 vi.mock('../../bindings', () => ({
     commands: {
-        startNativeFolderWatcher: vi.fn()
-    }
+        startNativeFolderWatcher: vi.fn(),
+    },
 }));
 
 vi.mock('../runtime', () => ({
-    isBrowserMockMode: runtimeMocks.isBrowserMockMode
+    isBrowserMockMode: runtimeMocks.isBrowserMockMode,
 }));
 
 const mockedStartNativeFolderWatcher = vi.mocked(commands.startNativeFolderWatcher);
@@ -39,10 +39,9 @@ describe('WatcherService', () => {
 
         await service.startWatching(['C:/watch-a', 'C:/watch-b'], vi.fn());
 
-        expect(infoSpy).toHaveBeenCalledWith(
-            '[WatcherService] Native watcher unavailable in browser mock mode; skipped start.',
-            { pathCount: 2 }
-        );
+        expect(infoSpy).toHaveBeenCalledWith('[WatcherService] Native watcher unavailable in browser mock mode; skipped start.', {
+            pathCount: 2,
+        });
         expect(mockedStartNativeFolderWatcher).not.toHaveBeenCalled();
         expect(mockedListen).not.toHaveBeenCalled();
     });
@@ -72,7 +71,7 @@ describe('WatcherService', () => {
         await service.startWatching(['C:/watch'], onChange);
         const changes = [
             { kind: 'create' as const, paths: ['C:/watch/a.png'] },
-            { kind: 'modify' as const, paths: ['C:/watch/b.png'] }
+            { kind: 'modify' as const, paths: ['C:/watch/b.png'] },
         ];
         changeHandler?.({ payload: changes });
 
@@ -88,10 +87,9 @@ describe('WatcherService', () => {
         await service.startWatching(['C:/watch'], vi.fn());
         await service.startWatching(['C:/watch'], vi.fn());
 
-        expect(debugSpy).toHaveBeenCalledWith(
-            '[WatcherService] Native watcher already active for requested paths; skipped restart.',
-            { pathCount: 1 }
-        );
+        expect(debugSpy).toHaveBeenCalledWith('[WatcherService] Native watcher already active for requested paths; skipped restart.', {
+            pathCount: 1,
+        });
         expect(mockedStartNativeFolderWatcher).toHaveBeenCalledTimes(1);
     });
 
@@ -106,7 +104,7 @@ describe('WatcherService', () => {
         expect(errorSpy).toHaveBeenCalledWith(
             '[WatcherService] Failed to start native watcher:',
             {
-                pathCount: 2
+                pathCount: 2,
             },
             startupError
         );
@@ -129,9 +127,11 @@ describe('WatcherService', () => {
     it('invalidates a pending native watcher start when stop is requested before startup settles', async () => {
         let resolveStart!: () => void;
         mockedStartNativeFolderWatcher
-            .mockReturnValueOnce(new Promise((resolve) => {
-                resolveStart = () => resolve({ status: 'ok', data: null });
-            }))
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveStart = () => resolve({ status: 'ok', data: null });
+                })
+            )
             .mockResolvedValue({ status: 'ok', data: null });
 
         const service = new WatcherService();

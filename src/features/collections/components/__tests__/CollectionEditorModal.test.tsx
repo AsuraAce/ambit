@@ -23,7 +23,7 @@ vi.mock('framer-motion', async () => {
 });
 
 vi.mock('../../../../utils/dateFilters', () => ({
-    getDateFilterLabel: (filters: FilterState) => filters.dateRange === 'all' ? null : `Date:${filters.dateRange}`,
+    getDateFilterLabel: (filters: FilterState) => (filters.dateRange === 'all' ? null : `Date:${filters.dateRange}`),
 }));
 
 const createFilters = (overrides: Partial<FilterState> = {}): FilterState => ({
@@ -91,7 +91,7 @@ describe('CollectionEditorModal', () => {
                 filters={currentFilters}
                 onSave={onSave}
                 onUpdateScope={onUpdateScope}
-            />,
+            />
         );
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Collection visibility' }), {
@@ -99,23 +99,19 @@ describe('CollectionEditorModal', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Update Visibility' }));
 
-        await waitFor(() => expect(onUpdateScope).toHaveBeenCalledWith('collection-1', {
-            mode: 'owner',
-            dbPath: 'invoke.db',
-            ownerId: 'jupiter',
-        }));
+        await waitFor(() =>
+            expect(onUpdateScope).toHaveBeenCalledWith('collection-1', {
+                mode: 'owner',
+                dbPath: 'invoke.db',
+                ownerId: 'jupiter',
+            })
+        );
         expect(onClose).toHaveBeenCalled();
     });
 
     it('renders nothing without a collection or while closed', () => {
         const { container, rerender } = render(
-            <CollectionEditorModal
-                isOpen
-                onClose={onClose}
-                collection={null}
-                filters={currentFilters}
-                onSave={onSave}
-            />,
+            <CollectionEditorModal isOpen onClose={onClose} collection={null} filters={currentFilters} onSave={onSave} />
         );
         expect(container.innerHTML).toBe('');
 
@@ -126,7 +122,7 @@ describe('CollectionEditorModal', () => {
                 collection={createCollection()}
                 filters={currentFilters}
                 onSave={onSave}
-            />,
+            />
         );
         expect(container.innerHTML).toBe('');
     });
@@ -148,7 +144,7 @@ describe('CollectionEditorModal', () => {
                 filters={currentFilters}
                 onSave={onSave}
                 onResetInvokeCollection={onResetInvokeCollection}
-            />,
+            />
         );
 
         expect(screen.getByText('Source unavailable')).toBeTruthy();
@@ -171,7 +167,7 @@ describe('CollectionEditorModal', () => {
                 filters={currentFilters}
                 onSave={onSave}
                 onResetInvokeCollection={onResetInvokeCollection}
-            />,
+            />
         );
         fireEvent.click(screen.getByRole('button', { name: /reset to invokeai/i }));
         expect(onResetInvokeCollection).not.toHaveBeenCalled();
@@ -187,22 +183,27 @@ describe('CollectionEditorModal', () => {
     });
 
     it('shows explicit local rename intent even when the source name matches', () => {
-        render(<CollectionEditorModal isOpen onClose={onClose} onSave={onSave} filters={currentFilters}
-            collection={{ ...createCollection(), source: 'invoke', invokeSourceName: 'Portfolio', invokeNameOverridden: true, invokeOwnerId: 'owner-a' }} />);
+        render(
+            <CollectionEditorModal
+                isOpen
+                onClose={onClose}
+                onSave={onSave}
+                filters={currentFilters}
+                collection={{
+                    ...createCollection(),
+                    source: 'invoke',
+                    invokeSourceName: 'Portfolio',
+                    invokeNameOverridden: true,
+                    invokeOwnerId: 'owner-a',
+                }}
+            />
+        );
         expect(screen.getByText(/Local name override/)).toBeTruthy();
         expect(screen.getByText('Linked to InvokeAI · owner-a')).toBeTruthy();
     });
 
     it('saves static drafts and can replace them with the current view', async () => {
-        render(
-            <CollectionEditorModal
-                isOpen
-                onClose={onClose}
-                collection={createCollection()}
-                filters={currentFilters}
-                onSave={onSave}
-            />,
-        );
+        render(<CollectionEditorModal isOpen onClose={onClose} collection={createCollection()} filters={currentFilters} onSave={onSave} />);
 
         expect(screen.getByText('Static')).toBeTruthy();
         expect(screen.queryByText(/No active rules/)).toBeNull();
@@ -239,13 +240,7 @@ describe('CollectionEditorModal', () => {
             generationTypes: ['img2img'],
         });
         render(
-            <CollectionEditorModal
-                isOpen
-                onClose={onClose}
-                collection={createCollection(draft)}
-                filters={currentFilters}
-                onSave={onSave}
-            />,
+            <CollectionEditorModal isOpen onClose={onClose} collection={createCollection(draft)} filters={currentFilters} onSave={onSave} />
         );
         await waitFor(() => expect(screen.getByText('Dynamic')).toBeTruthy());
 
@@ -301,13 +296,7 @@ describe('CollectionEditorModal', () => {
             models: undefined as unknown as string[],
         });
         const { rerender } = render(
-            <CollectionEditorModal
-                isOpen
-                onClose={onClose}
-                collection={createCollection(first)}
-                filters={currentFilters}
-                onSave={onSave}
-            />,
+            <CollectionEditorModal isOpen onClose={onClose} collection={createCollection(first)} filters={currentFilters} onSave={onSave} />
         );
         await waitFor(() => expect(screen.getByText(/Steps: 4-/)).toBeTruthy());
         expect(screen.getByText(/CFG: 0-8/)).toBeTruthy();
@@ -320,7 +309,7 @@ describe('CollectionEditorModal', () => {
                 collection={{ ...createCollection(second), id: 'collection-2' }}
                 filters={currentFilters}
                 onSave={onSave}
-            />,
+            />
         );
         await waitFor(() => expect(screen.getByText(/Steps: 0-30/)).toBeTruthy());
         expect(screen.getByText(/CFG: 2-/)).toBeTruthy();
@@ -334,7 +323,7 @@ describe('CollectionEditorModal', () => {
                 collection={createCollection(createFilters({ models: ['model'] }))}
                 filters={currentFilters}
                 onSave={onSave}
-            />,
+            />
         );
         await waitFor(() => expect(screen.getByText('Dynamic')).toBeTruthy());
 
@@ -346,13 +335,7 @@ describe('CollectionEditorModal', () => {
 
     it('closes from the backdrop and header while inner clicks stay contained', () => {
         const { container } = render(
-            <CollectionEditorModal
-                isOpen
-                onClose={onClose}
-                collection={createCollection()}
-                filters={currentFilters}
-                onSave={onSave}
-            />,
+            <CollectionEditorModal isOpen onClose={onClose} collection={createCollection()} filters={currentFilters} onSave={onSave} />
         );
         const backdrop = container.firstElementChild;
         const panel = backdrop?.firstElementChild;
@@ -380,7 +363,7 @@ describe('CollectionEditorModal', () => {
                 collection={createCollection(createFilters({ models: ['model'] }))}
                 filters={currentFilters}
                 onSave={onSave}
-            />,
+            />
         );
         await waitFor(() => expect(screen.getByText('Dynamic')).toBeTruthy());
         const staleRemoveButton = screen.getByText('model').parentElement?.querySelector('button');
@@ -393,7 +376,7 @@ describe('CollectionEditorModal', () => {
                 collection={{ ...createCollection(), id: 'static-2' }}
                 filters={currentFilters}
                 onSave={onSave}
-            />,
+            />
         );
 
         await waitFor(() => expect(screen.getByText('Static')).toBeTruthy());

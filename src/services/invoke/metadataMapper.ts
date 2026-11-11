@@ -19,10 +19,9 @@ export const parseFiniteDecimalF32 = (value: string): number | undefined => {
     return parsed !== undefined && Number.isFinite(Math.fround(parsed)) ? parsed : undefined;
 };
 
-const isRecord = (value: unknown): value is MetadataRecord =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is MetadataRecord => !!value && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): MetadataRecord => isRecord(value) ? value : {};
+const asRecord = (value: unknown): MetadataRecord => (isRecord(value) ? value : {});
 
 const readString = (record: MetadataRecord, ...keys: string[]): string => {
     for (const key of keys) {
@@ -69,21 +68,18 @@ const readResourceName = (record: MetadataRecord): string => {
 export function cleanModelName(name: string): string {
     if (!name || typeof name !== 'string') return '';
     return name
-        .replace(".safetensors", "")
-        .replace(".ckpt", "")
-        .replace(".pth", "")
-        .replace(".bin", "")
-        .replace(".pt", "")
+        .replace('.safetensors', '')
+        .replace('.ckpt', '')
+        .replace('.pth', '')
+        .replace('.bin', '')
+        .replace('.pt', '')
         .split('(')[0]
         .trim();
 }
 
 function cleanGuidanceResourceName(name: string): string {
     const basename = name.split(/[\\/]/).pop() || name;
-    const normalized = basename
-        .split('(')[0]
-        .toLowerCase()
-        .trim();
+    const normalized = basename.split('(')[0].toLowerCase().trim();
     return normalized
         .replace(/\.(safetensors|ckpt|pth|bin|pt)$/i, '')
         .replace(/ /g, '_')
@@ -93,7 +89,7 @@ function cleanGuidanceResourceName(name: string): string {
 
 function extractEmbeddingsFromPrompt(text: string): string[] {
     if (!text) return [];
-    // Matches: 
+    // Matches:
     // 1. embedding:name (Comfy/A1111)
     // 2. <embedding:name> (Comfy/A1111)
     // 3. <name> (InvokeAI) - must have closing >
@@ -106,10 +102,10 @@ function extractEmbeddingsFromPrompt(text: string): string[] {
         const closing = match[3] || '';
 
         // Stricter check for bare <name> format
-        if (prefix === "<") {
-            if (closing !== ">") continue;
+        if (prefix === '<') {
+            if (closing !== '>') continue;
             const nameLower = name.toLowerCase();
-            if (nameLower === "lora" || nameLower === "hypernet" || nameLower.startsWith("lora:") || nameLower.startsWith("hypernet:")) {
+            if (nameLower === 'lora' || nameLower === 'hypernet' || nameLower.startsWith('lora:') || nameLower.startsWith('hypernet:')) {
                 continue;
             }
         }
@@ -179,7 +175,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
     if (!val || typeof val !== 'object' || depth > 20) return;
 
     if (Array.isArray(val)) {
-        val.forEach(item => scanForResources(item, res, depth + 1));
+        val.forEach((item) => scanForResources(item, res, depth + 1));
         return;
     }
 
@@ -191,9 +187,7 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
             if (!l) return;
             const loraRecord = asRecord(l);
             const loraModel = asRecord(loraRecord.lora);
-            const name = typeof l === 'string'
-                ? l
-                : (readResourceName(loraModel) || readResourceName(loraRecord));
+            const name = typeof l === 'string' ? l : readResourceName(loraModel) || readResourceName(loraRecord);
 
             if (name && typeof name === 'string') {
                 const weight = readNumber(loraRecord, 'weight') ?? 1.0;
@@ -204,8 +198,8 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
     }
 
     // Check for ControlNets (Support both arrays of adapters and individual node patterns)
-    const cns_keys = ["controlnets", "control_adapters", "control_model"];
-    cns_keys.forEach(key => {
+    const cns_keys = ['controlnets', 'control_adapters', 'control_model'];
+    cns_keys.forEach((key) => {
         const cns = obj[key];
         if (cns) {
             const items = Array.isArray(cns) ? cns : [cns];
@@ -232,12 +226,12 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
     // T2I adapters share Ambit's control-resource taxonomy, but retain their
     // source-aware classification instead of being redirected as IP adapters.
     const t2iKeys = ['t2iAdapters', 't2i_adapters', 't2i_adapter'];
-    t2iKeys.forEach(key => {
+    t2iKeys.forEach((key) => {
         const adapters = obj[key];
         if (!adapters) return;
 
         const items = Array.isArray(adapters) ? adapters : [adapters];
-        items.forEach(item => {
+        items.forEach((item) => {
             if (!item) return;
             let name: string;
             if (typeof item === 'string') {
@@ -257,8 +251,8 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
     });
 
     // Check for IP-Adapters
-    const ips_keys = ["ip_adapters", "ip_adapter", "ip_adapter_model"];
-    ips_keys.forEach(key => {
+    const ips_keys = ['ip_adapters', 'ip_adapter', 'ip_adapter_model'];
+    ips_keys.forEach((key) => {
         const ips = obj[key];
         if (ips) {
             const items = Array.isArray(ips) ? ips : [ips];
@@ -283,8 +277,8 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
     });
 
     // Check for embeddings
-    const embs_keys = ["embeddings", "ti", "textual_inversion"];
-    embs_keys.forEach(key => {
+    const embs_keys = ['embeddings', 'ti', 'textual_inversion'];
+    embs_keys.forEach((key) => {
         const embs = obj[key];
         if (embs) {
             const items = Array.isArray(embs) ? embs : [embs];
@@ -301,8 +295,8 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
     });
 
     // Check for hypernetworks
-    const hn_keys = ["hypernetworks", "hypernet", "hypernets"];
-    hn_keys.forEach(key => {
+    const hn_keys = ['hypernetworks', 'hypernet', 'hypernets'];
+    hn_keys.forEach((key) => {
         const hn = obj[key];
         if (hn) {
             const items = Array.isArray(hn) ? hn : [hn];
@@ -349,14 +343,14 @@ export function mapInvokeMetadata(row: unknown, metaCol: string, _processedIndex
         embeddings: [],
         hypernetworks: [],
         hasWorkflowHint: rowRecord.has_workflow === 1 || rowRecord.has_workflow === true,
-        isIntermediate: rowRecord.is_intermediate === 1 || rowRecord.is_intermediate === true
+        isIntermediate: rowRecord.is_intermediate === 1 || rowRecord.is_intermediate === true,
     };
 
     // Even if metadata is empty, we still know this is an InvokeAI image
     if (!rawVal) return baseMetadata;
 
     try {
-        const meta = typeof rawVal === 'string' ? JSON.parse(rawVal) as unknown : rawVal;
+        const meta = typeof rawVal === 'string' ? (JSON.parse(rawVal) as unknown) : rawVal;
         const mapped = mapRawInvokeMetadata(meta);
         // Overwrite hints from higher-level row if present
         if (rowRecord.has_workflow !== undefined) mapped.hasWorkflowHint = rowRecord.has_workflow === 1 || rowRecord.has_workflow === true;
@@ -371,21 +365,22 @@ export function mapInvokeMetadata(row: unknown, metaCol: string, _processedIndex
  * Used both during sync and when displaying "Original" metadata in the UI.
  */
 export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
-    if (!meta) return {
-        tool: GeneratorTool.INVOKEAI,
-        model: 'Unknown',
-        steps: 0,
-        sampler: 'Unknown',
-        positivePrompt: '',
-        negativePrompt: '',
-        loras: [],
-        controlNets: [],
-        ipAdapters: [],
-        embeddings: [],
-        hypernetworks: [],
-        hasWorkflowHint: false,
-        isIntermediate: false
-    };
+    if (!meta)
+        return {
+            tool: GeneratorTool.INVOKEAI,
+            model: 'Unknown',
+            steps: 0,
+            sampler: 'Unknown',
+            positivePrompt: '',
+            negativePrompt: '',
+            loras: [],
+            controlNets: [],
+            ipAdapters: [],
+            embeddings: [],
+            hypernetworks: [],
+            hasWorkflowHint: false,
+            isIntermediate: false,
+        };
 
     // Check if the input is wrapped in our internal DB structure
     const metaRecord = asRecord(meta);
@@ -406,8 +401,14 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     const actualRoot = asRecord(rootRecord.image || rootRecord.generation || rootRecord);
 
     // Aggressive Workflow Detection - searches all potential storage locations
-    const workflow = rootRecord.workflow || metaRecord.workflow || rootRecord.graph || metaRecord.graph ||
-        actualRoot.workflow || actualRoot.graph || metaRecord.has_workflow_data;
+    const workflow =
+        rootRecord.workflow ||
+        metaRecord.workflow ||
+        rootRecord.graph ||
+        metaRecord.graph ||
+        actualRoot.workflow ||
+        actualRoot.graph ||
+        metaRecord.has_workflow_data;
 
     const mapped: RawInvokeImageMetadata = {
         tool: GeneratorTool.INVOKEAI,
@@ -422,9 +423,13 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
         embeddings: [],
         hypernetworks: [],
         hasWorkflowHint: !!(workflow || metaRecord.has_workflow),
-        isIntermediate: rootRecord.is_intermediate === 1 || rootRecord.is_intermediate === true || metaRecord.is_intermediate === 1 || metaRecord.is_intermediate === true,
+        isIntermediate:
+            rootRecord.is_intermediate === 1 ||
+            rootRecord.is_intermediate === true ||
+            metaRecord.is_intermediate === 1 ||
+            metaRecord.is_intermediate === true,
         generationType: 'unknown',
-        workflowJson: workflow ? (typeof workflow === 'string' ? workflow : JSON.stringify(workflow)) : undefined
+        workflowJson: workflow ? (typeof workflow === 'string' ? workflow : JSON.stringify(workflow)) : undefined,
     };
 
     // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
@@ -498,33 +503,24 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     const hypernetworks = mapped.hypernetworks;
 
     // --- Extract Embeddings from Prompts (Legacy/Text-based) ---
-    const promptEmbeddings = [
-        ...extractEmbeddingsFromPrompt(mapped.positivePrompt),
-        ...extractEmbeddingsFromPrompt(mapped.negativePrompt)
-    ];
-    promptEmbeddings.forEach(emb => {
+    const promptEmbeddings = [...extractEmbeddingsFromPrompt(mapped.positivePrompt), ...extractEmbeddingsFromPrompt(mapped.negativePrompt)];
+    promptEmbeddings.forEach((emb) => {
         if (!embeddings.includes(emb)) {
             embeddings.push(emb);
         }
     });
 
     // --- Extract LoRAs from Prompts ---
-    const promptLoras = [
-        ...extractLorasFromPrompt(mapped.positivePrompt),
-        ...extractLorasFromPrompt(mapped.negativePrompt)
-    ];
-    promptLoras.forEach(lora => {
+    const promptLoras = [...extractLorasFromPrompt(mapped.positivePrompt), ...extractLorasFromPrompt(mapped.negativePrompt)];
+    promptLoras.forEach((lora) => {
         if (!loras.includes(lora)) {
             loras.push(lora);
         }
     });
 
     // --- Extract Hypernetworks from Prompts ---
-    const promptHypernets = [
-        ...extractHypernetsFromPrompt(mapped.positivePrompt),
-        ...extractHypernetsFromPrompt(mapped.negativePrompt)
-    ];
-    promptHypernets.forEach(hn => {
+    const promptHypernets = [...extractHypernetsFromPrompt(mapped.positivePrompt), ...extractHypernetsFromPrompt(mapped.negativePrompt)];
+    promptHypernets.forEach((hn) => {
         if (!hypernetworks.includes(hn)) {
             hypernetworks.push(hn);
         }

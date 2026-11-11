@@ -5,30 +5,29 @@ import { useTimelineScroll } from '../useTimelineScroll';
 
 type TimelineScrollProps = Parameters<typeof useTimelineScroll>[0];
 
-const createScrollEvent = (
-    scrollTop: number,
-    scrollHeight = 10000,
-    clientHeight = 3000
-): UIEvent<HTMLDivElement> => ({
-    currentTarget: {
-        scrollTop,
-        scrollHeight,
-        clientHeight
-    } as HTMLDivElement
-} as UIEvent<HTMLDivElement>);
+const createScrollEvent = (scrollTop: number, scrollHeight = 10000, clientHeight = 3000): UIEvent<HTMLDivElement> =>
+    ({
+        currentTarget: {
+            scrollTop,
+            scrollHeight,
+            clientHeight,
+        } as HTMLDivElement,
+    }) as UIEvent<HTMLDivElement>;
 
 const renderTimelineScroll = (overrides: Partial<TimelineScrollProps> = {}) => {
     const stickyHeaderRef: RefObject<HTMLDivElement | null> = { current: null };
     const activeHeaderIdRef: MutableRefObject<string | null> = { current: null };
 
-    return renderHook(() => useTimelineScroll({
-        headers: [],
-        stickyHeaderRef,
-        activeHeaderIdRef,
-        setScrollTop: vi.fn(),
-        setActiveHeaderData: vi.fn(),
-        ...overrides
-    }));
+    return renderHook(() =>
+        useTimelineScroll({
+            headers: [],
+            stickyHeaderRef,
+            activeHeaderIdRef,
+            setScrollTop: vi.fn(),
+            setActiveHeaderData: vi.fn(),
+            ...overrides,
+        })
+    );
 };
 
 describe('useTimelineScroll', () => {
@@ -37,7 +36,7 @@ describe('useTimelineScroll', () => {
         const { result } = renderTimelineScroll({
             hasMoreImages: true,
             isLoadingMore: false,
-            onLoadMore
+            onLoadMore,
         });
 
         act(() => {
@@ -52,7 +51,7 @@ describe('useTimelineScroll', () => {
         const { result } = renderTimelineScroll({
             hasMoreImages: true,
             isLoadingMore: true,
-            onLoadMore
+            onLoadMore,
         });
 
         act(() => {
@@ -71,7 +70,7 @@ describe('useTimelineScroll', () => {
         const { result } = renderTimelineScroll({
             hasMoreImages: true,
             isLoadingMore: false,
-            onLoadMore
+            onLoadMore,
         });
 
         act(() => {
@@ -96,8 +95,11 @@ describe('useTimelineScroll', () => {
 
     it('resets the load gate after synchronous failure and logs the error', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        const onLoadMore = vi.fn()
-            .mockImplementationOnce(() => { throw new Error('failed'); })
+        const onLoadMore = vi
+            .fn()
+            .mockImplementationOnce(() => {
+                throw new Error('failed');
+            })
             .mockResolvedValueOnce(undefined);
         const { result } = renderTimelineScroll({ hasMoreImages: true, onLoadMore });
         act(() => result.current(createScrollEvent(6500)));

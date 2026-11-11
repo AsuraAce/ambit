@@ -42,7 +42,7 @@ export const useStacking = (images: AIImage[]) => {
         if (images.length === 0) {
             activeWorkerCleanupRef.current?.();
             activeWorkerCleanupRef.current = null;
-            setSuggestedStacks(current => current.length === 0 ? current : []);
+            setSuggestedStacks((current) => (current.length === 0 ? current : []));
             setIsCalculating(false);
             return;
         }
@@ -62,7 +62,7 @@ export const useStacking = (images: AIImage[]) => {
             const requestId = `stack_${Date.now()}`;
             const diagnostic = startBackgroundDiagnostic('worker', 'Stack suggestion analysis', {
                 requestId,
-                imageCount: images.length
+                imageCount: images.length,
             });
             let finished = false;
 
@@ -96,7 +96,7 @@ export const useStacking = (images: AIImage[]) => {
             worker.addEventListener('message', handler);
 
             // Send lightweight payload
-            const payload = images.map(img => ({
+            const payload = images.map((img) => ({
                 id: img.id,
                 timestamp: img.timestamp,
                 width: img.width,
@@ -110,8 +110,8 @@ export const useStacking = (images: AIImage[]) => {
                     cfg: img.metadata.cfg,
                     variationId: img.metadata.variationId,
                     controlNets: img.metadata.controlNets,
-                    ipAdapters: img.metadata.ipAdapters
-                }
+                    ipAdapters: img.metadata.ipAdapters,
+                },
             }));
 
             worker.postMessage({ type: 'analyze-stacks', images: payload, requestId });

@@ -28,11 +28,8 @@ export const MetadataRawInspector = ({ image }: MetadataRawInspectorProps) => {
     };
 
     const rawContent = getRawContent();
-    const copyLabel = rawViewMode === 'parsed'
-        ? 'Copy parsed metadata'
-        : rawViewMode === 'json'
-            ? 'Copy workflow JSON'
-            : 'Copy source metadata';
+    const copyLabel =
+        rawViewMode === 'parsed' ? 'Copy parsed metadata' : rawViewMode === 'json' ? 'Copy workflow JSON' : 'Copy source metadata';
 
     useEffect(() => {
         if (!copiedMode) return;
@@ -52,8 +49,11 @@ export const MetadataRawInspector = ({ image }: MetadataRawInspectorProps) => {
 
     return (
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-white/5">
-            <button onClick={() => setShowRaw(!showRaw)} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 dark:hover:text-white text-xs py-2 transition-colors font-medium">
-                <Code className="w-3 h-3" /> {showRaw ? "Hide" : "View"} Internal Metadata
+            <button
+                onClick={() => setShowRaw(!showRaw)}
+                className="flex items-center gap-2 text-gray-500 hover:text-gray-900 dark:hover:text-white text-xs py-2 transition-colors font-medium"
+            >
+                <Code className="w-3 h-3" /> {showRaw ? 'Hide' : 'View'} Internal Metadata
             </button>
 
             {showRaw && (
@@ -88,7 +88,11 @@ export const MetadataRawInspector = ({ image }: MetadataRawInspectorProps) => {
                             onClick={() => void copyRawContent()}
                             className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-300"
                         >
-                            {copiedMode === rawViewMode ? <Check className="h-3.5 w-3.5 text-sage-600 dark:text-sage-300" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copiedMode === rawViewMode ? (
+                                <Check className="h-3.5 w-3.5 text-sage-600 dark:text-sage-300" />
+                            ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                            )}
                         </TooltipButton>
                     </div>
 

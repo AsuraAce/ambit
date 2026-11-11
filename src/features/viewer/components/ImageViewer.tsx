@@ -15,11 +15,7 @@ import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
 import { isOsOpenUnavailable, openFileInDefaultApp } from '../../../services/osOpen';
-import {
-    getEffectiveAiModel,
-    getEffectiveAiThinkingMode,
-    getEffectiveSystemPrompts
-} from '../../../utils/settingsUtils';
+import { getEffectiveAiModel, getEffectiveAiThinkingMode, getEffectiveSystemPrompts } from '../../../utils/settingsUtils';
 import { MaskedViewerGate } from './MaskedViewerGate';
 import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
 import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
@@ -91,10 +87,7 @@ const ViewerStatusHud: React.FC<ViewerStatusHudProps> = ({ isFavorite, isPinned,
 
     if (!isVisible && !isFavorite && !isPinned) return null;
 
-    const label = [
-        isFavorite ? 'liked' : 'not liked',
-        isPinned ? 'pinned' : 'not pinned',
-    ].join(', ');
+    const label = [isFavorite ? 'liked' : 'not liked', isPinned ? 'pinned' : 'not pinned'].join(', ');
 
     return (
         <div
@@ -145,21 +138,15 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     isSidebarOpen = true,
     onToggleSidebar,
     searchHighlights,
-    onOpenReferencedImage
+    onOpenReferencedImage,
 }) => {
     const metadataDisclosure = useMetadataDisclosureState();
-    const settings = useSettingsStore(s => s.settings);
-    const privacyExposureBlocked = useSettingsStore(state => (
-        state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
-    ));
-    const [revealedImageId, setRevealedImageId] = useState<string | null>(
-        initiallyRevealed ? image.id : null
-    );
-    const itemExposureBlocked = isMasked
-        && !initiallyRevealed
-        && revealedImageId !== image.id;
+    const settings = useSettingsStore((s) => s.settings);
+    const privacyExposureBlocked = useSettingsStore((state) => state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready');
+    const [revealedImageId, setRevealedImageId] = useState<string | null>(initiallyRevealed ? image.id : null);
+    const itemExposureBlocked = isMasked && !initiallyRevealed && revealedImageId !== image.id;
     const mediaExposureBlocked = privacyExposureBlocked || itemExposureBlocked;
-    const collections = useCollectionStore(s => s.collections);
+    const collections = useCollectionStore((s) => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
     const [settledMetadataId, setSettledMetadataId] = useState<string | null>(null);
@@ -182,30 +169,34 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         }
         const targetId = activeVersionId || image.id;
         let cancelled = false;
-        // Optimization: Only clear if it's a completely different image, 
-        // keep old one as placeholder if it's just a version switch? 
+        // Optimization: Only clear if it's a completely different image,
+        // keep old one as placeholder if it's just a version switch?
         // No, let's clear to avoid confusing metadata flicker.
         setFullImage(null);
         setSettledMetadataId(null);
         setIsLoadingFull(true);
 
-        getImageWithFullMetadata(targetId).then(res => {
-            if (cancelled) return;
-            if (res) setFullImage(res);
-            setSettledMetadataId(targetId);
-            setIsLoadingFull(false);
-        }).catch(() => {
-            if (cancelled) return;
-            setSettledMetadataId(targetId);
-            setIsLoadingFull(false);
-        });
-        return () => { cancelled = true; };
+        getImageWithFullMetadata(targetId)
+            .then((res) => {
+                if (cancelled) return;
+                if (res) setFullImage(res);
+                setSettledMetadataId(targetId);
+                setIsLoadingFull(false);
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setSettledMetadataId(targetId);
+                setIsLoadingFull(false);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [image.id, activeVersionId, mediaExposureBlocked]);
 
     const versions = useMemo(() => {
         if (!image.stack || image.stack.length === 0) return [];
         // Sort: Smallest resolution (base) first, largest/newest last
-        return [...image.stack].sort((a, b) => (a.width * a.height) - (b.width * b.height));
+        return [...image.stack].sort((a, b) => a.width * a.height - b.width * b.height);
     }, [image]);
 
     const displayImage = useMemo(() => {
@@ -215,36 +206,34 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         const targetId = activeVersionId || image.id;
         const isCorrectImage = fullImage && fullImage.id === targetId;
 
-        const base = isCorrectImage ? {
-            ...fullImage,
-            ...image, // Prioritize reactive props (isFavorite, notes, etc)
-            metadata: {
-                ...fullImage.metadata,
-                positivePrompt: image.metadata.positivePrompt,
-                negativePrompt: image.metadata.negativePrompt,
-                tool: image.metadata.tool,
-                ...(image.metadata.overrideModel !== undefined
-                    ? { overrideModel: image.metadata.overrideModel }
-                    : {})
-            },
-            originalMetadata: image.originalMetadata ?? fullImage.originalMetadata,
-            originalChunks: image.originalChunks ?? fullImage.originalChunks,
-            originalState: image.originalState ?? fullImage.originalState,
-            photoMetadata: image.photoMetadata ?? fullImage.photoMetadata,
-            captureWallTimeMs: image.captureWallTimeMs ?? fullImage.captureWallTimeMs,
-            // These scalar fields are present in current lightweight rows.
-            // Preserve legacy callers that omit them, while keeping an own
-            // undefined override authoritative after Automatic is restored.
-            sourceKindOverride: 'sourceKindOverride' in image
-                ? image.sourceKindOverride
-                : fullImage.sourceKindOverride,
-            detectedSourceKind: image.detectedSourceKind ?? fullImage.detectedSourceKind,
-            sourceKind: image.sourceKind ?? fullImage.sourceKind,
-            displayTimestamp: image.displayTimestamp ?? fullImage.displayTimestamp,
-        } : image;
+        const base = isCorrectImage
+            ? {
+                  ...fullImage,
+                  ...image, // Prioritize reactive props (isFavorite, notes, etc)
+                  metadata: {
+                      ...fullImage.metadata,
+                      positivePrompt: image.metadata.positivePrompt,
+                      negativePrompt: image.metadata.negativePrompt,
+                      tool: image.metadata.tool,
+                      ...(image.metadata.overrideModel !== undefined ? { overrideModel: image.metadata.overrideModel } : {}),
+                  },
+                  originalMetadata: image.originalMetadata ?? fullImage.originalMetadata,
+                  originalChunks: image.originalChunks ?? fullImage.originalChunks,
+                  originalState: image.originalState ?? fullImage.originalState,
+                  photoMetadata: image.photoMetadata ?? fullImage.photoMetadata,
+                  captureWallTimeMs: image.captureWallTimeMs ?? fullImage.captureWallTimeMs,
+                  // These scalar fields are present in current lightweight rows.
+                  // Preserve legacy callers that omit them, while keeping an own
+                  // undefined override authoritative after Automatic is restored.
+                  sourceKindOverride: 'sourceKindOverride' in image ? image.sourceKindOverride : fullImage.sourceKindOverride,
+                  detectedSourceKind: image.detectedSourceKind ?? fullImage.detectedSourceKind,
+                  sourceKind: image.sourceKind ?? fullImage.sourceKind,
+                  displayTimestamp: image.displayTimestamp ?? fullImage.displayTimestamp,
+              }
+            : image;
 
         if (!activeVersionId) return base;
-        return versions.find(v => v.id === activeVersionId) || base;
+        return versions.find((v) => v.id === activeVersionId) || base;
     }, [image, fullImage, versions, activeVersionId]);
 
     // Derive loading state synchronously to avoid flash
@@ -252,23 +241,18 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, zoomIn, zoomOut, handlers } = useZoomPan();
-    const { palette, isLoading: isPaletteLoading } = usePalette(
-        mediaExposureBlocked ? null : displayImage.url
-    );
+    const { palette, isLoading: isPaletteLoading } = usePalette(mediaExposureBlocked ? null : displayImage.url);
     const { addToast } = useToast();
     const ai = useImageAI({
         aiModel: getEffectiveAiModel(settings),
         aiThinkingMode: getEffectiveAiThinkingMode(settings),
         enableAI: settings.enableAI,
         prompts: getEffectiveSystemPrompts(settings),
-        onError: (msg) => addToast(msg, 'error')
+        onError: (msg) => addToast(msg, 'error'),
     });
 
     // --- UI State ---
-    const availableViewerTabs = useMemo(
-        () => getImageViewerTabs(displayImage).map(tab => tab.id),
-        [displayImage]
-    );
+    const availableViewerTabs = useMemo(() => getImageViewerTabs(displayImage).map((tab) => tab.id), [displayImage]);
     const { activeTab, onExplicitTabChange } = useViewerPreferredTab(availableViewerTabs);
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
@@ -288,14 +272,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         setNegativePromptValue(displayImage.metadata.negativePrompt || '');
         resetZoom();
         ai.closeModal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- resets the viewer only when the displayed image changes; the ai object is new every render
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- resets the viewer only when the displayed image changes; the ai object is new every render
     }, [
         displayImage.id,
         displayImage.notes,
         displayImage.metadata.positivePrompt,
         displayImage.metadata.negativePrompt,
         displayImage.originalMetadata,
-        resetZoom
+        resetZoom,
     ]);
 
     useEffect(() => {
@@ -341,10 +325,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         } else {
             controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);
         }
-        return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
+        return () => {
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        };
     }, [isSidebarOpen, isTheaterMode, scale]);
 
-    const handleViewerKeyDown = useCallback((e: KeyboardEvent) => {
+    const handleViewerKeyDown = useCallback(
+        (e: KeyboardEvent) => {
             if (ai.modalOpen) {
                 if (e.key === 'Escape') {
                     e.preventDefault();
@@ -380,9 +367,27 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 if (isTheaterMode) setIsTheaterMode(false);
                 else onClose();
             }
-            if (key === 'z') setIsTheaterMode(p => !p);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- lists ai.modalOpen and ai.closeModal, the members used; the ai object is new every render
-    }, [ai.modalOpen, ai.closeModal, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleFavorite, onTogglePin, onToggleSidebar, onDelete, onClose]);
+            if (key === 'z') setIsTheaterMode((p) => !p);
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- lists ai.modalOpen and ai.closeModal, the members used; the ai object is new every render
+        [
+            ai.modalOpen,
+            ai.closeModal,
+            isTheaterMode,
+            displayImage.id,
+            onNext,
+            onPrev,
+            canNavigateNext,
+            canNavigatePrevious,
+            handleToggleFavorite,
+            handleTogglePin,
+            onToggleFavorite,
+            onTogglePin,
+            onToggleSidebar,
+            onDelete,
+            onClose,
+        ]
+    );
 
     useViewerKeyboard({
         enabled: isOpen,
@@ -406,11 +411,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 animate={{ opacity: 1 }}
                 className="fixed inset-0 z-[100] flex bg-gray-950/95 backdrop-blur-md"
             >
-                <MaskedViewerGate
-                    mediaLabel="image"
-                    onReveal={() => setRevealedImageId(image.id)}
-                    onClose={onClose}
-                />
+                <MaskedViewerGate mediaLabel="image" onReveal={() => setRevealedImageId(image.id)} onClose={onClose} />
             </motion.div>
         );
     }
@@ -421,11 +422,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         try {
             const response = await fetch(displayImage.url);
             const blob = await response.blob();
-            await navigator.clipboard.write([
-                new ClipboardItem({ [blob.type]: blob })
-            ]);
+            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         } catch (e) {
-            console.error("Copy failed", e);
+            console.error('Copy failed', e);
         }
     };
 
@@ -455,7 +454,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             exit={{ opacity: 0, transition: { duration: 0.2 } }}
             className={`fixed inset-0 z-[100] flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
         >
-
             {/* Left Area: Canvas */}
             <div
                 className="flex-1 relative flex flex-col h-full overflow-hidden"
@@ -468,7 +466,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 <ViewerToolbar
                     image={displayImage}
                     versionsCount={versions.length}
-                    activeVersionIndex={versions.findIndex(v => v.id === displayImage.id)}
+                    activeVersionIndex={versions.findIndex((v) => v.id === displayImage.id)}
                     showControls={showControls}
                     isTheaterMode={isTheaterMode}
                     isSidebarOpen={isSidebarOpen}
@@ -514,7 +512,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onVersionSelect={setActiveVersionId}
                     showControls={showControls}
                 />
-
             </div>
 
             {/* Right Area: Sidebar */}

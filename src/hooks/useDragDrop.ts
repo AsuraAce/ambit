@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 
 /**
  * Hook to handle drag and drop of files/folders from external sources.
- * 
+ *
  * With dragDropEnabled: false in tauri.conf.json, we handle ALL drag-and-drop
  * (both internal and external) via the standard HTML5 Drag and Drop API.
- * 
+ *
  * Internal drags (application/x-ambit-image-ids) are ignored by this hook
  * and handled by the individual drop target components.
  */
@@ -32,7 +32,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
         // Helper: is this an internal (image reorder) drag?
         const isInternalDrag = (e: DragEvent): boolean => {
             const types = e.dataTransfer?.types ? Array.from(e.dataTransfer.types) : [];
-            return types.some(t => t === 'application/x-ambit-image-ids' || t === 'application/json');
+            return types.some((t) => t === 'application/x-ambit-image-ids' || t === 'application/json');
         };
 
         const handleDragEnter = (e: DragEvent) => {
@@ -69,9 +69,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
                 if (isTauriEnv) {
                     // In Tauri, File objects may have a .path property
                     const files = Array.from(e.dataTransfer.files);
-                    const paths = files
-                        .map(file => (file as File & { path?: string }).path)
-                        .filter((path): path is string => !!path);
+                    const paths = files.map((file) => (file as File & { path?: string }).path).filter((path): path is string => !!path);
 
                     if (paths.length > 0) {
                         console.log('[DragDrop] External drop with paths:', paths.length);

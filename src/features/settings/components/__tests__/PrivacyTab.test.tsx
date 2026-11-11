@@ -47,8 +47,8 @@ const settingsHarness = (initial: AppSettings) => {
 };
 
 const StorePrivacyTab = () => {
-    const settings = useSettingsStore(state => state.settings);
-    const setSettings = useSettingsStore(state => state.setSettings);
+    const settings = useSettingsStore((state) => state.settings);
+    const setSettings = useSettingsStore((state) => state.setSettings);
     return <PrivacyTab settings={settings} setSettings={setSettings} />;
 };
 
@@ -116,23 +116,26 @@ describe('PrivacyTab', () => {
     });
 
     it('persists prompt masking independently while retaining an editable keyword list', async () => {
-        const harness = settingsHarness(createSettings({
-            promptMaskingEnabled: true,
-            maskedKeywords: ['retained'],
-        }));
+        const harness = settingsHarness(
+            createSettings({
+                promptMaskingEnabled: true,
+                maskedKeywords: ['retained'],
+            })
+        );
         const { rerender } = render(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
 
         const promptSwitch = screen.getByRole('switch', { name: 'Use prompt keywords' });
         fireEvent.click(promptSwitch);
 
-        expect(harness.current()).toEqual(expect.objectContaining({
-            promptMaskingEnabled: false,
-            maskedKeywords: ['retained'],
-        }));
-        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(
-            'Prompt keyword masking disabled; saved keywords retained',
-            'success'
-        ));
+        expect(harness.current()).toEqual(
+            expect.objectContaining({
+                promptMaskingEnabled: false,
+                maskedKeywords: ['retained'],
+            })
+        );
+        await waitFor(() =>
+            expect(addToastMock).toHaveBeenCalledWith('Prompt keyword masking disabled; saved keywords retained', 'success')
+        );
 
         rerender(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
         expect(screen.getByText('retained')).not.toBeNull();
@@ -222,10 +225,7 @@ describe('PrivacyTab', () => {
         fireEvent.change(input, { target: { value: 'sensitive' } });
         fireEvent.click(screen.getByText('Add'));
 
-        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(
-            'Added "sensitive" to masked keywords',
-            'success'
-        ));
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('Added "sensitive" to masked keywords', 'success'));
         expect((input as HTMLInputElement).disabled).toBe(false);
         expect((input as HTMLInputElement).value).toBe('');
     });
@@ -259,10 +259,14 @@ describe('PrivacyTab', () => {
 
         fireEvent.click(screen.getByRole('switch', { name: 'Use prompt keywords' }));
 
-        await waitFor(() => expect(useSettingsStore.getState().settings).toEqual(expect.objectContaining({
-            promptMaskingEnabled: true,
-            maskedKeywords: ['retained'],
-        })));
+        await waitFor(() =>
+            expect(useSettingsStore.getState().settings).toEqual(
+                expect.objectContaining({
+                    promptMaskingEnabled: true,
+                    maskedKeywords: ['retained'],
+                })
+            )
+        );
         expect(addToastMock).toHaveBeenCalledWith('Failed to save prompt keyword masking', 'error');
         consoleError.mockRestore();
     });
@@ -270,9 +274,7 @@ describe('PrivacyTab', () => {
     it('completes an owned rollback and exact flush while close admission drains', async () => {
         const firstFlush = createDeferred<void>();
         const rollbackFlush = createDeferred<void>();
-        const flushSettings = vi.fn()
-            .mockReturnValueOnce(firstFlush.promise)
-            .mockReturnValueOnce(rollbackFlush.promise);
+        const flushSettings = vi.fn().mockReturnValueOnce(firstFlush.promise).mockReturnValueOnce(rollbackFlush.promise);
         useSettingsStore.setState({
             settings: createSettings({ maskedKeywords: ['existing'], thumbnailSize: 200 }),
             flushSettings,
@@ -290,20 +292,24 @@ describe('PrivacyTab', () => {
         const drain = settingsPersistenceCoordinator.closeAdmissionAndDrain().then(() => {
             drainSettled = true;
         });
-        useSettingsStore.setState(state => ({
+        useSettingsStore.setState((state) => ({
             settings: { ...state.settings, thumbnailSize: 320 },
         }));
         firstFlush.reject(new Error('disk full'));
 
         await waitFor(() => expect(flushSettings).toHaveBeenCalledTimes(2));
-        expect(useSettingsStore.getState().settings).toEqual(expect.objectContaining({
-            maskedKeywords: ['existing'],
-            thumbnailSize: 320,
-        }));
-        expect(flushSettings).toHaveBeenLastCalledWith(expect.objectContaining({
-            maskedKeywords: ['existing'],
-            thumbnailSize: 320,
-        }));
+        expect(useSettingsStore.getState().settings).toEqual(
+            expect.objectContaining({
+                maskedKeywords: ['existing'],
+                thumbnailSize: 320,
+            })
+        );
+        expect(flushSettings).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                maskedKeywords: ['existing'],
+                thumbnailSize: 320,
+            })
+        );
         expect(drainSettled).toBe(false);
 
         rollbackFlush.resolve();
@@ -315,9 +321,7 @@ describe('PrivacyTab', () => {
     it('does not let an older failed save roll back a newer save after remount', async () => {
         const firstSave = createDeferred<void>();
         const secondSave = createDeferred<void>();
-        const flushSettings = vi.fn()
-            .mockReturnValueOnce(firstSave.promise)
-            .mockReturnValueOnce(secondSave.promise);
+        const flushSettings = vi.fn().mockReturnValueOnce(firstSave.promise).mockReturnValueOnce(secondSave.promise);
         useSettingsStore.setState({ flushSettings });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const harness = settingsHarness(createSettings());
@@ -336,10 +340,7 @@ describe('PrivacyTab', () => {
         secondSave.resolve();
         await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('Added "newer" to masked keywords', 'success'));
         firstSave.reject(new Error('older write failed'));
-        await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
-            '[Privacy] Failed to persist privacy settings',
-            expect.any(Error)
-        ));
+        await waitFor(() => expect(consoleError).toHaveBeenCalledWith('[Privacy] Failed to persist privacy settings', expect.any(Error)));
 
         expect(harness.current().maskedKeywords).toEqual(['older', 'newer']);
         expect(flushSettings).toHaveBeenCalledTimes(2);

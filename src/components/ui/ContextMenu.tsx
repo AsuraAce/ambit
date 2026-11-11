@@ -1,390 +1,466 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Copy, Heart, Pin, FolderPlus, FolderMinus, Trash2, Folder,
-  Wand2, Eye, EyeOff, MinusCircle, ImageIcon, ExternalLink,
-  ImageOff, ChevronRight, Share2, Layout, Shield, Check
+    Copy,
+    Heart,
+    Pin,
+    FolderPlus,
+    FolderMinus,
+    Trash2,
+    Folder,
+    Wand2,
+    Eye,
+    EyeOff,
+    MinusCircle,
+    ImageIcon,
+    ExternalLink,
+    ImageOff,
+    ChevronRight,
+    Share2,
+    Layout,
+    Shield,
+    Check,
 } from 'lucide-react';
 import { TooltipButton } from './InfoTooltip';
 import type { SourceKind } from '../../types';
 
 interface ContextMenuProps {
-  x: number;
-  y: number;
-  isPinned?: boolean;
-  enableAI?: boolean;
-  activeCollectionName?: string;
-  onClose: () => void;
-  onCopyPrompt?: () => void;
-  onCopySeed?: () => void;
-  onCopyGenerationInfo?: () => void;
-  onCopyImage?: () => void;
-  onCopyFilePath?: () => void;
-  onOpenInDefaultApp?: () => void;
-  onAddToCollection: () => void;
-  onMoveToCollection?: () => void;
-  onRemoveFromCollection?: () => void;
-  onTogglePin: () => void;
-  onDelete: () => void;
-  onShowInFolder: () => void;
-  onRecoverMetadata?: () => void;
-  onSetThumbnail?: () => void;
-  onUnsetThumbnail?: () => void;
-  onToggleMask?: (override?: boolean | null) => void;
-  onToggleFavorite?: () => void;
-  isFavorite?: boolean;
-  isMasked?: boolean;
-  userMasked?: boolean;
-  isIntermediate?: boolean;
-  onToggleIntermediate?: () => void;
-  modelsForThumbnail?: { name: string; hash: string; type: string }[];
-  onSetModelThumbnail?: (model: { name: string; hash: string; type: string }) => void;
-  detectedSourceKind?: SourceKind;
-  sourceKindOverride?: SourceKind;
-  onSetImageKind?: (sourceKindOverride: SourceKind | null) => void;
+    x: number;
+    y: number;
+    isPinned?: boolean;
+    enableAI?: boolean;
+    activeCollectionName?: string;
+    onClose: () => void;
+    onCopyPrompt?: () => void;
+    onCopySeed?: () => void;
+    onCopyGenerationInfo?: () => void;
+    onCopyImage?: () => void;
+    onCopyFilePath?: () => void;
+    onOpenInDefaultApp?: () => void;
+    onAddToCollection: () => void;
+    onMoveToCollection?: () => void;
+    onRemoveFromCollection?: () => void;
+    onTogglePin: () => void;
+    onDelete: () => void;
+    onShowInFolder: () => void;
+    onRecoverMetadata?: () => void;
+    onSetThumbnail?: () => void;
+    onUnsetThumbnail?: () => void;
+    onToggleMask?: (override?: boolean | null) => void;
+    onToggleFavorite?: () => void;
+    isFavorite?: boolean;
+    isMasked?: boolean;
+    userMasked?: boolean;
+    isIntermediate?: boolean;
+    onToggleIntermediate?: () => void;
+    modelsForThumbnail?: { name: string; hash: string; type: string }[];
+    onSetModelThumbnail?: (model: { name: string; hash: string; type: string }) => void;
+    detectedSourceKind?: SourceKind;
+    sourceKindOverride?: SourceKind;
+    onSetImageKind?: (sourceKindOverride: SourceKind | null) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
-  x,
-  y,
-  isPinned,
-  enableAI,
-  activeCollectionName,
-  onClose,
-  onCopyPrompt,
-  onCopySeed,
-  onCopyGenerationInfo,
-  onCopyImage,
-  onCopyFilePath,
-  onOpenInDefaultApp,
-  onAddToCollection,
-  onRemoveFromCollection,
-  onTogglePin,
-  onDelete,
-  onShowInFolder,
-  onRecoverMetadata,
-  onSetThumbnail,
-  onUnsetThumbnail,
-  onToggleMask,
-  onToggleFavorite,
-  onMoveToCollection,
-  isFavorite,
-  isMasked,
-  userMasked,
-  isIntermediate,
-  onToggleIntermediate,
-  modelsForThumbnail,
-  onSetModelThumbnail,
-  detectedSourceKind,
-  sourceKindOverride,
-  onSetImageKind,
+    x,
+    y,
+    isPinned,
+    enableAI,
+    activeCollectionName,
+    onClose,
+    onCopyPrompt,
+    onCopySeed,
+    onCopyGenerationInfo,
+    onCopyImage,
+    onCopyFilePath,
+    onOpenInDefaultApp,
+    onAddToCollection,
+    onRemoveFromCollection,
+    onTogglePin,
+    onDelete,
+    onShowInFolder,
+    onRecoverMetadata,
+    onSetThumbnail,
+    onUnsetThumbnail,
+    onToggleMask,
+    onToggleFavorite,
+    onMoveToCollection,
+    isFavorite,
+    isMasked,
+    userMasked,
+    isIntermediate,
+    onToggleIntermediate,
+    modelsForThumbnail,
+    onSetModelThumbnail,
+    detectedSourceKind,
+    sourceKindOverride,
+    onSetImageKind,
 }) => {
-  const menuRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close on click outside
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
+    // Close on click outside
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [onClose]);
 
-  // Keep menu within viewport logic
-  const MENU_WIDTH = 240;
-  const SUBMENU_WIDTH = 220;
+    // Keep menu within viewport logic
+    const MENU_WIDTH = 240;
+    const SUBMENU_WIDTH = 220;
 
-  const [menuPos, setMenuPos] = useState({ top: y, left: x });
-  const [side, setSide] = useState<'right' | 'left'>('right');
+    const [menuPos, setMenuPos] = useState({ top: y, left: x });
+    const [side, setSide] = useState<'right' | 'left'>('right');
 
-  useEffect(() => {
-    const top = Math.min(y, window.innerHeight - 300);
-    const left = Math.min(x, window.innerWidth - MENU_WIDTH);
+    useEffect(() => {
+        const top = Math.min(y, window.innerHeight - 300);
+        const left = Math.min(x, window.innerWidth - MENU_WIDTH);
 
-    // Determine which side submenus should open on
-    const wouldOverflowRight = left + MENU_WIDTH + SUBMENU_WIDTH > window.innerWidth;
-    setSide(wouldOverflowRight ? 'left' : 'right');
+        // Determine which side submenus should open on
+        const wouldOverflowRight = left + MENU_WIDTH + SUBMENU_WIDTH > window.innerWidth;
+        setSide(wouldOverflowRight ? 'left' : 'right');
 
-    setMenuPos({ top, left });
-  }, [x, y]);
+        setMenuPos({ top, left });
+    }, [x, y]);
 
-  return (
-    <div
-      ref={menuRef}
-      style={{ top: menuPos.top, left: menuPos.left }}
-      className="fixed z-50 w-60 bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl shadow-black overflow-visible animate-in fade-in zoom-in-95 duration-100 py-1"
-    >
-      {/* Quick Actions Bar */}
-      <div className="flex items-center justify-between px-2 pb-1.5 pt-0.5 border-b border-white/5 mb-1">
-        <div className="flex gap-0.5">
-          <ActionButton
-            icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />}
-            onClick={() => onToggleFavorite?.()}
-            label={isFavorite ? "Unfavorite" : "Favorite"}
-            pressed={Boolean(isFavorite)}
-          />
-          <ActionButton
-            icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-sage-400 text-white' : 'text-gray-400'}`} />}
-            onClick={onTogglePin}
-            label={isPinned ? "Unpin" : "Pin to Top"}
-            pressed={Boolean(isPinned)}
-          />
-          <ActionButton
-            icon={<Folder className="w-4 h-4 text-gray-400" />}
-            onClick={onShowInFolder}
-            label="Show in Folder"
-          />
-        </div>
-        <ActionButton
-          icon={<Trash2 className="w-4 h-4 text-gray-400" />}
-          onClick={onDelete}
-          label="Remove from Library"
-          className="hover:!bg-red-500/20 hover:!text-red-400"
-        />
-      </div>
-
-      {/* Main Menu Groups */}
-      <SubMenu label="Copy Data" icon={<Share2 className="w-4 h-4 text-gray-400" />} side={side}>
-        {onCopyPrompt && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Prompt" onClick={onCopyPrompt} />}
-        {onCopySeed && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Seed" onClick={onCopySeed} />}
-        {onCopyGenerationInfo && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy All Info" onClick={onCopyGenerationInfo} />}
-        <div className="h-px bg-white/5 my-1" />
-        {onCopyImage && <MenuItem icon={<ImageIcon className="w-4 h-4 text-gray-400" />} label="Copy Image" onClick={onCopyImage} />}
-        {onCopyFilePath && <MenuItem icon={<Copy className="w-4 h-4 text-gray-500" />} label="Copy File Path" onClick={onCopyFilePath} />}
-      </SubMenu>
-
-      {onSetImageKind && detectedSourceKind && (
-        <SubMenu label="Image Kind" icon={<ImageIcon className="w-4 h-4 text-gray-400" />} side={side}>
-          <MenuItem
-            icon={<Check className={`w-4 h-4 ${sourceKindOverride === undefined ? 'opacity-100' : 'opacity-0'}`} />}
-            label={`Automatic (${detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})`}
-            onClick={() => onSetImageKind(null)}
-            checked={sourceKindOverride === undefined}
-          />
-          {(['generated', 'photograph', 'other'] as const).map(kind => (
-            <MenuItem
-              key={kind}
-              icon={<Check className={`w-4 h-4 ${sourceKindOverride === kind ? 'opacity-100' : 'opacity-0'}`} />}
-              label={kind === 'photograph' ? 'Photo' : kind === 'generated' ? 'Generated' : 'Other'}
-              onClick={() => onSetImageKind(kind)}
-              checked={sourceKindOverride === kind}
-            />
-          ))}
-        </SubMenu>
-      )}
-
-      <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-gray-400" />} side={side}>
-        <MenuItem icon={<FolderPlus className="w-4 h-4 text-gray-400" />} label="Add to Collection..." onClick={onAddToCollection} />
-        {onMoveToCollection && (
-          <MenuItem icon={<Layout className="w-4 h-4 text-gray-400" />} label="Move to Collection..." onClick={onMoveToCollection} />
-        )}
-        {activeCollectionName && onRemoveFromCollection && (
-          <MenuItem
-            icon={<FolderMinus className="w-4 h-4 text-gray-400" />}
-            label="Remove from Collection"
-            onClick={onRemoveFromCollection}
-            className="hover:!bg-red-500/10 hover:!text-red-200"
-          />
-        )}
-        <div className="h-px bg-white/5 my-1" />
-        {/* Collection Thumbnail */}
-        {onSetThumbnail && (
-          <MenuItem icon={<ImageIcon className="w-4 h-4 text-gray-400" />} label="Set as Collection Thumb" onClick={onSetThumbnail} />
-        )}
-        {onUnsetThumbnail && (
-          <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Collection Thumb" onClick={onUnsetThumbnail} />
-        )}
-
-        {/* Model Thumbnails */}
-        {modelsForThumbnail && modelsForThumbnail.length > 0 && onSetModelThumbnail && (
-          <>
-            <div className="h-px bg-white/5 my-1" />
-            <div className="px-2 py-1 text-[10px] uppercase font-bold text-gray-500">Set Model Thumbnail</div>
-            {modelsForThumbnail.map((m, i) => (
-              <MenuItem
-                key={i}
-                icon={<ImageIcon className="w-3 h-3 text-gray-400" />}
-                label={m.name}
-                onClick={() => onSetModelThumbnail(m)}
-              />
-            ))}
-          </>
-        )}
-      </SubMenu>
-
-      <SubMenu label="Privacy & AI" icon={<Shield className="w-4 h-4 text-gray-400" />} side={side}>
-        {onToggleMask && (
-          <>
-            {userMasked !== undefined && (
-              <MenuItem
-                icon={<MinusCircle className="w-4 h-4 text-gray-400" />}
-                label="Reset Mask to Auto"
-                onClick={() => onToggleMask(null)}
-              />
-            )}
-            {!isMasked && (
-              <MenuItem icon={<EyeOff className="w-4 h-4 text-gray-400" />} label="Mask Content" onClick={() => onToggleMask(true)} />
-            )}
-            {isMasked && (
-              <MenuItem icon={<Eye className="w-4 h-4 text-gray-400" />} label="Unmask Content" onClick={() => onToggleMask(false)} />
-            )}
-          </>
-        )}
-        {onToggleIntermediate && (
-          <>
-            <div className="h-px bg-white/5 my-1" />
-            <MenuItem
-              icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-gray-400' : 'text-gray-400'}`} />}
-              label={isIntermediate ? "Unmark as Intermediate" : "Mark as Intermediate"}
-              onClick={onToggleIntermediate}
-            />
-          </>
-        )}
-        {enableAI && onRecoverMetadata && (
-          <>
-            <div className="h-px bg-white/5 my-1" />
-            <MenuItem
-              icon={<Wand2 className="w-4 h-4 text-gray-400" />}
-              label="Recover Metadata (AI)"
-              onClick={onRecoverMetadata}
-              className="text-gray-400"
-            />
-          </>
-        )}
-      </SubMenu>
-
-      <div className="h-px bg-white/5 my-1" />
-
-      {
-        onOpenInDefaultApp && (
-          <MenuItem
-            icon={<ExternalLink className="w-4 h-4 text-gray-400" />}
-            label="Open in Default App"
-            onClick={onOpenInDefaultApp}
-          />
-        )
-      }
-    </div >
-  );
-};
-
-const SubMenu = ({ label, icon, children, side }: { label: string, icon: React.ReactNode, children: React.ReactNode, side: 'right' | 'left' }) => {
-  const [isHovered, setIsHovered] = useState(false);
-  const [isClickOpen, setIsClickOpen] = useState(false);
-  const timeoutRef = useRef<number | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const isOpen = isHovered || isClickOpen;
-
-  const handleMouseEnter = () => {
-    if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    setIsHovered(true);
-  };
-
-  const handleMouseLeave = () => {
-    timeoutRef.current = window.setTimeout(() => setIsHovered(false), 150);
-  };
-
-  const toggleOpen = () => {
-    if (isOpen) {
-      setIsHovered(false);
-      setIsClickOpen(false);
-    } else {
-      setIsClickOpen(true);
-    }
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.stopPropagation();
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      event.stopPropagation();
-      setIsClickOpen(true);
-    } else if (event.key === 'ArrowLeft' || event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      setIsHovered(false);
-      setIsClickOpen(false);
-    }
-  };
-
-  const handleSubmenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowRight') {
-      event.stopPropagation();
-    } else if (event.key === 'ArrowLeft' || event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      setIsHovered(false);
-      setIsClickOpen(false);
-      triggerRef.current?.focus();
-    }
-  };
-
-  return (
-    <div
-      className="relative"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          setIsHovered(false);
-          setIsClickOpen(false);
-        }
-      }}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-expanded={isOpen}
-        onClick={toggleOpen}
-        onKeyDown={handleKeyDown}
-        className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between transition-colors group"
-      >
-        <div className="flex items-center gap-2">
-          {icon}
-          <span>{label}</span>
-        </div>
-        <ChevronRight className={`w-3 h-3 text-gray-600 group-hover:text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-90 sm:rotate-0' : ''}`} />
-      </button>
-
-      {isOpen && (
+    return (
         <div
-          onKeyDown={handleSubmenuKeyDown}
-          className={`absolute top-0 w-56 bg-zinc-950/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl py-1 z-[60] animate-in fade-in zoom-in-95 duration-150 ${side === 'right' ? 'left-[calc(100%+4px)]' : 'right-[calc(100%+4px)]'}`}
+            ref={menuRef}
+            style={{ top: menuPos.top, left: menuPos.left }}
+            className="fixed z-50 w-60 bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl shadow-black overflow-visible animate-in fade-in zoom-in-95 duration-100 py-1"
         >
-          {children}
+            {/* Quick Actions Bar */}
+            <div className="flex items-center justify-between px-2 pb-1.5 pt-0.5 border-b border-white/5 mb-1">
+                <div className="flex gap-0.5">
+                    <ActionButton
+                        icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />}
+                        onClick={() => onToggleFavorite?.()}
+                        label={isFavorite ? 'Unfavorite' : 'Favorite'}
+                        pressed={Boolean(isFavorite)}
+                    />
+                    <ActionButton
+                        icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-sage-400 text-white' : 'text-gray-400'}`} />}
+                        onClick={onTogglePin}
+                        label={isPinned ? 'Unpin' : 'Pin to Top'}
+                        pressed={Boolean(isPinned)}
+                    />
+                    <ActionButton icon={<Folder className="w-4 h-4 text-gray-400" />} onClick={onShowInFolder} label="Show in Folder" />
+                </div>
+                <ActionButton
+                    icon={<Trash2 className="w-4 h-4 text-gray-400" />}
+                    onClick={onDelete}
+                    label="Remove from Library"
+                    className="hover:!bg-red-500/20 hover:!text-red-400"
+                />
+            </div>
+
+            {/* Main Menu Groups */}
+            <SubMenu label="Copy Data" icon={<Share2 className="w-4 h-4 text-gray-400" />} side={side}>
+                {onCopyPrompt && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Prompt" onClick={onCopyPrompt} />}
+                {onCopySeed && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Seed" onClick={onCopySeed} />}
+                {onCopyGenerationInfo && (
+                    <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy All Info" onClick={onCopyGenerationInfo} />
+                )}
+                <div className="h-px bg-white/5 my-1" />
+                {onCopyImage && (
+                    <MenuItem icon={<ImageIcon className="w-4 h-4 text-gray-400" />} label="Copy Image" onClick={onCopyImage} />
+                )}
+                {onCopyFilePath && (
+                    <MenuItem icon={<Copy className="w-4 h-4 text-gray-500" />} label="Copy File Path" onClick={onCopyFilePath} />
+                )}
+            </SubMenu>
+
+            {onSetImageKind && detectedSourceKind && (
+                <SubMenu label="Image Kind" icon={<ImageIcon className="w-4 h-4 text-gray-400" />} side={side}>
+                    <MenuItem
+                        icon={<Check className={`w-4 h-4 ${sourceKindOverride === undefined ? 'opacity-100' : 'opacity-0'}`} />}
+                        label={`Automatic (${detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})`}
+                        onClick={() => onSetImageKind(null)}
+                        checked={sourceKindOverride === undefined}
+                    />
+                    {(['generated', 'photograph', 'other'] as const).map((kind) => (
+                        <MenuItem
+                            key={kind}
+                            icon={<Check className={`w-4 h-4 ${sourceKindOverride === kind ? 'opacity-100' : 'opacity-0'}`} />}
+                            label={kind === 'photograph' ? 'Photo' : kind === 'generated' ? 'Generated' : 'Other'}
+                            onClick={() => onSetImageKind(kind)}
+                            checked={sourceKindOverride === kind}
+                        />
+                    ))}
+                </SubMenu>
+            )}
+
+            <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-gray-400" />} side={side}>
+                <MenuItem
+                    icon={<FolderPlus className="w-4 h-4 text-gray-400" />}
+                    label="Add to Collection..."
+                    onClick={onAddToCollection}
+                />
+                {onMoveToCollection && (
+                    <MenuItem
+                        icon={<Layout className="w-4 h-4 text-gray-400" />}
+                        label="Move to Collection..."
+                        onClick={onMoveToCollection}
+                    />
+                )}
+                {activeCollectionName && onRemoveFromCollection && (
+                    <MenuItem
+                        icon={<FolderMinus className="w-4 h-4 text-gray-400" />}
+                        label="Remove from Collection"
+                        onClick={onRemoveFromCollection}
+                        className="hover:!bg-red-500/10 hover:!text-red-200"
+                    />
+                )}
+                <div className="h-px bg-white/5 my-1" />
+                {/* Collection Thumbnail */}
+                {onSetThumbnail && (
+                    <MenuItem
+                        icon={<ImageIcon className="w-4 h-4 text-gray-400" />}
+                        label="Set as Collection Thumb"
+                        onClick={onSetThumbnail}
+                    />
+                )}
+                {onUnsetThumbnail && (
+                    <MenuItem
+                        icon={<ImageOff className="w-4 h-4 text-gray-500" />}
+                        label="Reset Collection Thumb"
+                        onClick={onUnsetThumbnail}
+                    />
+                )}
+
+                {/* Model Thumbnails */}
+                {modelsForThumbnail && modelsForThumbnail.length > 0 && onSetModelThumbnail && (
+                    <>
+                        <div className="h-px bg-white/5 my-1" />
+                        <div className="px-2 py-1 text-[10px] uppercase font-bold text-gray-500">Set Model Thumbnail</div>
+                        {modelsForThumbnail.map((m, i) => (
+                            <MenuItem
+                                key={i}
+                                icon={<ImageIcon className="w-3 h-3 text-gray-400" />}
+                                label={m.name}
+                                onClick={() => onSetModelThumbnail(m)}
+                            />
+                        ))}
+                    </>
+                )}
+            </SubMenu>
+
+            <SubMenu label="Privacy & AI" icon={<Shield className="w-4 h-4 text-gray-400" />} side={side}>
+                {onToggleMask && (
+                    <>
+                        {userMasked !== undefined && (
+                            <MenuItem
+                                icon={<MinusCircle className="w-4 h-4 text-gray-400" />}
+                                label="Reset Mask to Auto"
+                                onClick={() => onToggleMask(null)}
+                            />
+                        )}
+                        {!isMasked && (
+                            <MenuItem
+                                icon={<EyeOff className="w-4 h-4 text-gray-400" />}
+                                label="Mask Content"
+                                onClick={() => onToggleMask(true)}
+                            />
+                        )}
+                        {isMasked && (
+                            <MenuItem
+                                icon={<Eye className="w-4 h-4 text-gray-400" />}
+                                label="Unmask Content"
+                                onClick={() => onToggleMask(false)}
+                            />
+                        )}
+                    </>
+                )}
+                {onToggleIntermediate && (
+                    <>
+                        <div className="h-px bg-white/5 my-1" />
+                        <MenuItem
+                            icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-gray-400' : 'text-gray-400'}`} />}
+                            label={isIntermediate ? 'Unmark as Intermediate' : 'Mark as Intermediate'}
+                            onClick={onToggleIntermediate}
+                        />
+                    </>
+                )}
+                {enableAI && onRecoverMetadata && (
+                    <>
+                        <div className="h-px bg-white/5 my-1" />
+                        <MenuItem
+                            icon={<Wand2 className="w-4 h-4 text-gray-400" />}
+                            label="Recover Metadata (AI)"
+                            onClick={onRecoverMetadata}
+                            className="text-gray-400"
+                        />
+                    </>
+                )}
+            </SubMenu>
+
+            <div className="h-px bg-white/5 my-1" />
+
+            {onOpenInDefaultApp && (
+                <MenuItem
+                    icon={<ExternalLink className="w-4 h-4 text-gray-400" />}
+                    label="Open in Default App"
+                    onClick={onOpenInDefaultApp}
+                />
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
-const MenuItem = ({ icon, label, onClick, className = "", checked }: { icon: React.ReactNode, label: string, onClick: () => void, className?: string, checked?: boolean }) => (
-  <button
-    type="button"
-    role={checked === undefined ? undefined : 'menuitemradio'}
-    aria-checked={checked === undefined ? undefined : checked}
-    onClick={(e) => {
-      e.stopPropagation();
-      onClick();
-    }}
-    className={`w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors ${className}`}
-  >
-    {icon}
-    <span className="truncate">{label}</span>
-  </button>
+const SubMenu = ({
+    label,
+    icon,
+    children,
+    side,
+}: {
+    label: string;
+    icon: React.ReactNode;
+    children: React.ReactNode;
+    side: 'right' | 'left';
+}) => {
+    const [isHovered, setIsHovered] = useState(false);
+    const [isClickOpen, setIsClickOpen] = useState(false);
+    const timeoutRef = useRef<number | null>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const isOpen = isHovered || isClickOpen;
+
+    const handleMouseEnter = () => {
+        if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+        setIsHovered(true);
+    };
+
+    const handleMouseLeave = () => {
+        timeoutRef.current = window.setTimeout(() => setIsHovered(false), 150);
+    };
+
+    const toggleOpen = () => {
+        if (isOpen) {
+            setIsHovered(false);
+            setIsClickOpen(false);
+        } else {
+            setIsClickOpen(true);
+        }
+    };
+
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.stopPropagation();
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsClickOpen(true);
+        } else if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsHovered(false);
+            setIsClickOpen(false);
+        }
+    };
+
+    const handleSubmenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowRight') {
+            event.stopPropagation();
+        } else if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsHovered(false);
+            setIsClickOpen(false);
+            triggerRef.current?.focus();
+        }
+    };
+
+    return (
+        <div
+            className="relative"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                    setIsHovered(false);
+                    setIsClickOpen(false);
+                }
+            }}
+        >
+            <button
+                ref={triggerRef}
+                type="button"
+                aria-expanded={isOpen}
+                onClick={toggleOpen}
+                onKeyDown={handleKeyDown}
+                className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between transition-colors group"
+            >
+                <div className="flex items-center gap-2">
+                    {icon}
+                    <span>{label}</span>
+                </div>
+                <ChevronRight
+                    className={`w-3 h-3 text-gray-600 group-hover:text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-90 sm:rotate-0' : ''}`}
+                />
+            </button>
+
+            {isOpen && (
+                <div
+                    onKeyDown={handleSubmenuKeyDown}
+                    className={`absolute top-0 w-56 bg-zinc-950/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl py-1 z-[60] animate-in fade-in zoom-in-95 duration-150 ${side === 'right' ? 'left-[calc(100%+4px)]' : 'right-[calc(100%+4px)]'}`}
+                >
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const MenuItem = ({
+    icon,
+    label,
+    onClick,
+    className = '',
+    checked,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    onClick: () => void;
+    className?: string;
+    checked?: boolean;
+}) => (
+    <button
+        type="button"
+        role={checked === undefined ? undefined : 'menuitemradio'}
+        aria-checked={checked === undefined ? undefined : checked}
+        onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+        }}
+        className={`w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors ${className}`}
+    >
+        {icon}
+        <span className="truncate">{label}</span>
+    </button>
 );
 
-const ActionButton = ({ icon, onClick, label, pressed, className = "" }: { icon: React.ReactNode, onClick: () => void, label: string, pressed?: boolean, className?: string }) => (
-  <TooltipButton
-    label={label}
-    content={label}
-    aria-pressed={pressed}
-    onClick={onClick}
-    className={`p-2 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white ${className}`}
-  >
-    {icon}
-  </TooltipButton>
+const ActionButton = ({
+    icon,
+    onClick,
+    label,
+    pressed,
+    className = '',
+}: {
+    icon: React.ReactNode;
+    onClick: () => void;
+    label: string;
+    pressed?: boolean;
+    className?: string;
+}) => (
+    <TooltipButton
+        label={label}
+        content={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+        className={`p-2 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white ${className}`}
+    >
+        {icon}
+    </TooltipButton>
 );

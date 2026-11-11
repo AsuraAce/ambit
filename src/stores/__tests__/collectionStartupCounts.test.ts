@@ -18,14 +18,20 @@ vi.mock('../../services/repository', () => ({
     appRepository: { load: vi.fn().mockResolvedValue({ collectionStorageVersion: 1 }) },
 }));
 
-const deferred = <T,>() => {
+const deferred = <T>() => {
     let resolve!: (value: T) => void;
     let reject!: (error: Error) => void;
-    const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+    const promise = new Promise<T>((yes, no) => {
+        resolve = yes;
+        reject = no;
+    });
     return { promise, resolve, reject };
 };
 const collection = (): Collection => ({ id: 'ordinary', name: 'Ordinary', createdAt: 1, imageIds: [] });
-interface ReadOptions { includeCounts?: boolean; readCounts?: () => Promise<Map<string, number>> }
+interface ReadOptions {
+    includeCounts?: boolean;
+    readCounts?: () => Promise<Map<string, number>>;
+}
 
 describe('ordinary collection startup counts', () => {
     beforeEach(() => {
@@ -65,10 +71,12 @@ describe('ordinary collection startup counts', () => {
         store.getState().setOrdinaryCountsReady(false);
         store.getState().setOrdinaryCountsReady(true);
         expect(mocks.counts).toHaveBeenCalledOnce();
-        store.setState(state => ({ collections: state.collections.map(row => ({ ...row, thumbnail: 'verified-thumb' })) }));
+        store.setState((state) => ({ collections: state.collections.map((row) => ({ ...row, thumbnail: 'verified-thumb' })) }));
         count.resolve(new Map());
         await store.getState().refreshPendingOrdinaryCounts();
-        await vi.waitFor(() => expect(store.getState().collections[0]).toMatchObject({ count: 0, countState: 'ready', thumbnail: 'verified-thumb' }));
+        await vi.waitFor(() =>
+            expect(store.getState().collections[0]).toMatchObject({ count: 0, countState: 'ready', thumbnail: 'verified-thumb' })
+        );
         expect(mocks.rows).toHaveBeenCalledOnce();
     });
 
@@ -97,7 +105,7 @@ describe('ordinary collection startup counts', () => {
         store.getState().setOrdinaryCountsReady(false);
         count.resolve(new Map([['ordinary', 99]]));
         await vi.waitFor(() => expect(mocks.counts).toHaveBeenCalledOnce());
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(store.getState().collections[0].countState).toBe('pending');
         store.getState().setOrdinaryCountsReady(true);
         await vi.waitFor(() => expect(store.getState().collections[0].count).toBe(4));
@@ -125,8 +133,12 @@ describe('ordinary collection startup counts', () => {
         await store.getState().initialize({ deferHydration: true });
         store.getState().setOrdinaryCountsReady(true);
         let settled = false;
-        const runtime = store.getState().refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false })
-            .then(() => { settled = true; });
+        const runtime = store
+            .getState()
+            .refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false })
+            .then(() => {
+                settled = true;
+            });
         await vi.waitFor(() => expect(mocks.rows).toHaveBeenCalledTimes(2));
         expect(mocks.counts).toHaveBeenCalledOnce();
         expect(settled).toBe(false);
@@ -143,8 +155,9 @@ describe('ordinary collection startup counts', () => {
         const { useCollectionStore: store } = await import('../collectionStore');
         store.getState().setOrdinaryCountsReady(true);
         mocks.counts.mockRejectedValueOnce(new Error('generated runtime failure'));
-        await expect(store.getState().refreshCollections(false, { consistency: 'authoritative' }))
-            .rejects.toThrow('generated runtime failure');
+        await expect(store.getState().refreshCollections(false, { consistency: 'authoritative' })).rejects.toThrow(
+            'generated runtime failure'
+        );
     });
 
     it('makes a failed replacement of pending startup counts explicitly retryable', async () => {
@@ -192,8 +205,12 @@ describe('ordinary collection startup counts', () => {
         store.getState().setOrdinaryCountsReady(false);
         store.getState().invalidateInitialization();
         let settled = false;
-        const refresh = store.getState().refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false })
-            .then(() => { settled = true; });
+        const refresh = store
+            .getState()
+            .refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false })
+            .then(() => {
+                settled = true;
+            });
         await vi.waitFor(() => expect(mocks.counts).toHaveBeenCalledOnce());
         expect(settled).toBe(false);
         expect(store.getState().hasOpenedGallery).toBe(true);
@@ -204,12 +221,17 @@ describe('ordinary collection startup counts', () => {
 
     it('coalesces pending snapshot edits into one latest read and retains added collections', async () => {
         const first = deferred<Map<string, number>>();
-        mocks.counts.mockReturnValueOnce(first.promise).mockResolvedValueOnce(new Map([['ordinary', 6], ['new', 3]]));
+        mocks.counts.mockReturnValueOnce(first.promise).mockResolvedValueOnce(
+            new Map([
+                ['ordinary', 6],
+                ['new', 3],
+            ])
+        );
         const { useCollectionStore: store } = await import('../collectionStore');
         await store.getState().initialize({ deferHydration: true });
         store.getState().setOrdinaryCountsReady(true);
-        store.getState().setCollections(rows => rows.map(row => ({ ...row, name: 'Renamed' })));
-        store.getState().setCollections(rows => [...rows, { ...collection(), id: 'new', countState: 'pending' }]);
+        store.getState().setCollections((rows) => rows.map((row) => ({ ...row, name: 'Renamed' })));
+        store.getState().setCollections((rows) => [...rows, { ...collection(), id: 'new', countState: 'pending' }]);
         expect(mocks.counts).toHaveBeenCalledOnce();
         first.resolve(new Map([['ordinary', 99]]));
         await vi.waitFor(() => expect(store.getState().collections[1].count).toBe(3));

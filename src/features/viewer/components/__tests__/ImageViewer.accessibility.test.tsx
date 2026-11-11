@@ -9,9 +9,7 @@ const mockMetadataSidebar = vi.fn();
 
 vi.mock('framer-motion', () => ({
     motion: {
-        div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-            <div {...props}>{children}</div>
-        ),
+        div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
     },
 }));
 
@@ -35,9 +33,7 @@ vi.mock('../ImageCanvas', () => ({
 }));
 
 vi.mock('../ViewerToolbar', () => ({
-    ViewerToolbar: ({ onToggleTheater }: { onToggleTheater: () => void }) => (
-        <button onClick={onToggleTheater}>Toggle Theater Mode</button>
-    ),
+    ViewerToolbar: ({ onToggleTheater }: { onToggleTheater: () => void }) => <button onClick={onToggleTheater}>Toggle Theater Mode</button>,
 }));
 
 vi.mock('../VersionSelector', () => ({
@@ -73,7 +69,15 @@ vi.mock('../../../../hooks/useImageAI', () => ({
 }));
 
 vi.mock('../../../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: { settings: Record<string, unknown>; isLoaded: boolean; setSettings: () => void; privacyEnabled: boolean; privacyMaskIndexStatus: string }) => unknown) => (
+    useSettingsStore: (
+        selector: (state: {
+            settings: Record<string, unknown>;
+            isLoaded: boolean;
+            setSettings: () => void;
+            privacyEnabled: boolean;
+            privacyMaskIndexStatus: string;
+        }) => unknown
+    ) =>
         selector({
             settings: {
                 enableAI: true,
@@ -84,14 +88,11 @@ vi.mock('../../../../stores/settingsStore', () => ({
             setSettings: vi.fn(),
             privacyEnabled: false,
             privacyMaskIndexStatus: 'ready',
-        })
-    ),
+        }),
 }));
 
 vi.mock('../../../../stores/collectionStore', () => ({
-    useCollectionStore: (selector: (state: { collections: never[] }) => unknown) => (
-        selector({ collections: [] })
-    ),
+    useCollectionStore: (selector: (state: { collections: never[] }) => unknown) => selector({ collections: [] }),
 }));
 
 vi.mock('../../../../services/assetScope', () => ({

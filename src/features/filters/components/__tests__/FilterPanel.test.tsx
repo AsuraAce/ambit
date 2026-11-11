@@ -1,7 +1,14 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { GeneratorTool, type Collection, type FilterState, type SmartCollection, type SortOption, type AssetScope } from '../../../../types';
+import {
+    GeneratorTool,
+    type Collection,
+    type FilterState,
+    type SmartCollection,
+    type SortOption,
+    type AssetScope,
+} from '../../../../types';
 import type { Facets } from '../../../../services/db/searchRepo';
 import type { useCollections } from '../../../../contexts/CollectionContext';
 import type { useSearch } from '../../../../contexts/SearchContext';
@@ -16,79 +23,89 @@ const contextMocks = vi.hoisted(() => ({
     search: { current: undefined as unknown },
     collections: { current: undefined as unknown },
     childProps: {} as Record<string, Record<string, unknown>>,
-    appVersion: { current: '0.0.0-test' as string | null }
+    appVersion: { current: '0.0.0-test' as string | null },
 }));
 
 vi.mock('../../../../contexts/SearchContext', () => ({
-    useSearch: () => contextMocks.search.current
+    useSearch: () => contextMocks.search.current,
 }));
 
 vi.mock('../../../../contexts/CollectionContext', () => ({
-    useCollections: () => contextMocks.collections.current
+    useCollections: () => contextMocks.collections.current,
 }));
 
 vi.mock('../../../../hooks/useAppVersion', () => ({
-    useAppVersion: () => contextMocks.appVersion.current
+    useAppVersion: () => contextMocks.appVersion.current,
 }));
 
 vi.mock('../../../../utils/externalLinks', () => ({
-    openExternalUrl: vi.fn()
+    openExternalUrl: vi.fn(),
 }));
 
 vi.mock('../CollectionsSection', () => ({
     CollectionsSection: (props: Record<string, unknown>) => {
         contextMocks.childProps.collections = props;
-        return <button data-testid="collections-section" onClick={() => (props.onToggle as () => void)()}>collections</button>;
-    }
+        return (
+            <button data-testid="collections-section" onClick={() => (props.onToggle as () => void)()}>
+                collections
+            </button>
+        );
+    },
 }));
 
 vi.mock('../GeneratorSection', () => ({
     GeneratorSection: (props: Record<string, unknown>) => {
         contextMocks.childProps.generator = props;
-        return <button data-testid="generator-section" onClick={() => (props.onToggle as () => void)()}>generator</button>;
-    }
+        return (
+            <button data-testid="generator-section" onClick={() => (props.onToggle as () => void)()}>
+                generator
+            </button>
+        );
+    },
 }));
 
 vi.mock('../ParameterSection', () => ({
     ParameterSection: (props: Record<string, unknown>) => {
         contextMocks.childProps.parameter = props;
-        return <button data-testid="parameter-section" onClick={() => (props.onToggle as () => void)()}>parameter</button>;
-    }
+        return (
+            <button data-testid="parameter-section" onClick={() => (props.onToggle as () => void)()}>
+                parameter
+            </button>
+        );
+    },
 }));
 
 vi.mock('../GuidanceSection', () => ({
     GuidanceSection: (props: Record<string, unknown>) => {
         contextMocks.childProps.guidance = props;
-        return <button data-testid="guidance-section" onClick={() => (props.onToggle as () => void)()}>guidance</button>;
-    }
+        return (
+            <button data-testid="guidance-section" onClick={() => (props.onToggle as () => void)()}>
+                guidance
+            </button>
+        );
+    },
 }));
 
 vi.mock('../DateRangeSection', () => ({
     DateRangeSection: (props: Record<string, unknown>) => {
         contextMocks.childProps.date = props;
         return <div data-testid="date-section">date</div>;
-    }
+    },
 }));
 
 vi.mock('../ResourceSection', () => ({
-    ResourceSection: (props: {
-        title: string;
-        type: string;
-        data: { name: string }[];
-        isLoading?: boolean;
-    }) => {
+    ResourceSection: (props: { title: string; type: string; data: { name: string }[]; isLoading?: boolean }) => {
         contextMocks.childProps[props.type] = props as unknown as Record<string, unknown>;
         return (
-        <section data-testid={`resource-section-${props.type}`} onClick={() => (props as Record<string, unknown>).onToggle && ((props as Record<string, unknown>).onToggle as () => void)()}>
-            <h3>{props.title}</h3>
-            {props.isLoading ? (
-                <p>Loading {props.title}...</p>
-            ) : (
-                <p>{props.data.map(item => item.name).join(', ')}</p>
-            )}
-        </section>
+            <section
+                data-testid={`resource-section-${props.type}`}
+                onClick={() => (props as Record<string, unknown>).onToggle && ((props as Record<string, unknown>).onToggle as () => void)()}
+            >
+                <h3>{props.title}</h3>
+                {props.isLoading ? <p>Loading {props.title}...</p> : <p>{props.data.map((item) => item.name).join(', ')}</p>}
+            </section>
         );
-    }
+    },
 }));
 
 const filters: FilterState = {
@@ -104,7 +121,7 @@ const filters: FilterState = {
     ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
-    collectionId: null
+    collectionId: null,
 };
 
 const emptyFacets = (): Facets => ({
@@ -114,7 +131,7 @@ const emptyFacets = (): Facets => ({
     hypernetworks: [],
     controlNets: [],
     ipAdapters: [],
-    tools: []
+    tools: [],
 });
 
 const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): SearchContextValue => ({
@@ -134,27 +151,27 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
         avgSteps: 0,
         estSizeMB: '0',
         modelStats: [],
-        keywordStats: []
+        keywordStats: [],
     },
     totalImages: 0,
     globalTotal: 0,
     scopeCountsLoading: false,
     scopeCountsError: false,
-    retryScopeCounts: async () => { },
+    retryScopeCounts: async () => {},
     hasMoreImages: false,
-    loadMoreImages: async () => { },
+    loadMoreImages: async () => {},
     clearAllFilters: vi.fn(),
     isFiltering: false,
     activeSqlWhere: '',
     activeSqlParams: [],
-    refreshMetadata: async () => { },
-    fetchData: async () => { },
+    refreshMetadata: async () => {},
+    fetchData: async () => {},
     recentSearches: [],
     setRecentSearches: vi.fn() as Dispatch<SetStateAction<string[]>>,
-    toggleFavorite: async () => { },
-    togglePin: async () => { },
+    toggleFavorite: async () => {},
+    togglePin: async () => {},
     availableHiddenContent: { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false },
-    refreshHiddenAvailability: async () => { },
+    refreshHiddenAvailability: async () => {},
     isFacetsLoading: false,
     isLoadingMore: false,
     isStatsSummaryLoading: false,
@@ -163,7 +180,7 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     assetScope: 'local',
     setAssetScope: vi.fn() as Dispatch<SetStateAction<AssetScope>>,
     setFacetDrilldownActive: vi.fn(),
-    ...overrides
+    ...overrides,
 });
 
 const defaultCollectionsContext = (): CollectionsContextValue => ({
@@ -172,9 +189,9 @@ const defaultCollectionsContext = (): CollectionsContextValue => ({
     smartCollections: [],
     setSmartCollections: vi.fn() as Dispatch<SetStateAction<SmartCollection[]>>,
     setAllCollections: vi.fn() as Dispatch<SetStateAction<Collection[]>>,
-    refreshCollections: async () => { },
-    refreshCollectionThumbnails: async () => { },
-    isLoaded: true
+    refreshCollections: async () => {},
+    refreshCollectionThumbnails: async () => {},
+    isLoaded: true,
 });
 
 interface RenderPanelOptions {
@@ -189,7 +206,7 @@ const renderPanel = ({ search, collections = [], smartCollections = [], props = 
     contextMocks.collections.current = {
         ...defaultCollectionsContext(),
         collections,
-        smartCollections
+        smartCollections,
     };
 
     const panelProps: React.ComponentProps<typeof FilterPanel> = {
@@ -198,7 +215,7 @@ const renderPanel = ({ search, collections = [], smartCollections = [], props = 
         onCreateCollection: vi.fn(),
         onSaveSmartCollection: vi.fn(),
         onDeleteSmartCollection: vi.fn(),
-        ...props
+        ...props,
     };
     const result = render(<FilterPanel {...panelProps} />);
     return { ...result, panelProps };
@@ -235,11 +252,13 @@ describe('FilterPanel local asset scope', () => {
 
     it('shows resource lists and hides the empty CTA when local disk assets exist', () => {
         const facets = emptyFacets();
-        facets.checkpoints = [{
-            name: 'LocalCheckpoint',
-            count: 0,
-            isLocalDisk: true
-        }];
+        facets.checkpoints = [
+            {
+                name: 'LocalCheckpoint',
+                count: 0,
+                isLocalDisk: true,
+            },
+        ];
 
         renderResourcesTab({ facets, isFacetsLoading: false });
 
@@ -256,7 +275,7 @@ describe('FilterPanel local asset scope', () => {
             setFilters: vi.fn() as Dispatch<SetStateAction<FilterState>>,
             onCreateCollection: vi.fn(),
             onSaveSmartCollection: vi.fn(),
-            onDeleteSmartCollection: vi.fn()
+            onDeleteSmartCollection: vi.fn(),
         };
         const { container, rerender } = render(<FilterPanel {...panelProps} isVisible={false} />);
         const panel = container.firstElementChild as HTMLElement;
@@ -302,7 +321,7 @@ describe('FilterPanel interactions', () => {
         const setFacetDrilldownActive = vi.fn();
         const { container } = renderPanel({
             search: { setFacetDrilldownActive },
-            props: { isVisible: false, className: 'custom-panel' }
+            props: { isVisible: false, className: 'custom-panel' },
         });
 
         fireEvent.click(screen.getByRole('button', { name: /^Assets$/, hidden: true }));
@@ -345,8 +364,8 @@ describe('FilterPanel interactions', () => {
                 hypernetworks: ['local-hypernet'],
                 controlNets: ['both-control'],
                 ipAdapters: ['unused-ip'],
-                tools: []
-            }
+                tools: [],
+            },
         });
 
         expect(screen.getByTestId('resource-section-embeddings')).toBeTruthy();
@@ -406,7 +425,7 @@ describe('FilterPanel interactions', () => {
     it('clears result filters and opens the project repository', () => {
         const clearAllFilters = vi.fn();
         renderPanel({
-            search: { filters: { ...filters, searchQuery: 'portrait', collectionId: 'regular' }, clearAllFilters }
+            search: { filters: { ...filters, searchQuery: 'portrait', collectionId: 'regular' }, clearAllFilters },
         });
 
         fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
@@ -418,24 +437,22 @@ describe('FilterPanel interactions', () => {
 
     it('does not offer to clear filters when only collection navigation scope is active', () => {
         renderPanel({
-            search: { filters: { ...filters, collectionId: 'regular' } }
+            search: { filters: { ...filters, collectionId: 'regular' } },
         });
 
         expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
     });
 
-    it.each([
-        { samplers: ['Euler'] },
-        { generationTypes: ['txt2img'] },
-        { minSteps: 0 },
-        { maxCfg: 0 },
-    ])('offers to clear every non-collection result criterion', criterion => {
-        renderPanel({
-            search: { filters: { ...filters, collectionId: 'regular', ...criterion } }
-        });
+    it.each([{ samplers: ['Euler'] }, { generationTypes: ['txt2img'] }, { minSteps: 0 }, { maxCfg: 0 }])(
+        'offers to clear every non-collection result criterion',
+        (criterion) => {
+            renderPanel({
+                search: { filters: { ...filters, collectionId: 'regular', ...criterion } },
+            });
 
-        expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
-    });
+            expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
+        }
+    );
 
     it('merges manual filters into a smart collection and clears transient edits', () => {
         const setFilters = vi.fn();
@@ -448,7 +465,7 @@ describe('FilterPanel interactions', () => {
             dateRange: 'all',
             favoritesOnly: true,
             showGrids: true,
-            showIntermediates: true
+            showIntermediates: true,
         };
         const manual: FilterState = {
             ...filters,
@@ -469,36 +486,41 @@ describe('FilterPanel interactions', () => {
             minSteps: 10,
             maxSteps: 20,
             minCfg: 4,
-            maxCfg: 8
+            maxCfg: 8,
         };
         const smart = { id: 'smart', name: 'Smart', filters: saved } as SmartCollection;
         renderPanel({
             search: { filters: manual, setFilters },
             smartCollections: [smart],
-            props: { onUpdateCollectionFilters }
+            props: { onUpdateCollectionFilters },
         });
 
         fireEvent.click(screen.getByRole('button', { name: 'Update' }));
-        expect(onUpdateCollectionFilters).toHaveBeenCalledWith('smart', expect.objectContaining({
-            collectionId: null,
-            searchQuery: 'saved manual',
-            models: ['base-model', 'new-model'],
-            tools: [GeneratorTool.COMFYUI, GeneratorTool.INVOKEAI],
-            loras: ['lora'],
-            dateRange: 'custom',
-            favoritesOnly: true,
-            pinnedOnly: true,
-            showGrids: true,
-            showIntermediates: true
-        }));
+        expect(onUpdateCollectionFilters).toHaveBeenCalledWith(
+            'smart',
+            expect.objectContaining({
+                collectionId: null,
+                searchQuery: 'saved manual',
+                models: ['base-model', 'new-model'],
+                tools: [GeneratorTool.COMFYUI, GeneratorTool.INVOKEAI],
+                loras: ['lora'],
+                dateRange: 'custom',
+                favoritesOnly: true,
+                pinnedOnly: true,
+                showGrids: true,
+                showIntermediates: true,
+            })
+        );
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => FilterState;
-        expect(updater(manual)).toEqual(expect.objectContaining({
-            collectionId: 'smart',
-            searchQuery: '',
-            models: [],
-            dateRange: 'all',
-            pinnedOnly: false
-        }));
+        expect(updater(manual)).toEqual(
+            expect.objectContaining({
+                collectionId: 'smart',
+                searchQuery: '',
+                models: [],
+                dateRange: 'all',
+                pinnedOnly: false,
+            })
+        );
     });
 
     it('falls back to saving the active smart collection when no updater is provided', () => {
@@ -508,7 +530,7 @@ describe('FilterPanel interactions', () => {
         renderPanel({
             search: { filters: manual },
             smartCollections: [smart],
-            props: { onSaveSmartCollection }
+            props: { onSaveSmartCollection },
         });
 
         fireEvent.click(screen.getByRole('button', { name: 'Update' }));
@@ -526,31 +548,34 @@ describe('FilterPanel interactions', () => {
             maxCfg: 4,
             dateRange: 'custom',
             dateFrom: '2025-01-01',
-            dateTo: '2025-01-31'
+            dateTo: '2025-01-31',
         };
         const manual: FilterState = {
             ...filters,
             collectionId: 'smart',
-            models: ['manual-model']
+            models: ['manual-model'],
         };
         renderPanel({
             search: { filters: manual },
             smartCollections: [{ id: 'smart', name: 'Smart', filters: saved } as SmartCollection],
-            props: { onUpdateCollectionFilters }
+            props: { onUpdateCollectionFilters },
         });
 
         fireEvent.click(screen.getByRole('button', { name: 'Update' }));
-        expect(onUpdateCollectionFilters).toHaveBeenCalledWith('smart', expect.objectContaining({
-            searchQuery: '',
-            dateRange: 'custom',
-            dateFrom: '2025-01-01',
-            dateTo: '2025-01-31',
-            pinnedOnly: true,
-            minSteps: 1,
-            maxSteps: 2,
-            minCfg: 3,
-            maxCfg: 4
-        }));
+        expect(onUpdateCollectionFilters).toHaveBeenCalledWith(
+            'smart',
+            expect.objectContaining({
+                searchQuery: '',
+                dateRange: 'custom',
+                dateFrom: '2025-01-01',
+                dateTo: '2025-01-31',
+                pinnedOnly: true,
+                minSteps: 1,
+                maxSteps: 2,
+                minCfg: 3,
+                maxCfg: 4,
+            })
+        );
     });
 
     it('shows a version placeholder while app version discovery is pending', () => {
@@ -563,16 +588,27 @@ describe('FilterPanel interactions', () => {
         const onUpdateCollectionFilters = vi.fn();
         const setFilters = vi.fn();
         const saved: FilterState = { ...filters, sourceKind: 'generated', mediaType: 'image' };
-        const manual: FilterState = { ...filters, collectionId: 'smart', searchQuery: 'castle', mediaType: 'all', sourceKind: 'photograph' };
+        const manual: FilterState = {
+            ...filters,
+            collectionId: 'smart',
+            searchQuery: 'castle',
+            mediaType: 'all',
+            sourceKind: 'photograph',
+        };
         renderPanel({
             search: { filters: manual, setFilters },
             smartCollections: [{ id: 'smart', name: 'Smart', filters: saved } as SmartCollection],
             props: { onUpdateCollectionFilters },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Update' }));
-        expect(onUpdateCollectionFilters).toHaveBeenCalledWith('smart', expect.objectContaining({
-            searchQuery: 'castle', sourceKind: 'generated', mediaType: 'image',
-        }));
+        expect(onUpdateCollectionFilters).toHaveBeenCalledWith(
+            'smart',
+            expect.objectContaining({
+                searchQuery: 'castle',
+                sourceKind: 'generated',
+                mediaType: 'image',
+            })
+        );
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => FilterState;
         expect(updater(manual)).toMatchObject({ sourceKind: 'all', mediaType: 'all', searchQuery: '' });
     });
@@ -581,7 +617,9 @@ describe('FilterPanel interactions', () => {
         const onUpdateCollectionFilters = vi.fn();
         renderPanel({
             search: { filters: { ...filters, collectionId: 'smart', mediaType: 'image', sourceKind: 'all' } },
-            smartCollections: [{ id: 'smart', name: 'Smart', filters: { ...filters, mediaType: 'all', sourceKind: 'photograph' } } as SmartCollection],
+            smartCollections: [
+                { id: 'smart', name: 'Smart', filters: { ...filters, mediaType: 'all', sourceKind: 'photograph' } } as SmartCollection,
+            ],
             props: { onUpdateCollectionFilters },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Update' }));
@@ -613,7 +651,9 @@ describe('FilterPanel interactions', () => {
         const update = screen.getByRole('button', { name: 'Update' });
         expect(update.getAttribute('aria-disabled')).toBe('true');
         fireEvent.focus(update);
-        expect(screen.getByRole('tooltip').textContent).toBe('This scope conflicts with the collection rules. Use Edit Filters to change them.');
+        expect(screen.getByRole('tooltip').textContent).toBe(
+            'This scope conflicts with the collection rules. Use Edit Filters to change them.'
+        );
         fireEvent.click(update);
         expect(onUpdateCollectionFilters).not.toHaveBeenCalled();
         expect(onSaveSmartCollection).not.toHaveBeenCalled();

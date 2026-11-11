@@ -9,16 +9,16 @@ import { WorkflowInspector } from '../WorkflowInspector';
 const workflowMocks = vi.hoisted(() => ({
     scanImageWorkflow: vi.fn(),
     updateImageWorkflow: vi.fn(),
-    updateImageWorkflowHint: vi.fn()
+    updateImageWorkflowHint: vi.fn(),
 }));
 
 vi.mock('../../../../services/metadataParser', () => ({
-    scanImageWorkflow: workflowMocks.scanImageWorkflow
+    scanImageWorkflow: workflowMocks.scanImageWorkflow,
 }));
 
 vi.mock('../../../../services/db/imageRepo', () => ({
     updateImageWorkflow: workflowMocks.updateImageWorkflow,
-    updateImageWorkflowHint: workflowMocks.updateImageWorkflowHint
+    updateImageWorkflowHint: workflowMocks.updateImageWorkflowHint,
 }));
 
 const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
@@ -39,9 +39,9 @@ const createImage = (overrides: Partial<AIImage> = {}): AIImage => ({
         cfg: 7,
         sampler: 'Euler',
         positivePrompt: 'prompt',
-        negativePrompt: ''
+        negativePrompt: '',
     },
-    ...overrides
+    ...overrides,
 });
 
 const withWorkflow = (workflowJson: string, overrides: Partial<AIImage> = {}): AIImage => {
@@ -50,8 +50,8 @@ const withWorkflow = (workflowJson: string, overrides: Partial<AIImage> = {}): A
         ...base,
         metadata: {
             ...base.metadata,
-            workflowJson
-        }
+            workflowJson,
+        },
     };
 };
 
@@ -65,7 +65,7 @@ describe('WorkflowInspector', () => {
         vi.mocked(writeTextFile).mockReset();
         Object.defineProperty(navigator, 'clipboard', {
             configurable: true,
-            value: { writeText: vi.fn().mockResolvedValue(undefined) }
+            value: { writeText: vi.fn().mockResolvedValue(undefined) },
         });
         vi.spyOn(console, 'log').mockImplementation(() => undefined);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -96,16 +96,16 @@ describe('WorkflowInspector', () => {
                         optional: null,
                         connection: { node: 1 },
                         longLink: ['x'.repeat(60), 0],
-                        values: ['euler', 1]
-                    }
+                        values: ['euler', 1],
+                    },
                 },
-                { id: 40, type: 'EmptyNode', title: 'Empty', inputs: {} }
-            ]
+                { id: 40, type: 'EmptyNode', title: 'Empty', inputs: {} },
+            ],
         });
 
         render(<WorkflowInspector image={withWorkflow(workflow)} />);
 
-        const headings = screen.getAllByTitle(/Sampler|Positive Prompt|Load Model|Empty/).map(node => node.textContent);
+        const headings = screen.getAllByTitle(/Sampler|Positive Prompt|Load Model|Empty/).map((node) => node.textContent);
         expect(headings).toEqual(['Sampler', 'Positive Prompt', 'Load Model', 'Empty']);
         expect(screen.getByText('4')).toBeTruthy();
 
@@ -133,13 +133,13 @@ describe('WorkflowInspector', () => {
                 type: 'invocation',
                 node_type: 'denoise_latents',
                 title: 'invocation',
-                inputs: { label: 'Denoise', strength: 0.6 }
+                inputs: { label: 'Denoise', strength: 0.6 },
             },
             a: {
                 type: 'invocation',
-                inputs: { type: 'prompt_builder', title: 'Prompt Builder', text: 'hello' }
+                inputs: { type: 'prompt_builder', title: 'Prompt Builder', text: 'hello' },
             },
-            ignored: 'not a node'
+            ignored: 'not a node',
         })} trailing text`;
 
         render(<WorkflowInspector image={withWorkflow(workflow)} />);
@@ -155,13 +155,17 @@ describe('WorkflowInspector', () => {
 
     it('renders raw and tool-specific empty states for non-graph workflow data', () => {
         const raw = '{"session":"complex"}';
-        const { rerender } = render(<WorkflowInspector image={withWorkflow(raw, {
-            metadata: {
-                ...createImage().metadata,
-                tool: GeneratorTool.INVOKEAI,
-                workflowJson: raw
-            }
-        })} />);
+        const { rerender } = render(
+            <WorkflowInspector
+                image={withWorkflow(raw, {
+                    metadata: {
+                        ...createImage().metadata,
+                        tool: GeneratorTool.INVOKEAI,
+                        workflowJson: raw,
+                    },
+                })}
+            />
+        );
 
         expect(screen.getByText(/complex session structure/i)).toBeTruthy();
         expect(screen.getByText('JSON Preview')).toBeTruthy();
@@ -199,7 +203,7 @@ describe('WorkflowInspector', () => {
         const flatWorkflow = JSON.stringify({
             one: { class_type: 'KSampler', inputs: { seed: 1 } },
             two: { type: 'Prompt', inputs: { text: 'hello' } },
-            metadata: 'ignored'
+            metadata: 'ignored',
         });
         workflowMocks.scanImageWorkflow.mockResolvedValueOnce(flatWorkflow);
         const first = render(<WorkflowInspector image={createImage({ id: 'flat.png' })} />);
@@ -216,8 +220,8 @@ describe('WorkflowInspector', () => {
         const withoutWorkflow = createImage({
             metadata: {
                 ...createImage().metadata,
-                hasWorkflowHint: false
-            }
+                hasWorkflowHint: false,
+            },
         });
         const first = render(<WorkflowInspector image={withoutWorkflow} />);
         expect(screen.getByText(/generated without a recorded workflow/i)).toBeTruthy();
@@ -261,7 +265,7 @@ describe('WorkflowInspector', () => {
         await waitFor(() => expect(writeTextFile).toHaveBeenCalledWith('C:/exports/image_workflow.json', workflow));
         expect(save).toHaveBeenCalledWith({
             filters: [{ name: 'JSON', extensions: ['json'] }],
-            defaultPath: 'image_workflow.json'
+            defaultPath: 'image_workflow.json',
         });
 
         fireEvent.click(download);
@@ -273,23 +277,30 @@ describe('WorkflowInspector', () => {
     });
 
     it('normalizes alternate node fields, generated ids, widget arrays, and every priority tier', () => {
-        const workflow = JSON.stringify({ nodes: [
-            { id: 'b', _type: 'l2l_generator', _meta: { title: 'Image Generator' }, widgets_values: [1, 'two'] },
-            { id: 'a', node_type: 'conditioning_combine', label: 'Conditioning', data: { strength: 0.5 } },
-            { id: 2, inputs: { type: 'checkpoint_loader', label: 'Input Loader', model: 'x' } },
-            { id: 1, inputs: { node_type: 'plain', title: 'Input Title', value: true } },
-            { type: 'invocation', title: 'invocation', inputs: { node_type: 'resolved_type', value: 3 } },
-            { type: 'invocation', title: 'invocation', node_type: 'resolved_node', inputs: { value: 4 } },
-            { type: 'invocation', title: 'invocation', inputs: { title: 'Input Invocation Title', value: 5 } },
-            { type: 'invocation', title: 'invocation', inputs: { value: 6 } },
-            { type: '', title: '', inputs: { value: 5 } },
-            { id: 8, type: 'Plain', title: 'Array Cases', inputs: {
-                longThree: ['x'.repeat(60), 1, 2],
-                longNonLink: ['y'.repeat(60), 'not-number'],
-                empty: [],
-                nullValue: null,
-            } },
-        ] });
+        const workflow = JSON.stringify({
+            nodes: [
+                { id: 'b', _type: 'l2l_generator', _meta: { title: 'Image Generator' }, widgets_values: [1, 'two'] },
+                { id: 'a', node_type: 'conditioning_combine', label: 'Conditioning', data: { strength: 0.5 } },
+                { id: 2, inputs: { type: 'checkpoint_loader', label: 'Input Loader', model: 'x' } },
+                { id: 1, inputs: { node_type: 'plain', title: 'Input Title', value: true } },
+                { type: 'invocation', title: 'invocation', inputs: { node_type: 'resolved_type', value: 3 } },
+                { type: 'invocation', title: 'invocation', node_type: 'resolved_node', inputs: { value: 4 } },
+                { type: 'invocation', title: 'invocation', inputs: { title: 'Input Invocation Title', value: 5 } },
+                { type: 'invocation', title: 'invocation', inputs: { value: 6 } },
+                { type: '', title: '', inputs: { value: 5 } },
+                {
+                    id: 8,
+                    type: 'Plain',
+                    title: 'Array Cases',
+                    inputs: {
+                        longThree: ['x'.repeat(60), 1, 2],
+                        longNonLink: ['y'.repeat(60), 'not-number'],
+                        empty: [],
+                        nullValue: null,
+                    },
+                },
+            ],
+        });
         render(<WorkflowInspector image={withWorkflow(workflow)} />);
 
         expect(screen.getByTitle('Image Generator')).not.toBeNull();
@@ -308,16 +319,16 @@ describe('WorkflowInspector', () => {
     });
 
     it('sorts equal-priority numeric and string ids deterministically', () => {
-        const workflow = JSON.stringify({ nodes: [
-            { id: 10, type: 'Plain', title: 'Ten', inputs: {} },
-            { id: 2, type: 'Plain', title: 'Two', inputs: {} },
-            { id: 'z', type: 'Plain', title: 'Zulu', inputs: {} },
-            { id: 'a', type: 'Plain', title: 'Alpha', inputs: {} },
-        ] });
+        const workflow = JSON.stringify({
+            nodes: [
+                { id: 10, type: 'Plain', title: 'Ten', inputs: {} },
+                { id: 2, type: 'Plain', title: 'Two', inputs: {} },
+                { id: 'z', type: 'Plain', title: 'Zulu', inputs: {} },
+                { id: 'a', type: 'Plain', title: 'Alpha', inputs: {} },
+            ],
+        });
         render(<WorkflowInspector image={withWorkflow(workflow)} />);
-        expect(screen.getAllByTitle(/Two|Ten|Alpha|Zulu/).map(element => element.textContent)).toEqual([
-            'Two', 'Ten', 'Alpha', 'Zulu'
-        ]);
+        expect(screen.getAllByTitle(/Two|Ten|Alpha|Zulu/).map((element) => element.textContent)).toEqual(['Two', 'Ten', 'Alpha', 'Zulu']);
     });
 
     it('renders an array-root workflow as raw JSON', () => {
@@ -349,11 +360,7 @@ describe('WorkflowInspector', () => {
     });
 
     it('recognizes flat graph node markers beyond type and inputs', async () => {
-        for (const [index, node] of [
-            { class_type: 'KSampler' },
-            { node_type: 'Prompt' },
-            { widgets_values: [1] },
-        ].entries()) {
+        for (const [index, node] of [{ class_type: 'KSampler' }, { node_type: 'Prompt' }, { widgets_values: [1] }].entries()) {
             const workflow = JSON.stringify({ one: node });
             workflowMocks.scanImageWorkflow.mockResolvedValueOnce(workflow);
             const view = render(<WorkflowInspector image={createImage({ id: `marker-${index}.png` })} />);
@@ -367,8 +374,12 @@ describe('WorkflowInspector', () => {
         vi.mocked(save).mockResolvedValueOnce(null);
         render(<WorkflowInspector image={withWorkflow(workflow, { filename: 'image' })} />);
         fireEvent.click(screen.getByRole('button', { name: 'Download workflow JSON' }));
-        await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
-            defaultPath: 'image_workflow.json'
-        })));
+        await waitFor(() =>
+            expect(save).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    defaultPath: 'image_workflow.json',
+                })
+            )
+        );
     });
 });

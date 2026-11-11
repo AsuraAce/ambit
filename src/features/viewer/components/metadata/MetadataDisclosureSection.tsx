@@ -49,8 +49,15 @@ export const MetadataDisclosureSection: React.FC<MetadataDisclosureSectionProps>
                     >
                         <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} />
                         <span className="truncate">{title}</span>
-                        {count !== undefined ? <span aria-hidden="true" className="text-[10px] font-medium text-gray-400 dark:text-zinc-600">{count}</span> : null}
-                        <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${isExpanded ? '' : '-rotate-90'}`} />
+                        {count !== undefined ? (
+                            <span aria-hidden="true" className="text-[10px] font-medium text-gray-400 dark:text-zinc-600">
+                                {count}
+                            </span>
+                        ) : null}
+                        <ChevronDown
+                            aria-hidden="true"
+                            className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${isExpanded ? '' : '-rotate-90'}`}
+                        />
                     </button>
                 </h3>
                 {trailing ? <div className="flex shrink-0 items-center gap-2">{trailing}</div> : null}

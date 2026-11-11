@@ -39,22 +39,21 @@ const historyEntries: BackgroundDiagnosticEntry[] = [];
 
 const cloneEntry = (entry: BackgroundDiagnosticEntry): BackgroundDiagnosticEntry => ({
     ...entry,
-    detail: entry.detail ? { ...entry.detail } : undefined
+    detail: entry.detail ? { ...entry.detail } : undefined,
 });
 
 const createSnapshot = (): BackgroundDiagnosticSnapshot => ({
     active: Array.from(activeEntries.values()).map(cloneEntry),
-    history: historyEntries.map(cloneEntry)
+    history: historyEntries.map(cloneEntry),
 });
 
-const isEnabled = (): boolean =>
-    typeof window !== 'undefined' && Boolean(import.meta.env.DEV);
+const isEnabled = (): boolean => typeof window !== 'undefined' && Boolean(import.meta.env.DEV);
 
 const ensureInstalled = () => {
     const target = window as AmbitDiagnosticsWindow;
     target.ambitDiagnostics = target.ambitDiagnostics ?? {};
     target.ambitDiagnostics.background = {
-        snapshot: createSnapshot
+        snapshot: createSnapshot,
     };
 };
 
@@ -74,7 +73,7 @@ export const startBackgroundDiagnostic = (
         return {
             id: '',
             update: () => undefined,
-            finish: () => undefined
+            finish: () => undefined,
         };
     }
 
@@ -89,7 +88,7 @@ export const startBackgroundDiagnostic = (
         startedAt: now,
         updatedAt: now,
         status: 'active',
-        detail
+        detail,
     };
     activeEntries.set(id, entry);
 
@@ -102,7 +101,7 @@ export const startBackgroundDiagnostic = (
             current.updatedAt = Date.now();
             current.detail = {
                 ...(current.detail ?? {}),
-                ...(nextDetail ?? {})
+                ...(nextDetail ?? {}),
             };
         },
         finish: (status = 'finished', finalDetail) => {
@@ -118,10 +117,10 @@ export const startBackgroundDiagnostic = (
                 status,
                 detail: {
                     ...(current.detail ?? {}),
-                    ...(finalDetail ?? {})
-                }
+                    ...(finalDetail ?? {}),
+                },
             };
             recordHistory(completed);
-        }
+        },
     };
 };

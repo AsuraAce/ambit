@@ -48,12 +48,14 @@ class RespondingWorker {
         mocks.workerMessages.push(message);
         const response = mocks.workerResponses.shift() ?? {};
         queueMicrotask(() => {
-            this.handlers.forEach((handler) => handler({
-                data: {
-                    requestId: message.requestId,
-                    ...response,
-                },
-            } as MessageEvent));
+            this.handlers.forEach((handler) =>
+                handler({
+                    data: {
+                        requestId: message.requestId,
+                        ...response,
+                    },
+                } as MessageEvent)
+            );
         });
     }
 
@@ -105,13 +107,7 @@ describe('metadataParser', () => {
         const { scanImageNative } = await import('../metadataParser');
         const result = await scanImageNative('C:/images/a.png', 'C:/thumbs', true, false, GeneratorTool.INVOKEAI);
 
-        expect(mocks.commands.scanImage).toHaveBeenCalledWith(
-            'C:/images/a.png',
-            'C:/thumbs',
-            true,
-            false,
-            GeneratorTool.INVOKEAI
-        );
+        expect(mocks.commands.scanImage).toHaveBeenCalledWith('C:/images/a.png', 'C:/thumbs', true, false, GeneratorTool.INVOKEAI);
         expect(result.metadata).toBe(metadata);
         expect(result.isIntermediate).toBe(true);
         expect(mocks.workerMessages).toEqual([]);
@@ -121,10 +117,20 @@ describe('metadataParser', () => {
         const photoMetadata = {
             capturedAt: { local: '2026:07:29 14:15:16', offset: null, subsecond: null },
             captureTimeRaw: '2026:07:29 14:15:16',
-            cameraMake: 'Test Camera Co', cameraModel: 'Camera One',
-            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
-            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: 6,
-            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
+            cameraMake: 'Test Camera Co',
+            cameraModel: 'Camera One',
+            lensMake: null,
+            lensModel: null,
+            focalLengthMm: null,
+            focalLength35Mm: null,
+            apertureFNumber: null,
+            exposureTimeSeconds: null,
+            iso: null,
+            orientation: 6,
+            artist: null,
+            copyright: null,
+            gpsLatitude: null,
+            gpsLongitude: null,
         };
         mocks.commands.scanImage.mockResolvedValue({
             status: 'ok',
@@ -216,7 +222,9 @@ describe('metadataParser', () => {
     it('ignores a duplicate worker response after the request settles', async () => {
         class DuplicateResponseWorker {
             private handler: WorkerHandler | null = null;
-            addEventListener(_event: string, handler: WorkerHandler) { this.handler = handler; }
+            addEventListener(_event: string, handler: WorkerHandler) {
+                this.handler = handler;
+            }
             removeEventListener() {}
             postMessage(message: Record<string, unknown>) {
                 const event = { data: { requestId: message.requestId, metadata: {}, extra: {} } } as MessageEvent;
@@ -289,18 +297,19 @@ describe('metadataParser', () => {
     it('bulk scans every returned result against the matching original path', async () => {
         mocks.commands.scanImagesBulk.mockResolvedValue({
             status: 'ok',
-            data: [
-                scanResult({ chunks: { parameters: 'a' } }),
-                scanResult({ chunks: { parameters: 'b' } }),
-            ],
+            data: [scanResult({ chunks: { parameters: 'a' } }), scanResult({ chunks: { parameters: 'b' } })],
         });
-        mocks.workerResponses.push(
-            { metadata: { positivePrompt: 'A' }, extra: {} },
-            { metadata: { positivePrompt: 'B' }, extra: {} },
-        );
+        mocks.workerResponses.push({ metadata: { positivePrompt: 'A' }, extra: {} }, { metadata: { positivePrompt: 'B' }, extra: {} });
 
         const { scanImagesBulk } = await import('../metadataParser');
-        const results = await scanImagesBulk(['C:/images/a.png', 'C:/images/b.png'], undefined, false, true, GeneratorTool.COMFYUI, 'run-1');
+        const results = await scanImagesBulk(
+            ['C:/images/a.png', 'C:/images/b.png'],
+            undefined,
+            false,
+            true,
+            GeneratorTool.COMFYUI,
+            'run-1'
+        );
 
         expect(mocks.commands.scanImagesBulk).toHaveBeenCalledWith(
             ['C:/images/a.png', 'C:/images/b.png'],
@@ -402,18 +411,16 @@ describe('metadataParser', () => {
     });
 
     it('normalizes sparse scan results and worker defaults', async () => {
-        mocks.commands.scanImage
-            .mockResolvedValueOnce({ status: 'ok', data: scanResult({ error: null }) })
-            .mockResolvedValueOnce({
-                status: 'ok',
-                data: scanResult({
-                    metadata: { tool: GeneratorTool.COMFYUI },
-                    thumbnail: null,
-                    microThumbnail: null,
-                    thumbnailSource: null,
-                    chunks: null,
-                }),
-            });
+        mocks.commands.scanImage.mockResolvedValueOnce({ status: 'ok', data: scanResult({ error: null }) }).mockResolvedValueOnce({
+            status: 'ok',
+            data: scanResult({
+                metadata: { tool: GeneratorTool.COMFYUI },
+                thumbnail: null,
+                microThumbnail: null,
+                thumbnailSource: null,
+                chunks: null,
+            }),
+        });
         mocks.workerResponses.push({});
 
         const { scanImageNative } = await import('../metadataParser');

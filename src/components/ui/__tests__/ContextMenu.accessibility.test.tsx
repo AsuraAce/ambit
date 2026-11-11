@@ -3,18 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { ContextMenu } from '../ContextMenu';
 
-const renderContextMenu = () => render(
-    <ContextMenu
-        x={20}
-        y={20}
-        onClose={vi.fn()}
-        onCopyPrompt={vi.fn()}
-        onAddToCollection={vi.fn()}
-        onTogglePin={vi.fn()}
-        onDelete={vi.fn()}
-        onShowInFolder={vi.fn()}
-    />
-);
+const renderContextMenu = () =>
+    render(
+        <ContextMenu
+            x={20}
+            y={20}
+            onClose={vi.fn()}
+            onCopyPrompt={vi.fn()}
+            onAddToCollection={vi.fn()}
+            onTogglePin={vi.fn()}
+            onDelete={vi.fn()}
+            onShowInFolder={vi.fn()}
+        />
+    );
 
 describe('ContextMenu submenus', () => {
     afterEach(() => {

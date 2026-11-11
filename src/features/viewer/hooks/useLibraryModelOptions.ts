@@ -17,7 +17,7 @@ const normalizeModelOptions = (values: readonly string[]): string[] => {
     return Array.from(unique.values()).sort((left, right) => left.localeCompare(right));
 };
 export const useLibraryModelOptions = (): string[] => {
-    const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
+    const facetCacheVersion = useLibraryStore((state) => state.facetCacheVersion);
     const useBrowserMocks = isBrowserMockMode();
     const query = useQuery({
         queryKey: ['viewer', 'model-options', facetCacheVersion, useBrowserMocks],
@@ -25,7 +25,7 @@ export const useLibraryModelOptions = (): string[] => {
             const checkpoints = useBrowserMocks
                 ? getBrowserMockFacets().checkpoints
                 : (await getFacets('', [], ['checkpoints'], { assetScope: 'all' })).checkpoints;
-            return normalizeModelOptions(checkpoints.map(item => item.name));
+            return normalizeModelOptions(checkpoints.map((item) => item.name));
         },
         staleTime: 1000 * 60 * 5,
     });

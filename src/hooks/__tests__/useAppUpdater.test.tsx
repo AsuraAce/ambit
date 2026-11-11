@@ -6,12 +6,13 @@ import { useAppUpdater } from '../useAppUpdater';
 
 const mockAddToast = vi.fn();
 
-const createMockUpdate = () => ({
-    version: '0.4.0',
-    body: 'New release notes',
-    date: '2026-04-17T12:00:00Z',
-    downloadAndInstall: vi.fn().mockResolvedValue(undefined),
-}) as unknown as Update;
+const createMockUpdate = () =>
+    ({
+        version: '0.4.0',
+        body: 'New release notes',
+        date: '2026-04-17T12:00:00Z',
+        downloadAndInstall: vi.fn().mockResolvedValue(undefined),
+    }) as unknown as Update;
 
 describe('useAppUpdater', () => {
     beforeEach(() => {
@@ -22,12 +23,13 @@ describe('useAppUpdater', () => {
 
     it('checks once after settings load and stays idle when no update is available', async () => {
         const { result, rerender } = renderHook(
-            ({ isSettingsLoaded }) => useAppUpdater({
-                addToast: mockAddToast,
-                autoCheckEnabled: true,
-                isSettingsLoaded,
-                isDevBuild: false,
-            }),
+            ({ isSettingsLoaded }) =>
+                useAppUpdater({
+                    addToast: mockAddToast,
+                    autoCheckEnabled: true,
+                    isSettingsLoaded,
+                    isDevBuild: false,
+                }),
             {
                 initialProps: { isSettingsLoaded: false },
             }
@@ -56,12 +58,14 @@ describe('useAppUpdater', () => {
         const mockUpdate = createMockUpdate();
         vi.mocked(check).mockResolvedValue(mockUpdate);
 
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: true,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: true,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await waitFor(() => {
             expect(result.current.status).toBe('available');
@@ -77,12 +81,14 @@ describe('useAppUpdater', () => {
         const mockUpdate = createMockUpdate();
         vi.mocked(check).mockResolvedValue(mockUpdate);
 
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         expect(vi.mocked(check)).not.toHaveBeenCalled();
 
@@ -98,12 +104,14 @@ describe('useAppUpdater', () => {
     it('surfaces manual check failures and recovers with an error state', async () => {
         vi.mocked(check).mockRejectedValue(new Error('Network down'));
 
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: true,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: true,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => {
             await result.current.checkForUpdates({ manual: true });
@@ -117,12 +125,14 @@ describe('useAppUpdater', () => {
     it('explains private or unreachable release feeds without treating latest-version checks as failures', async () => {
         vi.mocked(check).mockRejectedValue(new Error('404 Not Found'));
 
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => {
             await result.current.checkForUpdates({ manual: true });
@@ -131,10 +141,7 @@ describe('useAppUpdater', () => {
         expect(result.current.status).toBe('error');
         expect(result.current.errorMessage).toContain('release assets to be publicly reachable');
         expect(result.current.errorMessage).toContain('already up to date');
-        expect(mockAddToast).toHaveBeenCalledWith(
-            expect.stringContaining('release assets to be publicly reachable'),
-            'error'
-        );
+        expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('release assets to be publicly reachable'), 'error');
     });
 
     it('preserves raw install errors when package download or installation fails', async () => {
@@ -142,12 +149,14 @@ describe('useAppUpdater', () => {
         vi.mocked(mockUpdate.downloadAndInstall).mockRejectedValue('Download request timed out');
         vi.mocked(check).mockResolvedValue(mockUpdate);
 
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => {
             await result.current.checkForUpdates({ manual: true });
@@ -163,12 +172,14 @@ describe('useAppUpdater', () => {
     });
 
     it('disables checks in development builds and only explains manual attempts', async () => {
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: true,
-            isSettingsLoaded: true,
-            isDevBuild: true,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: true,
+                isSettingsLoaded: true,
+                isDevBuild: true,
+            })
+        );
 
         await act(async () => result.current.checkForUpdates());
         expect(mockAddToast).not.toHaveBeenCalled();
@@ -176,45 +187,48 @@ describe('useAppUpdater', () => {
 
         expect(result.current.canCheckForUpdates).toBe(false);
         expect(check).not.toHaveBeenCalled();
-        expect(mockAddToast).toHaveBeenCalledWith(
-            'Auto-update checks are disabled in development builds.',
-            'info'
-        );
+        expect(mockAddToast).toHaveBeenCalledWith('Auto-update checks are disabled in development builds.', 'info');
     });
 
     it('uses the development-build default when isDevBuild is omitted', () => {
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+            })
+        );
 
         expect(result.current.canCheckForUpdates).toBe(false);
     });
 
     it('confirms a manual no-update result', async () => {
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => result.current.checkForUpdates({ manual: true }));
 
         expect(mockAddToast).toHaveBeenCalledWith('Ambit is already up to date.', 'success');
     });
 
-    it.each(['401', '403', 'forbidden', 'not found', 'unauthorized']) (
+    it.each(['401', '403', 'forbidden', 'not found', 'unauthorized'])(
         'explains inaccessible release feeds reported as %s',
         async (message) => {
             vi.mocked(check).mockRejectedValueOnce(new Error(message));
-            const { result } = renderHook(() => useAppUpdater({
-                addToast: mockAddToast,
-                autoCheckEnabled: false,
-                isSettingsLoaded: true,
-                isDevBuild: false,
-            }));
+            const { result } = renderHook(() =>
+                useAppUpdater({
+                    addToast: mockAddToast,
+                    autoCheckEnabled: false,
+                    isSettingsLoaded: true,
+                    isDevBuild: false,
+                })
+            );
 
             await act(async () => result.current.checkForUpdates({ manual: true }));
 
@@ -224,12 +238,14 @@ describe('useAppUpdater', () => {
 
     it('preserves serialized Tauri check failures', async () => {
         vi.mocked(check).mockRejectedValueOnce('Network request timed out');
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => result.current.checkForUpdates({ manual: true }));
 
@@ -238,39 +254,44 @@ describe('useAppUpdater', () => {
 
     it('preserves message-bearing updater failures', async () => {
         vi.mocked(check).mockRejectedValueOnce({ message: 'Proxy authentication required' });
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => result.current.checkForUpdates({ manual: true }));
 
         expect(result.current.errorMessage).toBe('Proxy authentication required');
     });
 
-
     it('uses a generic message for opaque updater failures', async () => {
         vi.mocked(check).mockRejectedValueOnce({ code: 'opaque' });
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => result.current.checkForUpdates({ manual: true }));
 
         expect(result.current.errorMessage).toBe('Unexpected updater error');
     });
     it('does nothing when installation is requested without an update', async () => {
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         await act(async () => result.current.installUpdate());
 
@@ -283,19 +304,25 @@ describe('useAppUpdater', () => {
         const mockUpdate = createMockUpdate();
         vi.mocked(mockUpdate.downloadAndInstall).mockImplementation(async (onEvent) => {
             onEvent?.({ event: 'Started', data: { contentLength: 100 } });
-            await new Promise<void>(resolve => { finishDownload = resolve; });
+            await new Promise<void>((resolve) => {
+                finishDownload = resolve;
+            });
             onEvent?.({ event: 'Finished' });
         });
         vi.mocked(check).mockResolvedValue(mockUpdate);
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
         await act(async () => result.current.checkForUpdates({ manual: true }));
 
-        act(() => { void result.current.installUpdate(); });
+        act(() => {
+            void result.current.installUpdate();
+        });
         expect(result.current.status).toBe('downloading');
         act(() => result.current.dismissUpdateDialog());
         expect(result.current.isDialogOpen).toBe(true);
@@ -309,12 +336,14 @@ describe('useAppUpdater', () => {
 
     it('opens only when an update exists and dismisses an available dialog', async () => {
         const mockUpdate = createMockUpdate();
-        const { result } = renderHook(() => useAppUpdater({
-            addToast: mockAddToast,
-            autoCheckEnabled: false,
-            isSettingsLoaded: true,
-            isDevBuild: false,
-        }));
+        const { result } = renderHook(() =>
+            useAppUpdater({
+                addToast: mockAddToast,
+                autoCheckEnabled: false,
+                isSettingsLoaded: true,
+                isDevBuild: false,
+            })
+        );
 
         act(() => result.current.openUpdateDialog());
         expect(result.current.isDialogOpen).toBe(false);

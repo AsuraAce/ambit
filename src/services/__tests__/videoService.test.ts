@@ -32,10 +32,7 @@ describe('videoService', () => {
         });
         const { importVideoPaths } = await import('../videoService');
 
-        const summary = await importVideoPaths([
-            'C:/videos/first.mp4',
-            'C:/videos/second.mp4',
-        ]);
+        const summary = await importVideoPaths(['C:/videos/first.mp4', 'C:/videos/second.mp4']);
 
         expect(summary.cancelled).toBe(1);
         expect(mocks.importVideoAsset).toHaveBeenCalledTimes(1);
@@ -45,11 +42,7 @@ describe('videoService', () => {
     it('does not start another probe after the batch cancellation flag is set', async () => {
         const { importVideoPaths } = await import('../videoService');
 
-        const summary = await importVideoPaths(
-            ['C:/videos/first.mp4'],
-            undefined,
-            () => true
-        );
+        const summary = await importVideoPaths(['C:/videos/first.mp4'], undefined, () => true);
 
         expect(summary).toMatchObject({ imported: 0, duplicate: 0, rejected: 0, cancelled: 0 });
         expect(mocks.importVideoAsset).not.toHaveBeenCalled();
@@ -57,18 +50,13 @@ describe('videoService', () => {
 
     it('isolates a failed native import and continues with the remaining paths', async () => {
         const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-        mocks.importVideoAsset
-            .mockRejectedValueOnce(new Error('file vanished'))
-            .mockResolvedValueOnce({
-                status: 'ok',
-                data: { status: 'duplicate', asset: null, reason: null },
-            });
+        mocks.importVideoAsset.mockRejectedValueOnce(new Error('file vanished')).mockResolvedValueOnce({
+            status: 'ok',
+            data: { status: 'duplicate', asset: null, reason: null },
+        });
         const { importVideoPaths } = await import('../videoService');
 
-        const summary = await importVideoPaths([
-            'C:/videos/vanished.mp4',
-            'C:/videos/existing.mp4',
-        ]);
+        const summary = await importVideoPaths(['C:/videos/vanished.mp4', 'C:/videos/existing.mp4']);
 
         expect(summary).toMatchObject({ imported: 0, duplicate: 1, rejected: 1, cancelled: 0 });
         expect(mocks.importVideoAsset).toHaveBeenCalledTimes(2);
@@ -134,11 +122,9 @@ describe('videoService', () => {
             load: vi.fn(),
         };
         const createElement = document.createElement.bind(document);
-        vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => (
-            tagName === 'video'
-                ? video as unknown as HTMLVideoElement
-                : createElement(tagName)
-        ));
+        vi.spyOn(document, 'createElement').mockImplementation((tagName: string) =>
+            tagName === 'video' ? (video as unknown as HTMLVideoElement) : createElement(tagName)
+        );
         mocks.importVideoAsset.mockResolvedValue({
             status: 'ok',
             data: {
@@ -167,11 +153,7 @@ describe('videoService', () => {
         const { importVideoPaths } = await import('../videoService');
         let cancelled = false;
 
-        const resultPromise = importVideoPaths(
-            ['C:/videos/first.mp4', 'C:/videos/second.mp4'],
-            undefined,
-            () => cancelled
-        );
+        const resultPromise = importVideoPaths(['C:/videos/first.mp4', 'C:/videos/second.mp4'], undefined, () => cancelled);
         await vi.advanceTimersByTimeAsync(0);
         expect(video.addEventListener).toHaveBeenCalledWith('loadedmetadata', expect.any(Function), { once: true });
 

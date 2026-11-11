@@ -10,7 +10,18 @@ import { TimelineView } from '../features/library/components/TimelineView';
 import { VirtualGrid, type VirtualGridHandle } from '../features/library/components/VirtualGrid';
 import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
-import { AIImage, Collection, ContextMenuState, FilterState, LayoutMode, SmartCollection, SortOption, ToastMessage, ViewMode, type SourceKind } from '../types';
+import {
+    AIImage,
+    Collection,
+    ContextMenuState,
+    FilterState,
+    LayoutMode,
+    SmartCollection,
+    SortOption,
+    ToastMessage,
+    ViewMode,
+    type SourceKind,
+} from '../types';
 import { Search } from 'lucide-react';
 import { useSearch } from '../contexts/SearchContext';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -29,8 +40,10 @@ import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 
 setupGlobalLogging();
 
-const StatsDashboard = React.lazy(() => import('./ui/Charts').then(module => ({ default: module.StatsDashboard })));
-const MaintenanceView = React.lazy(() => import('../features/maintenance/components/MaintenanceView').then(module => ({ default: module.MaintenanceView })));
+const StatsDashboard = React.lazy(() => import('./ui/Charts').then((module) => ({ default: module.StatsDashboard })));
+const MaintenanceView = React.lazy(() =>
+    import('../features/maintenance/components/MaintenanceView').then((module) => ({ default: module.MaintenanceView }))
+);
 const LibraryEmptyState = React.lazy(() => import('../features/library/components/LibraryEmptyState'));
 const FILTER_PANEL_LAYOUT_TRANSITION_MS = 540;
 
@@ -43,16 +56,12 @@ const ViewLoadingFallback = () => (
 const LibraryEmptyStateContainer = ({ onImport }: { onImport: () => void }) => {
     // Isolate progress subscriptions so populated virtual grids do not rerender for
     // every import update while keeping the store in the existing startup chunk.
-    const isImporting = useLibraryStore(state => state.isImporting);
-    const importMessage = useLibraryStore(state => state.importProgress?.message);
+    const isImporting = useLibraryStore((state) => state.isImporting);
+    const importMessage = useLibraryStore((state) => state.importProgress?.message);
 
     return (
         <React.Suspense fallback={<ViewLoadingFallback />}>
-            <LibraryEmptyState
-                isImporting={isImporting}
-                importMessage={importMessage}
-                onImport={onImport}
-            />
+            <LibraryEmptyState isImporting={isImporting} importMessage={importMessage} onImport={onImport} />
         </React.Suspense>
     );
 };
@@ -139,33 +148,68 @@ interface AppLayoutProps {
 export const AppLayout: React.FC<AppLayoutProps> = ({
     isInvokeCollectionCatchupPending = false,
     forcePrivacyProtectionGate = false,
-    filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
-    colOps, setExportIds: _setExportIds, modals, addToast: _addToast,
-    viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
-    sortOption, setSortOption, displayedCount, scopeTotal, scopeName,
-    fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
-    handlers, setViewingImageId, onMaintenanceViewerOpenChange, onOpenReferencedImage, onViewerSearch, isViewerShortcutBlocked, onSetImageKind,
+    filters,
+    setFilters,
+    isFilterPanelOpen,
+    setIsFilterPanelOpen,
+    colOps,
+    setExportIds: _setExportIds,
+    modals,
+    addToast: _addToast,
+    viewMode,
+    changeViewMode,
+    searchProps,
+    layoutMode,
+    setLayoutMode,
+    sortOption,
+    setSortOption,
+    displayedCount,
+    scopeTotal,
+    scopeName,
+    fileOps,
+    onOpenImportModal,
+    workspaceRef,
+    scrollContainerRef,
+    handlers,
+    setViewingImageId,
+    onMaintenanceViewerOpenChange,
+    onOpenReferencedImage,
+    onViewerSearch,
+    isViewerShortcutBlocked,
+    onSetImageKind,
     modelOptions = [],
-    actions, availableTags, selectedIds,
-    handleImageClick, setSelectedImageIndex, handleSelectionToggle,
-    activeCollection, activeSmartCollection, handleRangeSelection,
-    clearSelection, gridRef, handleLayoutChange,
-    isSearchFocused, setIsSearchFocused, lastSelectedId,
+    actions,
+    availableTags,
+    selectedIds,
+    handleImageClick,
+    setSelectedImageIndex,
+    handleSelectionToggle,
+    activeCollection,
+    activeSmartCollection,
+    handleRangeSelection,
+    clearSelection,
+    gridRef,
+    handleLayoutChange,
+    isSearchFocused,
+    setIsSearchFocused,
+    lastSelectedId,
 
-    handleRemoveFromCollection, handleOpenCollectionModal, onSetCollectionMembership, onEditCollection
+    handleRemoveFromCollection,
+    handleOpenCollectionModal,
+    onSetCollectionMembership,
+    onEditCollection,
 }) => {
     // Hooks
     useProgressListeners();
 
     // Stores
-    const settings = useSettingsStore(s => s.settings);
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
-    const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
-    const privacyExposureBlocked = forcePrivacyProtectionGate
-        || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
+    const settings = useSettingsStore((s) => s.settings);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
+    const privacyMaskIndexStatus = useSettingsStore((s) => s.privacyMaskIndexStatus);
+    const privacyExposureBlocked = forcePrivacyProtectionGate || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
-    const _allCollections = useCollectionStore(s => s.collections);
+    const _allCollections = useCollectionStore((s) => s.collections);
 
     // Local State
     const [showSupportPulse, setShowSupportPulse] = React.useState(true);
@@ -220,7 +264,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         toggleFavorite,
         hasMoreImages,
         loadMoreImages,
-        isLoadingMore
+        isLoadingMore,
     } = useSearch();
     const isSearchPending = isFiltering || isSearchDraftPending;
     const shouldShowSearchSkeleton = isSearchPending && images.length === 0;
@@ -247,12 +291,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     //     const toggleFavorite = storeToggleFavorite;
 
     // --- Performance Logic (Moved from JSX to resolve Rules of Hooks violation) ---
-    const showPinnedInShelf = React.useMemo(() => (
-        filters.collectionId !== null && viewMode !== 'timeline' && !filters.pinnedOnly
-    ), [filters.collectionId, viewMode, filters.pinnedOnly]);
+    const showPinnedInShelf = React.useMemo(
+        () => filters.collectionId !== null && viewMode !== 'timeline' && !filters.pinnedOnly,
+        [filters.collectionId, viewMode, filters.pinnedOnly]
+    );
 
-    const pinnedImages = React.useMemo(() => showPinnedInShelf ? images.filter(i => i.isPinned) : [], [showPinnedInShelf, images]);
-    const gridItems = React.useMemo(() => showPinnedInShelf ? images.filter(i => !i.isPinned) : images, [showPinnedInShelf, images]);
+    const pinnedImages = React.useMemo(() => (showPinnedInShelf ? images.filter((i) => i.isPinned) : []), [showPinnedInShelf, images]);
+    const gridItems = React.useMemo(() => (showPinnedInShelf ? images.filter((i) => !i.isPinned) : images), [showPinnedInShelf, images]);
     const pinnedCount = pinnedImages.length;
     const activeThumbnailCollection = activeCollection || activeSmartCollection;
     const isActiveThumbnail = React.useCallback(
@@ -260,52 +305,71 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         [activeThumbnailCollection]
     );
 
-    const galleryTransitionKey = React.useMemo(() => [
-        layoutMode,
-        settings.thumbnailSize ?? 'default-size',
-        sortOption,
-        filters.collectionId ?? 'library',
-        filters.mediaType ?? 'all-media',
-        filters.favoritesOnly ? 'favorites' : 'all-images',
-        filters.pinnedOnly ? 'pinned-only' : 'unpinned-scope',
-        filters.showGrids ? 'show-grids' : 'hide-grids',
-        filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates',
-        filters.showInvokeImageAssets ? 'show-invoke-assets' : 'hide-invoke-assets'
-    ].join('|'), [
-        layoutMode,
-        settings.thumbnailSize,
-        sortOption,
-        filters.collectionId,
-        filters.mediaType,
-        filters.favoritesOnly,
-        filters.pinnedOnly,
-        filters.showGrids,
-        filters.showIntermediates,
-        filters.showInvokeImageAssets
-    ]);
+    const galleryTransitionKey = React.useMemo(
+        () =>
+            [
+                layoutMode,
+                settings.thumbnailSize ?? 'default-size',
+                sortOption,
+                filters.collectionId ?? 'library',
+                filters.mediaType ?? 'all-media',
+                filters.favoritesOnly ? 'favorites' : 'all-images',
+                filters.pinnedOnly ? 'pinned-only' : 'unpinned-scope',
+                filters.showGrids ? 'show-grids' : 'hide-grids',
+                filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates',
+                filters.showInvokeImageAssets ? 'show-invoke-assets' : 'hide-invoke-assets',
+            ].join('|'),
+        [
+            layoutMode,
+            settings.thumbnailSize,
+            sortOption,
+            filters.collectionId,
+            filters.mediaType,
+            filters.favoritesOnly,
+            filters.pinnedOnly,
+            filters.showGrids,
+            filters.showIntermediates,
+            filters.showInvokeImageAssets,
+        ]
+    );
 
-    const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout?: GridLayoutPosition) => (
-        <GridItem
-            key={img.id}
-            image={img}
-            style={style}
-            layoutPos={layout}
-            index={index + pinnedCount}
-            isSelected={selectedIds.has(img.id)}
-            selectedIds={selectedIds}
-            maskedKeywords={effectiveMaskedKeywords}
-            setImages={handlers.setImages}
-            onClick={(e, id, idx, revealGranted) => handleImageClick(e, id, idx, setSelectedImageIndex, revealGranted)}
-            onToggleSelection={handleSelectionToggle}
-            onToggleFavorite={(e, id) => toggleFavorite(id)}
-            onTogglePin={(e, id) => {
-                const imgFound = images.find(i => i.id === id);
-                if (imgFound) actions.handlePinImage(id, !imgFound.isPinned);
-            }}
-            onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-            isThumbnail={isActiveThumbnail(img)}
-        />
-    ), [pinnedCount, selectedIds, effectiveMaskedKeywords, handlers, handleImageClick, setSelectedImageIndex, handleSelectionToggle, toggleFavorite, images, actions, isActiveThumbnail]);
+    const renderGridItem = React.useCallback(
+        (img: AIImage, style: React.CSSProperties, index: number, layout?: GridLayoutPosition) => (
+            <GridItem
+                key={img.id}
+                image={img}
+                style={style}
+                layoutPos={layout}
+                index={index + pinnedCount}
+                isSelected={selectedIds.has(img.id)}
+                selectedIds={selectedIds}
+                maskedKeywords={effectiveMaskedKeywords}
+                setImages={handlers.setImages}
+                onClick={(e, id, idx, revealGranted) => handleImageClick(e, id, idx, setSelectedImageIndex, revealGranted)}
+                onToggleSelection={handleSelectionToggle}
+                onToggleFavorite={(e, id) => toggleFavorite(id)}
+                onTogglePin={(e, id) => {
+                    const imgFound = images.find((i) => i.id === id);
+                    if (imgFound) actions.handlePinImage(id, !imgFound.isPinned);
+                }}
+                onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+                isThumbnail={isActiveThumbnail(img)}
+            />
+        ),
+        [
+            pinnedCount,
+            selectedIds,
+            effectiveMaskedKeywords,
+            handlers,
+            handleImageClick,
+            setSelectedImageIndex,
+            handleSelectionToggle,
+            toggleFavorite,
+            images,
+            actions,
+            isActiveThumbnail,
+        ]
+    );
 
     return (
         <div className="flex flex-1 overflow-hidden p-3 gap-3">
@@ -316,8 +380,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 setFilters={setFilters}
                 isFilterPanelOpen={isFilterPanelOpen}
                 setIsFilterPanelOpen={setIsFilterPanelOpen}
-                onOpenSettings={() => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); }}
-                onOpenShortcuts={() => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); }}
+                onOpenSettings={() => {
+                    modals.setInitialSettingsTab('general');
+                    modals.openModal('settings');
+                }}
+                onOpenShortcuts={() => {
+                    modals.setShortcutsModalTab('shortcuts');
+                    modals.openModal('shortcuts');
+                }}
                 onOpenDonation={() => modals.openModal('donation')}
                 showSupportPulse={showSupportPulse}
             />
@@ -337,7 +407,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                             await colOps.addImagesToCollection(ids as string[], colId);
                         }
                     } catch (e) {
-                        console.error("Drop failed", e);
+                        console.error('Drop failed', e);
                     }
                 }}
                 onRenameCollection={colOps.renameCollection}
@@ -349,12 +419,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 onTogglePinCollection={colOps.togglePinCollection}
                 onSetCollectionColor={colOps.setCollectionColor}
                 onPlayCollection={(id) => {
-                    setFilters(f => ({ ...f, collectionId: id }));
+                    setFilters((f) => ({ ...f, collectionId: id }));
                     modals.setSlideshowShuffle(false);
                     modals.openModal('slideshow');
                 }}
                 onExportCollection={(id) => {
-                    setFilters(f => ({ ...f, collectionId: id }));
+                    setFilters((f) => ({ ...f, collectionId: id }));
                     modals.openModal('export');
                 }}
                 onResetCollectionThumbnail={colOps.resetCollectionThumbnail}
@@ -407,196 +477,228 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     isFiltering={isSearchPending}
                     onSearchDraftPendingChange={setIsSearchDraftPending}
                     onImport={onOpenImportModal}
-                    onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
+                    onSlideshow={() => {
+                        modals.setSlideshowShuffle(false);
+                        modals.openModal('slideshow');
+                    }}
                     clearAllFilters={clearAllFilters}
                 />
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
-                    <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
+                    <div
+                        ref={scrollContainerRef}
+                        className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}
+                    >
                         {privacyExposureBlocked ? (
-                            <PrivacyProtectionGate onOpenSettings={() => {
-                                modals.setInitialSettingsTab('privacy');
-                                modals.openModal('settings');
-                            }} />
-                        ) : <ErrorBoundary>
-                            {viewMode === 'dashboard' ? (
-                                <React.Suspense fallback={<ViewLoadingFallback />}>
-                                    <StatsDashboard images={images} onFilter={(t, v) => {
-                                        if (t === 'model') {
-                                            setFilters(p => ({
-                                                ...p,
-                                                models: p.models.includes(v) ? p.models : [...p.models, v]
-                                            }));
-                                        }
-                                        changeViewMode('grid');
-                                    }} />
-                                </React.Suspense>
-                            ) : viewMode === 'maintenance' ? (
-                                <React.Suspense fallback={<ViewLoadingFallback />}>
-                                    <MaintenanceView
-                                        images={images}
-                                        onResolveDuplicate={handlers.handleResolveDuplicate}
-                                        onRestoreImages={handlers.handleRestoreImages}
-                                        onRemoveFromLibrary={handlers.handleRemoveFromLibrary}
-                                        onDeleteFile={handlers.handleDeleteFile}
-                                        onEmptyTrash={handlers.handleEmptyTrash}
-                                        onGroupImages={handlers.handleGroupImages}
-                                        onViewImage={(id) => setViewingImageId(id)}
-                                        onRegenerateThumbnails={fileOps.regenerateThumbnails}
-                                        maskedKeywords={effectiveMaskedKeywords}
-                                        onUpdatePrompt={handlers.handleUpdatePrompt}
-                                        onUpdateNegativePrompt={handlers.handleUpdateNegativePrompt}
-                                        onUpdateModel={handlers.handleUpdateModel}
-                                        onUpdateTool={handlers.handleUpdateTool}
-                                        onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
-                                        onSetImageKind={onSetImageKind}
-                                        onUpdateNotes={(id, n) => { void handlers.handleUpdateNotes(id, n); /* rolls back and toasts on failure */ }}
-                                        onRevertMetadata={handlers.handleRevertMetadata}
-                                        onSearch={(term) => {
-                                            onViewerSearch(term);
-                                            changeViewMode('grid');
-                                        }}
-                                        onOpenSettings={() => {
-                                            modals.setInitialSettingsTab('intelligence');
-                                            modals.openModal('settings');
-                                        }}
-                                        onRecoverMetadata={(targetId, onRecovered) => {
-                                            actions.openMetadataRecovery(targetId, onRecovered);
-                                        }}
-                                        onToggleFavorite={(id) => toggleFavorite(id)}
-                                        onTogglePin={actions.handlePinImage}
-                                        onSetCollectionMembership={onSetCollectionMembership}
-                                        availableTags={availableTags}
-                                        onViewerOpenChange={onMaintenanceViewerOpenChange}
-                                        onOpenReferencedImage={onOpenReferencedImage}
-                                        isShortcutBlocked={isViewerShortcutBlocked}
-                                        modelOptions={modelOptions}
-                                    />
-                                </React.Suspense>
-                            ) : (images.length > 0 || isSearchPending) ? (
-                                <>
-                                    {shouldShowSearchSkeleton ? (
-                                        <GridSkeleton layout={layoutMode} />
-                                    ) : viewMode === 'timeline' ? (
-                                        <TimelineView
+                            <PrivacyProtectionGate
+                                onOpenSettings={() => {
+                                    modals.setInitialSettingsTab('privacy');
+                                    modals.openModal('settings');
+                                }}
+                            />
+                        ) : (
+                            <ErrorBoundary>
+                                {viewMode === 'dashboard' ? (
+                                    <React.Suspense fallback={<ViewLoadingFallback />}>
+                                        <StatsDashboard
                                             images={images}
-                                            selectedIds={selectedIds}
-                                            thumbnailSize={settings.thumbnailSize}
-                                            sortOption={sortOption}
-                                            maskedKeywords={effectiveMaskedKeywords}
-                                            onImageClick={(e, id, index, revealGranted) => handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)}
-                                            onSelectionToggle={handleSelectionToggle}
-                                            onToggleFavorite={(e, id) => { void Promise.resolve(toggleFavorite(id)).catch(error => console.error('[Favorite] Toggle failed', error)); }}
-                                            onTogglePin={(e, id) => {
-                                                const img = images.find(i => i.id === id);
-                                                if (img) actions.handlePinImage(id, !img.isPinned);
+                                            onFilter={(t, v) => {
+                                                if (t === 'model') {
+                                                    setFilters((p) => ({
+                                                        ...p,
+                                                        models: p.models.includes(v) ? p.models : [...p.models, v],
+                                                    }));
+                                                }
+                                                changeViewMode('grid');
                                             }}
-                                            onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                            onRangeSelection={handleRangeSelection}
-                                            onBackgroundClick={clearSelection}
-                                            hasMoreImages={hasMoreImages}
-                                            isLoadingMore={isLoadingMore}
-                                            onLoadMore={loadMoreImages}
                                         />
-                                    ) : (
-                                        <>
-                                            {showPinnedInShelf && (
-                                                <PinnedShelf
-                                                    images={pinnedImages}
-                                                    isCollapsed={modals.isPinnedShelfCollapsed}
-                                                    onToggleCollapse={() => modals.setIsPinnedShelfCollapsed((p: boolean) => !p)}
-                                                    selectedIds={selectedIds}
-                                                    maskedKeywords={effectiveMaskedKeywords}
-                                                    setImages={handlers.setImages}
-                                                    onImageClick={(e, id, index, revealGranted) => handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)}
-                                                    onToggleSelection={handleSelectionToggle}
-                                                    onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                    onTogglePin={(e, id) => {
-                                                        const img = images.find(i => i.id === id);
-                                                        if (img) actions.handlePinImage(id, !img.isPinned);
-                                                    }}
-                                                    onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                    thumbnailSize={settings.thumbnailSize}
-                                                    isActiveThumbnail={isActiveThumbnail}
-                                                    onRangeSelection={handleRangeSelection}
-                                                    onBackgroundClick={clearSelection}
-                                                />
-                                            )}
-                                            <VirtualGrid<AIImage>
-                                                ref={gridRef}
-                                                items={gridItems}
-                                                layout={layoutMode}
-                                                minItemWidth={settings.thumbnailSize}
-                                                gap={16}
-                                                padding={24}
-                                                scrollContainerRef={scrollContainerRef}
-                                                onEndReached={loadMoreImages}
-                                                getItemRatio={(img) => {
-                                                    const w = img.width || 1;
-                                                    const h = img.height || 1;
-                                                    return w / h;
+                                    </React.Suspense>
+                                ) : viewMode === 'maintenance' ? (
+                                    <React.Suspense fallback={<ViewLoadingFallback />}>
+                                        <MaintenanceView
+                                            images={images}
+                                            onResolveDuplicate={handlers.handleResolveDuplicate}
+                                            onRestoreImages={handlers.handleRestoreImages}
+                                            onRemoveFromLibrary={handlers.handleRemoveFromLibrary}
+                                            onDeleteFile={handlers.handleDeleteFile}
+                                            onEmptyTrash={handlers.handleEmptyTrash}
+                                            onGroupImages={handlers.handleGroupImages}
+                                            onViewImage={(id) => setViewingImageId(id)}
+                                            onRegenerateThumbnails={fileOps.regenerateThumbnails}
+                                            maskedKeywords={effectiveMaskedKeywords}
+                                            onUpdatePrompt={handlers.handleUpdatePrompt}
+                                            onUpdateNegativePrompt={handlers.handleUpdateNegativePrompt}
+                                            onUpdateModel={handlers.handleUpdateModel}
+                                            onUpdateTool={handlers.handleUpdateTool}
+                                            onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
+                                            onSetImageKind={onSetImageKind}
+                                            onUpdateNotes={(id, n) => {
+                                                void handlers.handleUpdateNotes(id, n); /* rolls back and toasts on failure */
+                                            }}
+                                            onRevertMetadata={handlers.handleRevertMetadata}
+                                            onSearch={(term) => {
+                                                onViewerSearch(term);
+                                                changeViewMode('grid');
+                                            }}
+                                            onOpenSettings={() => {
+                                                modals.setInitialSettingsTab('intelligence');
+                                                modals.openModal('settings');
+                                            }}
+                                            onRecoverMetadata={(targetId, onRecovered) => {
+                                                actions.openMetadataRecovery(targetId, onRecovered);
+                                            }}
+                                            onToggleFavorite={(id) => toggleFavorite(id)}
+                                            onTogglePin={actions.handlePinImage}
+                                            onSetCollectionMembership={onSetCollectionMembership}
+                                            availableTags={availableTags}
+                                            onViewerOpenChange={onMaintenanceViewerOpenChange}
+                                            onOpenReferencedImage={onOpenReferencedImage}
+                                            isShortcutBlocked={isViewerShortcutBlocked}
+                                            modelOptions={modelOptions}
+                                        />
+                                    </React.Suspense>
+                                ) : images.length > 0 || isSearchPending ? (
+                                    <>
+                                        {shouldShowSearchSkeleton ? (
+                                            <GridSkeleton layout={layoutMode} />
+                                        ) : viewMode === 'timeline' ? (
+                                            <TimelineView
+                                                images={images}
+                                                selectedIds={selectedIds}
+                                                thumbnailSize={settings.thumbnailSize}
+                                                sortOption={sortOption}
+                                                maskedKeywords={effectiveMaskedKeywords}
+                                                onImageClick={(e, id, index, revealGranted) =>
+                                                    handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)
+                                                }
+                                                onSelectionToggle={handleSelectionToggle}
+                                                onToggleFavorite={(e, id) => {
+                                                    void Promise.resolve(toggleFavorite(id)).catch((error) =>
+                                                        console.error('[Favorite] Toggle failed', error)
+                                                    );
                                                 }}
-                                                onLayoutChange={handleLayoutChange}
-                                                onRangeSelection={(indices, isAdditive) => {
-                                                    const globalIndices = indices.map(idx => idx + pinnedCount);
-                                                    handleRangeSelection(globalIndices, isAdditive);
+                                                onTogglePin={(e, id) => {
+                                                    const img = images.find((i) => i.id === id);
+                                                    if (img) actions.handlePinImage(id, !img.isPinned);
                                                 }}
+                                                onContextMenu={(e, id) =>
+                                                    handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })
+                                                }
+                                                onRangeSelection={handleRangeSelection}
                                                 onBackgroundClick={clearSelection}
-                                                renderItem={renderGridItem}
-                                                transitionKey={galleryTransitionKey}
-                                                suspendResizeLayout={isFilterPanelLayoutTransitioning}
+                                                hasMoreImages={hasMoreImages}
+                                                isLoadingMore={isLoadingMore}
+                                                onLoadMore={loadMoreImages}
                                             />
-                                            {isLoadingMore && (
-                                                <div className="w-full py-8 flex justify-center items-center">
-                                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-500"></div>
-                                                </div>
-                                            )}
-                                        </>
-                                    )}
-                                </>
-                            ) : globalTotal === 0 ? (
-                                <LibraryEmptyStateContainer onImport={onOpenImportModal} />
-                            ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
-                                    <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">
-                                        <Search className="w-12 h-12 text-zinc-400 dark:text-zinc-500" />
+                                        ) : (
+                                            <>
+                                                {showPinnedInShelf && (
+                                                    <PinnedShelf
+                                                        images={pinnedImages}
+                                                        isCollapsed={modals.isPinnedShelfCollapsed}
+                                                        onToggleCollapse={() => modals.setIsPinnedShelfCollapsed((p: boolean) => !p)}
+                                                        selectedIds={selectedIds}
+                                                        maskedKeywords={effectiveMaskedKeywords}
+                                                        setImages={handlers.setImages}
+                                                        onImageClick={(e, id, index, revealGranted) =>
+                                                            handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)
+                                                        }
+                                                        onToggleSelection={handleSelectionToggle}
+                                                        onToggleFavorite={(e, id) => toggleFavorite(id)}
+                                                        onTogglePin={(e, id) => {
+                                                            const img = images.find((i) => i.id === id);
+                                                            if (img) actions.handlePinImage(id, !img.isPinned);
+                                                        }}
+                                                        onContextMenu={(e, id) =>
+                                                            handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })
+                                                        }
+                                                        thumbnailSize={settings.thumbnailSize}
+                                                        isActiveThumbnail={isActiveThumbnail}
+                                                        onRangeSelection={handleRangeSelection}
+                                                        onBackgroundClick={clearSelection}
+                                                    />
+                                                )}
+                                                <VirtualGrid<AIImage>
+                                                    ref={gridRef}
+                                                    items={gridItems}
+                                                    layout={layoutMode}
+                                                    minItemWidth={settings.thumbnailSize}
+                                                    gap={16}
+                                                    padding={24}
+                                                    scrollContainerRef={scrollContainerRef}
+                                                    onEndReached={loadMoreImages}
+                                                    getItemRatio={(img) => {
+                                                        const w = img.width || 1;
+                                                        const h = img.height || 1;
+                                                        return w / h;
+                                                    }}
+                                                    onLayoutChange={handleLayoutChange}
+                                                    onRangeSelection={(indices, isAdditive) => {
+                                                        const globalIndices = indices.map((idx) => idx + pinnedCount);
+                                                        handleRangeSelection(globalIndices, isAdditive);
+                                                    }}
+                                                    onBackgroundClick={clearSelection}
+                                                    renderItem={renderGridItem}
+                                                    transitionKey={galleryTransitionKey}
+                                                    suspendResizeLayout={isFilterPanelLayoutTransitioning}
+                                                />
+                                                {isLoadingMore && (
+                                                    <div className="w-full py-8 flex justify-center items-center">
+                                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-500"></div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </>
+                                ) : globalTotal === 0 ? (
+                                    <LibraryEmptyStateContainer onImport={onOpenImportModal} />
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
+                                        <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">
+                                            <Search className="w-12 h-12 text-zinc-400 dark:text-zinc-500" />
+                                        </div>
+                                        <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">No Matches Found</h3>
+                                        <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+                                            We couldn't find any images matching your current filters. Try adjusting your search or clearing
+                                            filters.
+                                        </p>
+                                        <button
+                                            onClick={clearAllFilters}
+                                            className="px-8 py-3.5 bg-zinc-800 dark:bg-white/10 hover:bg-zinc-700 dark:hover:bg-white/20 text-white rounded-2xl font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                        >
+                                            Clear filters
+                                        </button>
                                     </div>
-                                    <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">No Matches Found</h3>
-                                    <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-                                        We couldn't find any images matching your current filters. Try adjusting your search or clearing filters.
-                                    </p>
-                                    <button
-                                        onClick={clearAllFilters}
-                                        className="px-8 py-3.5 bg-zinc-800 dark:bg-white/10 hover:bg-zinc-700 dark:hover:bg-white/20 text-white rounded-2xl font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                                    >
-                                        Clear filters
-                                    </button>
-                                </div>
-                            )}
-                        </ErrorBoundary>}
+                                )}
+                            </ErrorBoundary>
+                        )}
                     </div>
                 </div>
 
-                {!privacyExposureBlocked && <SelectionBar
-                    selectedIds={selectedIds}
-                    filteredImages={images}
-                    lastSelectedId={lastSelectedId}
-                    isExporting={fileOps.isExporting}
-                    confirmDelete={settings.confirmDelete}
-                    maskedKeywords={effectiveMaskedKeywords}
-                    onClearSelection={clearSelection}
-                    onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}
-                    onExport={() => modals.openModal('export')}
+                {!privacyExposureBlocked && (
+                    <SelectionBar
+                        selectedIds={selectedIds}
+                        filteredImages={images}
+                        lastSelectedId={lastSelectedId}
+                        isExporting={fileOps.isExporting}
+                        confirmDelete={settings.confirmDelete}
+                        maskedKeywords={effectiveMaskedKeywords}
+                        onClearSelection={clearSelection}
+                        onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}
+                        onExport={() => modals.openModal('export')}
 
-                    onAddToCollection={() => handleOpenCollectionModal('add')}
-                    onToggleFavorite={actions.handleBulkFavorite}
-                    onTogglePin={actions.handleBulkPin}
-                    onToggleMask={actions.handleBulkMask}
-                    onSetImageKind={(sourceKindOverride) => actions.handleSetImageSourceKind(Array.from(selectedIds), sourceKindOverride)}
-                    onCompare={() => modals.openModal('compare')}
-                    activeCollectionId={filters.collectionId}
-                    onRemoveFromCollection={handleRemoveFromCollection}
-                />}
+                        onAddToCollection={() => handleOpenCollectionModal('add')}
+                        onToggleFavorite={actions.handleBulkFavorite}
+                        onTogglePin={actions.handleBulkPin}
+                        onToggleMask={actions.handleBulkMask}
+                        onSetImageKind={(sourceKindOverride) =>
+                            actions.handleSetImageSourceKind(Array.from(selectedIds), sourceKindOverride)
+                        }
+                        onCompare={() => modals.openModal('compare')}
+                        activeCollectionId={filters.collectionId}
+                        onRemoveFromCollection={handleRemoveFromCollection}
+                    />
+                )}
 
                 <ActivityDock />
             </main>

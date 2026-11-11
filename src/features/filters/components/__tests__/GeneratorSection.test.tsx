@@ -5,14 +5,39 @@ import { GeneratorSection } from '../GeneratorSection';
 
 vi.mock('../FilterPrimitives', () => ({
     SectionHeader: ({ title, onToggle }: { title: string; onToggle: () => void }) => <button onClick={onToggle}>{title}</button>,
-    SelectableRow: ({ label, isSelected, disabled, className, onClick }: { label: string; isSelected: boolean; disabled?: boolean; className?: string; onClick: () => void }) => (
-        <button onClick={onClick} disabled={disabled} data-selected={isSelected} className={className}>{label}</button>
-    )
+    SelectableRow: ({
+        label,
+        isSelected,
+        disabled,
+        className,
+        onClick,
+    }: {
+        label: string;
+        isSelected: boolean;
+        disabled?: boolean;
+        className?: string;
+        onClick: () => void;
+    }) => (
+        <button onClick={onClick} disabled={disabled} data-selected={isSelected} className={className}>
+            {label}
+        </button>
+    ),
 }));
 
 const filters = (tools: GeneratorTool[] = []): FilterState => ({
-    searchQuery: '', models: [], tools, loras: [], embeddings: [], hypernetworks: [], samplers: [], generationTypes: [],
-    controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null
+    searchQuery: '',
+    models: [],
+    tools,
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    dateRange: 'all',
+    favoritesOnly: false,
+    collectionId: null,
 });
 
 describe('GeneratorSection', () => {
@@ -26,7 +51,9 @@ describe('GeneratorSection', () => {
 
     it('adds and removes tools while preserving selected drill-down values', () => {
         let current = filters([GeneratorTool.COMFYUI]);
-        const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => { current = update(current); });
+        const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => {
+            current = update(current);
+        });
         render(
             <GeneratorSection
                 filters={current}
@@ -48,7 +75,16 @@ describe('GeneratorSection', () => {
     });
 
     it.each([null, undefined])('makes every tool available when valid names are %s', (validNames) => {
-        render(<GeneratorSection filters={filters()} setFilters={vi.fn()} tools={[GeneratorTool.AUTOMATIC1111]} validNames={validNames} isOpen onToggle={vi.fn()} />);
+        render(
+            <GeneratorSection
+                filters={filters()}
+                setFilters={vi.fn()}
+                tools={[GeneratorTool.AUTOMATIC1111]}
+                validNames={validNames}
+                isOpen
+                onToggle={vi.fn()}
+            />
+        );
         expect((screen.getByText(GeneratorTool.AUTOMATIC1111) as HTMLButtonElement).disabled).toBe(false);
     });
 

@@ -6,7 +6,7 @@ import { SettingsModal } from '../SettingsModal';
 import type { InvokeOwnerDiscoverySession } from '../../hooks/useInvokeOwnerDiscovery';
 
 vi.mock('../../../../hooks/useAppVersion', () => ({
-    useAppVersion: () => 'test'
+    useAppVersion: () => 'test',
 }));
 
 const motionTestState = vi.hoisted(() => ({
@@ -27,17 +27,16 @@ vi.mock('framer-motion', () => {
         transition?: unknown;
     };
 
-    const MotionDiv = React.forwardRef<HTMLDivElement, MotionDivProps>(({
-        initial,
-        animate,
-        exit,
-        transition,
-        children,
-        ...props
-    }, ref) => {
-        motionTestState.divProps.push({ initial, animate, exit, transition });
-        return <div ref={ref} {...props}>{children}</div>;
-    });
+    const MotionDiv = React.forwardRef<HTMLDivElement, MotionDivProps>(
+        ({ initial, animate, exit, transition, children, ...props }, ref) => {
+            motionTestState.divProps.push({ initial, animate, exit, transition });
+            return (
+                <div ref={ref} {...props}>
+                    {children}
+                </div>
+            );
+        }
+    );
     MotionDiv.displayName = 'MotionDiv';
 
     return {
@@ -47,7 +46,7 @@ vi.mock('framer-motion', () => {
     };
 });
 vi.mock('../DevTab', () => ({
-    DevTab: () => <div>Dev panel</div>
+    DevTab: () => <div>Dev panel</div>,
 }));
 
 vi.mock('..', () => ({
@@ -56,7 +55,7 @@ vi.mock('..', () => ({
             <button
                 type="button"
                 onClick={() =>
-                    setSettings(prev => ({
+                    setSettings((prev) => ({
                         ...prev,
                         monitoredFolders: [
                             ...prev.monitoredFolders,
@@ -65,9 +64,9 @@ vi.mock('..', () => ({
                                 path: 'D:/AmbitFixtures/Linked',
                                 isActive: true,
                                 imageCount: 0,
-                                initialScanPending: true
-                            }
-                        ]
+                                initialScanPending: true,
+                            },
+                        ],
                     }))
                 }
             >
@@ -76,13 +75,11 @@ vi.mock('..', () => ({
             <button
                 type="button"
                 onClick={() =>
-                    setSettings(prev => ({
+                    setSettings((prev) => ({
                         ...prev,
-                        monitoredFolders: prev.monitoredFolders.map(folder =>
-                            folder.id === 'folder-1'
-                                ? { ...folder, initialScanPending: false, lastScanned: 123 }
-                                : folder
-                        )
+                        monitoredFolders: prev.monitoredFolders.map((folder) =>
+                            folder.id === 'folder-1' ? { ...folder, initialScanPending: false, lastScanned: 123 } : folder
+                        ),
                     }))
                 }
             >
@@ -93,16 +90,27 @@ vi.mock('..', () => ({
     PrivacyTab: () => null,
     IntelligenceTab: () => null,
     AdvancedTab: () => <div>Advanced panel</div>,
-    ConnectionsTab: ({ invokeDraftSession, invokeOwnerDiscoverySession }: { invokeDraftSession?: { draft: { invokeAiPath: string }; update: (update: { invokeAiPath: string }) => void }; invokeOwnerDiscoverySession: InvokeOwnerDiscoverySession }) => (
+    ConnectionsTab: ({
+        invokeDraftSession,
+        invokeOwnerDiscoverySession,
+    }: {
+        invokeDraftSession?: { draft: { invokeAiPath: string }; update: (update: { invokeAiPath: string }) => void };
+        invokeOwnerDiscoverySession: InvokeOwnerDiscoverySession;
+    }) => (
         <div>
             <span data-testid="invoke-draft-path">{invokeDraftSession?.draft.invokeAiPath}</span>
             <span data-testid="invoke-applied-discovery-allowed">{String(invokeOwnerDiscoverySession.canUseAppliedDiscovery)}</span>
-            <button type="button" onClick={() => {
-                invokeDraftSession?.update({ invokeAiPath: 'D:/Draft' });
-                invokeOwnerDiscoverySession.invalidate('D:/Draft');
-            }}>Edit Invoke draft</button>
+            <button
+                type="button"
+                onClick={() => {
+                    invokeDraftSession?.update({ invokeAiPath: 'D:/Draft' });
+                    invokeOwnerDiscoverySession.invalidate('D:/Draft');
+                }}
+            >
+                Edit Invoke draft
+            </button>
         </div>
-    )
+    ),
 }));
 
 const createSettings = (): AppSettings => ({
@@ -115,7 +123,7 @@ const createSettings = (): AppSettings => ({
     promptMaskingEnabled: true,
     maskedKeywords: [],
     maskingMode: 'blur',
-    enableAI: false
+    enableAI: false,
 });
 
 describe('SettingsModal', () => {
@@ -165,7 +173,7 @@ describe('SettingsModal', () => {
             id: 'folder-1',
             path: 'D:/AmbitFixtures/Linked',
             initialScanPending: false,
-            lastScanned: 123
+            lastScanned: 123,
         });
     });
 

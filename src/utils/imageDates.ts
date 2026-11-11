@@ -7,13 +7,10 @@ export interface ImageCalendarParts {
     day: number;
 }
 
-export const getEffectiveDisplayTimestamp = (image: AIImage): number =>
-    image.displayTimestamp ?? image.timestamp;
+export const getEffectiveDisplayTimestamp = (image: AIImage): number => image.displayTimestamp ?? image.timestamp;
 
 export const usesPhotoWallTime = (image: AIImage): boolean =>
-    getEffectiveSourceKind(image) === 'photograph'
-    && image.captureWallTimeMs !== undefined
-    && image.captureWallTimeMs !== null;
+    getEffectiveSourceKind(image) === 'photograph' && image.captureWallTimeMs !== undefined && image.captureWallTimeMs !== null;
 
 export const getImageCalendarParts = (image: AIImage): ImageCalendarParts => {
     const date = new Date(getEffectiveDisplayTimestamp(image));
@@ -42,9 +39,7 @@ export const formatImageDisplayDate = (
     options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
 ): string => {
     const parts = getImageCalendarParts(image);
-    return new Intl.DateTimeFormat(undefined, options).format(
-        new Date(parts.year, parts.monthIndex, parts.day)
-    );
+    return new Intl.DateTimeFormat(undefined, options).format(new Date(parts.year, parts.monthIndex, parts.day));
 };
 
 export const toPhotoWallTimeBounds = (bounds: DateFilterBounds): DateFilterBounds => {

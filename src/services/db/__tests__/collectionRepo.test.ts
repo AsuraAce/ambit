@@ -88,7 +88,7 @@ const makeCollectionRow = (overrides: Record<string, unknown> = {}) => ({
     filter_state: null,
     manual_exclusions: null,
     source: 'ambit',
-    ...overrides
+    ...overrides,
 });
 
 const makeCollection = (overrides: Partial<Collection> & Pick<Collection, 'id'>): Collection => ({
@@ -127,18 +127,16 @@ const resetRepoMocks = () => {
     browserMocks.isBrowserMockMode.mockReturnValue(false);
     browserMocks.getBrowserMockCollections.mockReturnValue([]);
     browserMocks.getBrowserMockImages.mockReturnValue([]);
-    bindingMocks.mutateCollectionMembership.mockImplementation(async (input: {
-        imageIds: string[];
-        sourceCollectionId: string | null;
-        targetCollectionId: string | null;
-    }) => ({
-        status: 'ok',
-        data: {
-            affectedIds: input.imageIds,
-            sourceCollectionId: input.sourceCollectionId,
-            targetCollectionId: input.targetCollectionId,
-        },
-    }));
+    bindingMocks.mutateCollectionMembership.mockImplementation(
+        async (input: { imageIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }) => ({
+            status: 'ok',
+            data: {
+                affectedIds: input.imageIds,
+                sourceCollectionId: input.sourceCollectionId,
+                targetCollectionId: input.targetCollectionId,
+            },
+        })
+    );
     bindingMocks.setCollectionCustomThumbnail.mockResolvedValue({ status: 'ok', data: null });
     bindingMocks.updateAmbitCollectionScope.mockResolvedValue({
         status: 'ok',
@@ -160,10 +158,12 @@ describe('collectionRepo filter normalization', () => {
 
     it('normalizes legacy persisted collection filters with current defaults', async () => {
         const { parsePersistedCollectionFilters } = await import('../collectionRepo');
-        const filters = parsePersistedCollectionFilters(JSON.stringify({
-            searchQuery: 'portrait',
-            loras: ['detail'],
-        }));
+        const filters = parsePersistedCollectionFilters(
+            JSON.stringify({
+                searchQuery: 'portrait',
+                loras: ['detail'],
+            })
+        );
 
         expect(filters).toMatchObject({
             searchQuery: 'portrait',
@@ -219,35 +219,39 @@ describe('collectionRepo filter normalization', () => {
         const { migrateLegacyCollections } = await import('../collectionRepo');
         const filters = makeFilters({ searchQuery: 'portrait' });
 
-        await migrateLegacyCollections([makeCollection({
-            id: 'legacy',
-            name: 'Legacy',
-            color: '#abcdef',
-            createdAt: 10,
-            updatedAt: 20,
-            isArchived: true,
-            isPinned: true,
-            filters,
-            manualExclusions: ['excluded'],
-            customThumbnail: 'thumbnail',
-            imageIds: ['C:\\Images\\one.png'],
-        })]);
-
-        expect(bindingMocks.migrateLegacyCollections).toHaveBeenCalledWith({
-            importKey: 'library-json-collections-v1',
-            collections: [{
+        await migrateLegacyCollections([
+            makeCollection({
                 id: 'legacy',
                 name: 'Legacy',
                 color: '#abcdef',
-                isArchived: true,
-                isPinned: true,
                 createdAt: 10,
                 updatedAt: 20,
-                filterState: JSON.stringify(filters),
-                manualExclusions: '["excluded"]',
+                isArchived: true,
+                isPinned: true,
+                filters,
+                manualExclusions: ['excluded'],
                 customThumbnail: 'thumbnail',
-                imageIds: ['C:/Images/one.png'],
-            }],
+                imageIds: ['C:\\Images\\one.png'],
+            }),
+        ]);
+
+        expect(bindingMocks.migrateLegacyCollections).toHaveBeenCalledWith({
+            importKey: 'library-json-collections-v1',
+            collections: [
+                {
+                    id: 'legacy',
+                    name: 'Legacy',
+                    color: '#abcdef',
+                    isArchived: true,
+                    isPinned: true,
+                    createdAt: 10,
+                    updatedAt: 20,
+                    filterState: JSON.stringify(filters),
+                    manualExclusions: '["excluded"]',
+                    customThumbnail: 'thumbnail',
+                    imageIds: ['C:/Images/one.png'],
+                },
+            ],
         });
     });
 
@@ -349,12 +353,21 @@ describe('collectionRepo filter normalization', () => {
         dbMocks.select.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('database is locked'));
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         await expect(getAllCollectionsWithStats({ includeThumbnails: false })).rejects.toThrow('database is locked');
-        expect(bindingMocks.recordStartupDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
-            phase: 'collection-rows', status: 'completed', databaseRole: 'ambit',
-        }));
-        expect(bindingMocks.recordStartupDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
-            phase: 'collection-counts', status: 'failed', failureKind: 'database-busy', databaseRole: 'ambit',
-        }));
+        expect(bindingMocks.recordStartupDiagnostic).toHaveBeenCalledWith(
+            expect.objectContaining({
+                phase: 'collection-rows',
+                status: 'completed',
+                databaseRole: 'ambit',
+            })
+        );
+        expect(bindingMocks.recordStartupDiagnostic).toHaveBeenCalledWith(
+            expect.objectContaining({
+                phase: 'collection-counts',
+                status: 'failed',
+                failureKind: 'database-busy',
+                databaseRole: 'ambit',
+            })
+        );
     });
 
     it('stringifies non-Error schema migration failures', async () => {
@@ -412,20 +425,24 @@ describe('collectionRepo thumbnail hydration', () => {
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
             if (query.includes('ranked_thumbnails')) {
-                return [{
-                    collection_id: 'c1',
-                    dynamic_thumb: 'C:/images/full.png',
-                    dynamic_privacy: 1,
-                    safe_thumb: 'C:/thumbs/safe.webp'
-                }];
+                return [
+                    {
+                        collection_id: 'c1',
+                        dynamic_thumb: 'C:/images/full.png',
+                        dynamic_privacy: 1,
+                        safe_thumb: 'C:/thumbs/safe.webp',
+                    },
+                ];
             }
             if (query.includes('WHERE id IN')) {
-                return [{
-                    id: 'img1',
-                    path: 'C:/images/full.png',
-                    thumb: 'C:/thumbs/img1.webp',
-                    privacy_hidden: 0
-                }];
+                return [
+                    {
+                        id: 'img1',
+                        path: 'C:/images/full.png',
+                        thumb: 'C:/thumbs/img1.webp',
+                        privacy_hidden: 0,
+                    },
+                ];
             }
             if (query.includes('WHERE path IN')) return [];
             return [];
@@ -448,11 +465,13 @@ describe('collectionRepo thumbnail hydration', () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             queries.push(query);
             if (query.includes('SELECT * FROM scoped_collections')) {
-                return [makeCollectionRow({
-                    name: 'Base Only',
-                    updated_at: null,
-                    manual_exclusions: '["image-a"]',
-                })];
+                return [
+                    makeCollectionRow({
+                        name: 'Base Only',
+                        updated_at: null,
+                        manual_exclusions: '["image-a"]',
+                    }),
+                ];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
             return [];
@@ -461,12 +480,14 @@ describe('collectionRepo thumbnail hydration', () => {
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats({ includeThumbnails: false });
 
-        expect(collections[0]).toEqual(expect.objectContaining({
-            id: 'c1',
-            name: 'Base Only',
-            count: 3,
-            imageIds: []
-        }));
+        expect(collections[0]).toEqual(
+            expect.objectContaining({
+                id: 'c1',
+                name: 'Base Only',
+                count: 3,
+                imageIds: [],
+            })
+        );
         expect(collections[0].updatedAt).toBe(1);
         expect(collections[0].manualExclusions).toEqual(['image-a']);
         expect(collections[0].thumbnail).toBeUndefined();
@@ -479,9 +500,7 @@ describe('collectionRepo thumbnail hydration', () => {
         dbMocks.select.mockResolvedValueOnce([makeCollectionRow({ id: 'prepared', name: 'Prepared' })]);
         const { getScopedCollectionRows } = await import('../collectionRepo');
 
-        await expect(getScopedCollectionRows()).resolves.toEqual([
-            expect.objectContaining({ id: 'prepared', name: 'Prepared' }),
-        ]);
+        await expect(getScopedCollectionRows()).resolves.toEqual([expect.objectContaining({ id: 'prepared', name: 'Prepared' })]);
 
         expect(dbMocks.select).toHaveBeenCalledOnce();
         expect(dbMocks.select).toHaveBeenCalledWith('SELECT * FROM scoped_collections');
@@ -509,7 +528,7 @@ describe('collectionRepo thumbnail hydration', () => {
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         await getAllCollectionsWithStats({ includeThumbnails: false });
 
-        const countQuery = queries.find(query => query.includes('COUNT(*) as count'));
+        const countQuery = queries.find((query) => query.includes('COUNT(*) as count'));
         expect(countQuery).toContain('FROM scoped_collections c');
         expect(countQuery).toContain('JOIN collection_images ci ON ci.collection_id = c.id');
         expect(countQuery).toContain('JOIN scoped_images i ON i.id = ci.image_id');
@@ -522,12 +541,14 @@ describe('collectionRepo thumbnail hydration', () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             queries.push(query);
             if (query.includes('SELECT * FROM scoped_collections')) {
-                return [makeCollectionRow({
-                    name: 'Cached',
-                    dynamic_thumbnail_path: 'C:/thumbs/cached.webp',
-                    dynamic_safe_thumbnail_path: 'C:/thumbs/cached-safe.webp',
-                    dynamic_thumbnail_is_sensitive: 1
-                })];
+                return [
+                    makeCollectionRow({
+                        name: 'Cached',
+                        dynamic_thumbnail_path: 'C:/thumbs/cached.webp',
+                        dynamic_safe_thumbnail_path: 'C:/thumbs/cached-safe.webp',
+                        dynamic_thumbnail_is_sensitive: 1,
+                    }),
+                ];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
             return [];
@@ -536,12 +557,14 @@ describe('collectionRepo thumbnail hydration', () => {
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats();
 
-        expect(collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://C:/thumbs/cached.webp',
-            safeThumbnail: 'asset://C:/thumbs/cached-safe.webp',
-            thumbnailIsSensitive: true,
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://C:/thumbs/cached.webp',
+                safeThumbnail: 'asset://C:/thumbs/cached-safe.webp',
+                thumbnailIsSensitive: true,
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
         expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(dbMocks.execute).not.toHaveBeenCalled();
     });
@@ -551,15 +574,17 @@ describe('collectionRepo thumbnail hydration', () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             queries.push(query);
             if (query.includes('SELECT * FROM scoped_collections')) {
-                return [makeCollectionRow({
-                    id: 'smart-1',
-                    name: 'Cached Smart',
-                    filter_state: JSON.stringify({ dateRange: 'today' }),
-                    dynamic_thumbnail_path: 'C:/thumbs/cached-smart.webp',
-                    dynamic_safe_thumbnail_path: 'C:/thumbs/cached-smart-safe.webp',
-                    dynamic_thumbnail_is_sensitive: 0,
-                    dynamic_count: 12
-                })];
+                return [
+                    makeCollectionRow({
+                        id: 'smart-1',
+                        name: 'Cached Smart',
+                        filter_state: JSON.stringify({ dateRange: 'today' }),
+                        dynamic_thumbnail_path: 'C:/thumbs/cached-smart.webp',
+                        dynamic_safe_thumbnail_path: 'C:/thumbs/cached-smart-safe.webp',
+                        dynamic_thumbnail_is_sensitive: 0,
+                        dynamic_count: 12,
+                    }),
+                ];
             }
             if (query.includes('COUNT(*) as count')) return [];
             return [];
@@ -568,14 +593,16 @@ describe('collectionRepo thumbnail hydration', () => {
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats();
 
-        expect(collections[0]).toEqual(expect.objectContaining({
-            id: 'smart-1',
-            count: 12,
-            thumbnail: 'asset://C:/thumbs/cached-smart.webp',
-            safeThumbnail: 'asset://C:/thumbs/cached-smart-safe.webp',
-            thumbnailIsSensitive: false,
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(collections[0]).toEqual(
+            expect.objectContaining({
+                id: 'smart-1',
+                count: 12,
+                thumbnail: 'asset://C:/thumbs/cached-smart.webp',
+                safeThumbnail: 'asset://C:/thumbs/cached-smart-safe.webp',
+                thumbnailIsSensitive: false,
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
         expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(dbMocks.execute).not.toHaveBeenCalled();
     });
@@ -602,19 +629,21 @@ describe('collectionRepo thumbnail hydration', () => {
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats({ includeThumbnails: false });
 
-        expect(collections.find(collection => collection.id === 'smart-unknown')?.count).toBeUndefined();
-        expect(collections.find(collection => collection.id === 'smart-empty')?.count).toBe(0);
+        expect(collections.find((collection) => collection.id === 'smart-unknown')?.count).toBeUndefined();
+        expect(collections.find((collection) => collection.id === 'smart-empty')?.count).toBe(0);
     });
 
     it('does not display a cached dynamic thumbnail over a custom thumbnail', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('SELECT * FROM scoped_collections')) {
-                return [makeCollectionRow({
-                    custom_thumbnail: 'img-custom',
-                    dynamic_thumbnail_path: 'C:/thumbs/cached.webp',
-                    dynamic_safe_thumbnail_path: 'C:/thumbs/cached-safe.webp',
-                    dynamic_thumbnail_is_sensitive: 1
-                })];
+                return [
+                    makeCollectionRow({
+                        custom_thumbnail: 'img-custom',
+                        dynamic_thumbnail_path: 'C:/thumbs/cached.webp',
+                        dynamic_safe_thumbnail_path: 'C:/thumbs/cached-safe.webp',
+                        dynamic_thumbnail_is_sensitive: 1,
+                    }),
+                ];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
             return [];
@@ -640,12 +669,14 @@ describe('collectionRepo thumbnail hydration', () => {
             }
             if (query.includes('WHERE id IN')) return [];
             if (query.includes('WHERE path IN')) {
-                return [{
-                    id: 'img-path',
-                    path: 'C:/images/source.png',
-                    thumb: 'C:/thumbs/source.webp',
-                    privacy_hidden: 1
-                }];
+                return [
+                    {
+                        id: 'img-path',
+                        path: 'C:/images/source.png',
+                        thumb: 'C:/thumbs/source.webp',
+                        privacy_hidden: 1,
+                    },
+                ];
             }
             return [];
         });
@@ -666,13 +697,15 @@ describe('collectionRepo thumbnail hydration', () => {
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 0 }];
             if (query.includes('ranked_thumbnails')) return [];
             if (query.includes('FROM images AS images') && query.includes('WHERE id IN')) {
-                return [{
-                    id: 'img-other-owner',
-                    path: 'C:/images/other-owner.png',
-                    thumb: 'C:/thumbs/other-owner.webp',
-                    privacy_hidden: 0,
-                    invoke_scope_hidden: 1,
-                }];
+                return [
+                    {
+                        id: 'img-other-owner',
+                        path: 'C:/images/other-owner.png',
+                        thumb: 'C:/thumbs/other-owner.webp',
+                        privacy_hidden: 0,
+                        invoke_scope_hidden: 1,
+                    },
+                ];
             }
             return [];
         });
@@ -730,13 +763,15 @@ describe('collectionRepo thumbnail hydration', () => {
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
             if (query.includes('ranked_thumbnails')) return [];
             if (query.includes('WHERE id IN')) {
-                return [{
-                    id: 'video-empty',
-                    path: 'C:/videos/empty.mp4',
-                    thumb: null,
-                    privacy_hidden: 0,
-                    media_type: 'video'
-                }];
+                return [
+                    {
+                        id: 'video-empty',
+                        path: 'C:/videos/empty.mp4',
+                        thumb: null,
+                        privacy_hidden: 0,
+                        media_type: 'video',
+                    },
+                ];
             }
             return [];
         });
@@ -755,12 +790,14 @@ describe('collectionRepo thumbnail hydration', () => {
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 2 }];
             if (query.includes('ranked_thumbnails')) {
                 dynamicQuery = query;
-                return [{
-                    collection_id: 'c1',
-                    dynamic_thumb: 'C:/thumbs/unsafe.webp',
-                    dynamic_privacy: 1,
-                    safe_thumb: 'C:/thumbs/safe.webp'
-                }];
+                return [
+                    {
+                        collection_id: 'c1',
+                        dynamic_thumb: 'C:/thumbs/unsafe.webp',
+                        dynamic_privacy: 1,
+                        safe_thumb: 'C:/thumbs/safe.webp',
+                    },
+                ];
             }
             return [];
         });
@@ -781,59 +818,67 @@ describe('collectionRepo thumbnail hydration', () => {
     it('writes raw dynamic thumbnail paths to the collection cache after static hydration', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('ranked_thumbnails')) {
-                return [{
-                    collection_id: 'c1',
-                    dynamic_thumb: 'C:/thumbs/unsafe.webp',
-                    dynamic_privacy: 1,
-                    safe_thumb: null
-                }];
+                return [
+                    {
+                        collection_id: 'c1',
+                        dynamic_thumb: 'C:/thumbs/unsafe.webp',
+                        dynamic_privacy: 1,
+                        safe_thumb: null,
+                    },
+                ];
             }
             return [];
         });
 
         const { getCollectionThumbnailSummaries } = await import('../collectionRepo');
-        await getCollectionThumbnailSummaries([{
-            id: 'c1',
-            name: 'Collection',
-            createdAt: 1,
-            source: 'ambit',
-            count: 1,
-            imageIds: []
-        }]);
+        await getCollectionThumbnailSummaries([
+            {
+                id: 'c1',
+                name: 'Collection',
+                createdAt: 1,
+                source: 'ambit',
+                count: 1,
+                imageIds: [],
+            },
+        ]);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path'),
-            ['C:/thumbs/unsafe.webp', null, 1, expect.any(Number), 'c1']
-        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), [
+            'C:/thumbs/unsafe.webp',
+            null,
+            1,
+            expect.any(Number),
+            'c1',
+        ]);
     });
 
     it('clears the dynamic thumbnail cache when static hydration finds no thumbnail', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('ranked_thumbnails')) {
-                return [{
-                    collection_id: 'c1',
-                    dynamic_thumb: null,
-                    dynamic_privacy: null,
-                    safe_thumb: null
-                }];
+                return [
+                    {
+                        collection_id: 'c1',
+                        dynamic_thumb: null,
+                        dynamic_privacy: null,
+                        safe_thumb: null,
+                    },
+                ];
             }
             return [];
         });
 
         const { getCollectionThumbnailSummaries } = await import('../collectionRepo');
-        await getCollectionThumbnailSummaries([{
-            id: 'c1',
-            name: 'Collection',
-            createdAt: 1,
-            source: 'ambit',
-            count: 1,
-            imageIds: []
-        }]);
+        await getCollectionThumbnailSummaries([
+            {
+                id: 'c1',
+                name: 'Collection',
+                createdAt: 1,
+                source: 'ambit',
+                count: 1,
+                imageIds: [],
+            },
+        ]);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path'),
-            [null, null, null, null, 'c1']
-        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), [null, null, null, null, 'c1']);
     });
 
     it('writes raw dynamic thumbnail paths to the collection cache after smart summary hydration', async () => {
@@ -849,40 +894,48 @@ describe('collectionRepo thumbnail hydration', () => {
         });
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
-        await getSmartCollectionSummaries([{
-            id: 'smart-1',
-            name: 'Smart',
-            createdAt: 1,
-            source: 'ambit',
-            count: 0,
-            imageIds: [],
-            filters: {
-                searchQuery: '',
-                models: [],
-                tools: [],
-                loras: [],
-                embeddings: [],
-                hypernetworks: [],
-                samplers: [],
-                generationTypes: [],
-                controlNets: [],
-                ipAdapters: [],
-                dateRange: 'today',
-                favoritesOnly: false,
-                collectionId: null
-            } as FilterState
-        }]);
+        await getSmartCollectionSummaries([
+            {
+                id: 'smart-1',
+                name: 'Smart',
+                createdAt: 1,
+                source: 'ambit',
+                count: 0,
+                imageIds: [],
+                filters: {
+                    searchQuery: '',
+                    models: [],
+                    tools: [],
+                    loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
+                    samplers: [],
+                    generationTypes: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    dateRange: 'today',
+                    favoritesOnly: false,
+                    collectionId: null,
+                } as FilterState,
+            },
+        ]);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path'),
-            ['C:/thumbs/smart.webp', null, 0, expect.any(Number), 'smart-1']
-        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), [
+            'C:/thumbs/smart.webp',
+            null,
+            0,
+            expect.any(Number),
+            'smart-1',
+        ]);
     });
 
     it('returns empty smart thumbnail data and skips cache writes for custom thumbnails', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('COUNT(*) FROM scoped_images')) {
-                return [{ id: 'smart-empty', count: 0 }, { id: 'smart-custom', count: 0 }];
+                return [
+                    { id: 'smart-empty', count: 0 },
+                    { id: 'smart-custom', count: 0 },
+                ];
             }
             return [];
         });
@@ -894,13 +947,8 @@ describe('collectionRepo thumbnail hydration', () => {
         ]);
 
         expect(summaries['smart-empty']).toMatchObject({ count: 0, thumbnail: undefined });
-        expect(dbMocks.execute).not.toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_count'),
-            expect.anything()
-        );
-        const thumbnailCacheWrites = dbMocks.execute.mock.calls.filter(([query]) =>
-            (query as string).includes('dynamic_thumbnail_path')
-        );
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(expect.stringContaining('dynamic_count'), expect.anything());
+        const thumbnailCacheWrites = dbMocks.execute.mock.calls.filter(([query]) => (query as string).includes('dynamic_thumbnail_path'));
         expect(thumbnailCacheWrites).toHaveLength(1);
     });
 });
@@ -943,9 +991,7 @@ describe('collectionRepo membership helpers', () => {
             makeCollection({ id: 'empty', count: 0, imageIds: [] }),
         ];
         browserMocks.getBrowserMockCollections.mockReturnValue(collections);
-        browserMocks.getBrowserMockImages.mockReturnValue([
-            { id: 'img-1', thumbnailUrl: 'thumb-img-1' },
-        ]);
+        browserMocks.getBrowserMockImages.mockReturnValue([{ id: 'img-1', thumbnailUrl: 'thumb-img-1' }]);
 
         const {
             clearCollectionThumbnailCacheForCollections,
@@ -975,13 +1021,15 @@ describe('collectionRepo membership helpers', () => {
         await expect(clearAllCollectionThumbnailCaches()).resolves.toBeUndefined();
         await expect(ensureCollectionSchema()).resolves.toBeUndefined();
         await expect(upsertCollection({ id: 'new', name: 'New' })).resolves.toBeUndefined();
-        await expect(upsertInvokeBoardCollection({
-            id: 'invoke-board',
-            name: 'Invoke Board',
-            createdAt: 1,
-            invokeOwnerId: 'owner-a',
-            invokeSourceId: 'D:/Invoke/databases/invokeai.db',
-        })).resolves.toBeUndefined();
+        await expect(
+            upsertInvokeBoardCollection({
+                id: 'invoke-board',
+                name: 'Invoke Board',
+                createdAt: 1,
+                invokeOwnerId: 'owner-a',
+                invokeSourceId: 'D:/Invoke/databases/invokeai.db',
+            })
+        ).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', 'img-1')).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', null)).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('missing', 'img-1')).rejects.toThrow('Collection not found: missing');
@@ -989,10 +1037,9 @@ describe('collectionRepo membership helpers', () => {
         await expect(addImagesToCollection('c1', ['img-2'])).resolves.toMatchObject({ affectedIds: ['img-2'] });
         await expect(removeImagesFromCollection('c1', ['img-1'])).resolves.toMatchObject({ affectedIds: ['img-1'] });
         await expect(getAllCollectionsWithStats()).resolves.toEqual(collections);
-        await expect(getCollectionThumbnailSummaries([
-            makeCollection({ id: 'c1' }),
-            makeCollection({ id: 'fallback', thumbnail: 'fallback-thumb' }),
-        ])).resolves.toEqual({
+        await expect(
+            getCollectionThumbnailSummaries([makeCollection({ id: 'c1' }), makeCollection({ id: 'fallback', thumbnail: 'fallback-thumb' })])
+        ).resolves.toEqual({
             c1: {
                 thumbnail: 'thumb-c1',
                 safeThumbnail: 'safe-c1',
@@ -1006,10 +1053,12 @@ describe('collectionRepo membership helpers', () => {
                 thumbnailSourceKind: undefined,
             },
         });
-        await expect(getSmartCollectionSummaries([
-            makeCollection({ id: 'smart', filters: smartFilters }),
-            makeCollection({ id: 'unknown', filters: smartFilters }),
-        ], { includeThumbnails: false })).resolves.toEqual({
+        await expect(
+            getSmartCollectionSummaries(
+                [makeCollection({ id: 'smart', filters: smartFilters }), makeCollection({ id: 'unknown', filters: smartFilters })],
+                { includeThumbnails: false }
+            )
+        ).resolves.toEqual({
             smart: { count: 7, thumbnailSourceKind: 'dynamic' },
             unknown: { count: 0, thumbnailSourceKind: 'dynamic' },
         });
@@ -1050,29 +1099,17 @@ describe('collectionRepo membership helpers', () => {
     });
 
     it('clears dynamic thumbnail caches for collections containing changed image ids', async () => {
-        dbMocks.select.mockResolvedValue([
-            { collection_id: 'c1' },
-            { collection_id: 'c2' },
-        ]);
+        dbMocks.select.mockResolvedValue([{ collection_id: 'c1' }, { collection_id: 'c2' }]);
 
         const { clearCollectionThumbnailCacheForImages } = await import('../collectionRepo');
         await clearCollectionThumbnailCacheForImages(['C:\\images\\a.png', 'C:/images/a.png']);
 
-        expect(dbMocks.select).toHaveBeenCalledWith(
-            expect.stringContaining('FROM collection_images'),
-            ['C:/images/a.png']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path = NULL'),
-            ['c1', 'c2']
-        );
+        expect(dbMocks.select).toHaveBeenCalledWith(expect.stringContaining('FROM collection_images'), ['C:/images/a.png']);
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path = NULL'), ['c1', 'c2']);
     });
 
     it('skips thumbnail cache clearing when there are no affected collections or images', async () => {
-        const {
-            clearCollectionThumbnailCacheForCollections,
-            clearCollectionThumbnailCacheForImages,
-        } = await import('../collectionRepo');
+        const { clearCollectionThumbnailCacheForCollections, clearCollectionThumbnailCacheForImages } = await import('../collectionRepo');
 
         await clearCollectionThumbnailCacheForCollections([]);
         await clearCollectionThumbnailCacheForImages([]);
@@ -1092,11 +1129,8 @@ describe('collectionRepo membership helpers', () => {
     });
 
     it('clears selected and all native collection thumbnail caches', async () => {
-        const {
-            clearAllCollectionThumbnailCaches,
-            clearCollectionThumbnailCacheForCollections,
-            deleteCollectionFromDb,
-        } = await import('../collectionRepo');
+        const { clearAllCollectionThumbnailCaches, clearCollectionThumbnailCacheForCollections, deleteCollectionFromDb } =
+            await import('../collectionRepo');
 
         await clearCollectionThumbnailCacheForCollections(['']);
         expect(dbMocks.execute).not.toHaveBeenCalled();
@@ -1105,17 +1139,11 @@ describe('collectionRepo membership helpers', () => {
         dbMocks.select.mockResolvedValueOnce([{ source: 'ambit' }]);
         await deleteCollectionFromDb('c1');
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('WHERE id IN (?)'),
-            ['c1']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining("WHERE custom_thumbnail IS NULL OR custom_thumbnail = ''")
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)',
-            ['c1']
-        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('WHERE id IN (?)'), ['c1']);
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining("WHERE custom_thumbnail IS NULL OR custom_thumbnail = ''"));
+        expect(dbMocks.execute).toHaveBeenCalledWith('DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)', [
+            'c1',
+        ]);
     });
 
     it('skips cache SQL in browser mock mode', async () => {
@@ -1148,10 +1176,17 @@ describe('collectionRepo membership helpers', () => {
         dbMocks.select.mockResolvedValue([{ id: 'smart-1', count: 4 }]);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
-        await expect(getSmartCollectionSummaries([makeCollection({
-            id: 'smart-1',
-            filters: makeFilters({ searchQuery: 'portrait' }),
-        })], { includeThumbnails: false })).resolves.toEqual({
+        await expect(
+            getSmartCollectionSummaries(
+                [
+                    makeCollection({
+                        id: 'smart-1',
+                        filters: makeFilters({ searchQuery: 'portrait' }),
+                    }),
+                ],
+                { includeThumbnails: false }
+            )
+        ).resolves.toEqual({
             'smart-1': { count: 4, thumbnailSourceKind: 'dynamic' },
         });
 
@@ -1164,19 +1199,16 @@ describe('collectionRepo membership helpers', () => {
 
         await cacheSmartCollectionCount('smart-1', 4, 1);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringMatching(/dynamic_count[\s\S]*updated_at = \?/),
-            [4, 'smart-1', 1]
-        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringMatching(/dynamic_count[\s\S]*updated_at = \?/), [4, 'smart-1', 1]);
     });
 
     it('serializes accepted count cache writes for the same collection', async () => {
         let signalFirstWriteStarted!: () => void;
-        const firstWriteStarted = new Promise<void>(resolve => {
+        const firstWriteStarted = new Promise<void>((resolve) => {
             signalFirstWriteStarted = resolve;
         });
         let releaseFirstWrite!: () => void;
-        const firstWrite = new Promise<void>(resolve => {
+        const firstWrite = new Promise<void>((resolve) => {
             releaseFirstWrite = resolve;
         });
         dbMocks.execute
@@ -1208,10 +1240,7 @@ describe('collectionRepo membership helpers', () => {
         const { cacheSmartCollectionCount } = await import('../collectionRepo');
         await expect(cacheSmartCollectionCount('smart-1', 4, 1)).resolves.toBeUndefined();
 
-        expect(errorSpy).toHaveBeenCalledWith(
-            '[DB] Failed to cache smart collection count smart-1',
-            expect.any(Error)
-        );
+        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to cache smart collection count smart-1', expect.any(Error));
         errorSpy.mockRestore();
     });
 
@@ -1222,33 +1251,36 @@ describe('collectionRepo membership helpers', () => {
             .mockResolvedValueOnce([{ thumbnail_path: 'C:/thumbs/smart.webp' }]);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
-        await expect(getSmartCollectionSummaries([makeCollection({
-            id: 'smart-1',
-            filters: makeFilters({ dateRange: 'today' }),
-        })])).resolves.toEqual({
+        await expect(
+            getSmartCollectionSummaries([
+                makeCollection({
+                    id: 'smart-1',
+                    filters: makeFilters({ dateRange: 'today' }),
+                }),
+            ])
+        ).resolves.toEqual({
             'smart-1': expect.objectContaining({
                 count: 4,
-                thumbnail: 'asset://C:/thumbs/smart.webp'
-            })
+                thumbnail: 'asset://C:/thumbs/smart.webp',
+            }),
         });
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path'),
-            expect.any(Array)
-        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), expect.any(Array));
     });
 
     it('returns partial smart summaries when smart thumbnail queries fail', async () => {
-        dbMocks.select
-            .mockResolvedValueOnce([{ id: 'smart-1', count: 4 }])
-            .mockRejectedValueOnce(new Error('thumbnail query failed'));
+        dbMocks.select.mockResolvedValueOnce([{ id: 'smart-1', count: 4 }]).mockRejectedValueOnce(new Error('thumbnail query failed'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
-        await expect(getSmartCollectionSummaries([makeCollection({
-            id: 'smart-1',
-            filters: makeFilters({ searchQuery: 'portrait' }),
-        })])).resolves.toEqual({
+        await expect(
+            getSmartCollectionSummaries([
+                makeCollection({
+                    id: 'smart-1',
+                    filters: makeFilters({ searchQuery: 'portrait' }),
+                }),
+            ])
+        ).resolves.toEqual({
             'smart-1': { count: 4, thumbnailSourceKind: 'dynamic' },
         });
 
@@ -1392,13 +1424,15 @@ describe('collectionRepo membership helpers', () => {
 
     it('loads collections through fail-closed owner visibility and preserves the mapped board owner', async () => {
         dbMocks.select
-            .mockResolvedValueOnce([makeCollectionRow({
-                id: 'owned-board',
-                source: 'invoke',
-                invoke_owner_id: 'owner-a',
-                invoke_source_name: 'Upstream board',
-                invoke_source_present: 0,
-            })])
+            .mockResolvedValueOnce([
+                makeCollectionRow({
+                    id: 'owned-board',
+                    source: 'invoke',
+                    invoke_owner_id: 'owner-a',
+                    invoke_source_name: 'Upstream board',
+                    invoke_source_present: 0,
+                }),
+            ])
             .mockResolvedValueOnce([]);
 
         const { getAllCollectionsWithStats, upsertCollection } = await import('../collectionRepo');
@@ -1426,42 +1460,37 @@ describe('collectionRepo membership helpers', () => {
     });
 
     it('hides InvokeAI collections and exposes scoped recovery and reset actions', async () => {
-        dbMocks.select
-            .mockResolvedValueOnce([{ source: 'invoke' }])
-            .mockResolvedValueOnce([{
+        dbMocks.select.mockResolvedValueOnce([{ source: 'invoke' }]).mockResolvedValueOnce([
+            {
                 id: 'hidden-board',
                 name: 'Local label',
                 invoke_source_name: 'Upstream label',
                 invoke_source_present: 0,
                 invoke_owner_id: 'owner-a',
-            }]);
-        const {
-            deleteCollectionFromDb,
-            getSuppressedInvokeCollections,
-            resetInvokeCollection,
-            restoreInvokeCollection,
-        } = await import('../collectionRepo');
+            },
+        ]);
+        const { deleteCollectionFromDb, getSuppressedInvokeCollections, resetInvokeCollection, restoreInvokeCollection } =
+            await import('../collectionRepo');
 
         await deleteCollectionFromDb('hidden-board');
         await resetInvokeCollection('hidden-board');
         await restoreInvokeCollection('hidden-board');
-        await expect(getSuppressedInvokeCollections()).resolves.toEqual([{
-            id: 'hidden-board',
-            name: 'Local label',
-            invokeSourceName: 'Upstream label',
-            invokeSourcePresent: false,
-            invokeOwnerId: 'owner-a',
-        }]);
+        await expect(getSuppressedInvokeCollections()).resolves.toEqual([
+            {
+                id: 'hidden-board',
+                name: 'Local label',
+                invokeSourceName: 'Upstream label',
+                invokeSourcePresent: false,
+                invokeOwnerId: 'owner-a',
+            },
+        ]);
 
         expect(bindingMocks.updateInvokeCollectionOwnership.mock.calls).toEqual([
             ['hidden-board', 'suppress'],
             ['hidden-board', 'reset'],
             ['hidden-board', 'restore'],
         ]);
-        expect(dbMocks.execute).not.toHaveBeenCalledWith(
-            expect.stringContaining('DELETE FROM collections'),
-            expect.anything(),
-        );
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collections'), expect.anything());
         expect(String(dbMocks.select.mock.calls.at(-1)?.[0])).toContain('invoke_suppressed = 1');
         expect(String(dbMocks.select.mock.calls.at(-1)?.[0])).toContain('invoke_owner_scope_state');
     });
@@ -1472,10 +1501,12 @@ describe('collectionRepo membership helpers', () => {
         const { deleteCollectionFromDb, upsertCollection } = await import('../collectionRepo');
 
         await expect(deleteCollectionFromDb('hidden-board')).rejects.toThrow('collection was not found');
-        await expect(upsertCollection({
-            id: 'hidden-board',
-            name: 'Must not overwrite',
-        })).rejects.toThrow('collection was not found');
+        await expect(
+            upsertCollection({
+                id: 'hidden-board',
+                name: 'Must not overwrite',
+            })
+        ).rejects.toThrow('collection was not found');
 
         const deleteSql = String(dbMocks.select.mock.calls[0]?.[0]);
         const upsertSql = String(dbMocks.execute.mock.calls[0]?.[0]);
@@ -1513,19 +1544,19 @@ describe('collectionRepo membership helpers', () => {
         expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
         expect(sql).not.toContain('is_archived = excluded.is_archived');
         expect(sql).not.toContain('is_pinned = excluded.is_pinned');
-        expect(params.slice(0, 5)).toEqual([
-            'owned-board', 'Renamed upstream', 10, 'owner-a', 'D:/Invoke/databases/invokeai.db'
-        ]);
+        expect(params.slice(0, 5)).toEqual(['owned-board', 'Renamed upstream', 10, 'owner-a', 'D:/Invoke/databases/invokeai.db']);
     });
 
     it('batch-repairs Invoke board owners without touching collection customizations', async () => {
         dbMocks.execute.mockResolvedValueOnce({ rowsAffected: 2 });
         const { upsertInvokeBoardCollections } = await import('../collectionRepo');
 
-        await expect(upsertInvokeBoardCollections([
-            { id: 'board-a', name: 'Board A', createdAt: 10, invokeOwnerId: 'owner-a', invokeSourceId: 'db-a' },
-            { id: 'board-b', name: 'Board B', createdAt: 20, invokeOwnerId: 'owner-b', invokeSourceId: 'db-a' },
-        ])).resolves.toBe(2);
+        await expect(
+            upsertInvokeBoardCollections([
+                { id: 'board-a', name: 'Board A', createdAt: 10, invokeOwnerId: 'owner-a', invokeSourceId: 'db-a' },
+                { id: 'board-b', name: 'Board B', createdAt: 20, invokeOwnerId: 'owner-b', invokeSourceId: 'db-a' },
+            ])
+        ).resolves.toBe(2);
 
         const sql = dbMocks.execute.mock.calls[0][0] as string;
         const params = dbMocks.execute.mock.calls[0][1] as unknown[];
@@ -1544,7 +1575,6 @@ describe('collectionRepo membership helpers', () => {
         expect(params.slice(7, 12)).toEqual(['board-b', 'Board B', 20, 'owner-b', 'db-a']);
     });
 });
-
 
 describe('Invoke collection local name intent', () => {
     beforeEach(resetRepoMocks);
@@ -1572,27 +1602,53 @@ describe('Invoke collection local name intent', () => {
 
     it('keeps rename intent when local and source names converge, until reset', async () => {
         browserMocks.isBrowserMockMode.mockReturnValue(true);
-        let collection: Collection = { id: 'board', name: 'Local', source: 'invoke', invokeSourceName: 'Original', invokeNameOverridden: false, createdAt: 1, imageIds: ['local-image'] };
+        let collection: Collection = {
+            id: 'board',
+            name: 'Local',
+            source: 'invoke',
+            invokeSourceName: 'Original',
+            invokeNameOverridden: false,
+            createdAt: 1,
+            imageIds: ['local-image'],
+        };
         browserMocks.getBrowserMockCollections.mockImplementation(() => [collection]);
-        browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => { collection = { ...collection, ...update }; });
-        const { renameCollectionInDb, upsertInvokeBoardCollection, upsertInvokeBoardCollections, resetInvokeCollection, upsertCollection } = await import('../collectionRepo');
+        browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => {
+            collection = { ...collection, ...update };
+        });
+        const { renameCollectionInDb, upsertInvokeBoardCollection, upsertInvokeBoardCollections, resetInvokeCollection, upsertCollection } =
+            await import('../collectionRepo');
         await renameCollectionInDb('board', 'Local');
         const board = { id: 'board', name: 'Local', createdAt: 1, invokeSourceId: 'invoke.db' };
         await upsertInvokeBoardCollection(board);
         await upsertInvokeBoardCollections([{ ...board, name: 'Later upstream' }]);
         await upsertCollection({ ...collection, name: 'Stale', invokeNameOverridden: false, color: 'green' });
-        expect(collection).toMatchObject({ name: 'Local', invokeNameOverridden: true, invokeSourceName: 'Later upstream', color: 'green', imageIds: ['local-image'] });
+        expect(collection).toMatchObject({
+            name: 'Local',
+            invokeNameOverridden: true,
+            invokeSourceName: 'Later upstream',
+            color: 'green',
+            imageIds: ['local-image'],
+        });
         browserMocks.getBrowserMockInvokeMembershipSnapshot.mockReturnValue(['source-image']);
         await resetInvokeCollection('board');
-        expect(collection).toMatchObject({ name: 'Later upstream', invokeNameOverridden: false, imageIds: ['source-image'], color: 'green' });
+        expect(collection).toMatchObject({
+            name: 'Later upstream',
+            invokeNameOverridden: false,
+            imageIds: ['source-image'],
+            color: 'green',
+        });
     });
 
     it('preserves ambiguous legacy names and marks adopted source boards as overridden', async () => {
         browserMocks.isBrowserMockMode.mockReturnValue(true);
-        browserMocks.getBrowserMockCollections.mockReturnValue([{ id: 'legacy', name: 'Retained', source: 'invoke', imageIds: [], createdAt: 1 }]);
+        browserMocks.getBrowserMockCollections.mockReturnValue([
+            { id: 'legacy', name: 'Retained', source: 'invoke', imageIds: [], createdAt: 1 },
+        ]);
         const { upsertInvokeBoardCollection } = await import('../collectionRepo');
         await upsertInvokeBoardCollection({ id: 'legacy', name: 'Upstream', createdAt: 1, invokeSourceId: 'invoke.db' });
-        expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith(expect.objectContaining({ name: 'Retained', invokeNameOverridden: true }));
+        expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'Retained', invokeNameOverridden: true })
+        );
     });
 
     const ambiguousSourceCases = [
@@ -1612,9 +1668,13 @@ describe('Invoke collection local name intent', () => {
                     invoke_name_overridden INTEGER NOT NULL DEFAULT 0, updated_at INTEGER,
                     color TEXT, custom_thumbnail TEXT
                 )`);
-                sqlite.prepare(`INSERT INTO collections
+                sqlite
+                    .prepare(
+                        `INSERT INTO collections
                     (id,name,created_at,source,invoke_source_id,invoke_source_name,color,custom_thumbnail)
-                    VALUES ('board',?,1,'invoke',?,'A','green','keep.png')`).run(name, sourceId);
+                    VALUES ('board',?,1,'invoke',?,'A','green','keep.png')`
+                    )
+                    .run(name, sourceId);
                 dbMocks.execute.mockImplementation(async (sql: string, params: SQLInputValue[] = []) => {
                     const result = sqlite.prepare(sql).run(...params);
                     return { rowsAffected: Number(result.changes) };
@@ -1627,8 +1687,12 @@ describe('Invoke collection local name intent', () => {
                     if (mode === 'single') await upsertInvokeBoardCollection(board);
                     else await upsertInvokeBoardCollections([board]);
                     expect(sqlite.prepare('SELECT * FROM collections WHERE id = ?').get('board')).toMatchObject({
-                        name, invoke_source_name: sourceName, invoke_source_id: 'invoke.db',
-                        invoke_name_overridden: 1, color: 'green', custom_thumbnail: 'keep.png',
+                        name,
+                        invoke_source_name: sourceName,
+                        invoke_source_id: 'invoke.db',
+                        invoke_name_overridden: 1,
+                        color: 'green',
+                        custom_thumbnail: 'keep.png',
                     });
                 }
             } finally {
@@ -1639,9 +1703,16 @@ describe('Invoke collection local name intent', () => {
         it.each(ambiguousSourceCases)('retains $reason in browser mode', async ({ name, sourceId }) => {
             browserMocks.isBrowserMockMode.mockReturnValue(true);
             let collection: Collection = {
-                id: 'board', name, source: 'invoke', invokeSourceId: sourceId ?? undefined,
-                invokeSourceName: 'A', invokeNameOverridden: false,
-                createdAt: 1, imageIds: ['local-image'], color: 'green', customThumbnail: 'keep.png',
+                id: 'board',
+                name,
+                source: 'invoke',
+                invokeSourceId: sourceId ?? undefined,
+                invokeSourceName: 'A',
+                invokeNameOverridden: false,
+                createdAt: 1,
+                imageIds: ['local-image'],
+                color: 'green',
+                customThumbnail: 'keep.png',
             };
             browserMocks.getBrowserMockCollections.mockImplementation(() => [collection]);
             browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => {
@@ -1653,8 +1724,12 @@ describe('Invoke collection local name intent', () => {
                 if (mode === 'single') await upsertInvokeBoardCollection(board);
                 else await upsertInvokeBoardCollections([board]);
                 expect(collection).toMatchObject({
-                    name, invokeSourceName: sourceName, invokeNameOverridden: true,
-                    color: 'green', customThumbnail: 'keep.png', imageIds: ['local-image'],
+                    name,
+                    invokeSourceName: sourceName,
+                    invokeNameOverridden: true,
+                    color: 'green',
+                    customThumbnail: 'keep.png',
+                    imageIds: ['local-image'],
                 });
             }
         });
@@ -1662,17 +1737,27 @@ describe('Invoke collection local name intent', () => {
         it('continues following a known source when its display name was unmodified', async () => {
             browserMocks.isBrowserMockMode.mockReturnValue(true);
             const collection: Collection = {
-                id: 'board', name: 'A', source: 'invoke', invokeSourceId: 'invoke.db',
-                invokeSourceName: 'A', invokeNameOverridden: false, createdAt: 1, imageIds: [],
+                id: 'board',
+                name: 'A',
+                source: 'invoke',
+                invokeSourceId: 'invoke.db',
+                invokeSourceName: 'A',
+                invokeNameOverridden: false,
+                createdAt: 1,
+                imageIds: [],
             };
             browserMocks.getBrowserMockCollections.mockReturnValue([collection]);
             const { upsertInvokeBoardCollection, upsertInvokeBoardCollections } = await import('../collectionRepo');
             const board = { id: 'board', name: 'B', createdAt: 1, invokeSourceId: 'invoke.db' };
             if (mode === 'single') await upsertInvokeBoardCollection(board);
             else await upsertInvokeBoardCollections([board]);
-            expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith(expect.objectContaining({
-                name: 'B', invokeSourceName: 'B', invokeNameOverridden: false,
-            }));
+            expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    name: 'B',
+                    invokeSourceName: 'B',
+                    invokeNameOverridden: false,
+                })
+            );
         });
     });
 
@@ -1689,7 +1774,18 @@ describe('Invoke collection local name intent', () => {
 
     it('ownership-only mock verification refreshes availability without adopting or changing content', async () => {
         browserMocks.isBrowserMockMode.mockReturnValue(true);
-        const local: Collection = { id: 'local', name: 'Local name', source: 'invoke', createdAt: 1, imageIds: ['local-image'], invokeSourceId: 'D:/Invoke/invokeai.db', invokeSourceName: 'Last source name', invokeNameOverridden: true, invokeSourcePresent: false, color: 'green' };
+        const local: Collection = {
+            id: 'local',
+            name: 'Local name',
+            source: 'invoke',
+            createdAt: 1,
+            imageIds: ['local-image'],
+            invokeSourceId: 'D:/Invoke/invokeai.db',
+            invokeSourceName: 'Last source name',
+            invokeNameOverridden: true,
+            invokeSourcePresent: false,
+            color: 'green',
+        };
         const absent: Collection = { ...local, id: 'absent', invokeOwnerId: 'last-verified', invokeSourcePresent: true };
         const foreign: Collection = { ...local, id: 'foreign', invokeSourceId: 'D:/Other/invokeai.db' };
         const unbound: Collection = { ...local, id: 'unbound', invokeSourceId: undefined };
@@ -1697,30 +1793,57 @@ describe('Invoke collection local name intent', () => {
         let collections = [local, absent, foreign, unbound, ambit];
         browserMocks.getBrowserMockCollections.mockImplementation(() => collections);
         browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => {
-            collections = collections.map(collection => collection.id === update.id ? update : collection);
+            collections = collections.map((collection) => (collection.id === update.id ? update : collection));
         });
         const { reconcileInvokeBoardSnapshot } = await import('../collectionRepo');
         const input = {
-            dbPath: 'd:/invoke/invokeai.db', mode: 'all' as const, ownerId: null, ownershipOnly: true,
-            reconcileMemberships: false, deleteMissingCollections: false, memberships: [],
-            boards: ['local', 'foreign', 'unbound', 'ambit', 'new'].map(id => ({ id, name: 'New upstream', createdAt: 2, ownerId: ' owner ' })),
+            dbPath: 'd:/invoke/invokeai.db',
+            mode: 'all' as const,
+            ownerId: null,
+            ownershipOnly: true,
+            reconcileMemberships: false,
+            deleteMissingCollections: false,
+            memberships: [],
+            boards: ['local', 'foreign', 'unbound', 'ambit', 'new'].map((id) => ({
+                id,
+                name: 'New upstream',
+                createdAt: 2,
+                ownerId: ' owner ',
+            })),
         };
         await expect(reconcileInvokeBoardSnapshot(input)).resolves.toMatchObject({ collectionsUpdated: 2 });
         expect(collections).toEqual([
             { ...local, invokeOwnerId: 'owner', invokeSourcePresent: true },
-            { ...absent, invokeSourcePresent: false }, foreign, unbound, ambit,
+            { ...absent, invokeSourcePresent: false },
+            foreign,
+            unbound,
+            ambit,
         ]);
         expect(browserMocks.setBrowserMockInvokeMembershipSnapshot).not.toHaveBeenCalled();
         expect(browserMocks.getBrowserMockImages).not.toHaveBeenCalled();
         await expect(reconcileInvokeBoardSnapshot(input)).resolves.toMatchObject({ collectionsUpdated: 0 });
     });
 
-    it.each(['owner', 'unselected', 'memberships', 'reconcileMemberships', 'deleteMissingCollections', 'emptyPath', 'emptyBoard', 'duplicateBoard'])('ownership-only mock rejects %s before any mutation', async (invalid) => {
+    it.each([
+        'owner',
+        'unselected',
+        'memberships',
+        'reconcileMemberships',
+        'deleteMissingCollections',
+        'emptyPath',
+        'emptyBoard',
+        'duplicateBoard',
+    ])('ownership-only mock rejects %s before any mutation', async (invalid) => {
         browserMocks.isBrowserMockMode.mockReturnValue(true);
         const { reconcileInvokeBoardSnapshot } = await import('../collectionRepo');
         const input: Parameters<typeof reconcileInvokeBoardSnapshot>[0] = {
-            dbPath: 'invoke.db', mode: 'all', ownerId: 'owner', ownershipOnly: true,
-            reconcileMemberships: false, deleteMissingCollections: false, memberships: [],
+            dbPath: 'invoke.db',
+            mode: 'all',
+            ownerId: 'owner',
+            ownershipOnly: true,
+            reconcileMemberships: false,
+            deleteMissingCollections: false,
+            memberships: [],
             boards: [{ id: 'board', name: 'Upstream', createdAt: 1, ownerId: 'owner' }],
         };
         if (invalid === 'owner' || invalid === 'unselected') input.mode = invalid;
@@ -1736,8 +1859,12 @@ describe('Invoke collection local name intent', () => {
     });
 
     it('hydrates explicit rename intent independently of matching display names', async () => {
-        dbMocks.select.mockResolvedValue([makeCollectionRow({ source: 'invoke', name: 'Matching', invoke_source_name: 'Matching', invoke_name_overridden: 1 })]);
+        dbMocks.select.mockResolvedValue([
+            makeCollectionRow({ source: 'invoke', name: 'Matching', invoke_source_name: 'Matching', invoke_name_overridden: 1 }),
+        ]);
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
-        await expect(getAllCollectionsWithStats({ includeCounts: false, includeThumbnails: false })).resolves.toEqual([expect.objectContaining({ invokeNameOverridden: true })]);
+        await expect(getAllCollectionsWithStats({ includeCounts: false, includeThumbnails: false })).resolves.toEqual([
+            expect.objectContaining({ invokeNameOverridden: true }),
+        ]);
     });
 });

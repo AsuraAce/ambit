@@ -2,7 +2,19 @@ import * as React from 'react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Archive, Search, Pin, LayoutGrid, List as ListIcon, Calendar, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow, SortDesc, SortAsc } from 'lucide-react';
+import {
+    Archive,
+    Search,
+    Pin,
+    LayoutGrid,
+    List as ListIcon,
+    Calendar,
+    Clock,
+    ArrowDownWideNarrow,
+    ArrowUpWideNarrow,
+    SortDesc,
+    SortAsc,
+} from 'lucide-react';
 import type { Collection, CollectionSortOption, FilterState } from '../../../types';
 import { SearchInput, SortDropdown } from './FilterPrimitives';
 import { CollectionContextMenu } from '../../collections/components/CollectionContextMenu';
@@ -39,12 +51,11 @@ const collectionSortIds: CollectionSortOption[] = [
     'date_asc',
     'date_desc',
     'recent_desc',
-    'recent_asc'
+    'recent_asc',
 ];
 
-const isCollectionSort = (id: unknown): id is CollectionSortOption => (
-    typeof id === 'string' && collectionSortIds.includes(id as CollectionSortOption)
-);
+const isCollectionSort = (id: unknown): id is CollectionSortOption =>
+    typeof id === 'string' && collectionSortIds.includes(id as CollectionSortOption);
 
 export function CollectionList<T extends Collection>({
     collections,
@@ -62,25 +73,25 @@ export function CollectionList<T extends Collection>({
     onEditCollection,
     renderToolbarExtras,
     renderCreationForm,
-    emptyMessage = "No collections found."
+    emptyMessage = 'No collections found.',
 }: CollectionListProps<T>) {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showArchived, setShowArchived] = useState(false);
     const { settings, setSettings } = useSettings();
-    const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
-    const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
-    const smartSummaryPendingIds = useCollectionStore(s => s.smartSummaryPendingIds);
+    const refreshSmartCounts = useCollectionStore((s) => s.refreshSmartCounts);
+    const thumbnailHydrationPendingIds = useCollectionStore((s) => s.thumbnailHydrationPendingIds);
+    const smartSummaryPendingIds = useCollectionStore((s) => s.smartSummaryPendingIds);
     const persistedSort = settings.resourceSortOptions?.collections;
     const sort: CollectionSortOption = isCollectionSort(persistedSort) ? persistedSort : 'recent_desc';
 
     const setSort = (newSort: CollectionSortOption) => {
-        setSettings(prev => ({
+        setSettings((prev) => ({
             ...prev,
             resourceSortOptions: {
                 ...(prev.resourceSortOptions || {}),
-                collections: newSort
-            }
+                collections: newSort,
+            },
         }));
     };
     const handleSortSelect = (id: string) => {
@@ -106,9 +117,7 @@ export function CollectionList<T extends Collection>({
 
     const lastSelectedSmartRefresh = React.useRef<string | null>(null);
     React.useEffect(() => {
-        const selectedSmartCollection = collections.find(collection =>
-            collection.id === filters.collectionId && !!collection.filters
-        );
+        const selectedSmartCollection = collections.find((collection) => collection.id === filters.collectionId && !!collection.filters);
         if (!selectedSmartCollection) {
             lastSelectedSmartRefresh.current = null;
             return;
@@ -120,18 +129,18 @@ export function CollectionList<T extends Collection>({
             collectionIds: [selectedSmartCollection.id],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
     }, [collections, filters.collectionId, refreshSmartCounts]);
 
     const toggleViewMode = (e: React.MouseEvent) => {
         e.stopPropagation();
-        setSettings(prev => ({
+        setSettings((prev) => ({
             ...prev,
             resourceViewModes: {
                 ...(prev.resourceViewModes || {}),
-                collections: viewMode === 'list' ? 'grid' : 'list'
-            }
+                collections: viewMode === 'list' ? 'grid' : 'list',
+            },
         }));
     };
 
@@ -140,7 +149,7 @@ export function CollectionList<T extends Collection>({
     const [editName, setEditName] = useState('');
 
     // Context Menu state
-    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, collectionId: string } | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; collectionId: string } | null>(null);
 
     const handleRenameSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -153,11 +162,13 @@ export function CollectionList<T extends Collection>({
 
     // Drag & Drop Handlers
     const handleDragEnter = (e: React.DragEvent, colId: string) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         setDropTargetId(colId);
     };
     const handleDragOver = (e: React.DragEvent, colId: string) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'copy'; // Visual feedback
         setDropTargetId(colId);
 
@@ -167,12 +178,14 @@ export function CollectionList<T extends Collection>({
         }
     };
     const handleDragLeave = (e: React.DragEvent) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         if (e.currentTarget.contains(e.relatedTarget as Node)) return;
         setDropTargetId(null);
     };
     const handleDrop = (e: React.DragEvent, colId: string) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         setDropTargetId(null);
         console.log('[CollectionList] Drop event on:', colId);
         const data = e.dataTransfer.getData('application/x-ambit-image-ids') || e.dataTransfer.getData('text/plain');
@@ -188,31 +201,40 @@ export function CollectionList<T extends Collection>({
     };
 
     const filtered = collections
-        .filter(c => {
+        .filter((c) => {
             const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesArchive = showArchived ? true : !c.isArchived;
             return matchesSearch && matchesArchive;
         })
         .sort((a, b) => {
             switch (sort) {
-                case 'name_asc': return a.name.localeCompare(b.name);
-                case 'name_desc': return b.name.localeCompare(a.name);
-                case 'count_asc': return compareCollectionsByCount(a, b, 'asc');
-                case 'count_desc': return compareCollectionsByCount(a, b, 'desc');
-                case 'date_asc': return a.createdAt - b.createdAt;
-                case 'date_desc': return b.createdAt - a.createdAt;
-                case 'recent_asc': return (a.updatedAt || a.createdAt) - (b.updatedAt || b.createdAt);
-                case 'recent_desc': default: return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
+                case 'name_asc':
+                    return a.name.localeCompare(b.name);
+                case 'name_desc':
+                    return b.name.localeCompare(a.name);
+                case 'count_asc':
+                    return compareCollectionsByCount(a, b, 'asc');
+                case 'count_desc':
+                    return compareCollectionsByCount(a, b, 'desc');
+                case 'date_asc':
+                    return a.createdAt - b.createdAt;
+                case 'date_desc':
+                    return b.createdAt - a.createdAt;
+                case 'recent_asc':
+                    return (a.updatedAt || a.createdAt) - (b.updatedAt || b.createdAt);
+                case 'recent_desc':
+                default:
+                    return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
             }
         });
 
-    const pinned = filtered.filter(c => c.isPinned);
-    const others = filtered.filter(c => !c.isPinned);
+    const pinned = filtered.filter((c) => c.isPinned);
+    const others = filtered.filter((c) => !c.isPinned);
 
     const visibleOthers = others.slice(0, renderLimit);
     const hasMore = others.length > renderLimit;
 
-    const activeCol = collections.find(c => c.id === contextMenu?.collectionId);
+    const activeCol = collections.find((c) => c.id === contextMenu?.collectionId);
 
     return (
         <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
@@ -232,7 +254,9 @@ export function CollectionList<T extends Collection>({
                     currentValue={sort}
                     onSelect={handleSortSelect}
                     align="left"
-                    triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                    triggerClassName={(isOpen) =>
+                        `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`
+                    }
                 />
                 <TooltipButton
                     label={viewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
@@ -256,7 +280,10 @@ export function CollectionList<T extends Collection>({
                     label="Search Collections"
                     content="Search Collections"
                     aria-expanded={isSearchOpen}
-                    onClick={() => { setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
+                    onClick={() => {
+                        setIsSearchOpen(!isSearchOpen);
+                        if (isSearchOpen) setSearchQuery('');
+                    }}
                     className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                 >
                     <Search className="w-3.5 h-3.5" />
@@ -264,12 +291,7 @@ export function CollectionList<T extends Collection>({
                 {renderToolbarExtras?.()}
             </div>
             {isSearchOpen && (
-                <SearchInput
-                    value={searchQuery}
-                    onChange={setSearchQuery}
-                    placeholder="Find collection..."
-                    className="pb-3"
-                />
+                <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Find collection..." className="pb-3" />
             )}
 
             {renderCreationForm?.()}
@@ -282,7 +304,7 @@ export function CollectionList<T extends Collection>({
                         </div>
                         <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2 relative' : 'space-y-1 relative'}>
                             <AnimatePresence mode="popLayout" initial={false}>
-                                {pinned.map(col => (
+                                {pinned.map((col) => (
                                     <motion.div
                                         key={col.id}
                                         layout
@@ -293,7 +315,7 @@ export function CollectionList<T extends Collection>({
                                         transition={{
                                             layout: { duration: 0.2, ease: 'easeInOut' },
                                             opacity: { duration: 0.15 },
-                                            scale: { duration: 0.15 }
+                                            scale: { duration: 0.15 },
                                         }}
                                     >
                                         <CollectionItem
@@ -331,7 +353,7 @@ export function CollectionList<T extends Collection>({
 
                 <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2 relative' : 'space-y-1 relative'}>
                     <AnimatePresence mode="popLayout" initial={false}>
-                        {visibleOthers.map(col => (
+                        {visibleOthers.map((col) => (
                             <motion.div
                                 key={col.id}
                                 layout
@@ -342,7 +364,7 @@ export function CollectionList<T extends Collection>({
                                 transition={{
                                     layout: { duration: 0.2, ease: 'easeInOut' },
                                     opacity: { duration: 0.15 },
-                                    scale: { duration: 0.15 }
+                                    scale: { duration: 0.15 },
                                 }}
                             >
                                 <CollectionItem
@@ -377,41 +399,69 @@ export function CollectionList<T extends Collection>({
 
                 {hasMore && (
                     <button
-                        onClick={() => setRenderLimit(prev => prev + 60)}
+                        onClick={() => setRenderLimit((prev) => prev + 60)}
                         className={`w-full py-2 text-xs font-medium text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/20 hover:bg-sage-100 dark:hover:bg-sage-900/40 rounded-lg transition-colors border border-sage-200 dark:border-sage-500/30 ${viewMode === 'grid' ? 'col-span-3' : ''}`}
                     >
                         Show More ({others.length - renderLimit} remaining)
                     </button>
                 )}
 
-                {filtered.length === 0 && (
-                    <div className="text-xs text-gray-400 text-center py-2 italic">{emptyMessage}</div>
-                )}
+                {filtered.length === 0 && <div className="text-xs text-gray-400 text-center py-2 italic">{emptyMessage}</div>}
             </div>
 
-            {contextMenu && createPortal(
-                <CollectionContextMenu
-                    x={contextMenu.x} y={contextMenu.y} collectionId={contextMenu.collectionId}
-                    isArchived={activeCol?.isArchived}
-                    isPinned={activeCol?.isPinned}
-                    hasCustomThumbnail={!!activeCol?.customThumbnail}
-                    currentColor={activeCol?.color}
-                    onClose={() => setContextMenu(null)}
-                    onRename={() => {
-                        if (activeCol) { setEditingColId(activeCol.id); setEditName(activeCol.name); }
-                        setContextMenu(null);
-                    }}
-                    onToggleArchive={() => { onToggleArchiveCollection?.(contextMenu.collectionId); setContextMenu(null); }}
-                    onTogglePin={() => { onTogglePinCollection?.(contextMenu.collectionId); setContextMenu(null); }}
-                    onDelete={() => { onDeleteCollection?.(contextMenu.collectionId); setContextMenu(null); }}
-                    onPlaySlideshow={() => { onPlayCollection?.(contextMenu.collectionId); setContextMenu(null); }}
-                    onExport={() => { onExportCollection?.(contextMenu.collectionId); setContextMenu(null); }}
-                    onResetThumbnail={() => { onResetCollectionThumbnail?.(contextMenu.collectionId); setContextMenu(null); }}
-                    onColorChange={(color) => { onSetCollectionColor?.(contextMenu.collectionId, color); setContextMenu(null); }}
-                    onEditCollection={() => { onEditCollection?.(contextMenu.collectionId); setContextMenu(null); }}
-                />,
-                document.body
-            )}
+            {contextMenu &&
+                createPortal(
+                    <CollectionContextMenu
+                        x={contextMenu.x}
+                        y={contextMenu.y}
+                        collectionId={contextMenu.collectionId}
+                        isArchived={activeCol?.isArchived}
+                        isPinned={activeCol?.isPinned}
+                        hasCustomThumbnail={!!activeCol?.customThumbnail}
+                        currentColor={activeCol?.color}
+                        onClose={() => setContextMenu(null)}
+                        onRename={() => {
+                            if (activeCol) {
+                                setEditingColId(activeCol.id);
+                                setEditName(activeCol.name);
+                            }
+                            setContextMenu(null);
+                        }}
+                        onToggleArchive={() => {
+                            onToggleArchiveCollection?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                        onTogglePin={() => {
+                            onTogglePinCollection?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                        onDelete={() => {
+                            onDeleteCollection?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                        onPlaySlideshow={() => {
+                            onPlayCollection?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                        onExport={() => {
+                            onExportCollection?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                        onResetThumbnail={() => {
+                            onResetCollectionThumbnail?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                        onColorChange={(color) => {
+                            onSetCollectionColor?.(contextMenu.collectionId, color);
+                            setContextMenu(null);
+                        }}
+                        onEditCollection={() => {
+                            onEditCollection?.(contextMenu.collectionId);
+                            setContextMenu(null);
+                        }}
+                    />,
+                    document.body
+                )}
         </div>
     );
 }

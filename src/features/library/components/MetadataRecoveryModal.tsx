@@ -17,43 +17,36 @@ const options: { id: RecoveryStyle; label: string; desc: string; icon: React.Rea
         id: 'generic',
         label: 'Descriptive (General)',
         desc: 'Detailed natural language description suitable for most models.',
-        icon: <Wand2 className="w-5 h-5" />
+        icon: <Wand2 className="w-5 h-5" />,
     },
     {
         id: 'midjourney',
         label: 'Midjourney Style',
         desc: 'Optimized for MJ v6 with --params and artistic focus.',
-        icon: <Palette className="w-5 h-5" />
+        icon: <Palette className="w-5 h-5" />,
     },
     {
         id: 'sdxl',
         label: 'Stable Diffusion XL',
         desc: 'Standard SDXL prompting with quality boosters and style refs.',
-        icon: <Bot className="w-5 h-5" />
+        icon: <Bot className="w-5 h-5" />,
     },
     {
         id: 'danbooru',
         label: 'Anime Tags (Danbooru)',
         desc: 'Comma-separated tags focusing on character features.',
-        icon: <Hash className="w-5 h-5" />
-    }
+        icon: <Hash className="w-5 h-5" />,
+    },
 ];
 
-export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
-    isOpen,
-    onClose,
-    onConfirm,
-    isProcessing
-}) => {
+export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({ isOpen, onClose, onConfirm, isProcessing }) => {
     const [selectedStyle, setSelectedStyle] = useState<RecoveryStyle>('generic');
     const closeButtonRef = React.useRef<HTMLButtonElement>(null);
 
     React.useEffect(() => {
         if (!isOpen) return;
 
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         closeButtonRef.current?.focus();
 
         return () => {
@@ -80,7 +73,7 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                         initial={{ opacity: 0, y: 10, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
                         className="relative w-full max-w-md bg-white dark:bg-surface-dialog border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
                     >
                         {/* Decorative top line */}
@@ -93,12 +86,8 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                                     <Wand2 className="w-4 h-4 text-amethyst-600 dark:text-amethyst-300" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-gray-900 dark:text-white text-sm">
-                                        AI Prompt Recovery
-                                    </h3>
-                                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                        Gemini AI
-                                    </p>
+                                    <h3 className="font-bold text-gray-900 dark:text-white text-sm">AI Prompt Recovery</h3>
+                                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Gemini AI</p>
                                 </div>
                             </div>
                             {!isProcessing && (
@@ -134,30 +123,36 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                                     </p>
 
                                     <div className="space-y-2 mb-6">
-                                        {options.map(opt => (
+                                        {options.map((opt) => (
                                             <button
                                                 key={opt.id}
                                                 onClick={() => setSelectedStyle(opt.id)}
                                                 className={cn(
-                                                    "w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 group",
+                                                    'w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 group',
                                                     selectedStyle === opt.id
                                                         ? 'bg-amethyst-50 dark:bg-amethyst-900/20 border-amethyst-500 ring-1 ring-amethyst-500/50'
                                                         : 'bg-gray-50 dark:bg-white/[0.02] border-gray-200 dark:border-white/5 hover:border-amethyst-300 dark:hover:border-amethyst-500/30'
                                                 )}
                                             >
-                                                <div className={cn(
-                                                    "mt-0.5 transition-colors",
-                                                    selectedStyle === opt.id
-                                                        ? 'text-amethyst-600 dark:text-amethyst-300'
-                                                        : 'text-gray-400 group-hover:text-amethyst-600 dark:group-hover:text-amethyst-300'
-                                                )}>
+                                                <div
+                                                    className={cn(
+                                                        'mt-0.5 transition-colors',
+                                                        selectedStyle === opt.id
+                                                            ? 'text-amethyst-600 dark:text-amethyst-300'
+                                                            : 'text-gray-400 group-hover:text-amethyst-600 dark:group-hover:text-amethyst-300'
+                                                    )}
+                                                >
                                                     {opt.icon}
                                                 </div>
                                                 <div>
-                                                    <div className={cn(
-                                                        "text-sm font-semibold transition-colors",
-                                                        selectedStyle === opt.id ? 'text-amethyst-600 dark:text-amethyst-300' : 'text-gray-700 dark:text-gray-300'
-                                                    )}>
+                                                    <div
+                                                        className={cn(
+                                                            'text-sm font-semibold transition-colors',
+                                                            selectedStyle === opt.id
+                                                                ? 'text-amethyst-600 dark:text-amethyst-300'
+                                                                : 'text-gray-700 dark:text-gray-300'
+                                                        )}
+                                                    >
                                                         {opt.label}
                                                     </div>
                                                     <div className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">{opt.desc}</div>

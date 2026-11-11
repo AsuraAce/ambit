@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     filters: { showIntermediates: false, showGrids: false, showInvokeImageAssets: false } as FilterState,
     sortOption: 'date_desc' as SortOption,
     setSortOption: vi.fn(),
-    setFilters: vi.fn()
+    setFilters: vi.fn(),
 }));
 
 vi.mock('../../../../contexts/SearchContext', () => ({
@@ -18,21 +18,44 @@ vi.mock('../../../../contexts/SearchContext', () => ({
         filters: mocks.filters,
         setFilters: mocks.setFilters,
         sortOption: mocks.sortOption,
-        setSortOption: mocks.setSortOption
-    })
+        setSortOption: mocks.setSortOption,
+    }),
 }));
 
 const baseFilters = (): FilterState => ({
-    searchQuery: '', models: [], tools: [], loras: [], embeddings: [], hypernetworks: [], samplers: [], generationTypes: [],
-    controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null, showIntermediates: false, showGrids: false,
-    showInvokeImageAssets: false
+    searchQuery: '',
+    models: [],
+    tools: [],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    dateRange: 'all',
+    favoritesOnly: false,
+    collectionId: null,
+    showIntermediates: false,
+    showGrids: false,
+    showInvokeImageAssets: false,
 });
 
 const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {}) => {
     const props: React.ComponentProps<typeof ViewControls> = {
-        showLayoutSwitcher: true, layoutMode: 'masonry', setLayoutMode: vi.fn(), showSlideshowButton: true, onSlideshow: vi.fn(),
-        sortOption: 'date_desc', setSortOption: vi.fn(), thumbnailSize: 200, setThumbnailSize: vi.fn(), displayedCount: 10,
-        totalCount: 10, scopeName: 'Library', ...overrides
+        showLayoutSwitcher: true,
+        layoutMode: 'masonry',
+        setLayoutMode: vi.fn(),
+        showSlideshowButton: true,
+        onSlideshow: vi.fn(),
+        sortOption: 'date_desc',
+        setSortOption: vi.fn(),
+        thumbnailSize: 200,
+        setThumbnailSize: vi.fn(),
+        displayedCount: 10,
+        totalCount: 10,
+        scopeName: 'Library',
+        ...overrides,
     };
     const result = render(<ViewControls {...props} />);
     return { ...result, props };
@@ -73,7 +96,9 @@ describe('ViewControls', () => {
         mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = baseFilters();
         mocks.sortOption = 'date_desc';
-        mocks.setFilters.mockImplementation((update: (previous: FilterState) => FilterState) => { mocks.filters = update(mocks.filters); });
+        mocks.setFilters.mockImplementation((update: (previous: FilterState) => FilterState) => {
+            mocks.filters = update(mocks.filters);
+        });
     });
 
     afterEach(() => {
@@ -86,7 +111,7 @@ describe('ViewControls', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Use Grid Layout' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Masonry Layout' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Justified Layout' }));
-        expect(vi.mocked(props.setLayoutMode).mock.calls.map(call => call[0])).toEqual(['grid', 'masonry', 'justified']);
+        expect(vi.mocked(props.setLayoutMode).mock.calls.map((call) => call[0])).toEqual(['grid', 'masonry', 'justified']);
         fireEvent.click(screen.getByRole('button', { name: 'Start Slideshow' }));
         expect(props.onSlideshow).toHaveBeenCalledTimes(1);
         fireEvent.change(screen.getByRole('slider'), { target: { value: '325' } });
@@ -103,8 +128,12 @@ describe('ViewControls', () => {
     it('selects every sort option, closes after selection, and dismisses outside clicks', () => {
         const { props } = setup();
         const options: Array<[SortOption, string]> = [
-            ['date_desc', 'Newest'], ['date_asc', 'Oldest'], ['name_asc', 'Name (A-Z)'], ['name_desc', 'Name (Z-A)'],
-            ['size_desc', 'Largest (Size)'], ['size_asc', 'Smallest (Size)']
+            ['date_desc', 'Newest'],
+            ['date_asc', 'Oldest'],
+            ['name_asc', 'Name (A-Z)'],
+            ['name_desc', 'Name (Z-A)'],
+            ['size_desc', 'Largest (Size)'],
+            ['size_asc', 'Smallest (Size)'],
         ];
         for (const [value, label] of options) {
             fireEvent.click(screen.getByText('Newest'));
@@ -154,7 +183,15 @@ describe('ViewControls', () => {
 
         mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showGrids: true };
-        rerender(<ViewControls {...props} layoutMode="justified" sortOption={'future' as SortOption} showLayoutSwitcher={false} showSlideshowButton={false} />);
+        rerender(
+            <ViewControls
+                {...props}
+                layoutMode="justified"
+                sortOption={'future' as SortOption}
+                showLayoutSwitcher={false}
+                showSlideshowButton={false}
+            />
+        );
         expect(screen.getByText('Sort')).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Use Grid Layout' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Start Slideshow' })).toBeNull();
@@ -187,16 +224,10 @@ describe('ViewControls', () => {
             displayedCount: 10,
             totalCount: 10,
             scopeName: 'Demo - Gallery',
-            isFiltering: false
+            isFiltering: false,
         });
 
-        rerender(<ViewControls
-            {...props}
-            displayedCount={10}
-            totalCount={84}
-            scopeName="Demo - Assets"
-            isFiltering
-        />);
+        rerender(<ViewControls {...props} displayedCount={10} totalCount={84} scopeName="Demo - Assets" isFiltering />);
 
         expect(screen.getByText('10')).toBeTruthy();
         expect(screen.getByText('Demo - Gallery')).toBeTruthy();
@@ -207,13 +238,7 @@ describe('ViewControls', () => {
         expect(screen.getByText('Demo - Gallery')).toBeTruthy();
         expect(screen.queryByText('...')).toBeNull();
 
-        rerender(<ViewControls
-            {...props}
-            displayedCount={84}
-            totalCount={84}
-            scopeName="Demo - Assets"
-            isFiltering={false}
-        />);
+        rerender(<ViewControls {...props} displayedCount={84} totalCount={84} scopeName="Demo - Assets" isFiltering={false} />);
 
         expect(screen.getByText('84')).toBeTruthy();
         expect(screen.getByText('Demo - Assets')).toBeTruthy();
@@ -227,7 +252,7 @@ describe('ViewControls', () => {
             displayedCount: 0,
             totalCount: 0,
             scopeName: 'Library',
-            isFiltering: true
+            isFiltering: true,
         });
 
         expect(screen.queryByText('...')).toBeNull();
@@ -237,13 +262,7 @@ describe('ViewControls', () => {
         act(() => vi.advanceTimersByTime(179));
         expect(screen.queryByText('...')).toBeNull();
 
-        rerender(<ViewControls
-            {...props}
-            displayedCount={84}
-            totalCount={84}
-            scopeName="Library"
-            isFiltering={false}
-        />);
+        rerender(<ViewControls {...props} displayedCount={84} totalCount={84} scopeName="Library" isFiltering={false} />);
 
         expect(screen.getByText('84')).toBeTruthy();
         expect(screen.getByText('Library')).toBeTruthy();
@@ -260,14 +279,16 @@ describe('ViewControls', () => {
             isFiltering: false,
         });
 
-        rerender(<ViewControls
-            {...props}
-            displayedCount={0}
-            totalCount={0}
-            scopeName="Library"
-            ownerPresentationKey="owner:jupiter"
-            isFiltering
-        />);
+        rerender(
+            <ViewControls
+                {...props}
+                displayedCount={0}
+                totalCount={0}
+                scopeName="Library"
+                ownerPresentationKey="owner:jupiter"
+                isFiltering
+            />
+        );
 
         expect(screen.queryByText('150,000')).toBeNull();
         expect(screen.queryByText('0')).toBeNull();
@@ -279,16 +300,12 @@ describe('ViewControls', () => {
             displayedCount: 10,
             totalCount: 10,
             scopeName: 'Demo - Gallery',
-            isFiltering: false
+            isFiltering: false,
         });
 
-        rerender(<ViewControls
-            {...props}
-            displayedCount={10}
-            totalCount={1254}
-            scopeName="Reference Poses - Collection Part 1"
-            isFiltering
-        />);
+        rerender(
+            <ViewControls {...props} displayedCount={10} totalCount={1254} scopeName="Reference Poses - Collection Part 1" isFiltering />
+        );
 
         act(() => vi.advanceTimersByTime(180));
         const loadingLabel = screen.getByText('LOADING Reference Poses - Collection Part 1');
@@ -297,13 +314,15 @@ describe('ViewControls', () => {
         expect(screen.queryByText('10')).toBeNull();
         expect(screen.queryByText('1,254')).toBeNull();
 
-        rerender(<ViewControls
-            {...props}
-            displayedCount={1254}
-            totalCount={1254}
-            scopeName="Reference Poses - Collection Part 1"
-            isFiltering={false}
-        />);
+        rerender(
+            <ViewControls
+                {...props}
+                displayedCount={1254}
+                totalCount={1254}
+                scopeName="Reference Poses - Collection Part 1"
+                isFiltering={false}
+            />
+        );
         act(() => vi.advanceTimersByTime(299));
         expect(screen.getByText('...')).toBeTruthy();
 

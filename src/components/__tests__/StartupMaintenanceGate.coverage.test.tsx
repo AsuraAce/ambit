@@ -6,11 +6,11 @@ import { getDb } from '../../services/db/connection';
 import { isBrowserMockMode } from '../../services/runtime';
 
 vi.mock('../../services/db/connection', () => ({
-    getDb: vi.fn()
+    getDb: vi.fn(),
 }));
 
 vi.mock('../../services/runtime', () => ({
-    isBrowserMockMode: vi.fn()
+    isBrowserMockMode: vi.fn(),
 }));
 
 const requestAnimationFrameMock = (callback: FrameRequestCallback) => {
@@ -54,7 +54,9 @@ describe('StartupMaintenanceGate', () => {
 
         await waitFor(() => {
             expect(screen.getByText('Database startup failed')).toBeTruthy();
-            expect(screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')).toBeTruthy();
+            expect(
+                screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')
+            ).toBeTruthy();
             expect(screen.getByText('migration failed')).toBeTruthy();
         });
         expect(screen.queryByText('Library ready')).toBeNull();
@@ -63,11 +65,18 @@ describe('StartupMaintenanceGate', () => {
     it('ignores phase and completion callbacks after unmount', async () => {
         let onPhase: ((phase: 'Loading library') => void) | undefined;
         let resolveDb!: () => void;
-        vi.mocked(getDb).mockImplementation((options = {}) => new Promise((resolve) => {
-            onPhase = options.onPhase as typeof onPhase;
-            resolveDb = () => resolve({} as Awaited<ReturnType<typeof getDb>>);
-        }));
-        const view = render(<StartupMaintenanceGate><div>Library ready</div></StartupMaintenanceGate>);
+        vi.mocked(getDb).mockImplementation(
+            (options = {}) =>
+                new Promise((resolve) => {
+                    onPhase = options.onPhase as typeof onPhase;
+                    resolveDb = () => resolve({} as Awaited<ReturnType<typeof getDb>>);
+                })
+        );
+        const view = render(
+            <StartupMaintenanceGate>
+                <div>Library ready</div>
+            </StartupMaintenanceGate>
+        );
         await act(async () => Promise.resolve());
 
         view.unmount();
@@ -78,17 +87,28 @@ describe('StartupMaintenanceGate', () => {
 
     it('ignores rejected preparation after unmount and formats non-Error failures', async () => {
         let rejectDb!: (reason: unknown) => void;
-        vi.mocked(getDb).mockImplementationOnce(() => new Promise((_resolve, reject) => {
-            rejectDb = reject;
-        }));
-        const view = render(<StartupMaintenanceGate><div>Library ready</div></StartupMaintenanceGate>);
+        vi.mocked(getDb).mockImplementationOnce(
+            () =>
+                new Promise((_resolve, reject) => {
+                    rejectDb = reject;
+                })
+        );
+        const view = render(
+            <StartupMaintenanceGate>
+                <div>Library ready</div>
+            </StartupMaintenanceGate>
+        );
         await act(async () => Promise.resolve());
         view.unmount();
         rejectDb('late failure');
         await act(async () => Promise.resolve());
 
         vi.mocked(getDb).mockRejectedValueOnce('bridge unavailable');
-        render(<StartupMaintenanceGate><div>Library ready</div></StartupMaintenanceGate>);
+        render(
+            <StartupMaintenanceGate>
+                <div>Library ready</div>
+            </StartupMaintenanceGate>
+        );
         await waitFor(() => expect(screen.getByText('bridge unavailable')).toBeTruthy());
     });
 });

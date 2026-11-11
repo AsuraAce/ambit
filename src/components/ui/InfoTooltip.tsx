@@ -7,10 +7,11 @@ interface InfoTooltipProps {
     content: string;
 }
 
-type TooltipButtonProps = InfoTooltipProps & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'children'> & {
-    children: React.ReactNode;
-    persistOnClick?: boolean;
-};
+type TooltipButtonProps = InfoTooltipProps &
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'children'> & {
+        children: React.ReactNode;
+        persistOnClick?: boolean;
+    };
 
 interface TooltipPosition {
     left: number;
@@ -78,13 +79,11 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
 
             const triggerRect = trigger.getBoundingClientRect();
             const tooltipRect = tooltip.getBoundingClientRect();
-            const centeredLeft = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+            const centeredLeft = triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2;
             const maxLeft = Math.max(VIEWPORT_PADDING, window.innerWidth - tooltipRect.width - VIEWPORT_PADDING);
             const left = Math.min(Math.max(centeredLeft, VIEWPORT_PADDING), maxLeft);
             const fitsAbove = triggerRect.top >= tooltipRect.height + TOOLTIP_GAP + VIEWPORT_PADDING;
-            const preferredTop = fitsAbove
-                ? triggerRect.top - tooltipRect.height - TOOLTIP_GAP
-                : triggerRect.bottom + TOOLTIP_GAP;
+            const preferredTop = fitsAbove ? triggerRect.top - tooltipRect.height - TOOLTIP_GAP : triggerRect.bottom + TOOLTIP_GAP;
             const maxTop = Math.max(VIEWPORT_PADDING, window.innerHeight - tooltipRect.height - VIEWPORT_PADDING);
             const top = Math.min(Math.max(preferredTop, VIEWPORT_PADDING), maxTop);
 
@@ -128,22 +127,24 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
         };
     }, [isOpen]);
 
-    const tooltip = isOpen ? createPortal(
-        <div
-            ref={tooltipRef}
-            id={tooltipId}
-            role="tooltip"
-            style={{
-                left: position?.left ?? 0,
-                top: position?.top ?? 0,
-                visibility: position ? 'visible' : 'hidden',
-            }}
-            className="pointer-events-none fixed z-[400] max-w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-700 shadow-xl dark:border-white/10 dark:bg-zinc-800 dark:text-gray-200"
-        >
-            {content}
-        </div>,
-        document.body
-    ) : null;
+    const tooltip = isOpen
+        ? createPortal(
+              <div
+                  ref={tooltipRef}
+                  id={tooltipId}
+                  role="tooltip"
+                  style={{
+                      left: position?.left ?? 0,
+                      top: position?.top ?? 0,
+                      visibility: position ? 'visible' : 'hidden',
+                  }}
+                  className="pointer-events-none fixed z-[400] max-w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-700 shadow-xl dark:border-white/10 dark:bg-zinc-800 dark:text-gray-200"
+              >
+                  {content}
+              </div>,
+              document.body
+          )
+        : null;
 
     return (
         <>

@@ -63,11 +63,13 @@ describe('ResourcesSection', () => {
     });
 
     it('keeps unweighted dotted names and renders non-string evidence inertly', () => {
-        const { onSearch } = renderSection([{
-            title: 'Other',
-            icon: Code,
-            items: ['adapter.SAFETENSORS', 'name.with.dots', 42],
-        }]);
+        const { onSearch } = renderSection([
+            {
+                title: 'Other',
+                icon: Code,
+                items: ['adapter.SAFETENSORS', 'name.with.dots', 42],
+            },
+        ]);
 
         fireEvent.click(screen.getByRole('button', { name: 'adapter' }));
         fireEvent.click(screen.getByRole('button', { name: 'name.with.dots' }));

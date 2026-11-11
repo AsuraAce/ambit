@@ -8,7 +8,9 @@ class ControlledImage {
     onerror: (() => void) | null = null;
     crossOrigin = '';
     src = '';
-    constructor() { ControlledImage.instances.push(this); }
+    constructor() {
+        ControlledImage.instances.push(this);
+    }
 }
 
 describe('usePalette controlled extraction', () => {
@@ -19,8 +21,15 @@ describe('usePalette controlled extraction', () => {
         vi.stubGlobal('Image', ControlledImage);
         const pixels = new Uint8ClampedArray(400);
         const samples = [
-            [255, 0, 0, 255], [250, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255],
-            [200, 200, 0, 255], [0, 200, 200, 255], [200, 0, 200, 255], [0, 0, 0, 255], [50, 50, 50, 0],
+            [255, 0, 0, 255],
+            [250, 0, 0, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+            [200, 200, 0, 255],
+            [0, 200, 200, 255],
+            [200, 0, 200, 255],
+            [0, 0, 0, 255],
+            [50, 50, 50, 0],
         ];
         samples.forEach((sample, index) => pixels.set(sample, index * 40));
         const drawImage = vi.fn();
@@ -46,7 +55,9 @@ describe('usePalette controlled extraction', () => {
         await act(async () => ControlledImage.instances[0].onload?.());
         await waitFor(() => expect(first.result.current.isLoading).toBe(false));
 
-        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => { throw new Error('canvas failed'); });
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => {
+            throw new Error('canvas failed');
+        });
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const second = renderHook(() => usePalette('two'));
         await act(async () => ControlledImage.instances[1].onload?.());

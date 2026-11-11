@@ -22,8 +22,14 @@ describe('InvokeOwnerScopeGate', () => {
     it('keeps preparation cancellation visible until native work settles without refocusing progress updates', () => {
         const cancel = vi.fn();
         useInvokeOwnerScopeStore.getState().setOperation({
-            id: Symbol('switch'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
-            phase: 'preparing', viewCommitted: false, progress: { current: 1, total: 4 }, cancel,
+            id: Symbol('switch'),
+            origin: 'user',
+            rootPath: 'D:/Invoke',
+            targetLabel: 'Odin',
+            phase: 'preparing',
+            viewCommitted: false,
+            progress: { current: 1, total: 4 },
+            cancel,
         });
         renderGate({ status: 'applying', rootPath: 'D:/Invoke' });
         expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBe(document.activeElement);
@@ -32,9 +38,16 @@ describe('InvokeOwnerScopeGate', () => {
         fireEvent.click(button);
         expect(cancel).toHaveBeenCalledTimes(1);
 
-        act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
-            ...current, phase: 'cancelling', progress: { current: 2, total: 4 },
-        })));
+        act(() =>
+            useInvokeOwnerScopeStore.getState().setOperation(
+                (current) =>
+                    current && {
+                        ...current,
+                        phase: 'cancelling',
+                        progress: { current: 2, total: 4 },
+                    }
+            )
+        );
         expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
         expect(document.activeElement).toBe(button);
         expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('2');
@@ -174,7 +187,9 @@ describe('InvokeOwnerScopeGate', () => {
 
     it('prevents duplicate Open view submissions while the selection is in flight', async () => {
         let resolveSelection!: () => void;
-        const selectionPromise = new Promise<void>(resolve => { resolveSelection = resolve; });
+        const selectionPromise = new Promise<void>((resolve) => {
+            resolveSelection = resolve;
+        });
         const callbacks = {
             onSelect: vi.fn(() => selectionPromise),
             onRetry: vi.fn(),
@@ -211,7 +226,8 @@ describe('InvokeOwnerScopeGate', () => {
 
     it('keeps cancelled preparation gated with neutral feedback and explicit recovery actions', () => {
         const { callbacks } = renderGate({
-            status: 'error', rootPath: 'D:/Invoke',
+            status: 'error',
+            rootPath: 'D:/Invoke',
             failure: { kind: 'preparation_cancelled', details: 'Preparation cancelled.' },
         });
 
@@ -228,13 +244,20 @@ describe('InvokeOwnerScopeGate', () => {
         expect(callbacks.onOpenSettings).toHaveBeenCalledTimes(1);
     });
 
-    it.each([false, true])('explains real failures even after a cancellation request: %s', async cancelled => {
-        if (cancelled) useInvokeOwnerScopeStore.getState().setOperation({
-            id: Symbol('cancelled operation'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
-            phase: 'cancelled', viewCommitted: false, progress: { current: 0, total: 0 },
-        });
+    it.each([false, true])('explains real failures even after a cancellation request: %s', async (cancelled) => {
+        if (cancelled)
+            useInvokeOwnerScopeStore.getState().setOperation({
+                id: Symbol('cancelled operation'),
+                origin: 'user',
+                rootPath: 'D:/Invoke',
+                targetLabel: 'Odin',
+                phase: 'cancelled',
+                viewCommitted: false,
+                progress: { current: 0, total: 0 },
+            });
         const { callbacks } = renderGate({
-            status: 'error', rootPath: 'D:/Invoke',
+            status: 'error',
+            rootPath: 'D:/Invoke',
             failure: { kind: 'preparation_failed', details: 'database locked' },
             error: 'database locked',
         });
@@ -253,11 +276,19 @@ describe('InvokeOwnerScopeGate', () => {
     it('retries the applied operation when its committed view needs guarded recovery', () => {
         const retry = vi.fn();
         useInvokeOwnerScopeStore.getState().setOperation({
-            id: Symbol('failed operation'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
-            phase: 'failed', viewCommitted: true, progress: { current: 2, total: 3 }, retry,
+            id: Symbol('failed operation'),
+            origin: 'user',
+            rootPath: 'D:/Invoke',
+            targetLabel: 'Odin',
+            phase: 'failed',
+            viewCommitted: true,
+            progress: { current: 2, total: 3 },
+            retry,
         });
         const { callbacks } = renderGate({
-            status: 'error', rootPath: 'D:/Invoke', error: 'Owner visibility could not be verified.',
+            status: 'error',
+            rootPath: 'D:/Invoke',
+            error: 'Owner visibility could not be verified.',
             failure: { kind: 'preparation_failed', details: 'Owner visibility could not be verified.' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));

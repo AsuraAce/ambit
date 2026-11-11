@@ -50,14 +50,17 @@ export const AI_PROMPTS = {
     4. Provide a generic safety 'negativePrompt' (e.g., 'low quality, blurry, watermark').
     
     Return the result as JSON.
-    `
+    `,
 } as const;
 
 export const RECOVERY_STYLES = {
-    midjourney: "Format the output as a Midjourney v6 prompt. Use --v 6 syntax parameters if applicable. Focus on artistic style, lighting, and composition.",
+    midjourney:
+        'Format the output as a Midjourney v6 prompt. Use --v 6 syntax parameters if applicable. Focus on artistic style, lighting, and composition.',
     sdxl: "Format the output as a Stable Diffusion XL (SDXL) prompt. Use booru tags for key elements if helpful, but prioritize natural language description. Mention art style, artist references, and quality boosters (e.g. 'masterpiece, best quality').",
-    danbooru: "Format the output as a list of comma-separated Danbooru tags. Focus on character traits, clothing, background elements, and framing.",
-    generic: "Provide a detailed descriptive prompt that would generate this image. Include subject, medium, style, lighting, and color palette."
+    danbooru:
+        'Format the output as a list of comma-separated Danbooru tags. Focus on character traits, clothing, background elements, and framing.',
+    generic:
+        'Provide a detailed descriptive prompt that would generate this image. Include subject, medium, style, lighting, and color palette.',
 } as const;
 
 export type AIPromptKey = keyof typeof AI_PROMPTS;

@@ -7,9 +7,7 @@ export const getAssetBasename = (value: string): string => {
     return trimmed.split(/[\\/]/).pop() || trimmed;
 };
 
-export const stripAssetExtension = (value: string): string => (
-    getAssetBasename(value).replace(ASSET_EXTENSION_RE, '').trim()
-);
+export const stripAssetExtension = (value: string): string => getAssetBasename(value).replace(ASSET_EXTENSION_RE, '').trim();
 
 export const getAssetMatchKey = (value: string | null | undefined): string => {
     if (!value) return '';
@@ -38,14 +36,11 @@ export const getAssetMatchKeyCandidates = (value: string | null | undefined): st
     return candidates;
 };
 
-export const resolveAssetMatchKey = (
-    value: string | null | undefined,
-    knownMatchKeys?: ReadonlySet<string>
-): string => {
+export const resolveAssetMatchKey = (value: string | null | undefined, knownMatchKeys?: ReadonlySet<string>): string => {
     const [primary = '', ...candidates] = getAssetMatchKeyCandidates(value);
     if (!knownMatchKeys || knownMatchKeys.size === 0) return primary;
     if (knownMatchKeys.has(primary)) return primary;
-    return candidates.find(candidate => knownMatchKeys.has(candidate)) ?? primary;
+    return candidates.find((candidate) => knownMatchKeys.has(candidate)) ?? primary;
 };
 
 export const uniqueAssetAliases = (values: Array<string | null | undefined>): string[] => {

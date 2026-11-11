@@ -17,14 +17,14 @@ const STARTUP_PHASE_LABELS: Record<StartupDbPhase, string> = {
     'Preparing library database': 'Preparing library database',
     'Updating database schema': 'Preparing database',
     'Optimizing database': 'Optimizing database',
-    'Loading library': 'Loading library'
+    'Loading library': 'Loading library',
 };
 
 const STARTUP_PHASE_COPY: Record<StartupDbPhase, string> = {
     'Preparing library database': 'Checking the local library database before Ambit opens.',
     'Updating database schema': 'Preparing the local database. Startup may take longer than usual this time.',
     'Optimizing database': 'Optimizing the local database for large libraries.',
-    'Loading library': 'Loading your library.'
+    'Loading library': 'Loading your library.',
 };
 
 export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ children }) => {
@@ -44,11 +44,13 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
         const prepareDatabase = async () => {
             try {
                 setPhase('Preparing library database');
-                await measureStartupPhase('database', () => getDb({
-                    onPhase: (nextPhase) => {
-                        if (isMounted) setPhase(nextPhase);
-                    }
-                }));
+                await measureStartupPhase('database', () =>
+                    getDb({
+                        onPhase: (nextPhase) => {
+                            if (isMounted) setPhase(nextPhase);
+                        },
+                    })
+                );
                 if (isMounted) {
                     setIsReady(true);
                 }
@@ -98,12 +100,8 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
                                 <AlertCircle className="h-6 w-6" />
                             </div>
                             <div className="min-w-0">
-                                <p className="text-xs font-black uppercase tracking-[0.22em] text-gray-500">
-                                    Local database
-                                </p>
-                                <h1 className="mt-1 text-xl font-black tracking-tight">
-                                    Database startup failed
-                                </h1>
+                                <p className="text-xs font-black uppercase tracking-[0.22em] text-gray-500">Local database</p>
+                                <h1 className="mt-1 text-xl font-black tracking-tight">Database startup failed</h1>
                             </div>
                         </div>
 
@@ -111,9 +109,7 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
                             Ambit could not prepare the local library database. Restart the app and contact support if this repeats.
                         </p>
 
-                        <pre className="mt-4 max-h-32 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-red-200">
-                            {error}
-                        </pre>
+                        <pre className="mt-4 max-h-32 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-red-200">{error}</pre>
                     </section>
                 </main>
             ) : null}

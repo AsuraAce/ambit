@@ -16,9 +16,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
     React.useEffect(() => {
         if (!isOpen) return;
 
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         closeButtonRef.current?.focus();
 
         return () => {
@@ -44,11 +42,10 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                        transition={{ type: 'spring', stiffness: 350, damping: 25 }}
                         className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl p-6 relative overflow-hidden"
                         onClick={(e) => e.stopPropagation()} // Prevent click from closing modal when clicking content
                     >
-
                         {/* Decorative Background */}
                         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-sage-500/20 to-sage-500/20 pointer-events-none" />
 
@@ -72,7 +69,8 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
 
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Support {APP_NAME}</h2>
                             <p className="text-gray-600 dark:text-gray-400 text-sm mb-8 leading-relaxed max-w-xs">
-                                If Ambit helps you manage your image library, optional support helps fund development, testing, packaging, and maintenance.
+                                If Ambit helps you manage your image library, optional support helps fund development, testing, packaging,
+                                and maintenance.
                             </p>
 
                             {ENABLED_DONATION_PROVIDERS.length > 0 ? (
@@ -86,10 +84,11 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                                                 key={provider.id}
                                                 type="button"
                                                 onClick={() => provider.url && handleOpenLink(provider.url)}
-                                                className={`flex items-center justify-center gap-3 w-full py-3 rounded-xl font-bold transition-all shadow-lg hover:scale-[1.02] ${isKoFi
-                                                    ? 'bg-kofi hover:bg-kofi-hover text-white'
-                                                    : 'bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-gray-900'
-                                                    }`}
+                                                className={`flex items-center justify-center gap-3 w-full py-3 rounded-xl font-bold transition-all shadow-lg hover:scale-[1.02] ${
+                                                    isKoFi
+                                                        ? 'bg-kofi hover:bg-kofi-hover text-white'
+                                                        : 'bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-gray-900'
+                                                }`}
                                             >
                                                 <ProviderIcon className="w-5 h-5" /> {provider.ctaLabel}
                                             </button>
@@ -100,14 +99,13 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                                 <div className="w-full rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/90 dark:bg-black/20 px-4 py-4 text-left">
                                     <div className="font-semibold text-gray-900 dark:text-white">Donations are not configured yet</div>
                                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                                        Add your Ko-fi, GitHub Sponsors, or Patreon URL in <code>src/constants/support.ts</code> when the pages are live.
+                                        Add your Ko-fi, GitHub Sponsors, or Patreon URL in <code>src/constants/support.ts</code> when the
+                                        pages are live.
                                     </div>
                                 </div>
                             )}
 
-                            <div className="mt-8 text-xs text-gray-400">
-                                Thank you for being part of the journey.
-                            </div>
+                            <div className="mt-8 text-xs text-gray-400">Thank you for being part of the journey.</div>
                         </div>
                     </motion.div>
                 </motion.div>

@@ -17,25 +17,54 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 const baseRow: Record<string, SQLInputValue> = {
-    id: 'C:/library/removed.png', path: 'C:/library/removed.png',
-    width: 1024, height: 768, file_size: 123456, timestamp: 10, removed_at: 20,
-    thumbnail_path: 'C:/thumbs/removed.webp', micro_thumbnail: 'data:image/webp;base64,AAAA',
-    thumbnail_source: 'ambit', thumbnail_version: null,
-    detected_source_kind: 'generated', source_kind_override: null, source_kind: 'generated',
-    capture_wall_time_ms: null, display_timestamp: 10, photo_refresh_version: null,
-    is_favorite: 1, is_pinned: 1, is_missing: 0,
-    user_masked: null, group_id: 'group', board_id: 'board', notes: 'note', is_corrupt: 0,
-    invoke_image_name: 'removed.png', invoke_image_category: 'general',
-    invoke_image_origin: 'internal', invoke_owner_id: 'visible', invoke_scope_hidden: 0,
+    id: 'C:/library/removed.png',
+    path: 'C:/library/removed.png',
+    width: 1024,
+    height: 768,
+    file_size: 123456,
+    timestamp: 10,
+    removed_at: 20,
+    thumbnail_path: 'C:/thumbs/removed.webp',
+    micro_thumbnail: 'data:image/webp;base64,AAAA',
+    thumbnail_source: 'ambit',
+    thumbnail_version: null,
+    detected_source_kind: 'generated',
+    source_kind_override: null,
+    source_kind: 'generated',
+    capture_wall_time_ms: null,
+    display_timestamp: 10,
+    photo_refresh_version: null,
+    is_favorite: 1,
+    is_pinned: 1,
+    is_missing: 0,
+    user_masked: null,
+    group_id: 'group',
+    board_id: 'board',
+    notes: 'note',
+    is_corrupt: 0,
+    invoke_image_name: 'removed.png',
+    invoke_image_category: 'general',
+    invoke_image_origin: 'internal',
+    invoke_owner_id: 'visible',
+    invoke_scope_hidden: 0,
     metadata_json: JSON.stringify({ positivePrompt: 'private sunset', steps: 20, sampler: 'euler' }),
     photo_metadata_json: null,
     original_metadata_json: JSON.stringify({ workflow: 'archival workflow' }),
     original_parsed_json: JSON.stringify({ positivePrompt: 'original prompt', seed: 0 }),
     original_state_json: JSON.stringify({ isFavorite: true, boardId: 'original-board' }),
-    media_type: 'image', media_container: null, media_mime_type: null, duration_ms: null,
-    video_codec: null, video_profile: null, audio_present: null, audio_codec: null,
-    frame_rate_num: null, frame_rate_den: null, rotation_degrees: null,
-    probe_status: null, playback_status: null,
+    media_type: 'image',
+    media_container: null,
+    media_mime_type: null,
+    duration_ms: null,
+    video_codec: null,
+    video_profile: null,
+    audio_present: null,
+    audio_codec: null,
+    frame_rate_num: null,
+    frame_rate_den: null,
+    rotation_degrees: null,
+    probe_status: null,
+    playback_status: null,
 };
 const blobFields = ['metadata_json', 'original_metadata_json', 'original_parsed_json', 'original_state_json'];
 
@@ -45,8 +74,14 @@ describe('Removed listings over SQLite', () => {
 
     const insert = (overrides: Record<string, SQLInputValue> = {}) => {
         const row = { ...baseRow, ...overrides };
-        sqlite.prepare(`INSERT INTO removed_images (${Object.keys(row).join(',')})
-            VALUES (${Object.keys(row).map(() => '?').join(',')})`).run(...Object.values(row));
+        sqlite
+            .prepare(
+                `INSERT INTO removed_images (${Object.keys(row).join(',')})
+            VALUES (${Object.keys(row)
+                .map(() => '?')
+                .join(',')})`
+            )
+            .run(...Object.values(row));
     };
 
     beforeEach(() => {
@@ -76,16 +111,29 @@ describe('Removed listings over SQLite', () => {
         insert({ id: 'hidden', invoke_scope_hidden: 1 });
         insert({ id: 'other-owner', invoke_owner_id: 'other' });
         const images = await getDeletedImages();
-        expect(images.map(image => image.id)).toEqual(['newer', baseRow.id]);
+        expect(images.map((image) => image.id)).toEqual(['newer', baseRow.id]);
         for (const row of returnedRows) {
             for (const field of blobFields) expect(row).not.toHaveProperty(field);
         }
         expect(images[1]).toMatchObject({
-            filename: 'removed.png', width: 1024, height: 768, fileSize: 123456, timestamp: 10,
-            thumbnailUrl: 'asset://C:/thumbs/removed.webp', microThumbnail: baseRow.micro_thumbnail,
-            isFavorite: true, isPinned: true, isMissing: false, isCorrupt: false,
-            groupId: 'group', boardId: 'board', notes: 'note', invokeOwnerId: 'visible',
-            invokeImageName: 'removed.png', invokeImageCategory: 'general', invokeImageOrigin: 'internal',
+            filename: 'removed.png',
+            width: 1024,
+            height: 768,
+            fileSize: 123456,
+            timestamp: 10,
+            thumbnailUrl: 'asset://C:/thumbs/removed.webp',
+            microThumbnail: baseRow.micro_thumbnail,
+            isFavorite: true,
+            isPinned: true,
+            isMissing: false,
+            isCorrupt: false,
+            groupId: 'group',
+            boardId: 'board',
+            notes: 'note',
+            invokeOwnerId: 'visible',
+            invokeImageName: 'removed.png',
+            invokeImageCategory: 'general',
+            invokeImageOrigin: 'internal',
             metadata: { positivePrompt: 'private sunset' },
         });
         expect(images[1].originalChunks).toBeUndefined();
@@ -114,14 +162,15 @@ describe('Removed listings over SQLite', () => {
         expect(light.metadata.positivePrompt).toBe(full.metadata.positivePrompt);
         for (const privacyEnabled of [true, false]) {
             for (const userMasked of [undefined, true, false]) {
-                expect(isImageMasked({ ...light, userMasked }, privacyEnabled, ['PRIVATE']))
-                    .toBe(isImageMasked({ ...full, userMasked }, privacyEnabled, ['PRIVATE']));
+                expect(isImageMasked({ ...light, userMasked }, privacyEnabled, ['PRIVATE'])).toBe(
+                    isImageMasked({ ...full, userMasked }, privacyEnabled, ['PRIVATE'])
+                );
             }
         }
         expect(isImageMasked(light, true, ['PRIVATE'])).toBe(String(prompt).includes('private'));
     });
 
-    it.each([null, '', '{}'])('handles absent metadata (%s) without needing archival blobs', async metadata => {
+    it.each([null, '', '{}'])('handles absent metadata (%s) without needing archival blobs', async (metadata) => {
         insert({ metadata_json: metadata, original_parsed_json: metadata });
         const [image] = await getDeletedImages();
         expect(image.metadata.positivePrompt).toBe('');
@@ -130,20 +179,39 @@ describe('Removed listings over SQLite', () => {
 
     it('retains video poster and playback facts in lightweight rows', async () => {
         insert({
-            path: 'C:/library/removed.mp4', media_type: 'video', thumbnail_source: 'ambit-video-v1',
-            media_container: 'mp4', media_mime_type: 'video/mp4', duration_ms: 1500,
-            video_codec: 'h264', video_profile: 'High', audio_present: 1, audio_codec: 'aac',
-            frame_rate_num: 30, frame_rate_den: 1, rotation_degrees: 90,
-            probe_status: 'ready', playback_status: 'supported',
+            path: 'C:/library/removed.mp4',
+            media_type: 'video',
+            thumbnail_source: 'ambit-video-v1',
+            media_container: 'mp4',
+            media_mime_type: 'video/mp4',
+            duration_ms: 1500,
+            video_codec: 'h264',
+            video_profile: 'High',
+            audio_present: 1,
+            audio_codec: 'aac',
+            frame_rate_num: 30,
+            frame_rate_den: 1,
+            rotation_degrees: 90,
+            probe_status: 'ready',
+            playback_status: 'supported',
         });
         const [image] = await getDeletedImages();
         expect(isVideoAsset(image)).toBe(true);
         expect(image).toMatchObject({
-            thumbnailSource: 'ambit-video-v1', thumbnailUrl: 'asset://C:/thumbs/removed.webp',
-            mediaContainer: 'mp4', mediaMimeType: 'video/mp4', durationMs: 1500,
-            videoCodec: 'h264', videoProfile: 'High', audioPresent: true, audioCodec: 'aac',
-            frameRateNum: 30, frameRateDen: 1, rotationDegrees: 90,
-            probeStatus: 'ready', playbackStatus: 'supported',
+            thumbnailSource: 'ambit-video-v1',
+            thumbnailUrl: 'asset://C:/thumbs/removed.webp',
+            mediaContainer: 'mp4',
+            mediaMimeType: 'video/mp4',
+            durationMs: 1500,
+            videoCodec: 'h264',
+            videoProfile: 'High',
+            audioPresent: true,
+            audioCodec: 'aac',
+            frameRateNum: 30,
+            frameRateDen: 1,
+            rotationDegrees: 90,
+            probeStatus: 'ready',
+            playbackStatus: 'supported',
         });
     });
 
@@ -181,12 +249,17 @@ describe('Removed listings over SQLite', () => {
         const initialImages = await getDeletedImages();
         const initialPayload = JSON.stringify(returnedRows);
         const workflow = 'x'.repeat(512 * 1024);
-        sqlite.prepare(`UPDATE removed_images SET metadata_json = ?, original_parsed_json = ?,
-            original_metadata_json = ?, original_state_json = ?`).run(
-            JSON.stringify({ positivePrompt: 'private sunset', steps: 20, sampler: 'euler', workflow }),
-            JSON.stringify({ positivePrompt: 'original prompt', seed: 0, workflow }),
-            JSON.stringify({ workflow }), JSON.stringify({ workflow }),
-        );
+        sqlite
+            .prepare(
+                `UPDATE removed_images SET metadata_json = ?, original_parsed_json = ?,
+            original_metadata_json = ?, original_state_json = ?`
+            )
+            .run(
+                JSON.stringify({ positivePrompt: 'private sunset', steps: 20, sampler: 'euler', workflow }),
+                JSON.stringify({ positivePrompt: 'original prompt', seed: 0, workflow }),
+                JSON.stringify({ workflow }),
+                JSON.stringify({ workflow })
+            );
         returnedRows = [];
         const enlargedImages = await getDeletedImages();
         expect(JSON.stringify(returnedRows).length).toBe(initialPayload.length);

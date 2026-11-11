@@ -1,8 +1,6 @@
 {
   "minTokens": 70,
-  "reporters": [
-    "console"
-  ],
+  "reporters": ["console"],
   "ignore": [
     "src/bindings.ts",
     "src/test/**",

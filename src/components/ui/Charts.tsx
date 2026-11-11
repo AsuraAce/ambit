@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useState } from 'react';
 import { Lightbulb, X, BarChart3 } from 'lucide-react';
@@ -14,13 +13,13 @@ interface ChartsProps {
 }
 
 const TIPS = [
-    "Right-click an image to quickly add it to a collection.",
+    'Right-click an image to quickly add it to a collection.',
     "Use 'steps:>50' in the search bar to find high-step generations.",
-    "Enable AI Features to search your library using natural language.",
+    'Enable AI Features to search your library using natural language.',
     "Press 'Space' to quickly open the image viewer.",
-    "Shift+Click images to select a range.",
-    "Double click an image in the viewer to zoom 200%.",
-    "Drag and drop images to import them."
+    'Shift+Click images to select a range.',
+    'Double click an image in the viewer to zoom 200%.',
+    'Drag and drop images to import them.',
 ];
 
 type ModelChartStat = {
@@ -32,24 +31,15 @@ type ModelChartStat = {
 const SKELETON_BAR_WIDTHS = ['92%', '76%', '84%', '63%', '71%'];
 
 const formatAnalysisTarget = (globalTotal: number) =>
-    globalTotal > 0
-        ? `Analyzing ${globalTotal.toLocaleString()} library images`
-        : 'Analyzing library images';
+    globalTotal > 0 ? `Analyzing ${globalTotal.toLocaleString()} library images` : 'Analyzing library images';
 
 export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilter }) => {
-    const setKeywordStatsEnabled = useLibraryStore(state => state.setKeywordStatsEnabled);
+    const setKeywordStatsEnabled = useLibraryStore((state) => state.setKeywordStatsEnabled);
     // Use DB-backed global stats
-    const {
-        stats,
-        setFilters,
-        isFiltering,
-        globalTotal,
-        isStatsSummaryLoading,
-        isKeywordStatsLoading
-    } = useLibraryContext();
+    const { stats, setFilters, isFiltering, globalTotal, isStatsSummaryLoading, isKeywordStatsLoading } = useLibraryContext();
     const { totalGenerations, totalItems, totalImages, totalVideos, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
     const modelChartStats: ModelChartStat[] = modelStats ?? [];
-    const maxModelCount = Math.max(1, ...modelChartStats.map(stat => stat.count));
+    const maxModelCount = Math.max(1, ...modelChartStats.map((stat) => stat.count));
     const shouldShowWordCloudLoading = isStatsSummaryLoading || (isKeywordStatsLoading && keywordStats.length === 0);
     const analysisTargetLabel = formatAnalysisTarget(globalTotal);
 
@@ -75,14 +65,15 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilte
                             </div>
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gallery Statistics</h2>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">Analyze your generation habits, models, and prompts.</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">
+                            Analyze your generation habits, models, and prompts.
+                        </p>
                     </div>
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-8" style={{ scrollbarGutter: 'stable' }}>
                 <div className="w-full space-y-6 pb-24">
-
                     {showTip && (
                         <div className="relative flex items-start gap-3 rounded-xl border border-harbor-200 bg-harbor-50 p-4 animate-in fade-in slide-in-from-top-2 dark:border-harbor-400/30 dark:bg-harbor-500/15">
                             <div className="rounded-lg bg-harbor-100 p-2 text-harbor-600 dark:bg-harbor-500/20 dark:text-harbor-300">
@@ -92,7 +83,12 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilte
                                 <h4 className="mb-1 text-sm font-bold text-harbor-600 dark:text-harbor-300">Tip of the Day</h4>
                                 <p className="text-sm text-harbor-600 dark:text-harbor-300">{randomTip}</p>
                             </div>
-                            <button type="button" aria-label="Dismiss Tip" onClick={() => setShowTip(false)} className="absolute right-2 top-2 p-1 text-harbor-600 hover:text-harbor-600 dark:text-harbor-300 dark:hover:text-harbor-300">
+                            <button
+                                type="button"
+                                aria-label="Dismiss Tip"
+                                onClick={() => setShowTip(false)}
+                                className="absolute right-2 top-2 p-1 text-harbor-600 hover:text-harbor-600 dark:text-harbor-300 dark:hover:text-harbor-300"
+                            >
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
@@ -124,7 +120,9 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilte
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Bar Chart */}
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col">
-                            <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">Generations per Model (Click to Filter)</h3>
+                            <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">
+                                Generations per Model (Click to Filter)
+                            </h3>
                             <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1 space-y-3">
                                 {isStatsSummaryLoading ? (
                                     <div className="h-full flex flex-col justify-center gap-4">
@@ -149,44 +147,41 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilte
                                     <div className="h-full flex items-center justify-center text-xs uppercase tracking-wider text-gray-400">
                                         No model stats found
                                     </div>
-                                ) : modelChartStats.map((stat, index) => {
-                                    const widthPercent = Math.max(6, Math.round((stat.count / maxModelCount) * 100));
-                                    const colorClass = [
-                                        'bg-indigo-500',
-                                        'bg-violet-500',
-                                        'bg-rose-500',
-                                        'bg-teal-500'
-                                    ][index % 4];
+                                ) : (
+                                    modelChartStats.map((stat, index) => {
+                                        const widthPercent = Math.max(6, Math.round((stat.count / maxModelCount) * 100));
+                                        const colorClass = ['bg-indigo-500', 'bg-violet-500', 'bg-rose-500', 'bg-teal-500'][index % 4];
 
-                                    return (
-                                        <button
-                                            key={`${stat.fullName ?? stat.name}-${index}`}
-                                            type="button"
-                                            className="group w-full text-left rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-sage-500/60"
-                                            title={stat.fullName ?? stat.name}
-                                            onClick={() => {
-                                                if (typeof stat.fullName === 'string') {
-                                                    onFilter('model', stat.fullName);
-                                                }
-                                            }}
-                                        >
-                                            <div className="flex items-center justify-between gap-3 mb-1">
-                                                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">
-                                                    {stat.fullName ?? stat.name}
-                                                </span>
-                                                <span className="text-xs font-mono text-gray-500 dark:text-gray-400 shrink-0">
-                                                    {stat.count.toLocaleString()}
-                                                </span>
-                                            </div>
-                                            <div className="h-2.5 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
-                                                <div
-                                                    className={`h-full rounded-full ${colorClass} group-hover:opacity-90 transition-all`}
-                                                    style={{ width: `${widthPercent}%` }}
-                                                />
-                                            </div>
-                                        </button>
-                                    );
-                                })}
+                                        return (
+                                            <button
+                                                key={`${stat.fullName ?? stat.name}-${index}`}
+                                                type="button"
+                                                className="group w-full text-left rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-sage-500/60"
+                                                title={stat.fullName ?? stat.name}
+                                                onClick={() => {
+                                                    if (typeof stat.fullName === 'string') {
+                                                        onFilter('model', stat.fullName);
+                                                    }
+                                                }}
+                                            >
+                                                <div className="flex items-center justify-between gap-3 mb-1">
+                                                    <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">
+                                                        {stat.fullName ?? stat.name}
+                                                    </span>
+                                                    <span className="text-xs font-mono text-gray-500 dark:text-gray-400 shrink-0">
+                                                        {stat.count.toLocaleString()}
+                                                    </span>
+                                                </div>
+                                                <div className="h-2.5 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
+                                                    <div
+                                                        className={`h-full rounded-full ${colorClass} group-hover:opacity-90 transition-all`}
+                                                        style={{ width: `${widthPercent}%` }}
+                                                    />
+                                                </div>
+                                            </button>
+                                        );
+                                    })
+                                )}
                             </div>
                         </div>
 
@@ -194,7 +189,9 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilte
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col relative overflow-hidden group">
                             <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center justify-between">
                                 <span>Top Prompt Keywords</span>
-                                {isFiltering && <div className="h-4 w-4 animate-spin rounded-full border-2 border-sage-500/20 border-t-sage-500" />}
+                                {isFiltering && (
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-sage-500/20 border-t-sage-500" />
+                                )}
                             </h3>
                             <div className="flex-1 min-h-0">
                                 <WordCloud
@@ -204,7 +201,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilte
                                     onWordClick={(word) => {
                                         setFilters((prev) => ({
                                             ...prev,
-                                            searchQuery: prev.searchQuery ? `${prev.searchQuery.trim()} ${word}` : word
+                                            searchQuery: prev.searchQuery ? `${prev.searchQuery.trim()} ${word}` : word,
                                         }));
                                     }}
                                 />
@@ -221,7 +218,7 @@ const StatCard = ({
     label,
     value,
     isLoading,
-    loadingText
+    loadingText,
 }: {
     label: string;
     value: number | string;

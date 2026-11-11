@@ -84,60 +84,57 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 }) => {
     const isGenerated = getEffectiveSourceKind(image) === 'generated';
     const tabs = getImageViewerTabs(image);
-    const effectiveActiveTab = tabs.some(tab => tab.id === activeTab)
-        ? activeTab
-        : 'metadata';
+    const effectiveActiveTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : 'metadata';
 
-    return <ViewerSidebarShell
-        tabs={tabs}
-        activeTab={effectiveActiveTab}
-        onTabChange={setActiveTab}
-        ariaLabel="Image viewer sections"
-    >
-        {!isGenerated && effectiveActiveTab === 'metadata' ? <PhotoDetailsTab key={image.id} image={image} isLoading={isLoading} /> : null}
+    return (
+        <ViewerSidebarShell tabs={tabs} activeTab={effectiveActiveTab} onTabChange={setActiveTab} ariaLabel="Image viewer sections">
+            {!isGenerated && effectiveActiveTab === 'metadata' ? (
+                <PhotoDetailsTab key={image.id} image={image} isLoading={isLoading} />
+            ) : null}
 
-        {effectiveActiveTab === 'details' ? (
-            <ImageDetailsTab
-                image={image}
-                collections={collections}
-                notes={notes}
-                setNotes={setNotes}
-                onUpdateNotes={onUpdateNotes}
-                onSetImageKind={onSetImageKind}
-                onSetCollectionMembership={onSetCollectionMembership}
-                palette={palette}
-                isPaletteLoading={isPaletteLoading}
-            />
-        ) : null}
+            {effectiveActiveTab === 'details' ? (
+                <ImageDetailsTab
+                    image={image}
+                    collections={collections}
+                    notes={notes}
+                    setNotes={setNotes}
+                    onUpdateNotes={onUpdateNotes}
+                    onSetImageKind={onSetImageKind}
+                    onSetCollectionMembership={onSetCollectionMembership}
+                    palette={palette}
+                    isPaletteLoading={isPaletteLoading}
+                />
+            ) : null}
 
-        {isGenerated && effectiveActiveTab === 'metadata' ? (
-            <MetadataInfoTab
-                image={image}
-                promptValue={promptValue}
-                setPromptValue={setPromptValue}
-                negativePromptValue={negativePromptValue}
-                setNegativePromptValue={setNegativePromptValue}
-                availableTags={availableTags}
-                modelOptions={modelOptions}
-                disclosure={disclosure}
-                onUpdatePrompt={onUpdatePrompt}
-                onUpdateNegativePrompt={onUpdateNegativePrompt}
-                onSearch={onSearch}
-                onClose={onClose}
-                onRecoverMetadata={onRecoverMetadata}
-                onRevertMetadata={onRevertMetadata}
-                onUpdateModel={onUpdateModel}
-                onUpdateTool={onUpdateTool}
-                onAIAnalysis={onAIAnalysis}
-                onGenerateVariations={onGenerateVariations}
-                isAnalyzing={isAnalyzing}
-                onOpenAIResult={onOpenAIResult}
-                isLoading={isLoading}
-                searchHighlights={searchHighlights}
-                onOpenReferencedImage={onOpenReferencedImage}
-            />
-        ) : null}
+            {isGenerated && effectiveActiveTab === 'metadata' ? (
+                <MetadataInfoTab
+                    image={image}
+                    promptValue={promptValue}
+                    setPromptValue={setPromptValue}
+                    negativePromptValue={negativePromptValue}
+                    setNegativePromptValue={setNegativePromptValue}
+                    availableTags={availableTags}
+                    modelOptions={modelOptions}
+                    disclosure={disclosure}
+                    onUpdatePrompt={onUpdatePrompt}
+                    onUpdateNegativePrompt={onUpdateNegativePrompt}
+                    onSearch={onSearch}
+                    onClose={onClose}
+                    onRecoverMetadata={onRecoverMetadata}
+                    onRevertMetadata={onRevertMetadata}
+                    onUpdateModel={onUpdateModel}
+                    onUpdateTool={onUpdateTool}
+                    onAIAnalysis={onAIAnalysis}
+                    onGenerateVariations={onGenerateVariations}
+                    isAnalyzing={isAnalyzing}
+                    onOpenAIResult={onOpenAIResult}
+                    isLoading={isLoading}
+                    searchHighlights={searchHighlights}
+                    onOpenReferencedImage={onOpenReferencedImage}
+                />
+            ) : null}
 
-        {isGenerated && effectiveActiveTab === 'workflow' ? <WorkflowInspector key={image.id} image={image} /> : null}
-    </ViewerSidebarShell>;
+            {isGenerated && effectiveActiveTab === 'workflow' ? <WorkflowInspector key={image.id} image={image} /> : null}
+        </ViewerSidebarShell>
+    );
 };

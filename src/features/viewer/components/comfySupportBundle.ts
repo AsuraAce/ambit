@@ -9,19 +9,15 @@ const describeImage = (image: SupportImage) => {
     return {
         format: extension || 'unknown',
         width: image.width,
-        height: image.height
+        height: image.height,
     };
 };
 
 const sortChunks = (chunks: Record<string, string>) =>
-    Object.fromEntries(
-        Object.entries(chunks).sort(([left], [right]) => left.localeCompare(right))
-    ) as Record<string, string>;
+    Object.fromEntries(Object.entries(chunks).sort(([left], [right]) => left.localeCompare(right))) as Record<string, string>;
 
 const getChunkLengths = (chunks: Record<string, string>) =>
-    Object.fromEntries(
-        Object.entries(chunks).map(([key, value]) => [key, value.length])
-    ) as Record<string, number>;
+    Object.fromEntries(Object.entries(chunks).map(([key, value]) => [key, value.length])) as Record<string, number>;
 
 export const buildDiagnosticsClipboardPayload = (
     image: SupportImage,
@@ -40,7 +36,7 @@ export const buildDiagnosticsClipboardPayload = (
         outputSelection: {
             selectedOutputCandidateCount: diagnostics.selectedOutputCandidateCount,
             uniqueOutputRootSamplerCount: diagnostics.uniqueOutputRootSamplerCount,
-            ambiguous: diagnostics.outputAmbiguous
+            ambiguous: diagnostics.outputAmbiguous,
         },
         attemptedLayers: diagnostics.attemptedLayers,
         fieldSources: diagnostics.fieldSources,
@@ -48,7 +44,7 @@ export const buildDiagnosticsClipboardPayload = (
         resourceSources: diagnostics.resourceSources,
         traversalIssues: diagnostics.traversalIssues,
         traversalIssuesTruncated: diagnostics.traversalIssuesTruncated,
-        metadata: diagnostics.metadata
+        metadata: diagnostics.metadata,
     };
 };
 
@@ -68,6 +64,6 @@ export const buildComfySupportBundle = (
         image: describeImage(image),
         diagnostics,
         chunkLengths: getChunkLengths(sortedChunks),
-        chunks: sortedChunks
+        chunks: sortedChunks,
     };
 };

@@ -4,44 +4,62 @@ import { startupDiagnostics } from '../../../utils/startupDiagnostics';
 import { commands } from '../../../bindings';
 import { ensureFolderAccessible } from '../../assetScope';
 import { inspectInvokeConnection } from '../connection';
-import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, getInvokeSourceDatabase, invalidateInvokeSourceDatabase, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
+import {
+    diagnoseInvokeAI,
+    discoverInvokeOwners,
+    fetchBoardMappings as fetchBoardMappingsImpl,
+    fetchBoards,
+    getInvokeSourceDatabase,
+    invalidateInvokeSourceDatabase,
+    readInvokeSourceFingerprint,
+    resolveInvokePaths,
+    testConnection,
+} from '../connection';
 
-const fetchBoardMappings = (db: Database) => fetchBoardMappingsImpl(db, {
-    mode: 'legacy',
-    dbPath: 'D:/InvokeAI/databases/invokeai.db',
-    imagesRoot: 'D:/InvokeAI',
-});
+const fetchBoardMappings = (db: Database) =>
+    fetchBoardMappingsImpl(db, {
+        mode: 'legacy',
+        dbPath: 'D:/InvokeAI/databases/invokeai.db',
+        imagesRoot: 'D:/InvokeAI',
+    });
 
 const sqlMock = vi.hoisted(() => ({
-    load: vi.fn()
+    load: vi.fn(),
 }));
 
 vi.mock('../sourceDatabase', () => ({
-    openInvokeSourceDatabase: sqlMock.load
+    openInvokeSourceDatabase: sqlMock.load,
 }));
 
 vi.mock('../../assetScope', () => ({
-    ensureFolderAccessible: vi.fn(async () => true)
+    ensureFolderAccessible: vi.fn(async () => true),
 }));
 
 const createDb = (select: (sql: string) => Promise<unknown[]>) => ({
-    select: vi.fn(select)
+    select: vi.fn(select),
 });
 
 describe('InvokeAI connection helpers', () => {
     it('rejects a missing candidate without letting SQLite create a source database', async () => {
-        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
-            dbPath: 'D:/Missing/databases/invokeai.db', files: [],
-        } });
+        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({
+            status: 'ok',
+            data: {
+                dbPath: 'D:/Missing/databases/invokeai.db',
+                files: [],
+            },
+        });
         await expect(inspectInvokeConnection('D:/Missing')).rejects.toThrow('existing InvokeAI database');
         expect(sqlMock.load).not.toHaveBeenCalled();
     });
 
     it('inspects an existing candidate without importing or changing its database', async () => {
-        const snapshot = vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
-            dbPath: 'D:/Invoke/databases/invokeai.db',
-            files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
-        } });
+        const snapshot = vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({
+            status: 'ok',
+            data: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
+            },
+        });
         const db = createDb(async () => [{ name: 'image_name' }]);
         sqlMock.load.mockResolvedValue(db);
         await expect(inspectInvokeConnection(' D:/Invoke ')).resolves.toMatchObject({ schemaMode: 'legacy' });
@@ -49,8 +67,7 @@ describe('InvokeAI connection helpers', () => {
         // #384: a typed candidate enters the filesystem scope before the snapshot,
         // which refuses a database outside it, and before the source reader opens it.
         expect(ensureFolderAccessible).toHaveBeenCalledWith('D:/Invoke');
-        expect(vi.mocked(ensureFolderAccessible).mock.invocationCallOrder.at(-1))
-            .toBeLessThan(snapshot.mock.invocationCallOrder.at(-1)!);
+        expect(vi.mocked(ensureFolderAccessible).mock.invocationCallOrder.at(-1)).toBeLessThan(snapshot.mock.invocationCallOrder.at(-1)!);
     });
 
     it('rejects a candidate folder that cannot be registered without asking for a snapshot', async () => {
@@ -65,10 +82,13 @@ describe('InvokeAI connection helpers', () => {
     });
 
     it('rejects a non-Invoke database rather than treating missing tables as legacy ownership', async () => {
-        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
-            dbPath: 'D:/Invoke/databases/invokeai.db',
-            files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
-        } });
+        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({
+            status: 'ok',
+            data: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
+            },
+        });
         sqlMock.load.mockResolvedValue(createDb(async () => []));
         await expect(inspectInvokeConnection('D:/Invoke')).rejects.toThrow('images table');
     });
@@ -108,10 +128,9 @@ describe('InvokeAI connection helpers', () => {
         const db = createDb(async () => []);
         sqlMock.load.mockResolvedValue(db);
 
-        await expect(Promise.all([
-            getInvokeSourceDatabase('D:/Invoke'),
-            getInvokeSourceDatabase('d:\\invoke\\databases\\invokeai.db'),
-        ])).resolves.toEqual([db, db]);
+        await expect(
+            Promise.all([getInvokeSourceDatabase('D:/Invoke'), getInvokeSourceDatabase('d:\\invoke\\databases\\invokeai.db')])
+        ).resolves.toEqual([db, db]);
 
         expect(sqlMock.load).toHaveBeenCalledOnce();
         expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
@@ -132,9 +151,10 @@ describe('InvokeAI connection helpers', () => {
         const firstDb = createDb(async () => []);
         const otherDb = createDb(async () => []);
         sqlMock.load.mockResolvedValueOnce(firstDb).mockResolvedValueOnce(otherDb);
-        await expect(Promise.all([
-            getInvokeSourceDatabase('D:/First'), getInvokeSourceDatabase('D:/Other'),
-        ])).resolves.toEqual([firstDb, otherDb]);
+        await expect(Promise.all([getInvokeSourceDatabase('D:/First'), getInvokeSourceDatabase('D:/Other')])).resolves.toEqual([
+            firstDb,
+            otherDb,
+        ]);
         invalidateInvokeSourceDatabase('D:/First');
         await expect(getInvokeSourceDatabase('D:/Other')).resolves.toBe(otherDb);
         expect(sqlMock.load).toHaveBeenCalledTimes(2);
@@ -142,7 +162,9 @@ describe('InvokeAI connection helpers', () => {
 
     it('does not evict a replacement when an older invalidated open fails late', async () => {
         let rejectOld!: (reason: Error) => void;
-        const oldOpen = new Promise<Database>((_resolve, reject) => { rejectOld = reject; });
+        const oldOpen = new Promise<Database>((_resolve, reject) => {
+            rejectOld = reject;
+        });
         const replacement = createDb(async () => []);
         sqlMock.load.mockReturnValueOnce(oldOpen).mockResolvedValueOnce(replacement);
         const oldCaller = getInvokeSourceDatabase('D:/Invoke');
@@ -168,7 +190,7 @@ describe('InvokeAI connection helpers', () => {
 
     it('invalidates future source lookups without closing an in-flight open', async () => {
         let finishFirst!: (db: ReturnType<typeof createDb>) => void;
-        const firstOpen = new Promise<ReturnType<typeof createDb>>(resolve => {
+        const firstOpen = new Promise<ReturnType<typeof createDb>>((resolve) => {
             finishFirst = resolve;
         });
         const firstDb = createDb(async () => []);
@@ -245,7 +267,10 @@ describe('InvokeAI connection helpers', () => {
             unassignedImageCount: 2,
             unassignedBoardCount: 0,
         });
-        const queriedSql = db.select.mock.calls.map(([sql]) => sql).join('\n').toLowerCase();
+        const queriedSql = db.select.mock.calls
+            .map(([sql]) => sql)
+            .join('\n')
+            .toLowerCase();
         expect(queriedSql).not.toContain('select email');
         expect(queriedSql).not.toContain('password');
     });
@@ -290,14 +315,14 @@ describe('InvokeAI connection helpers', () => {
             if (sql === 'SELECT board_id, board_name, created_at FROM boards') {
                 return [
                     { board_id: 'board-a', board_name: 'Favorites', created_at: '2026-01-02T03:04:05' },
-                    { board_id: 'board-b', board_name: 'Archive', created_at: '2026-01-02T03:04:05Z' }
+                    { board_id: 'board-b', board_name: 'Archive', created_at: '2026-01-02T03:04:05Z' },
                 ];
             }
             if (sql === 'SELECT image_name, board_id FROM board_images') {
                 return [
                     { image_name: 'first.png', board_id: 'board-a' },
                     { image_name: 'loose.png', board_id: null },
-                    { image_name: 123, board_id: 'board-b' }
+                    { image_name: 123, board_id: 'board-b' },
                 ];
             }
             throw new Error(`Unexpected SQL: ${sql}`);
@@ -307,27 +332,29 @@ describe('InvokeAI connection helpers', () => {
 
         expect(result.boards.get('board-a')).toEqual({
             name: 'Favorites',
-            createdAt: new Date('2026-01-02T03:04:05 Z').getTime()
+            createdAt: new Date('2026-01-02T03:04:05 Z').getTime(),
         });
         expect(result.boards.get('board-b')).toEqual({
             name: 'Archive',
-            createdAt: new Date('2026-01-02T03:04:05Z').getTime()
+            createdAt: new Date('2026-01-02T03:04:05Z').getTime(),
         });
         expect(result.isAuthoritative).toBe(true);
         expect([...result.imageToBoardId.entries()]).toEqual([
             ['first.png', 'board-a'],
-            ['123', 'board-b']
+            ['123', 'board-b'],
         ]);
     });
 
     it('returns empty board mappings when Invoke board tables are unavailable', async () => {
         const db = createDb(async (sql) => {
             if (sql === 'SELECT board_id, board_name, created_at FROM boards') {
-                return [{
-                    board_id: 'partial-board',
-                    board_name: 'Must not leak',
-                    created_at: '2026-01-02T03:04:05Z',
-                }];
+                return [
+                    {
+                        board_id: 'partial-board',
+                        board_name: 'Must not leak',
+                        created_at: '2026-01-02T03:04:05Z',
+                    },
+                ];
             }
             throw new Error('missing boards');
         });
@@ -337,10 +364,7 @@ describe('InvokeAI connection helpers', () => {
         expect(result.boards.size).toBe(0);
         expect(result.imageToBoardId.size).toBe(0);
         expect(result.isAuthoritative).toBe(false);
-        expect(console.warn).toHaveBeenCalledWith(
-            'Failed to fetch boards/collections mapping:',
-            expect.any(Error)
-        );
+        expect(console.warn).toHaveBeenCalledWith('Failed to fetch boards/collections mapping:', expect.any(Error));
     });
 
     it('loads only directly owned boards and memberships for a selected owner', async () => {
@@ -374,12 +398,14 @@ describe('InvokeAI connection helpers', () => {
         const db = createDb(async (sql) => {
             if (sql === 'PRAGMA table_info(boards)') return [{ name: 'user_id' }];
             if (sql.includes('FROM boards b')) {
-                return [{
-                    board_id: 'board-a',
-                    board_name: 'Owned',
-                    created_at: '2026-01-02T03:04:05Z',
-                    user_id: 'owner-a',
-                }];
+                return [
+                    {
+                        board_id: 'board-a',
+                        board_name: 'Owned',
+                        created_at: '2026-01-02T03:04:05Z',
+                        user_id: 'owner-a',
+                    },
+                ];
             }
             throw new Error(`Unexpected SQL: ${sql}`);
         });
@@ -392,13 +418,13 @@ describe('InvokeAI connection helpers', () => {
         });
 
         expect(result.isAuthoritative).toBe(true);
-        expect(result.boards.get('board-a')).toEqual(expect.objectContaining({
-            name: 'Owned',
-            ownerId: 'owner-a',
-        }));
-        const boardCall = (db.select.mock.calls as Array<[string, unknown[]?]>).find(
-            ([sql]) => sql.includes('FROM boards b')
+        expect(result.boards.get('board-a')).toEqual(
+            expect.objectContaining({
+                name: 'Owned',
+                ownerId: 'owner-a',
+            })
         );
+        const boardCall = (db.select.mock.calls as Array<[string, unknown[]?]>).find(([sql]) => sql.includes('FROM boards b'));
         expect(boardCall?.[0]).not.toContain('EXISTS');
         expect(boardCall?.[0]).not.toContain('WHERE b.user_id');
         expect(boardCall?.[1]).toBeUndefined();
@@ -422,12 +448,14 @@ describe('InvokeAI connection helpers', () => {
         });
         sqlMock.load.mockResolvedValue(db);
 
-        await expect(readInvokeSourceFingerprint('D:/InvokeAI', {
-            mode: 'owner',
-            ownerId: 'owner-a',
-            dbPath: 'D:/InvokeAI/databases/invokeai.db',
-            imagesRoot: 'D:/InvokeAI',
-        })).resolves.toEqual({
+        await expect(
+            readInvokeSourceFingerprint('D:/InvokeAI', {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: 'D:/InvokeAI/databases/invokeai.db',
+                imagesRoot: 'D:/InvokeAI',
+            })
+        ).resolves.toEqual({
             schemaVersion: 1,
             imageCount: 12,
             imageUpdatedAt: '2026-08-08 10:00:00',
@@ -436,8 +464,9 @@ describe('InvokeAI connection helpers', () => {
             membershipCount: 31,
             membershipMaxRowId: '44',
         });
-        const scopedCalls = (db.select.mock.calls as Array<[string, unknown[]?]>)
-            .filter(([sql]) => sql.includes('FROM images') || sql.includes('FROM boards') || sql.includes('FROM board_images'));
+        const scopedCalls = (db.select.mock.calls as Array<[string, unknown[]?]>).filter(
+            ([sql]) => sql.includes('FROM images') || sql.includes('FROM boards') || sql.includes('FROM board_images')
+        );
         expect(scopedCalls).toHaveLength(3);
         expect(scopedCalls.every(([, params]) => params?.[0] === 'owner-a')).toBe(true);
         expect(scopedCalls.find(([sql]) => sql.includes('FROM board_images'))?.[0]).toContain('b.user_id = ?');
@@ -468,7 +497,7 @@ describe('InvokeAI connection helpers', () => {
         await expect(testConnection('')).resolves.toEqual({
             success: false,
             count: 0,
-            message: 'No path provided.'
+            message: 'No path provided.',
         });
         expect(sqlMock.load).not.toHaveBeenCalled();
     });
@@ -483,7 +512,7 @@ describe('InvokeAI connection helpers', () => {
         await expect(testConnection('D:\\Invoke\\databases\\invokeai.db')).resolves.toEqual({
             success: true,
             count: 42,
-            message: 'Connected! Found 42 images.'
+            message: 'Connected! Found 42 images.',
         });
         expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
@@ -499,21 +528,16 @@ describe('InvokeAI connection helpers', () => {
 
     it('tries Invoke root candidates until one contains an images table', async () => {
         const db = createDb(async () => [{ count: 7 }]);
-        sqlMock.load
-            .mockRejectedValueOnce(new Error('not here'))
-            .mockResolvedValueOnce(db);
+        sqlMock.load.mockRejectedValueOnce(new Error('not here')).mockResolvedValueOnce(db);
 
         await expect(testConnection('D:/Invoke')).resolves.toEqual({
             success: true,
             count: 7,
-            message: 'Connected! Found 7 images.'
+            message: 'Connected! Found 7 images.',
         });
         expect(sqlMock.load).toHaveBeenNthCalledWith(1, 'D:/Invoke/databases/invokeai.db');
         expect(sqlMock.load).toHaveBeenNthCalledWith(2, 'D:/Invoke/invokeai.db');
-        expect(console.warn).toHaveBeenCalledWith(
-            '[InvokeAI] Failed to connect to D:/Invoke/databases/invokeai.db:',
-            expect.any(Error)
-        );
+        expect(console.warn).toHaveBeenCalledWith('[InvokeAI] Failed to connect to D:/Invoke/databases/invokeai.db:', expect.any(Error));
     });
 
     it('returns the not-found message after every candidate fails', async () => {
@@ -522,7 +546,7 @@ describe('InvokeAI connection helpers', () => {
         await expect(testConnection('D:/Invoke')).resolves.toEqual({
             success: false,
             count: 0,
-            message: "Could not find valid 'invokeai.db' at this path."
+            message: "Could not find valid 'invokeai.db' at this path.",
         });
         expect(sqlMock.load).toHaveBeenCalledTimes(2);
     });
@@ -535,11 +559,7 @@ describe('InvokeAI connection helpers', () => {
     it('diagnoses a direct database path and only queries optional columns that exist', async () => {
         const db = createDb(async (sql) => {
             if (sql === 'PRAGMA table_info(images)') {
-                return [
-                    { name: 'image_name' },
-                    { name: 'image_category' },
-                    { name: 'is_intermediate' }
-                ];
+                return [{ name: 'image_name' }, { name: 'image_category' }, { name: 'is_intermediate' }];
             }
             if (sql === 'SELECT count(*) as count FROM images') return [{ count: 3 }];
             if (sql === 'SELECT image_category, count(*) as count FROM images GROUP BY image_category') {
@@ -568,8 +588,8 @@ describe('InvokeAI connection helpers', () => {
             imagesRoot: 'D:/Invoke',
             tables: [
                 { name: 'images', count: 3 },
-                { name: 'broken_table', count: 'Error' }
-            ]
+                { name: 'broken_table', count: 'Error' },
+            ],
         });
         expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
@@ -589,7 +609,7 @@ describe('InvokeAI connection helpers', () => {
             imagesRoot: 'D:/Invoke',
             columns: ['image_origin'],
             categories: [],
-            origins: []
+            origins: [],
         });
         expect(sqlMock.load).toHaveBeenCalledWith('D:/Invoke/databases/invokeai.db');
     });
@@ -598,12 +618,12 @@ describe('InvokeAI connection helpers', () => {
         sqlMock.load.mockRejectedValue('permission denied');
 
         await expect(diagnoseInvokeAI('D:/Invoke')).resolves.toEqual({
-            error: 'permission denied'
+            error: 'permission denied',
         });
 
         sqlMock.load.mockRejectedValueOnce(new Error('database locked'));
         await expect(diagnoseInvokeAI('D:/Invoke')).resolves.toEqual({
-            error: 'database locked'
+            error: 'database locked',
         });
     });
 

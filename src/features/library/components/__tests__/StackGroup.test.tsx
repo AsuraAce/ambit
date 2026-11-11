@@ -51,7 +51,7 @@ describe('StackGroup', () => {
         const onConfirm = vi.fn();
         const { container } = render(<StackGroup group={group('')} onConfirm={onConfirm} />);
         expect(screen.getByText('Workflow Detected')).toBeTruthy();
-        const cards = [...container.querySelectorAll('img')].map(img => img.closest('.cursor-pointer') as HTMLElement);
+        const cards = [...container.querySelectorAll('img')].map((img) => img.closest('.cursor-pointer') as HTMLElement);
 
         fireEvent.click(cards[0]);
         fireEvent.click(screen.getByRole('button', { name: 'Group (2)' }));

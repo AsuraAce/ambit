@@ -1,7 +1,24 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen, Users, RotateCcw } from 'lucide-react';
+import {
+    DatabaseZap,
+    Folder,
+    Info,
+    Globe,
+    Loader2,
+    CheckCircle2,
+    XCircle,
+    Activity,
+    BarChart3,
+    Search,
+    Database,
+    Files,
+    AlertTriangle,
+    FolderOpen,
+    Users,
+    RotateCcw,
+} from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { InvokeRecoverySection, SyncSection } from './SyncSection';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
@@ -10,10 +27,7 @@ import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScop
 import { isSameInvokePath } from '../../../services/invoke/pathIdentity';
 import { ensureFolderAccessible } from '../../../services/assetScope';
 import { normalizeInvokeRoot } from '../../../utils/pathUtils';
-import {
-    isSameInvokeConnectionSource,
-    isSameInvokeOwnerSelection,
-} from '../../../services/invoke/connectionDraft';
+import { isSameInvokeConnectionSource, isSameInvokeOwnerSelection } from '../../../services/invoke/connectionDraft';
 import {
     getSuppressedInvokeCollections,
     restoreInvokeCollection,
@@ -82,41 +96,44 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const applyInFlightRef = useRef(false);
     const primaryActionRef = useRef<HTMLButtonElement>(null);
     const mountedRef = useRef(true);
-    const operation = useInvokeOwnerScopeStore(state => state.operation);
-    const isOperationPending = operation !== null
-        && !['completed', 'cancelled', 'failed'].includes(operation.phase);
-    const refreshCollections = useCollectionStore(state => state.refreshCollections);
+    const operation = useInvokeOwnerScopeStore((state) => state.operation);
+    const isOperationPending = operation !== null && !['completed', 'cancelled', 'failed'].includes(operation.phase);
+    const refreshCollections = useCollectionStore((state) => state.refreshCollections);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const draftRoot = draft.invokeAiPath.trim();
     const draftRootRef = useRef(draftRoot);
     const matchingAppliedSource = isSameInvokeConnectionSource(draftRoot, settings.invokeAiPath ?? '');
-    const ownerDiscovery = ownerDiscoverySession.discovery
-        ?? (matchingAppliedSource && ownerDiscoverySession.canUseAppliedDiscovery ? invokeOwnerScopeState.discovery : undefined);
-    const matchingDraftSelection = draft.invokeOwnerSelection && ownerDiscovery
-        && isSameInvokePath(draft.invokeOwnerSelection.dbPath, ownerDiscovery.dbPath)
-        ? draft.invokeOwnerSelection
-        : undefined;
-    const ownerSelection = matchingDraftSelection?.mode === 'owner'
-        && !ownerDiscovery?.owners.some(owner => owner.ownerId === matchingDraftSelection.ownerId)
-        ? undefined
-        : matchingDraftSelection;
-    const ownerScopeInProgress = invokeOwnerScopeState.status === 'discovering'
-        || invokeOwnerScopeState.status === 'applying';
+    const ownerDiscovery =
+        ownerDiscoverySession.discovery ??
+        (matchingAppliedSource && ownerDiscoverySession.canUseAppliedDiscovery ? invokeOwnerScopeState.discovery : undefined);
+    const matchingDraftSelection =
+        draft.invokeOwnerSelection && ownerDiscovery && isSameInvokePath(draft.invokeOwnerSelection.dbPath, ownerDiscovery.dbPath)
+            ? draft.invokeOwnerSelection
+            : undefined;
+    const ownerSelection =
+        matchingDraftSelection?.mode === 'owner' &&
+        !ownerDiscovery?.owners.some((owner) => owner.ownerId === matchingDraftSelection.ownerId)
+            ? undefined
+            : matchingDraftSelection;
+    const ownerScopeInProgress = invokeOwnerScopeState.status === 'discovering' || invokeOwnerScopeState.status === 'applying';
     const ownerScopeBusy = ownerScopeInProgress || invokeOwnerScopeState.isRetrying === true;
     const foregroundInvokeSyncActive = isInvokeSyncActive && !isLiveSyncing;
     const rootControlsBusy = ownerScopeBusy || foregroundInvokeSyncActive || isApplying;
     const rootControlsLocked = ownerScopeBusy || isInvokeSyncActive || isApplying;
     const scopeControlsBusy = ownerScopeBusy || foregroundInvokeSyncActive || isApplying;
-    const singleOwner = ownerDiscovery?.schemaMode === 'multi_user'
-        && ownerDiscovery.owners.length === 1
-        && ownerDiscovery.unassignedImageCount === 0
-        && (ownerDiscovery.unassignedBoardCount ?? 0) === 0
-        ? ownerDiscovery.owners[0]
-        : undefined;
+    const singleOwner =
+        ownerDiscovery?.schemaMode === 'multi_user' &&
+        ownerDiscovery.owners.length === 1 &&
+        ownerDiscovery.unassignedImageCount === 0 &&
+        (ownerDiscovery.unassignedBoardCount ?? 0) === 0
+            ? ownerDiscovery.owners[0]
+            : undefined;
 
     useEffect(() => {
         mountedRef.current = true;
-        return () => { mountedRef.current = false; };
+        return () => {
+            mountedRef.current = false;
+        };
     }, []);
 
     useEffect(() => {
@@ -136,14 +153,18 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         let cancelled = false;
         if (!settings.invokeAiPath) {
             setHiddenCollections([]);
-            return () => { cancelled = true; };
+            return () => {
+                cancelled = true;
+            };
         }
         void getSuppressedInvokeCollections()
-            .then(collections => {
+            .then((collections) => {
                 if (!cancelled) setHiddenCollections(collections);
             })
-            .catch(error => console.error('[InvokeAI] Failed to load hidden collections', error));
-        return () => { cancelled = true; };
+            .catch((error) => console.error('[InvokeAI] Failed to load hidden collections', error));
+        return () => {
+            cancelled = true;
+        };
     }, [settings.invokeAiPath, invokeOwnerScopeState.status]);
 
     const handleRestoreCollection = async (collection: SuppressedInvokeCollection) => {
@@ -151,7 +172,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         try {
             await restoreInvokeCollection(collection.id);
             await refreshCollections(false, { consistency: 'authoritative' });
-            setHiddenCollections(current => current.filter(item => item.id !== collection.id));
+            setHiddenCollections((current) => current.filter((item) => item.id !== collection.id));
         } catch (error) {
             console.error('[InvokeAI] Failed to restore hidden collection', error);
         } finally {
@@ -172,16 +193,16 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         setIsDiagLoading(true);
         try {
             const { diagnoseInvokeAI } = await import('../../../services/invoke/connection');
-            const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath!) as Omit<InvokeDiagnostics, 'folder'>;
+            const dbDiag = (await diagnoseInvokeAI(settings.invokeAiPath!)) as Omit<InvokeDiagnostics, 'folder'>;
             // The audit refuses a folder outside the scope. One that cannot be registered
             // is missing, which the audit reported as empty before.
-            const folderAudit = await ensureFolderAccessible(normalizeInvokeRoot(settings.invokeAiPath))
+            const folderAudit = (await ensureFolderAccessible(normalizeInvokeRoot(settings.invokeAiPath)))
                 ? await invoke<InvokeFolderAudit>('audit_invokeai_folder', { path: settings.invokeAiPath! })
                 : { imageFiles: 0, thumbnailFiles: 0, subfolders: {} };
 
             setDiagData({
                 ...dbDiag,
-                folder: folderAudit
+                folder: folderAudit,
             });
         } catch (e) {
             console.error(e);
@@ -200,9 +221,10 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
             if (!isSameInvokeConnectionSource(draftRootRef.current, draftRoot)) return;
             setTestResult({
                 success: true,
-                message: discovery.schemaMode === 'legacy'
-                    ? 'Connected to a legacy InvokeAI database.'
-                    : `Connected! Found ${discovery.owners.length.toLocaleString()} owner${discovery.owners.length === 1 ? '' : 's'}.`,
+                message:
+                    discovery.schemaMode === 'legacy'
+                        ? 'Connected to a legacy InvokeAI database.'
+                        : `Connected! Found ${discovery.owners.length.toLocaleString()} owner${discovery.owners.length === 1 ? '' : 's'}.`,
             });
         } catch (e) {
             if (isStaleInvokeOwnerDiscoveryRequestError(e) || !isSameInvokeConnectionSource(draftRootRef.current, draftRoot)) return;
@@ -224,7 +246,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
             const selected = await open({
                 directory: true,
                 multiple: false,
-                title: 'Select InvokeAI Root Folder'
+                title: 'Select InvokeAI Root Folder',
             });
 
             if (selected && typeof selected === 'string') {
@@ -241,12 +263,14 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     if (!isSameInvokeConnectionSource(draftRootRef.current, selected)) return;
                     setTestResult({
                         success: true,
-                        message: discovery.schemaMode === 'legacy'
-                            ? 'Connected to a legacy InvokeAI database.'
-                            : `Connected! Found ${discovery.owners.length.toLocaleString()} owner${discovery.owners.length === 1 ? '' : 's'}.`,
+                        message:
+                            discovery.schemaMode === 'legacy'
+                                ? 'Connected to a legacy InvokeAI database.'
+                                : `Connected! Found ${discovery.owners.length.toLocaleString()} owner${discovery.owners.length === 1 ? '' : 's'}.`,
                     });
                 } catch (error) {
-                    if (isStaleInvokeOwnerDiscoveryRequestError(error) || !isSameInvokeConnectionSource(draftRootRef.current, selected)) return;
+                    if (isStaleInvokeOwnerDiscoveryRequestError(error) || !isSameInvokeConnectionSource(draftRootRef.current, selected))
+                        return;
                     console.error(error);
                     setTestResult({
                         success: false,
@@ -264,10 +288,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const validatedDraft = validateInvokeConnectionDraft(draft, ownerDiscovery);
     const selectionRequired = ownerDiscovery?.schemaMode === 'multi_user' && !ownerSelection;
     const sourceChanged = !matchingAppliedSource;
-    const ownerSelectionChanged = !isSameInvokeOwnerSelection(
-        ownerSelection,
-        settings.invokeOwnerSelection,
-    );
+    const ownerSelectionChanged = !isSameInvokeOwnerSelection(ownerSelection, settings.invokeOwnerSelection);
     const ownerChanged = !sourceChanged && ownerSelectionChanged;
     const primaryActionLabel = sourceChanged ? 'Connect & Import' : ownerChanged ? 'Switch view' : 'Sync now';
     const actionDisabled = !validatedDraft.valid || rootControlsLocked || isTesting;
@@ -279,18 +300,20 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         setApplyResult(null);
         let continuesInGallery = false;
         try {
-            const outcome = onClose && (sourceChanged || ownerChanged)
-                ? await applyInvokeConnection(validatedDraft.draft, {
-                    onAccepted: () => {
-                        continuesInGallery = true;
-                        onClose();
-                    },
-                })
-                : await applyInvokeConnection(validatedDraft.draft);
+            const outcome =
+                onClose && (sourceChanged || ownerChanged)
+                    ? await applyInvokeConnection(validatedDraft.draft, {
+                          onAccepted: () => {
+                              continuesInGallery = true;
+                              onClose();
+                          },
+                      })
+                    : await applyInvokeConnection(validatedDraft.draft);
             if (!mountedRef.current || continuesInGallery) return;
-            const message = outcome.status === 'completed'
-                ? `${primaryActionLabel} completed.`
-                : ('message' in outcome ? outcome.message : undefined) ?? `InvokeAI ${outcome.status.replace('_', ' ')}.`;
+            const message =
+                outcome.status === 'completed'
+                    ? `${primaryActionLabel} completed.`
+                    : (('message' in outcome ? outcome.message : undefined) ?? `InvokeAI ${outcome.status.replace('_', ' ')}.`);
             setApplyResult(message);
         } catch (error) {
             console.error(error);
@@ -320,13 +343,11 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const describeSelection = (selection?: typeof ownerSelection): string => {
         if (!selection) return 'No owner selected';
         if (selection.mode === 'all') return 'All users';
-        return ownerDiscovery?.owners.find(owner => owner.ownerId === selection.ownerId)?.displayName
-            || selection.ownerId;
+        return ownerDiscovery?.owners.find((owner) => owner.ownerId === selection.ownerId)?.displayName || selection.ownerId;
     };
 
     return (
         <div className="space-y-8 max-w-2xl">
-
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-300 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
                     <DatabaseZap className="w-4 h-4" /> InvokeAI Configuration
@@ -385,7 +406,9 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             </p>
                         )}
                         {isDirty && matchingAppliedSource && (
-                            <p className="mt-2 text-[10px] text-ember-600 dark:text-ember-300">Draft import options have not been applied.</p>
+                            <p className="mt-2 text-[10px] text-ember-600 dark:text-ember-300">
+                                Draft import options have not been applied.
+                            </p>
                         )}
                         {foregroundInvokeSyncActive && syncState.status === 'syncing' && (
                             <p className="text-[10px] text-ember-600 dark:text-ember-300 mt-2">
@@ -398,10 +421,11 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         <button
                             onClick={handleTestConnection}
                             disabled={rootControlsBusy || isTesting || !draftRoot}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!draftRoot
-                                ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                                : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
-                                }`}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${
+                                !draftRoot
+                                    ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
+                                    : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
+                            }`}
                         >
                             {isTesting ? (
                                 <>
@@ -417,16 +441,18 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         </button>
 
                         {testResult && (
-                            <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in duration-150 motion-reduce:animate-none ${testResult.success
-                                ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
-                                : 'bg-red-500/10 text-red-600 dark:text-red-300'
-                                }`}>
+                            <div
+                                className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in duration-150 motion-reduce:animate-none ${
+                                    testResult.success
+                                        ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
+                                        : 'bg-red-500/10 text-red-600 dark:text-red-300'
+                                }`}
+                            >
                                 {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                                 {testResult.message}
                             </div>
                         )}
                     </div>
-
                 </div>
             </section>
 
@@ -438,8 +464,18 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
 
                     {ownerDiscovery?.schemaMode === 'multi_user' && (
                         <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-[10px] text-gray-500 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
-                            <p>Active view: <span className="font-bold text-gray-700 dark:text-gray-200">{matchingAppliedSource ? describeSelection(settings.invokeOwnerSelection) : 'current connection'}</span></p>
-                            {(sourceChanged || ownerSelectionChanged) && ownerSelection && <p className="mt-1">Pending view: <span className="font-bold text-sage-600 dark:text-sage-300">{describeSelection(ownerSelection)}</span></p>}
+                            <p>
+                                Active view:{' '}
+                                <span className="font-bold text-gray-700 dark:text-gray-200">
+                                    {matchingAppliedSource ? describeSelection(settings.invokeOwnerSelection) : 'current connection'}
+                                </span>
+                            </p>
+                            {(sourceChanged || ownerSelectionChanged) && ownerSelection && (
+                                <p className="mt-1">
+                                    Pending view:{' '}
+                                    <span className="font-bold text-sage-600 dark:text-sage-300">{describeSelection(ownerSelection)}</span>
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -448,14 +484,15 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             <Loader2 className="w-4 h-4 animate-spin" />
                             <span>
                                 <span className="block">
-                                    {invokeOwnerScopeState.progress?.message
-                                        ?? (invokeOwnerScopeState.status === 'discovering'
+                                    {invokeOwnerScopeState.progress?.message ??
+                                        (invokeOwnerScopeState.status === 'discovering'
                                             ? 'Checking InvokeAI owner information...'
                                             : 'Preparing your InvokeAI library...')}
                                 </span>
                                 {(invokeOwnerScopeState.progress?.total ?? 0) > 0 && (
                                     <span className="mt-1 block text-[10px] font-mono text-gray-400">
-                                        {invokeOwnerScopeState.progress?.current.toLocaleString()} / {invokeOwnerScopeState.progress?.total.toLocaleString()}
+                                        {invokeOwnerScopeState.progress?.current.toLocaleString()} /{' '}
+                                        {invokeOwnerScopeState.progress?.total.toLocaleString()}
                                     </span>
                                 )}
                             </span>
@@ -463,22 +500,26 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     )}
 
                     {matchingAppliedSource && invokeOwnerScopeState.status === 'error' && (
-                        <div className={`p-4 rounded-xl border ${invokeOwnerScopeState.failure?.kind === 'preparation_cancelled'
-                            ? 'bg-harbor-500/10 border-harbor-500/20 text-harbor-600 dark:text-harbor-300'
-                            : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-300'}`}>
+                        <div
+                            className={`p-4 rounded-xl border ${
+                                invokeOwnerScopeState.failure?.kind === 'preparation_cancelled'
+                                    ? 'bg-harbor-500/10 border-harbor-500/20 text-harbor-600 dark:text-harbor-300'
+                                    : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-300'
+                            }`}
+                        >
                             <p className="text-xs font-bold">
                                 {invokeOwnerScopeState.failure?.kind === 'preparation_cancelled'
                                     ? 'InvokeAI preparation cancelled'
                                     : invokeOwnerScopeState.failure?.kind === 'source_unavailable'
-                                        ? 'InvokeAI connection unavailable'
-                                        : 'InvokeAI library preparation failed'}
+                                      ? 'InvokeAI connection unavailable'
+                                      : 'InvokeAI library preparation failed'}
                             </p>
                             <p className="mt-1 text-[10px] leading-4">
                                 {invokeOwnerScopeState.failure?.kind === 'preparation_cancelled'
                                     ? 'Your connection and import options are saved for retry. InvokeAI content stays hidden until preparation finishes.'
                                     : invokeOwnerScopeState.failure?.kind === 'source_unavailable'
-                                        ? 'Ambit could not verify this InvokeAI database, so its content remains hidden.'
-                                        : 'Ambit could not finish verifying owner visibility, so its content remains hidden.'}
+                                      ? 'Ambit could not verify this InvokeAI database, so its content remains hidden.'
+                                      : 'Ambit could not finish verifying owner visibility, so its content remains hidden.'}
                             </p>
                             {invokeOwnerScopeState.error && (
                                 <details className="mt-3 text-[10px]">
@@ -486,9 +527,16 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
                                 </details>
                             )}
-                            <button type="button" disabled={isDirty || isApplying || isInvokeSyncActive} onClick={() => void handleOwnerRetry()} className={`mt-3 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-50 ${invokeOwnerScopeState.failure?.kind === 'preparation_cancelled'
-                                ? 'bg-sage-600 text-white hover:bg-sage-500'
-                                : 'bg-red-500/15 text-red-600 dark:text-red-300'}`}>
+                            <button
+                                type="button"
+                                disabled={isDirty || isApplying || isInvokeSyncActive}
+                                onClick={() => void handleOwnerRetry()}
+                                className={`mt-3 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-50 ${
+                                    invokeOwnerScopeState.failure?.kind === 'preparation_cancelled'
+                                        ? 'bg-sage-600 text-white hover:bg-sage-500'
+                                        : 'bg-red-500/15 text-red-600 dark:text-red-300'
+                                }`}
+                            >
                                 Retry
                             </button>
                         </div>
@@ -518,68 +566,65 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         </div>
                     )}
 
-                    {matchingAppliedSource && !ownerScopeBusy
-                        && invokeOwnerScopeState.status !== 'error'
-                        && invokeOwnerScopeState.status !== 'offline_ready'
-                        && invokeOwnerScopeState.warning && (
-                        <div className="mb-4 rounded-xl border border-ember-500/20 bg-ember-500/10 p-4 text-xs text-ember-600 dark:text-ember-300">
-                            {invokeOwnerScopeState.warning}
-                        </div>
-                    )}
+                    {matchingAppliedSource &&
+                        !ownerScopeBusy &&
+                        invokeOwnerScopeState.status !== 'error' &&
+                        invokeOwnerScopeState.status !== 'offline_ready' &&
+                        invokeOwnerScopeState.warning && (
+                            <div className="mb-4 rounded-xl border border-ember-500/20 bg-ember-500/10 p-4 text-xs text-ember-600 dark:text-ember-300">
+                                {invokeOwnerScopeState.warning}
+                            </div>
+                        )}
 
-                    {!ownerScopeBusy
-                        && (!matchingAppliedSource || (invokeOwnerScopeState.status !== 'error'
-                            && invokeOwnerScopeState.status !== 'offline_ready'))
-                        && ownerDiscovery?.schemaMode === 'legacy' && (
-                        <div className="p-4 rounded-xl bg-sage-500/10 border border-sage-500/20 text-xs text-gray-600 dark:text-gray-300">
-                            This InvokeAI database predates per-user ownership. Ambit keeps the existing unscoped behavior.
-                        </div>
-                    )}
+                    {!ownerScopeBusy &&
+                        (!matchingAppliedSource ||
+                            (invokeOwnerScopeState.status !== 'error' && invokeOwnerScopeState.status !== 'offline_ready')) &&
+                        ownerDiscovery?.schemaMode === 'legacy' && (
+                            <div className="p-4 rounded-xl bg-sage-500/10 border border-sage-500/20 text-xs text-gray-600 dark:text-gray-300">
+                                This InvokeAI database predates per-user ownership. Ambit keeps the existing unscoped behavior.
+                            </div>
+                        )}
 
-                    {!ownerScopeBusy
-                        && (!matchingAppliedSource || (invokeOwnerScopeState.status !== 'error'
-                            && invokeOwnerScopeState.status !== 'offline_ready'))
-                        && singleOwner && (
-                        <div className="rounded-xl border border-sage-500/20 bg-sage-500/10 p-4 text-gray-700 dark:text-gray-200">
-                            <p className="text-xs font-bold">
-                                {singleOwner.displayName || singleOwner.ownerId}
-                            </p>
-                            <p className="mt-1 text-[10px] font-mono text-gray-500 dark:text-gray-400">
-                                {singleOwner.ownerId} · {(singleOwner.imageCount - (singleOwner.intermediateImageCount ?? 0)).toLocaleString()}
-                                {singleOwner.intermediateImageCount ? ' standard images' : ' images'}
-                            </p>
-                            {!!singleOwner.intermediateImageCount && (
-                                <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                    {singleOwner.intermediateImageCount.toLocaleString()} intermediates
+                    {!ownerScopeBusy &&
+                        (!matchingAppliedSource ||
+                            (invokeOwnerScopeState.status !== 'error' && invokeOwnerScopeState.status !== 'offline_ready')) &&
+                        singleOwner && (
+                            <div className="rounded-xl border border-sage-500/20 bg-sage-500/10 p-4 text-gray-700 dark:text-gray-200">
+                                <p className="text-xs font-bold">{singleOwner.displayName || singleOwner.ownerId}</p>
+                                <p className="mt-1 text-[10px] font-mono text-gray-500 dark:text-gray-400">
+                                    {singleOwner.ownerId} ·{' '}
+                                    {(singleOwner.imageCount - (singleOwner.intermediateImageCount ?? 0)).toLocaleString()}
+                                    {singleOwner.intermediateImageCount ? ' standard images' : ' images'}
                                 </p>
-                            )}
-                            <p className="mt-3 text-xs leading-5 text-gray-600 dark:text-gray-300">
-                                Ambit found one InvokeAI owner and selected it automatically. All users would show the same library, so no scope switch is needed.
-                            </p>
-                        </div>
-                    )}
+                                {!!singleOwner.intermediateImageCount && (
+                                    <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                        {singleOwner.intermediateImageCount.toLocaleString()} intermediates
+                                    </p>
+                                )}
+                                <p className="mt-3 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                                    Ambit found one InvokeAI owner and selected it automatically. All users would show the same library, so
+                                    no scope switch is needed.
+                                </p>
+                            </div>
+                        )}
 
-                    {!ownerScopeBusy
-                        && (!matchingAppliedSource || (invokeOwnerScopeState.status !== 'error'
-                            && invokeOwnerScopeState.status !== 'offline_ready'))
-                        && ownerDiscovery?.schemaMode === 'multi_user'
-                        && !singleOwner && (
-                        <InvokeOwnerScopeSelector
-                            discovery={ownerDiscovery}
-                            selection={ownerSelection}
-                            disabled={scopeControlsBusy}
-                            selectionRequired={selectionRequired}
-                            onSelect={handleOwnerSelection}
-                        />
-                    )}
+                    {!ownerScopeBusy &&
+                        (!matchingAppliedSource ||
+                            (invokeOwnerScopeState.status !== 'error' && invokeOwnerScopeState.status !== 'offline_ready')) &&
+                        ownerDiscovery?.schemaMode === 'multi_user' &&
+                        !singleOwner && (
+                            <InvokeOwnerScopeSelector
+                                discovery={ownerDiscovery}
+                                selection={ownerSelection}
+                                disabled={scopeControlsBusy}
+                                selectionRequired={selectionRequired}
+                                onSelect={handleOwnerSelection}
+                            />
+                        )}
                 </section>
             )}
 
-            <SyncSection
-                draftSession={draftSession}
-                ownerDiscovery={ownerDiscovery}
-                isApplying={isApplying}
-            />
+            <SyncSection draftSession={draftSession} ownerDiscovery={ownerDiscovery} isApplying={isApplying} />
 
             {(draftRoot || isDirty) && (
                 <section className="rounded-xl border border-sage-500/20 bg-sage-500/5 p-6 shadow-sm">
@@ -587,8 +632,8 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         {sourceChanged
                             ? 'Connect & Import catalogs the selected images in Ambit. Existing images and collections are kept.'
                             : ownerChanged
-                                ? 'Switch view may synchronize the selected owner using these options.'
-                                : 'Sync the active InvokeAI view using these import options.'}
+                              ? 'Switch view may synchronize the selected owner using these options.'
+                              : 'Sync the active InvokeAI view using these import options.'}
                     </p>
                     <p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">Changes apply when you click the action below.</p>
                     <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
@@ -602,7 +647,15 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             {isApplying ? 'Applying…' : primaryActionLabel}
                         </button>
                         {isDirty && (
-                            <button type="button" onClick={() => { discard(); ownerDiscoverySession.reset(); }} disabled={isApplying} className="rounded-xl bg-gray-100 px-4 py-2.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    discard();
+                                    ownerDiscoverySession.reset();
+                                }}
+                                disabled={isApplying}
+                                className="rounded-xl bg-gray-100 px-4 py-2.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20"
+                            >
                                 Discard changes
                             </button>
                         )}
@@ -613,21 +666,33 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 disabled={operation?.phase === 'cancelling' || operation?.phase === 'settling'}
                                 className="rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-bold text-red-600 transition-colors hover:bg-red-500/20 dark:text-red-300"
                             >
-                                {operation?.phase === 'cancelling' ? 'Cancelling…' : operation?.phase === 'settling' ? 'Finishing…' : 'Cancel sync'}
+                                {operation?.phase === 'cancelling'
+                                    ? 'Cancelling…'
+                                    : operation?.phase === 'settling'
+                                      ? 'Finishing…'
+                                      : 'Cancel sync'}
                             </button>
                         )}
-                        {selectionRequired && <span className="text-[10px] text-ember-600 dark:text-ember-300">Choose an owner or All users before applying this connection.</span>}
-                        {applyResult && <div ref={applyResultRef} tabIndex={-1} role="status" className="text-xs font-bold text-gray-600 outline-none dark:text-gray-300">{applyResult}</div>}
+                        {selectionRequired && (
+                            <span className="text-[10px] text-ember-600 dark:text-ember-300">
+                                Choose an owner or All users before applying this connection.
+                            </span>
+                        )}
+                        {applyResult && (
+                            <div
+                                ref={applyResultRef}
+                                tabIndex={-1}
+                                role="status"
+                                className="text-xs font-bold text-gray-600 outline-none dark:text-gray-300"
+                            >
+                                {applyResult}
+                            </div>
+                        )}
                     </div>
                 </section>
             )}
 
-            <InvokeRecoverySection
-                settings={settings}
-                setSettings={setSettings}
-                hasPendingDraft={isDirty}
-                isApplying={isApplying}
-            />
+            <InvokeRecoverySection settings={settings} setSettings={setSettings} hasPendingDraft={isDirty} isApplying={isApplying} />
 
             <ConfirmDialog
                 isOpen={isAllUsersConfirmOpen}
@@ -654,8 +719,11 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         Restore collections hidden from Ambit. Source ownership and local organization are retained.
                     </p>
                     <div className="space-y-2">
-                        {hiddenCollections.map(collection => (
-                            <div key={collection.id} className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/5 dark:bg-black/20">
+                        {hiddenCollections.map((collection) => (
+                            <div
+                                key={collection.id}
+                                className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/5 dark:bg-black/20"
+                            >
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{collection.name}</p>
                                     {collection.invokeSourcePresent === false && (
@@ -667,7 +735,13 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 <button
                                     type="button"
                                     aria-label={`Restore ${collection.name}`}
-                                    disabled={restoringCollectionId === collection.id || isDirty || isApplying || isInvokeSyncActive || isLiveSyncing}
+                                    disabled={
+                                        restoringCollectionId === collection.id ||
+                                        isDirty ||
+                                        isApplying ||
+                                        isInvokeSyncActive ||
+                                        isLiveSyncing
+                                    }
                                     onClick={() => void handleRestoreCollection(collection)}
                                     className="rounded-lg bg-sage-600 px-3 py-2 text-xs font-bold text-white hover:bg-sage-500 disabled:cursor-wait disabled:opacity-60"
                                 >
@@ -703,7 +777,9 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             </div>
                             <div>
                                 <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Ready for Scan</p>
-                                <p className="text-[10px] text-gray-500">Run an audit to compare database entries with local output files.</p>
+                                <p className="text-[10px] text-gray-500">
+                                    Run an audit to compare database entries with local output files.
+                                </p>
                             </div>
                         </div>
                     ) : (
@@ -713,14 +789,18 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
                                         <Database className="w-3 h-3 text-sage-500" /> InvokeAI Database
                                     </div>
-                                    <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.totalInDb.toLocaleString()}</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">
+                                        {diagData.totalInDb.toLocaleString()}
+                                    </div>
                                     <div className="text-[9px] text-gray-500 font-medium">Synced Records</div>
                                 </div>
                                 <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
                                     <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
                                         <Files className="w-3 h-3 text-sage-500" /> Image Repository
                                     </div>
-                                    <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">
+                                        {diagData.folder.imageFiles.toLocaleString()}
+                                    </div>
                                     <div className="text-[10px] text-gray-500 font-medium">Files on Disk</div>
                                 </div>
                             </div>
@@ -732,22 +812,38 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                         Count Discrepancy Found
                                     </div>
                                     <p className="opacity-90 leading-normal">
-                                        There are <strong>{Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()}</strong> {diagData.totalInDb > diagData.folder.imageFiles ? 'extra records in the database' : 'extra files in the outputs folder'}.
+                                        There are{' '}
+                                        <strong>{Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()}</strong>{' '}
+                                        {diagData.totalInDb > diagData.folder.imageFiles
+                                            ? 'extra records in the database'
+                                            : 'extra files in the outputs folder'}
+                                        .
                                     </p>
                                     {diagData.totalInDb > diagData.folder.imageFiles && (
-                                        <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">Recommended: use "Force Full Resync" to re-validate image availability.</p>
+                                        <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">
+                                            Recommended: use "Force Full Resync" to re-validate image availability.
+                                        </p>
                                     )}
                                 </div>
                             )}
 
                             <div className="grid grid-cols-2 gap-6 pt-2">
                                 <div className="space-y-3">
-                                    <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Categories (DB)</div>
+                                    <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">
+                                        Categories (DB)
+                                    </div>
                                     <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
                                         {diagData.categories.map((c) => (
-                                            <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
-                                                <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{c.image_category}</span>
-                                                <span className="font-black text-gray-900 dark:text-white tabular-nums">{c.count.toLocaleString()}</span>
+                                            <div
+                                                key={c.image_category}
+                                                className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]"
+                                            >
+                                                <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">
+                                                    {c.image_category}
+                                                </span>
+                                                <span className="font-black text-gray-900 dark:text-white tabular-nums">
+                                                    {c.count.toLocaleString()}
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
@@ -757,9 +853,16 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Origins (DB)</div>
                                     <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
                                         {diagData.origins.map((o) => (
-                                            <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
-                                                <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{o.image_origin}</span>
-                                                <span className="font-black text-gray-900 dark:text-white tabular-nums">{o.count.toLocaleString()}</span>
+                                            <div
+                                                key={o.image_origin}
+                                                className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]"
+                                            >
+                                                <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">
+                                                    {o.image_origin}
+                                                </span>
+                                                <span className="font-black text-gray-900 dark:text-white tabular-nums">
+                                                    {o.count.toLocaleString()}
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
@@ -776,16 +879,23 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
 
                                 <div className="grid grid-cols-2 gap-2">
                                     {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]) => (
-                                        <div key={folder} className="flex justify-between items-center text-[10px] p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-lg border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
+                                        <div
+                                            key={folder}
+                                            className="flex justify-between items-center text-[10px] p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-lg border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all"
+                                        >
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <FolderOpen className="w-3 h-3 text-gray-400 flex-shrink-0" />
                                                 <span className="text-gray-500 dark:text-gray-400 truncate font-mono">{folder}</span>
                                             </div>
-                                            <span className="font-black text-gray-700 dark:text-gray-300 pl-2 tabular-nums">{count.toLocaleString()}</span>
+                                            <span className="font-black text-gray-700 dark:text-gray-300 pl-2 tabular-nums">
+                                                {count.toLocaleString()}
+                                            </span>
                                         </div>
                                     ))}
                                     {Object.keys(diagData.folder.subfolders || {}).length === 0 && (
-                                        <div className="col-span-2 text-[10px] text-gray-500 italic p-3 bg-black/5 dark:bg-black/20 rounded-xl text-center">Output repository is flat (no sub-collections found).</div>
+                                        <div className="col-span-2 text-[10px] text-gray-500 italic p-3 bg-black/5 dark:bg-black/20 rounded-xl text-center">
+                                            Output repository is flat (no sub-collections found).
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -793,7 +903,6 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     )}
                 </section>
             )}
-
         </div>
     );
 });

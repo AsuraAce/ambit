@@ -1,4 +1,3 @@
-
 import type * as React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -15,7 +14,7 @@ describe('useSelection', () => {
         width: 100,
         height: 100,
         isFavorite: false,
-        metadata: {} as any
+        metadata: {} as any,
     })) as AIImage[];
 
     beforeEach(() => {

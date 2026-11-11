@@ -10,14 +10,16 @@ vi.mock('react', async (importOriginal) => {
         lazy: (loader: () => Promise<unknown>) => {
             mocks.lazyLoads.push(loader());
             return () => null;
-        }
+        },
     };
 });
 vi.mock('react-dom/client', () => ({ default: { createRoot: mocks.createRoot }, createRoot: mocks.createRoot }));
 vi.mock('./App', () => ({ default: () => null }));
 vi.mock('./contexts/ToastContext', () => ({ ToastProvider: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('./contexts/LibraryContext', () => ({ LibraryProvider: ({ children }: { children: React.ReactNode }) => children }));
-vi.mock('./components/StartupMaintenanceGate', () => ({ StartupMaintenanceGate: ({ children }: { children: React.ReactNode }) => children }));
+vi.mock('./components/StartupMaintenanceGate', () => ({
+    StartupMaintenanceGate: ({ children }: { children: React.ReactNode }) => children,
+}));
 vi.mock('./components/StartupBoundary', () => ({ StartupBoundary: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('./utils/startupDiagnostics', () => ({
     startupDiagnostics: { mark: vi.fn() },

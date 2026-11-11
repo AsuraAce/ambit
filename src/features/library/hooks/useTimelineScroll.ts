@@ -14,7 +14,7 @@ interface UseTimelineScrollProps {
     stickyHeaderRef: RefObject<HTMLDivElement | null>;
     activeHeaderIdRef: MutableRefObject<string | null>;
     setScrollTop: (top: number) => void;
-    setActiveHeaderData: (data: { date: string, count: number } | null) => void;
+    setActiveHeaderData: (data: { date: string; count: number } | null) => void;
     hasMoreImages?: boolean;
     isLoadingMore?: boolean;
     onLoadMore?: () => void | Promise<void>;
@@ -30,75 +30,81 @@ export const useTimelineScroll = ({
     hasMoreImages = false,
     isLoadingMore = false,
     onLoadMore,
-    loadMoreThreshold = 6000
+    loadMoreThreshold = 6000,
 }: UseTimelineScrollProps) => {
     const loadMoreRequestedRef = useRef(false);
 
-    const maybeLoadMore = useCallback((container: HTMLDivElement) => {
-        if (!hasMoreImages || isLoadingMore || !onLoadMore || loadMoreRequestedRef.current) return;
+    const maybeLoadMore = useCallback(
+        (container: HTMLDivElement) => {
+            if (!hasMoreImages || isLoadingMore || !onLoadMore || loadMoreRequestedRef.current) return;
 
-        const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
-        if (distanceFromBottom >= loadMoreThreshold) return;
+            const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+            if (distanceFromBottom >= loadMoreThreshold) return;
 
-        loadMoreRequestedRef.current = true;
+            loadMoreRequestedRef.current = true;
 
-        try {
-            const result = onLoadMore();
-            void Promise.resolve(result).finally(() => {
+            try {
+                const result = onLoadMore();
+                void Promise.resolve(result).finally(() => {
+                    loadMoreRequestedRef.current = false;
+                });
+            } catch (error) {
                 loadMoreRequestedRef.current = false;
-            });
-        } catch (error) {
-            loadMoreRequestedRef.current = false;
-            console.error('[TimelineView] Failed to load more images:', error);
-        }
-    }, [hasMoreImages, isLoadingMore, onLoadMore, loadMoreThreshold]);
-
-    return useCallback((e: UIEvent<HTMLDivElement>) => {
-        const currentTarget = e.currentTarget;
-        const currentScroll = currentTarget.scrollTop;
-        setScrollTop(currentScroll);
-        maybeLoadMore(currentTarget);
-
-        if (!stickyHeaderRef.current || headers.length === 0) return;
-
-        let active: TimelineHeaderItem | null = null;
-        let next: TimelineHeaderItem | null = null;
-
-        for (let i = 0; i < headers.length; i++) {
-            if (headers[i].y <= currentScroll + 20) {
-                active = headers[i];
-            } else {
-                next = headers[i];
-                break;
+                console.error('[TimelineView] Failed to load more images:', error);
             }
-        }
+        },
+        [hasMoreImages, isLoadingMore, onLoadMore, loadMoreThreshold]
+    );
 
-        if (active) {
-            if (active.id !== activeHeaderIdRef.current) {
-                setActiveHeaderData({ date: active.date!, count: active.count! });
-                activeHeaderIdRef.current = active.id!;
-            }
+    return useCallback(
+        (e: UIEvent<HTMLDivElement>) => {
+            const currentTarget = e.currentTarget;
+            const currentScroll = currentTarget.scrollTop;
+            setScrollTop(currentScroll);
+            maybeLoadMore(currentTarget);
 
-            let yOffset = 0;
-            const headerHeight = active.height;
-            const floatMargin = 20;
+            if (!stickyHeaderRef.current || headers.length === 0) return;
 
-            if (next) {
-                const distance = next.y - currentScroll;
-                const threshold = headerHeight + floatMargin;
+            let active: TimelineHeaderItem | null = null;
+            let next: TimelineHeaderItem | null = null;
 
-                if (distance < threshold) {
-                    yOffset = distance - threshold;
+            for (let i = 0; i < headers.length; i++) {
+                if (headers[i].y <= currentScroll + 20) {
+                    active = headers[i];
+                } else {
+                    next = headers[i];
+                    break;
                 }
             }
 
-            stickyHeaderRef.current.style.transform = `translateY(${yOffset}px)`;
-            stickyHeaderRef.current.style.opacity = '1';
-            stickyHeaderRef.current.style.pointerEvents = 'auto';
-        } else {
-            stickyHeaderRef.current.style.opacity = '0';
-            stickyHeaderRef.current.style.pointerEvents = 'none';
-            activeHeaderIdRef.current = null;
-        }
-    }, [headers, stickyHeaderRef, activeHeaderIdRef, setScrollTop, maybeLoadMore, setActiveHeaderData]);
+            if (active) {
+                if (active.id !== activeHeaderIdRef.current) {
+                    setActiveHeaderData({ date: active.date!, count: active.count! });
+                    activeHeaderIdRef.current = active.id!;
+                }
+
+                let yOffset = 0;
+                const headerHeight = active.height;
+                const floatMargin = 20;
+
+                if (next) {
+                    const distance = next.y - currentScroll;
+                    const threshold = headerHeight + floatMargin;
+
+                    if (distance < threshold) {
+                        yOffset = distance - threshold;
+                    }
+                }
+
+                stickyHeaderRef.current.style.transform = `translateY(${yOffset}px)`;
+                stickyHeaderRef.current.style.opacity = '1';
+                stickyHeaderRef.current.style.pointerEvents = 'auto';
+            } else {
+                stickyHeaderRef.current.style.opacity = '0';
+                stickyHeaderRef.current.style.pointerEvents = 'none';
+                activeHeaderIdRef.current = null;
+            }
+        },
+        [headers, stickyHeaderRef, activeHeaderIdRef, setScrollTop, maybeLoadMore, setActiveHeaderData]
+    );
 };

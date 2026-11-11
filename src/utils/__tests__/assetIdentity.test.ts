@@ -4,7 +4,7 @@ import {
     getAssetMatchKeyCandidates,
     resolveAssetMatchKey,
     stripAssetExtension,
-    uniqueAssetAliases
+    uniqueAssetAliases,
 } from '../assetIdentity';
 
 describe('assetIdentity', () => {
@@ -34,13 +34,13 @@ describe('assetIdentity', () => {
     it('derives suffix candidates for InvokeAI display labels', () => {
         expect(getAssetMatchKeyCandidates('Flux Style - watercolor_flux_v1.1_rank_16_bf16')).toEqual([
             'fluxstylewatercolorfluxv11rank16bf16',
-            'watercolorfluxv11rank16bf16'
+            'watercolorfluxv11rank16bf16',
         ]);
 
         expect(getAssetMatchKeyCandidates('Pony Style - Gothic Neon, g0th1cPXL')).toEqual([
             'ponystylegothicneong0th1cpxl',
             'gothicneong0th1cpxl',
-            'g0th1cpxl'
+            'g0th1cpxl',
         ]);
 
         expect(getAssetMatchKeyCandidates('Alpha - alpha')).toEqual(['alphaalpha', 'alpha']);
@@ -51,15 +51,13 @@ describe('assetIdentity', () => {
         expect(resolveAssetMatchKey('Primary')).toBe('primary');
         expect(resolveAssetMatchKey('Primary', new Set())).toBe('primary');
         expect(resolveAssetMatchKey('Primary', new Set(['primary']))).toBe('primary');
-        expect(resolveAssetMatchKey(
-            'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
-            new Set(['watercolorfluxv11rank16bf16'])
-        )).toBe('watercolorfluxv11rank16bf16');
+        expect(resolveAssetMatchKey('Flux Style - watercolor_flux_v1.1_rank_16_bf16', new Set(['watercolorfluxv11rank16bf16']))).toBe(
+            'watercolorfluxv11rank16bf16'
+        );
 
-        expect(resolveAssetMatchKey(
-            'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
-            new Set(['differentlora'])
-        )).toBe('fluxstylewatercolorfluxv11rank16bf16');
+        expect(resolveAssetMatchKey('Flux Style - watercolor_flux_v1.1_rank_16_bf16', new Set(['differentlora']))).toBe(
+            'fluxstylewatercolorfluxv11rank16bf16'
+        );
     });
 
     it('dedupes aliases case-insensitively while preserving display order', () => {

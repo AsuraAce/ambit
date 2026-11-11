@@ -30,7 +30,7 @@ export const pickVideoPaths = async (): Promise<string[]> => {
     const selected = await open({
         multiple: true,
         directory: false,
-        filters: [{ name: 'Videos', extensions: VIDEO_FILTER_EXTENSIONS }]
+        filters: [{ name: 'Videos', extensions: VIDEO_FILTER_EXTENSIONS }],
     });
     return (Array.isArray(selected) ? selected : selected ? [selected] : [])
         .filter((path): path is string => typeof path === 'string')
@@ -51,7 +51,7 @@ export const importVideoPaths = async (
         posterFailures: 0,
         assets: [],
         handledPaths: [],
-        failedPaths: []
+        failedPaths: [],
     };
 
     for (const path of paths) {
@@ -108,10 +108,7 @@ export const importVideoPaths = async (
     return summary;
 };
 
-const mapVideoRecordToAsset = (
-    record: VideoAssetRecord,
-    thumbnailPath?: string
-): VideoAsset => {
+const mapVideoRecordToAsset = (record: VideoAssetRecord, thumbnailPath?: string): VideoAsset => {
     const normalizedPath = normalizePath(record.path);
     return {
         mediaType: 'video',
@@ -129,9 +126,7 @@ const mapVideoRecordToAsset = (
         isMissing: false,
         isCorrupt: false,
         metadata: record.metadata as ImageMetadata,
-        originalChunks: record.originalMetadataJson
-            ? { videoEvidence: record.originalMetadataJson }
-            : undefined,
+        originalChunks: record.originalMetadataJson ? { videoEvidence: record.originalMetadataJson } : undefined,
         mediaContainer: record.mediaContainer ?? undefined,
         mediaMimeType: record.mediaMimeType ?? undefined,
         durationMs: record.durationMs,
@@ -143,12 +138,11 @@ const mapVideoRecordToAsset = (
         frameRateDen: record.frameRateDen ?? undefined,
         rotationDegrees: record.rotationDegrees as VideoAsset['rotationDegrees'],
         probeStatus: 'ready',
-        playbackStatus: 'unknown'
+        playbackStatus: 'unknown',
     };
 };
 
-export const cancelVideoImport = async (operationId: string): Promise<boolean> =>
-    unwrap(commands.cancelVideoImport(operationId));
+export const cancelVideoImport = async (operationId: string): Promise<boolean> => unwrap(commands.cancelVideoImport(operationId));
 
 const countOutcome = (summary: VideoImportSummary, outcome: VideoImportOutcome) => {
     if (outcome.status === 'imported' || outcome.status === 'updated') summary.imported += 1;
@@ -162,42 +156,39 @@ const waitForVideoEvent = (
     successEvent: 'loadedmetadata' | 'seeked',
     timeoutMs = 15_000,
     shouldCancel?: () => boolean
-): Promise<void> => new Promise((resolve, reject) => {
-    // eslint-disable-next-line prefer-const -- finish() can run (shouldCancel path) before the timer is created; a const would be in its temporal dead zone
-    let timeout: number | undefined;
-    let cancellationPoll: number | undefined;
-    let settled = false;
-    const finish = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        if (timeout !== undefined) window.clearTimeout(timeout);
-        if (cancellationPoll !== undefined) window.clearInterval(cancellationPoll);
-        video.removeEventListener(successEvent, handleSuccess);
-        video.removeEventListener('error', handleError);
-        if (error) reject(error);
-        else resolve();
-    };
-    const handleSuccess = () => finish();
-    const handleError = () => finish(new Error('Browser could not decode the video for poster generation'));
-    video.addEventListener(successEvent, handleSuccess, { once: true });
-    video.addEventListener('error', handleError, { once: true });
-    if (shouldCancel?.()) {
-        finish(new VideoPosterCancelledError());
-        return;
-    }
-    timeout = window.setTimeout(() => finish(new Error(`Timed out waiting for ${successEvent}`)), timeoutMs);
-    if (shouldCancel) {
-        cancellationPoll = window.setInterval(() => {
-            if (shouldCancel()) finish(new VideoPosterCancelledError());
-        }, VIDEO_POSTER_CANCEL_POLL_MS);
-    }
-});
+): Promise<void> =>
+    new Promise((resolve, reject) => {
+        // eslint-disable-next-line prefer-const -- finish() can run (shouldCancel path) before the timer is created; a const would be in its temporal dead zone
+        let timeout: number | undefined;
+        let cancellationPoll: number | undefined;
+        let settled = false;
+        const finish = (error?: Error) => {
+            if (settled) return;
+            settled = true;
+            if (timeout !== undefined) window.clearTimeout(timeout);
+            if (cancellationPoll !== undefined) window.clearInterval(cancellationPoll);
+            video.removeEventListener(successEvent, handleSuccess);
+            video.removeEventListener('error', handleError);
+            if (error) reject(error);
+            else resolve();
+        };
+        const handleSuccess = () => finish();
+        const handleError = () => finish(new Error('Browser could not decode the video for poster generation'));
+        video.addEventListener(successEvent, handleSuccess, { once: true });
+        video.addEventListener('error', handleError, { once: true });
+        if (shouldCancel?.()) {
+            finish(new VideoPosterCancelledError());
+            return;
+        }
+        timeout = window.setTimeout(() => finish(new Error(`Timed out waiting for ${successEvent}`)), timeoutMs);
+        if (shouldCancel) {
+            cancellationPoll = window.setInterval(() => {
+                if (shouldCancel()) finish(new VideoPosterCancelledError());
+            }, VIDEO_POSTER_CANCEL_POLL_MS);
+        }
+    });
 
-export const captureVideoPoster = async (
-    path: string,
-    durationMs: number,
-    shouldCancel?: () => boolean
-): Promise<string> => {
+export const captureVideoPoster = async (path: string, durationMs: number, shouldCancel?: () => boolean): Promise<string> => {
     if (shouldCancel?.()) throw new VideoPosterCancelledError();
     const video = document.createElement('video');
     video.crossOrigin = 'anonymous';
@@ -210,9 +201,7 @@ export const captureVideoPoster = async (
         await metadataReady;
         if (shouldCancel?.()) throw new VideoPosterCancelledError();
 
-        const knownDuration = Number.isFinite(video.duration) && video.duration > 0
-            ? video.duration
-            : durationMs / 1000;
+        const knownDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : durationMs / 1000;
         const seekTarget = Math.min(1, knownDuration * 0.1);
         if (seekTarget > 0) {
             const seeked = waitForVideoEvent(video, 'seeked', 15_000, shouldCancel);

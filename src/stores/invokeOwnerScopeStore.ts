@@ -20,8 +20,7 @@ export interface InvokeOwnerScopeState {
     progress?: SyncProgress;
 }
 
-type InvokeOwnerScopeStateUpdate = InvokeOwnerScopeState
-    | ((previous: InvokeOwnerScopeState) => InvokeOwnerScopeState);
+type InvokeOwnerScopeStateUpdate = InvokeOwnerScopeState | ((previous: InvokeOwnerScopeState) => InvokeOwnerScopeState);
 
 /** Operation lifetime is independent of whether the selected view is safe to browse. */
 export interface InvokeOperationState {
@@ -51,28 +50,24 @@ interface InvokeOwnerScopeStore {
 
 const INITIAL_OWNER_SCOPE_STATE: InvokeOwnerScopeState = { status: 'idle' };
 
-export const isInvokeOwnerScopeAdmitted = (
-    configuredPath: string | null | undefined,
-    state: InvokeOwnerScopeState
-): boolean => {
+export const isInvokeOwnerScopeAdmitted = (configuredPath: string | null | undefined, state: InvokeOwnerScopeState): boolean => {
     const configuredRoot = normalizeInvokeRoot(configuredPath);
     if (!configuredRoot) return true;
 
     const admittedRoot = normalizeInvokeRoot(state.rootPath ?? state.discovery?.imagesRoot);
-    return admittedRoot === configuredRoot
-        && (state.status === 'ready' || state.status === 'offline_ready');
+    return admittedRoot === configuredRoot && (state.status === 'ready' || state.status === 'offline_ready');
 };
 
 export const useInvokeOwnerScopeStore = create<InvokeOwnerScopeStore>((set) => ({
     ownerScopeState: INITIAL_OWNER_SCOPE_STATE,
     operation: null,
-    setOperation: (update) => set(current => ({
-        operation: typeof update === 'function' ? update(current.operation) : update,
-    })),
-    setOwnerScopeState: (update) => set(current => ({
-        ownerScopeState: typeof update === 'function'
-            ? update(current.ownerScopeState)
-            : update,
-    })),
+    setOperation: (update) =>
+        set((current) => ({
+            operation: typeof update === 'function' ? update(current.operation) : update,
+        })),
+    setOwnerScopeState: (update) =>
+        set((current) => ({
+            ownerScopeState: typeof update === 'function' ? update(current.ownerScopeState) : update,
+        })),
     resetOwnerScopeState: () => set({ ownerScopeState: INITIAL_OWNER_SCOPE_STATE, operation: null }),
 }));

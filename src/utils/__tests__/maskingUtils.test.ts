@@ -68,7 +68,7 @@ describe('maskingUtils', () => {
         it('should return false if prompt is empty', () => {
             const emptyPromptImage = {
                 ...mockImage,
-                metadata: { ...mockImage.metadata, positivePrompt: '' }
+                metadata: { ...mockImage.metadata, positivePrompt: '' },
             };
             expect(isImageMasked(emptyPromptImage, true, ['sunset'])).toBe(false);
         });
@@ -80,7 +80,7 @@ describe('maskingUtils', () => {
         it('should handle missing positive prompt gracefully', () => {
             const missingPromptImage = {
                 ...mockImage,
-                metadata: { ...mockImage.metadata, positivePrompt: undefined as any }
+                metadata: { ...mockImage.metadata, positivePrompt: undefined as any },
             };
             expect(isImageMasked(missingPromptImage, true, ['sunset'])).toBe(false);
         });

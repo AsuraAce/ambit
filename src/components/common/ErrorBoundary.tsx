@@ -13,7 +13,7 @@ interface State {
 export class ErrorBoundary extends Component<Props, State> {
     public state: State = {
         hasError: false,
-        error: null
+        error: null,
     };
 
     public static getDerivedStateFromError(error: Error): State {
@@ -29,14 +29,16 @@ export class ErrorBoundary extends Component<Props, State> {
             if (this.props.fallback) return this.props.fallback;
 
             return (
-                <div style={{
-                    padding: '20px',
-                    backgroundColor: 'var(--error-fallback-surface)',
-                    border: '1px solid var(--error-fallback-border)',
-                    borderRadius: '8px',
-                    margin: '10px',
-                    color: 'var(--error-fallback-text)'
-                }}>
+                <div
+                    style={{
+                        padding: '20px',
+                        backgroundColor: 'var(--error-fallback-surface)',
+                        border: '1px solid var(--error-fallback-border)',
+                        borderRadius: '8px',
+                        margin: '10px',
+                        color: 'var(--error-fallback-text)',
+                    }}
+                >
                     <h2>Something went wrong in this section.</h2>
                     <details style={{ whiteSpace: 'pre-wrap', marginTop: '10px', fontSize: '12px', opacity: 0.8 }}>
                         {this.state.error && this.state.error.toString()}
@@ -50,7 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
                             color: 'var(--error-fallback-button-text)',
                             border: 'none',
                             borderRadius: '4px',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
                         }}
                     >
                         Try again

@@ -3,177 +3,183 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Trash2, X, Loader2 } from 'lucide-react';
 
 interface ConfirmDialogProps {
-  isOpen: boolean;
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  isDangerous?: boolean;
-  onConfirm: () => void | Promise<void>;
-  onCancel: () => void;
-  zIndex?: number;
-  isLoading?: boolean;
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    isDangerous?: boolean;
+    onConfirm: () => void | Promise<void>;
+    onCancel: () => void;
+    zIndex?: number;
+    isLoading?: boolean;
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
-  isOpen,
-  title,
-  message,
-  confirmLabel = "Confirm",
-  isDangerous = false,
-  onConfirm,
-  onCancel,
-  zIndex = 60,
-  isLoading = false
+    isOpen,
+    title,
+    message,
+    confirmLabel = 'Confirm',
+    isDangerous = false,
+    onConfirm,
+    onCancel,
+    zIndex = 60,
+    isLoading = false,
 }) => {
-  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
-  const dialogRef = React.useRef<HTMLDivElement>(null);
-  const titleId = React.useId();
-  const messageId = React.useId();
+    const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+    const dialogRef = React.useRef<HTMLDivElement>(null);
+    const titleId = React.useId();
+    const messageId = React.useId();
 
-  React.useEffect(() => {
-    if (!isOpen) return;
+    React.useEffect(() => {
+        if (!isOpen) return;
 
-    const previousFocus = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    return () => {
-      if (previousFocus?.isConnected) previousFocus.focus();
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, [isOpen]);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+        if (isLoading) dialogRef.current?.focus();
+        else closeButtonRef.current?.focus();
+    }, [isLoading, isOpen]);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && !isLoading) {
+                event.preventDefault();
+                onCancel();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isLoading, isOpen, onCancel]);
+
+    const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Tab') return;
+        const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? []);
+        if (focusable.length === 0) {
+            event.preventDefault();
+            dialogRef.current?.focus();
+            return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
     };
-  }, [isOpen]);
 
-  React.useEffect(() => {
-    if (!isOpen) return;
-    if (isLoading) dialogRef.current?.focus();
-    else closeButtonRef.current?.focus();
-  }, [isLoading, isOpen]);
+    return (
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    style={{ zIndex }}
+                    className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md"
+                >
+                    {/* Overlay click to cancel (disabled while loading) */}
+                    <div className="absolute inset-0" onClick={!isLoading ? onCancel : undefined} />
 
-  React.useEffect(() => {
-    if (!isOpen) return;
+                    <motion.div
+                        ref={dialogRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby={titleId}
+                        aria-describedby={messageId}
+                        aria-busy={isLoading}
+                        tabIndex={-1}
+                        initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        className="relative w-full max-w-sm bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-gray-200/50 dark:border-white/10 rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={handleDialogKeyDown}
+                    >
+                        {/* Header / Accent Bar */}
+                        <div
+                            className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-sage-500 to-sage-600'}`}
+                        />
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isLoading) {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
+                        <div className="p-8">
+                            <div className="flex flex-col items-center text-center">
+                                <div
+                                    className={`p-4 rounded-2xl mb-6 shadow-xl ${
+                                        isDangerous
+                                            ? 'bg-red-50 dark:bg-red-500/10 text-red-500'
+                                            : 'bg-sage-50 dark:bg-sage-500/10 text-sage-600 dark:text-sage-300'
+                                    }`}
+                                >
+                                    {isDangerous ? <Trash2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
+                                </div>
 
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading, isOpen, onCancel]);
+                                <h3 id={titleId} className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">
+                                    {title}
+                                </h3>
+                                <p id={messageId} className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-[240px]">
+                                    {message}
+                                </p>
+                            </div>
 
-  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab') return;
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? []
+                            <div className="mt-10 flex flex-col gap-3">
+                                <button
+                                    onClick={() => {
+                                        void onConfirm();
+                                    }}
+                                    disabled={isLoading}
+                                    aria-label={isLoading ? 'Processing...' : undefined}
+                                    className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${
+                                        isDangerous
+                                            ? 'bg-gradient-to-br from-red-500 to-red-600 hover:shadow-red-500/40'
+                                            : 'bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-sage-500/40'
+                                    } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
+                                >
+                                    {isLoading ? (
+                                        <span className="flex items-center justify-center gap-2">
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            Processing...
+                                        </span>
+                                    ) : (
+                                        confirmLabel
+                                    )}
+                                </button>
+                                <button
+                                    onClick={onCancel}
+                                    disabled={isLoading}
+                                    className={`w-full py-3 px-6 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors rounded-2xl flex items-center justify-center gap-2 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Close Button Top Right */}
+                        <button
+                            ref={closeButtonRef}
+                            type="button"
+                            aria-label="Close Dialog"
+                            onClick={onCancel}
+                            disabled={isLoading}
+                            className={`absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all ${isLoading ? 'opacity-0 pointer-events-none' : ''}`}
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
-    if (focusable.length === 0) {
-      event.preventDefault();
-      dialogRef.current?.focus();
-      return;
-    }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          style={{ zIndex }}
-          className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md"
-        >
-          {/* Overlay click to cancel (disabled while loading) */}
-          <div className="absolute inset-0" onClick={!isLoading ? onCancel : undefined} />
-
-          <motion.div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            aria-describedby={messageId}
-            aria-busy={isLoading}
-            tabIndex={-1}
-            initial={{ opacity: 0, scale: 0.9, y: 30 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="relative w-full max-w-sm bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-gray-200/50 dark:border-white/10 rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={handleDialogKeyDown}
-          >
-            {/* Header / Accent Bar */}
-            <div className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-sage-500 to-sage-600'}`} />
-
-            <div className="p-8">
-              <div className="flex flex-col items-center text-center">
-                <div className={`p-4 rounded-2xl mb-6 shadow-xl ${isDangerous
-                  ? 'bg-red-50 dark:bg-red-500/10 text-red-500'
-                  : 'bg-sage-50 dark:bg-sage-500/10 text-sage-600 dark:text-sage-300'
-                  }`}>
-                  {isDangerous ? <Trash2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
-                </div>
-
-                <h3 id={titleId} className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">
-                  {title}
-                </h3>
-                <p id={messageId} className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-[240px]">
-                  {message}
-                </p>
-              </div>
-
-              <div className="mt-10 flex flex-col gap-3">
-                <button
-                  onClick={() => { void onConfirm(); }}
-                  disabled={isLoading}
-                  aria-label={isLoading ? 'Processing...' : undefined}
-                  className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${isDangerous
-                    ? 'bg-gradient-to-br from-red-500 to-red-600 hover:shadow-red-500/40'
-                    : 'bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-sage-500/40'
-                    } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Processing...
-                    </span>
-                  ) : confirmLabel}
-                </button>
-                <button
-                  onClick={onCancel}
-                  disabled={isLoading}
-                  className={`w-full py-3 px-6 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors rounded-2xl flex items-center justify-center gap-2 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-
-            {/* Close Button Top Right */}
-            <button
-              ref={closeButtonRef}
-              type="button"
-              aria-label="Close Dialog"
-              onClick={onCancel}
-              disabled={isLoading}
-              className={`absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all ${isLoading ? 'opacity-0 pointer-events-none' : ''}`}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
 };

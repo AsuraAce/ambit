@@ -20,9 +20,7 @@ export const openInvokeSourceDatabase = async (dbPath: string): Promise<InvokeSo
     const db: InvokeSourceDatabase = {
         select: async <T>(query: string, bindValues: unknown[] = []): Promise<T> => {
             const result = await unwrap(commands.selectInvokeSource(dbPath, query, bindValues.map(toSourceParam)));
-            return result.rows.map(row => Object.fromEntries(
-                result.columns.map((column, index) => [column, row[index] ?? null])
-            )) as T;
+            return result.rows.map((row) => Object.fromEntries(result.columns.map((column, index) => [column, row[index] ?? null]))) as T;
         },
     };
     // Fail at open time, as the SQL plugin did, when the path is out of scope or unreadable.

@@ -48,17 +48,11 @@ const FOCUSABLE_SELECTOR = [
     '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
-export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
-    isOpen,
-    mode,
-    onComplete,
-    onClose,
-    onOpenSettings,
-}) => {
+export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, mode, onComplete, onClose, onOpenSettings }) => {
     const brandGlyphSrc = '/branding/ambit-glyph.svg';
-    const settings = useSettingsStore(state => state.settings);
-    const geminiApiKey = useSettingsStore(state => state.geminiApiKey);
-    const setGeminiApiKey = useSettingsStore(state => state.setGeminiApiKey);
+    const settings = useSettingsStore((state) => state.settings);
+    const geminiApiKey = useSettingsStore((state) => state.geminiApiKey);
+    const setGeminiApiKey = useSettingsStore((state) => state.setGeminiApiKey);
     const isEnvKey = !!process.env.API_KEY;
     const { addToast } = useToast();
 
@@ -80,9 +74,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const promptMaskingEnabled = promptMaskingDraft ?? settings.promptMaskingEnabled;
     const trimmedApiKey = apiKey.trim();
     const hasStoredKey = !isEnvKey && !!geminiApiKey && trimmedApiKey === geminiApiKey;
-    const apiKeyInputStatus = verificationStatus === 'idle' && hasStoredKey
-        ? 'configured'
-        : verificationStatus;
+    const apiKeyInputStatus = verificationStatus === 'idle' && hasStoredKey ? 'configured' : verificationStatus;
     const hasConfiguredAiKey = hasStoredKey || verificationStatus === 'success';
     const needsAiSetup = step === 3 && enableAI && !hasConfiguredAiKey;
     const canContinue = !needsAiSetup && !isVerifying && !isCompleting;
@@ -91,9 +83,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     useLayoutEffect(() => {
         if (!isOpen) return;
 
-        const activeElement = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         if (!activeElement || !dialogRef.current?.contains(activeElement)) {
             previousFocusRef.current = activeElement;
         }
@@ -117,9 +107,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
         if (event.key !== 'Tab' || !dialogRef.current) return;
 
-        const focusableElements = Array.from(
-            dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-        ).filter(element => element.tabIndex >= 0 && !element.hasAttribute('disabled'));
+        const focusableElements = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+            (element) => element.tabIndex >= 0 && !element.hasAttribute('disabled')
+        );
 
         if (focusableElements.length === 0) {
             event.preventDefault();
@@ -129,9 +119,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
         const firstElement = focusableElements[0];
         const lastElement = focusableElements[focusableElements.length - 1];
-        const activeElement = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
+        const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
         if (!activeElement || !focusableElements.includes(activeElement)) {
             event.preventDefault();
@@ -171,10 +159,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             }
 
             setVerificationStatus('success');
-            addToast(
-                overrideKey ? 'Environment API key verified' : 'API key verified and saved securely',
-                'success'
-            );
+            addToast(overrideKey ? 'Environment API key verified' : 'API key verified and saved securely', 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             setVerificationStatus('error');
@@ -187,7 +172,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
     const handleNext = async () => {
         if (step < TOTAL_STEPS) {
-            setStep(current => Math.min(TOTAL_STEPS, current + 1));
+            setStep((current) => Math.min(TOTAL_STEPS, current + 1));
             return;
         }
 
@@ -206,7 +191,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     };
 
     const handleBack = () => {
-        setStep(current => Math.max(1, current - 1));
+        setStep((current) => Math.max(1, current - 1));
     };
 
     const handleSetUpLater = () => {
@@ -218,11 +203,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
     if (!isOpen) {
         return mode === 'firstRun' ? (
-            <div
-                data-testid="onboarding-backdrop"
-                aria-hidden="true"
-                className={ONBOARDING_BACKDROP_CLASS}
-            />
+            <div data-testid="onboarding-backdrop" aria-hidden="true" className={ONBOARDING_BACKDROP_CLASS} />
         ) : null;
     }
 
@@ -252,17 +233,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             <img src={brandGlyphSrc} alt="" className="h-10 w-10 drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
                         </motion.div>
                         <h1 className="mb-2 text-3xl font-semibold uppercase leading-tight tracking-[0.18em] text-white/92">{APP_NAME}</h1>
-                        <p className="text-sm leading-relaxed text-sage-100/50">Your local-first workspace for generated images and photography.</p>
+                        <p className="text-sm leading-relaxed text-sage-100/50">
+                            Your local-first workspace for generated images and photography.
+                        </p>
                     </div>
 
                     <ol aria-label="Onboarding progress" className="relative z-10 space-y-4">
                         {STEP_LABELS.map((label, index) => (
-                            <StepIndicator
-                                key={label}
-                                current={step}
-                                step={index + 1}
-                                label={label}
-                            />
+                            <StepIndicator key={label} current={step} step={index + 1} label={label} />
                         ))}
                     </ol>
                 </aside>
@@ -310,14 +288,27 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 Organize your AI image library
                                             </h2>
                                             <p className="text-base leading-relaxed text-gray-500 dark:text-gray-400 sm:text-lg">
-                                                Bring images from InvokeAI, ComfyUI, SD WebUI, and other folders into one searchable local library.
+                                                Bring images from InvokeAI, ComfyUI, SD WebUI, and other folders into one searchable local
+                                                library.
                                             </p>
                                         </div>
 
                                         <div className="space-y-3">
-                                            <FeatureRow icon={<Search className="h-6 w-6 text-sage-400" />} title="One searchable library" desc="Find images across prompts, models, tags, dates, and generation settings." />
-                                            <FeatureRow icon={<BrainCircuit className="h-6 w-6 text-sage-400" />} title="Native generation metadata" desc="Inspect prompts, seeds, parameters, and supported workflow data." />
-                                            <FeatureRow icon={<Lock className="h-6 w-6 text-sage-400" />} title="Local-first by default" desc="Your catalog stays on this machine, with optional network features under your control." />
+                                            <FeatureRow
+                                                icon={<Search className="h-6 w-6 text-sage-400" />}
+                                                title="One searchable library"
+                                                desc="Find images across prompts, models, tags, dates, and generation settings."
+                                            />
+                                            <FeatureRow
+                                                icon={<BrainCircuit className="h-6 w-6 text-sage-400" />}
+                                                title="Native generation metadata"
+                                                desc="Inspect prompts, seeds, parameters, and supported workflow data."
+                                            />
+                                            <FeatureRow
+                                                icon={<Lock className="h-6 w-6 text-sage-400" />}
+                                                title="Local-first by default"
+                                                desc="Your catalog stays on this machine, with optional network features under your control."
+                                            />
                                         </div>
                                     </div>
                                 ) : null}
@@ -361,7 +352,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                                         <div className="rounded-2xl border border-sage-500/10 bg-sage-500/5 p-4 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
                                             <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                                                Ambit watches connected folders for new images. InvokeAI can also sync supported favorites and boards.
+                                                Ambit watches connected folders for new images. InvokeAI can also sync supported favorites
+                                                and boards.
                                             </p>
                                             <button
                                                 type="button"
@@ -392,10 +384,26 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                         </div>
 
                                         <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <CompactFeature icon={<History className="h-4 w-4" />} title="AI Prompt Recovery" description="Infer a replacement prompt from an image" />
-                                            <CompactFeature icon={<BrainCircuit className="h-4 w-4" />} title="Prompt Analysis" description="Review a prompt and suggest improvements" />
-                                            <CompactFeature icon={<Wand2 className="h-4 w-4" />} title="Prompt Variations" description="Generate alternate prompt ideas" />
-                                            <CompactFeature icon={<Search className="h-4 w-4" />} title="Natural-language search" description="Turn requests into library filters" />
+                                            <CompactFeature
+                                                icon={<History className="h-4 w-4" />}
+                                                title="AI Prompt Recovery"
+                                                description="Infer a replacement prompt from an image"
+                                            />
+                                            <CompactFeature
+                                                icon={<BrainCircuit className="h-4 w-4" />}
+                                                title="Prompt Analysis"
+                                                description="Review a prompt and suggest improvements"
+                                            />
+                                            <CompactFeature
+                                                icon={<Wand2 className="h-4 w-4" />}
+                                                title="Prompt Variations"
+                                                description="Generate alternate prompt ideas"
+                                            />
+                                            <CompactFeature
+                                                icon={<Search className="h-4 w-4" />}
+                                                title="Natural-language search"
+                                                description="Turn requests into library filters"
+                                            />
                                         </div>
 
                                         <button
@@ -407,21 +415,22 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                             onClick={() => setEnableAIDraft(!enableAI)}
                                             className={`mb-5 flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amethyst-500 disabled:cursor-not-allowed disabled:opacity-50 ${enableAI ? 'border-amethyst-500/50 bg-amethyst-500/5' : 'border-gray-200 dark:border-white/10'}`}
                                         >
-                                            <span aria-hidden="true" className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all ${enableAI ? 'border-amethyst-500 bg-amethyst-500 shadow-lg shadow-amethyst-500/20' : 'border-gray-400'}`}>
+                                            <span
+                                                aria-hidden="true"
+                                                className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all ${enableAI ? 'border-amethyst-500 bg-amethyst-500 shadow-lg shadow-amethyst-500/20' : 'border-gray-400'}`}
+                                            >
                                                 {enableAI ? <Check className="h-4 w-4 text-white" /> : null}
                                             </span>
                                             <span className="flex-1">
                                                 <span className="block font-bold text-gray-900 dark:text-white">Enable AI features</span>
-                                                <span className="text-xs text-gray-500">Gemini is contacted only when you verify the key or run an AI action.</span>
+                                                <span className="text-xs text-gray-500">
+                                                    Gemini is contacted only when you verify the key or run an AI action.
+                                                </span>
                                             </span>
                                         </button>
 
                                         {enableAI ? (
-                                            <motion.div
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 1 }}
-                                                className="space-y-3"
-                                            >
+                                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
                                                 <ApiKeyInput
                                                     value={apiKey}
                                                     onChange={(value) => {
@@ -465,9 +474,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 Privacy & control
                                             </h2>
                                             <div className="space-y-2">
-                                                <PrivacyRow icon={<ServerOff className="h-6 w-6" />} title="Stored locally" description="Your image catalog, metadata, and settings stay on this machine. Ambit does not send telemetry." />
-                                                <PrivacyRow icon={<FileJson className="h-6 w-6" />} title="Gemini requests" description="Images or prompts are sent to Google only when you verify the key or run an AI action." />
-                                                <PrivacyRow icon={<Link2 className="h-6 w-6" />} title="Optional network access" description="Ambit can check GitHub Releases at startup when updates are enabled. CivitAI lookups run only after you confirm Resolve Online." />
+                                                <PrivacyRow
+                                                    icon={<ServerOff className="h-6 w-6" />}
+                                                    title="Stored locally"
+                                                    description="Your image catalog, metadata, and settings stay on this machine. Ambit does not send telemetry."
+                                                />
+                                                <PrivacyRow
+                                                    icon={<FileJson className="h-6 w-6" />}
+                                                    title="Gemini requests"
+                                                    description="Images or prompts are sent to Google only when you verify the key or run an AI action."
+                                                />
+                                                <PrivacyRow
+                                                    icon={<Link2 className="h-6 w-6" />}
+                                                    title="Optional network access"
+                                                    description="Ambit can check GitHub Releases at startup when updates are enabled. CivitAI lookups run only after you confirm Resolve Online."
+                                                />
                                             </div>
                                         </div>
 
@@ -479,7 +500,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 <div className="flex-1">
                                                     <h3 className="font-bold text-gray-900 dark:text-white">Use prompt keywords</h3>
                                                     <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                                                        While Privacy Mode is on, also mask images whose positive prompts contain a saved keyword. Manual image masks remain protected when this is off, and the keyword list is retained.
+                                                        While Privacy Mode is on, also mask images whose positive prompts contain a saved
+                                                        keyword. Manual image masks remain protected when this is off, and the keyword list
+                                                        is retained.
                                                     </p>
                                                 </div>
                                                 <button
@@ -505,8 +528,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                     <footer className="relative z-10 mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-white/5">
                         <div aria-hidden="true" className="hidden gap-1.5 sm:flex">
-                            {[1, 2, 3, 4].map(item => (
-                                <span key={item} className={`h-1.5 rounded-full transition-all duration-500 ${item === step ? 'w-10 bg-sage-500' : 'w-2 bg-gray-200 dark:bg-white/10'}`} />
+                            {[1, 2, 3, 4].map((item) => (
+                                <span
+                                    key={item}
+                                    className={`h-1.5 rounded-full transition-all duration-500 ${item === step ? 'w-10 bg-sage-500' : 'w-2 bg-gray-200 dark:bg-white/10'}`}
+                                />
                             ))}
                         </div>
 
@@ -557,7 +583,10 @@ const StepIndicator = ({ current, step, label }: { current: number; step: number
             aria-current={active ? 'step' : undefined}
             className={`flex items-center gap-4 transition-all duration-500 ${active ? 'translate-x-1 opacity-100' : 'opacity-40'}`}
         >
-            <span aria-hidden="true" className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-black shadow-sm transition-all duration-500 ${active ? 'scale-110 border-white bg-white text-zinc-900 shadow-lg shadow-white/20' : completed ? 'border-sage-500 bg-sage-500 text-white' : 'border-white/20 text-white'}`}>
+            <span
+                aria-hidden="true"
+                className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-black shadow-sm transition-all duration-500 ${active ? 'scale-110 border-white bg-white text-zinc-900 shadow-lg shadow-white/20' : completed ? 'border-sage-500 bg-sage-500 text-white' : 'border-white/20 text-white'}`}
+            >
                 {completed ? <Check className="h-4 w-4 stroke-[3]" /> : step}
             </span>
             <span className={`text-sm tracking-wide transition-all ${active ? 'font-black' : 'font-medium'}`}>{label}</span>
@@ -591,7 +620,9 @@ const CompactFeature = ({ icon, title, description }: { icon: React.ReactNode; t
 
 const PrivacyRow = ({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) => (
     <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-white/5 dark:bg-white/5">
-        <span aria-hidden="true" className="mt-1 text-sage-500">{icon}</span>
+        <span aria-hidden="true" className="mt-1 text-sage-500">
+            {icon}
+        </span>
         <div className="flex-1">
             <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h3>
             <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{description}</p>
@@ -607,7 +638,6 @@ interface IntegrationCardProps {
 }
 
 const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features, onSetup }) => {
-
     return (
         <motion.button
             type="button"
@@ -620,8 +650,11 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features
             </span>
             <span className="mb-3 block text-sm font-black tracking-tight text-gray-900 dark:text-white">{title}</span>
             <span className="mb-4 block space-y-2">
-                {features.map(feature => (
-                    <span key={feature} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                {features.map((feature) => (
+                    <span
+                        key={feature}
+                        className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+                    >
                         <span aria-hidden="true" className="h-1 w-1 rounded-full bg-gray-400" />
                         {feature}
                     </span>

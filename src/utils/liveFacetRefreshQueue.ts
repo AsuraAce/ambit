@@ -6,7 +6,7 @@ import {
     mergeTouchedFacetResources,
     orderFacetTypes,
     TouchedFacetResources,
-    touchedFacetResourcesToTypes
+    touchedFacetResourcesToTypes,
 } from './touchedFacetTypes';
 
 export interface LiveFacetRefreshQueueMeta {
@@ -42,15 +42,12 @@ const mergeSource = (
     return 'mixed';
 };
 
-const mergeMeta = (
-    current: LiveFacetRefreshQueueMeta | null,
-    next: LiveFacetRefreshQueueMeta
-): LiveFacetRefreshQueueMeta => {
+const mergeMeta = (current: LiveFacetRefreshQueueMeta | null, next: LiveFacetRefreshQueueMeta): LiveFacetRefreshQueueMeta => {
     if (!current) {
         return {
             ...next,
             changedImageCount: next.changedImageCount ?? 0,
-            mergedRunCount: next.mergedRunCount ?? 1
+            mergedRunCount: next.mergedRunCount ?? 1,
         };
     }
 
@@ -58,7 +55,7 @@ const mergeMeta = (
         source: mergeSource(current.source, next.source),
         cycleId: current.cycleId === next.cycleId ? current.cycleId : undefined,
         changedImageCount: current.changedImageCount! + (next.changedImageCount ?? 0),
-        mergedRunCount: current.mergedRunCount! + (next.mergedRunCount ?? 1)
+        mergedRunCount: current.mergedRunCount! + (next.mergedRunCount ?? 1),
     };
 };
 
@@ -66,7 +63,7 @@ export const createLiveFacetRefreshQueue = ({
     onRefreshApplied,
     runFullFallback,
     runIncremental,
-    runResourceIncremental
+    runResourceIncremental,
 }: LiveFacetRefreshQueueOptions) => {
     let activePromise: Promise<void> | null = null;
     let pendingFacetTypes = new Set<FacetType>();
@@ -86,12 +83,12 @@ export const createLiveFacetRefreshQueue = ({
                 cycleId: meta.cycleId,
                 source: meta.source,
                 changedImageCount: meta.changedImageCount ?? 0,
-                reason: 'no-touched-facet-types'
+                reason: 'no-touched-facet-types',
             });
             return Promise.resolve();
         }
 
-        orderedFacetTypes.forEach(type => pendingFacetTypes.add(type));
+        orderedFacetTypes.forEach((type) => pendingFacetTypes.add(type));
         pendingResources = mergeTouchedFacetResources(pendingResources, resources);
         pendingMeta = mergeMeta(pendingMeta, meta);
 
@@ -101,7 +98,7 @@ export const createLiveFacetRefreshQueue = ({
                 source: pendingMeta.source,
                 facetTypes: orderFacetTypes(pendingFacetTypes),
                 changedImageCount: pendingMeta.changedImageCount,
-                mergedRunCount: pendingMeta.mergedRunCount
+                mergedRunCount: pendingMeta.mergedRunCount,
             });
             return activePromise;
         }
@@ -135,7 +132,7 @@ export const createLiveFacetRefreshQueue = ({
                         mode: useResourceRefresh ? 'resource-incremental' : 'incremental',
                         entryCount,
                         incrementalMs,
-                        totalMs: elapsedMs(refreshStartedAt)
+                        totalMs: elapsedMs(refreshStartedAt),
                     });
                 } catch (incrementalError) {
                     const incrementalMs = elapsedMs(incrementalStartedAt);
@@ -147,7 +144,7 @@ export const createLiveFacetRefreshQueue = ({
                         changedImageCount: currentMeta.changedImageCount,
                         mergedRunCount: currentMeta.mergedRunCount,
                         incrementalMs,
-                        error: formatErrorMessage(incrementalError)
+                        error: formatErrorMessage(incrementalError),
                     });
 
                     const fullRefreshStartedAt = liveWatchNow();
@@ -167,7 +164,7 @@ export const createLiveFacetRefreshQueue = ({
                             entryCount,
                             incrementalMs,
                             fullRefreshMs,
-                            totalMs: elapsedMs(refreshStartedAt)
+                            totalMs: elapsedMs(refreshStartedAt),
                         });
                     } catch (fullRefreshError) {
                         console.error('[LiveWatch] Failed to refresh facet cache after live changes', fullRefreshError);
@@ -182,6 +179,6 @@ export const createLiveFacetRefreshQueue = ({
     };
 
     return {
-        queue
+        queue,
     };
 };

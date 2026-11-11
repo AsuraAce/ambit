@@ -6,10 +6,10 @@ vi.mock('../liveWatchPerf', () => ({
     debugLiveWatchPerf: vi.fn(),
     elapsedMs: vi.fn(() => 1),
     infoLiveWatchPerf: vi.fn(),
-    liveWatchNow: vi.fn(() => 1000)
+    liveWatchNow: vi.fn(() => 1000),
 }));
 
-const createDeferred = <T,>() => {
+const createDeferred = <T>() => {
     let resolve!: (value: T) => void;
     let reject!: (error?: unknown) => void;
     const promise = new Promise<T>((res, rej) => {
@@ -35,13 +35,13 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental,
             runFullFallback,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         const activeRefresh = queue.queue(['checkpoints'], {
             source: 'invoke',
             cycleId: 'cycle-1',
-            changedImageCount: 1
+            changedImageCount: 1,
         });
 
         await Promise.resolve();
@@ -49,7 +49,7 @@ describe('createLiveFacetRefreshQueue', () => {
         const mergedRefresh = queue.queue(['tools', 'loras'], {
             source: 'generic',
             cycleId: 'cycle-2',
-            changedImageCount: 2
+            changedImageCount: 2,
         });
 
         expect(activeRefresh).toBe(mergedRefresh);
@@ -76,7 +76,7 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental,
             runFullFallback,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         const resources = {
@@ -86,14 +86,18 @@ describe('createLiveFacetRefreshQueue', () => {
             hypernetworks: [],
             controlNets: [],
             ipAdapters: [],
-            tools: ['InvokeAI']
+            tools: ['InvokeAI'],
         };
 
-        await queue.queue(['checkpoints', 'loras', 'tools'], {
-            source: 'invoke',
-            cycleId: 'cycle-resource',
-            changedImageCount: 1
-        }, resources);
+        await queue.queue(
+            ['checkpoints', 'loras', 'tools'],
+            {
+                source: 'invoke',
+                cycleId: 'cycle-resource',
+                changedImageCount: 1,
+            },
+            resources
+        );
 
         expect(runResourceIncremental).toHaveBeenCalledWith(resources);
         expect(runIncremental).not.toHaveBeenCalled();
@@ -111,13 +115,13 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental,
             runFullFallback,
-            onRefreshApplied
+            onRefreshApplied,
         });
 
         await queue.queue(['tools', 'checkpoints'], {
             source: 'invoke',
             cycleId: 'cycle-fallback',
-            changedImageCount: 1
+            changedImageCount: 1,
         });
 
         expect(runIncremental).toHaveBeenCalledWith(['checkpoints', 'tools']);
@@ -131,7 +135,7 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental: vi.fn(),
             runFullFallback: vi.fn(),
-            onRefreshApplied: vi.fn()
+            onRefreshApplied: vi.fn(),
         });
 
         await expect(queue.queue([], { source: 'generic' })).resolves.toBeUndefined();
@@ -141,7 +145,7 @@ describe('createLiveFacetRefreshQueue', () => {
             cycleId: undefined,
             source: 'generic',
             changedImageCount: 0,
-            reason: 'no-touched-facet-types'
+            reason: 'no-touched-facet-types',
         });
     });
 
@@ -153,20 +157,24 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental,
             runFullFallback: vi.fn(),
-            onRefreshApplied: vi.fn()
+            onRefreshApplied: vi.fn(),
         });
 
         const active = queue.queue(['tools'], { source: 'generic', cycleId: 'same' });
         await Promise.resolve();
-        queue.queue([], { source: 'generic', cycleId: 'same', mergedRunCount: 2 }, {
-            checkpoints: ['A'],
-            loras: [],
-            embeddings: [],
-            hypernetworks: [],
-            controlNets: [],
-            ipAdapters: [],
-            tools: []
-        });
+        queue.queue(
+            [],
+            { source: 'generic', cycleId: 'same', mergedRunCount: 2 },
+            {
+                checkpoints: ['A'],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            }
+        );
         queue.queue(['tools'], { source: 'generic', cycleId: 'same' });
         queue.queue(['loras'], { source: 'invoke', cycleId: 'other', changedImageCount: 4 });
         firstRun.resolve(1);
@@ -180,7 +188,7 @@ describe('createLiveFacetRefreshQueue', () => {
                 cycleId: undefined,
                 changedImageCount: 4,
                 mergedRunCount: 4,
-                facetTypes: ['checkpoints', 'loras', 'tools']
+                facetTypes: ['checkpoints', 'loras', 'tools'],
             })
         );
     });
@@ -193,7 +201,7 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental: vi.fn(),
             runFullFallback,
-            onRefreshApplied: vi.fn()
+            onRefreshApplied: vi.fn(),
         });
 
         await expect(queue.queue(['tools'], { source: 'generic' })).resolves.toBeUndefined();
@@ -202,10 +210,7 @@ describe('createLiveFacetRefreshQueue', () => {
             'Live facet refresh incremental failed',
             expect.objectContaining({ error: 'incremental unavailable' })
         );
-        expect(error).toHaveBeenCalledWith(
-            '[LiveWatch] Failed to refresh facet cache after live changes',
-            expect.any(Error)
-        );
+        expect(error).toHaveBeenCalledWith('[LiveWatch] Failed to refresh facet cache after live changes', expect.any(Error));
         error.mockRestore();
     });
 
@@ -215,7 +220,7 @@ describe('createLiveFacetRefreshQueue', () => {
             runIncremental,
             runResourceIncremental: vi.fn(),
             runFullFallback: vi.fn(),
-            onRefreshApplied: vi.fn()
+            onRefreshApplied: vi.fn(),
         });
 
         const first = queue.queue(['tools'], { source: 'generic' });

@@ -7,17 +7,17 @@ import { CollectionList } from '../CollectionList';
 
 const settingsContextMocks = vi.hoisted(() => ({
     resourceSortOptions: {} as Record<string, SidebarSortOption>,
-    setSettings: vi.fn()
+    setSettings: vi.fn(),
 }));
 
 vi.mock('../../../../contexts/SettingsContext', () => ({
     useSettings: () => ({
         settings: {
             resourceViewModes: { collections: 'list' },
-            resourceSortOptions: settingsContextMocks.resourceSortOptions
+            resourceSortOptions: settingsContextMocks.resourceSortOptions,
         },
-        setSettings: settingsContextMocks.setSettings
-    })
+        setSettings: settingsContextMocks.setSettings,
+    }),
 }));
 
 const filters: FilterState = {
@@ -33,16 +33,16 @@ const filters: FilterState = {
     ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
-    collectionId: null
+    collectionId: null,
 };
 
-const setFilters: React.Dispatch<React.SetStateAction<FilterState>> = () => { };
+const setFilters: React.Dispatch<React.SetStateAction<FilterState>> = () => {};
 
 const makeCollection = ({
     id,
     name,
     createdAt,
-    updatedAt
+    updatedAt,
 }: {
     id: string;
     name: string;
@@ -55,17 +55,11 @@ const makeCollection = ({
     count: 1,
     createdAt,
     updatedAt,
-    source: 'ambit'
+    source: 'ambit',
 });
 
-const renderCollectionList = (collections: Collection[]) => render(
-    <CollectionList
-        collections={collections}
-        filters={filters}
-        setFilters={setFilters}
-        onDeleteCollection={vi.fn()}
-    />
-);
+const renderCollectionList = (collections: Collection[]) =>
+    render(<CollectionList collections={collections} filters={filters} setFilters={setFilters} onDeleteCollection={vi.fn()} />);
 
 const expectCollectionOrder = (names: string[]) => {
     for (let index = 0; index < names.length - 1; index += 1) {
@@ -88,8 +82,8 @@ describe('CollectionList toolbar tooltips', () => {
                 id: 'collection-1',
                 name: 'Collection One',
                 createdAt: 100,
-                updatedAt: 100
-            })
+                updatedAt: 100,
+            }),
         ]);
 
         const sortButton = screen.getByRole('button', { name: 'Sort Collections' });

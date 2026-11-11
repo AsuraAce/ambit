@@ -18,26 +18,34 @@ interface CollectionContextType {
 const CollectionContext = createContext<CollectionContextType | undefined>(undefined);
 
 export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const allCollections = useCollectionStore(s => s.collections);
-    const isLoaded = useCollectionStore(s => s.isLoaded);
-    const refreshCollections = useCollectionStore(s => s.refreshCollections);
-    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
+    const allCollections = useCollectionStore((s) => s.collections);
+    const isLoaded = useCollectionStore((s) => s.isLoaded);
+    const refreshCollections = useCollectionStore((s) => s.refreshCollections);
+    const refreshCollectionThumbnails = useCollectionStore((s) => s.refreshCollectionThumbnails);
     // SyncProvider owns scoped metadata readiness; ordinary counts may finish after the safe gallery opens.
 
-    const collections = allCollections.filter(c => !c.filters);
-    const smartCollections = allCollections.filter(c => !!c.filters) as SmartCollection[];
+    const collections = allCollections.filter((c) => !c.filters);
+    const smartCollections = allCollections.filter((c) => !!c.filters) as SmartCollection[];
 
     return (
-        <CollectionContext.Provider value={{
-            collections,
-            setCollections: () => { console.warn('setCollections is deprecated, use store actions'); },
-            smartCollections,
-            setSmartCollections: () => { console.warn('setSmartCollections is deprecated, use store actions'); },
-            setAllCollections: () => { console.warn('setAllCollections is deprecated, use store actions'); },
-            refreshCollections,
-            refreshCollectionThumbnails,
-            isLoaded
-        }}>
+        <CollectionContext.Provider
+            value={{
+                collections,
+                setCollections: () => {
+                    console.warn('setCollections is deprecated, use store actions');
+                },
+                smartCollections,
+                setSmartCollections: () => {
+                    console.warn('setSmartCollections is deprecated, use store actions');
+                },
+                setAllCollections: () => {
+                    console.warn('setAllCollections is deprecated, use store actions');
+                },
+                refreshCollections,
+                refreshCollectionThumbnails,
+                isLoaded,
+            }}
+        >
             {children}
         </CollectionContext.Provider>
     );

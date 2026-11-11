@@ -3,8 +3,13 @@ import { createInvokeSyncTrace } from '../invokeSyncTrace';
 import type { InvokeOperationState } from '../../stores/invokeOwnerScopeStore';
 
 const operation = (id: symbol, phase: InvokeOperationState['phase'] = 'syncing'): InvokeOperationState => ({
-    id, origin: 'user', rootPath: 'C:/secret/owner', targetLabel: 'private image.jpg', phase,
-    viewCommitted: true, progress: { current: 0, total: 5, message: 'C:/secret/raw-progress' },
+    id,
+    origin: 'user',
+    rootPath: 'C:/secret/owner',
+    targetLabel: 'private image.jpg',
+    phase,
+    viewCommitted: true,
+    progress: { current: 0, total: 5, message: 'C:/secret/raw-progress' },
     message: 'private failure details',
 });
 
@@ -17,7 +22,7 @@ const setup = (overrides: Partial<Parameters<typeof createInvokeSyncTrace>[0]> =
         enabled: true,
         now: () => Date.now(),
         setTimeout: (callback, delay) => setTimeout(callback, delay),
-        clearTimeout: timer => clearTimeout(timer),
+        clearTimeout: (timer) => clearTimeout(timer),
         documentVisible: () => true,
         runId: () => 'opaque-test-run',
         write,
@@ -53,30 +58,55 @@ describe('InvokeAI opt-in sync trace', () => {
     it('keeps bounded numeric health maxima and survives an unavailable sampler', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
-        const sampleHealth = vi.fn()
-            .mockReturnValueOnce({ jsHeapUsedMiB: 10_500.4, jsHeapTotalMiB: 15_500,
-                jsHeapLimitMiB: 16_000, domImageCount: 100, domLoadedImageCount: 80,
-                decodedImagePixels: 800_000_000, domNodeCount: 4_000, secretPath: 'C:/private/image.png' })
-            .mockImplementationOnce(() => { throw new Error('health API unavailable'); })
-            .mockReturnValueOnce({ jsHeapUsedMiB: 9_000, domImageCount: 90,
-                decodedImagePixels: Number.POSITIVE_INFINITY, domNodeCount: -1 });
+        const sampleHealth = vi
+            .fn()
+            .mockReturnValueOnce({
+                jsHeapUsedMiB: 10_500.4,
+                jsHeapTotalMiB: 15_500,
+                jsHeapLimitMiB: 16_000,
+                domImageCount: 100,
+                domLoadedImageCount: 80,
+                decodedImagePixels: 800_000_000,
+                domNodeCount: 4_000,
+                secretPath: 'C:/private/image.png',
+            })
+            .mockImplementationOnce(() => {
+                throw new Error('health API unavailable');
+            })
+            .mockReturnValueOnce({
+                jsHeapUsedMiB: 9_000,
+                domImageCount: 90,
+                decodedImagePixels: Number.POSITIVE_INFINITY,
+                domNodeCount: -1,
+            });
         const { trace, writes } = setup({ sampleHealth });
         const id = Symbol();
         trace.observeOperation(operation(id));
         await vi.advanceTimersByTimeAsync(6_000);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const content = writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content;
+        const content = writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content;
         const completed = JSON.parse(content);
         const beats = completed.events.filter((event: { kind: string }) => event.kind === 'heartbeat');
         expect(beats).toHaveLength(3);
-        expect(beats[0]).toMatchObject({ jsHeapUsedMiB: 10_500, domImageCount: 100,
-            domLoadedImageCount: 80, decodedImagePixels: 800_000_000, domNodeCount: 4_000 });
+        expect(beats[0]).toMatchObject({
+            jsHeapUsedMiB: 10_500,
+            domImageCount: 100,
+            domLoadedImageCount: 80,
+            decodedImagePixels: 800_000_000,
+            domNodeCount: 4_000,
+        });
         expect(beats[1].jsHeapUsedMiB).toBeUndefined();
         expect(beats[2].decodedImagePixels).toBeUndefined();
-        expect(completed.healthMax).toMatchObject({ jsHeapUsedMiB: 10_500,
-            jsHeapTotalMiB: 15_500, jsHeapLimitMiB: 16_000, domImageCount: 100,
-            domLoadedImageCount: 80, decodedImagePixels: 800_000_000, domNodeCount: 4_000 });
+        expect(completed.healthMax).toMatchObject({
+            jsHeapUsedMiB: 10_500,
+            jsHeapTotalMiB: 15_500,
+            jsHeapLimitMiB: 16_000,
+            domImageCount: 100,
+            domLoadedImageCount: 80,
+            decodedImagePixels: 800_000_000,
+            domNodeCount: 4_000,
+        });
         expect(content).not.toContain('secretPath');
         expect(content).not.toContain('private');
         expect(content.length).toBeLessThanOrEqual(256 * 1024);
@@ -91,9 +121,14 @@ describe('InvokeAI opt-in sync trace', () => {
         for (let index = 0; index < 600; index += 1) trace.serviceProgress(id, index, 600);
         trace.observeOperation({ ...operation(id, 'completed'), imported: 12, updated: 4 });
         await Promise.resolve();
-        const terminal = writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json');
+        const terminal = writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json');
         expect(terminal).toBeDefined();
-        const data = JSON.parse(terminal!.content) as { events: unknown[]; droppedEvents: number; terminal: string; serviceProgress: number };
+        const data = JSON.parse(terminal!.content) as {
+            events: unknown[];
+            droppedEvents: number;
+            terminal: string;
+            serviceProgress: number;
+        };
         expect(data.events.length).toBeLessThanOrEqual(512);
         expect(data.droppedEvents).toBeGreaterThan(0);
         expect(data.terminal).toBe('completed');
@@ -121,12 +156,14 @@ describe('InvokeAI opt-in sync trace', () => {
         for (let index = 0; index < 600; index += 1) trace.serviceProgress(id, index, 600);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const content = writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content;
+        const content = writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content;
         const completed = JSON.parse(content);
-        expect(completed.repairReport).toMatchObject({ status: 'completed', durationMs: 25,
-            counters: { factRows: 1_000_000_000 }, metrics: expect.arrayContaining([
-                { operation: 'fact-read', calls: 1, totalMs: 25, maxMs: 25 },
-            ]) });
+        expect(completed.repairReport).toMatchObject({
+            status: 'completed',
+            durationMs: 25,
+            counters: { factRows: 1_000_000_000 },
+            metrics: expect.arrayContaining([{ operation: 'fact-read', calls: 1, totalMs: 25, maxMs: 25 }]),
+        });
         expect(completed.repairReport.metrics).toHaveLength(14);
         expect(completed.events).toHaveLength(512);
         expect(content).not.toContain('C:/secret');
@@ -153,7 +190,7 @@ describe('InvokeAI opt-in sync trace', () => {
         newRepair?.finish('completed');
         trace.observeOperation(operation(newId, 'completed'));
         for (let index = 0; index < 6; index += 1) await Promise.resolve();
-        const completed = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
+        const completed = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
         expect(completed.runId).toBe('run-2');
         expect(completed.repairReport.counters.factRows).toBe(7);
     });
@@ -175,8 +212,8 @@ describe('InvokeAI opt-in sync trace', () => {
         await vi.advanceTimersByTimeAsync(2_000);
         await Promise.resolve();
         await Promise.resolve();
-        const active = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content);
-        const completed = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
+        const active = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content);
+        const completed = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
         expect(active.runId).toBe('run-2');
         expect(active.terminal).toBeUndefined();
         expect(active.serviceProgress).toBe(1);
@@ -192,18 +229,34 @@ describe('InvokeAI opt-in sync trace', () => {
         trace.observeOperation(operation(id));
         let releaseFirst: (() => void) | undefined;
         let releaseSecond: (() => void) | undefined;
-        const first = trace.measure(id, 'source-reconciliation', () => new Promise<void>(resolve => { releaseFirst = resolve; }));
-        const second = trace.measure(id, 'source-reconciliation', () => new Promise<void>(resolve => { releaseSecond = resolve; }));
+        const first = trace.measure(
+            id,
+            'source-reconciliation',
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseFirst = resolve;
+                })
+        );
+        const second = trace.measure(
+            id,
+            'source-reconciliation',
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseSecond = resolve;
+                })
+        );
         await vi.advanceTimersByTimeAsync(2_000);
-        const pending = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content);
+        const pending = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content);
         expect(pending.wallStartedAtEpochMs).toBe(1_791_710_000_123);
         expect(pending.stages['source-reconciliation']).toMatchObject({ started: 2, pending: 2, count: 0 });
-        expect(pending.events.filter((event: { kind: string; status?: string }) => event.kind === 'stage' && event.status === 'started')).toHaveLength(2);
+        expect(
+            pending.events.filter((event: { kind: string; status?: string }) => event.kind === 'stage' && event.status === 'started')
+        ).toHaveLength(2);
         releaseFirst?.();
         await first;
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.stages['source-reconciliation']).toMatchObject({ started: 2, pending: 1, count: 1 });
         releaseSecond?.();
         await second;
@@ -219,7 +272,7 @@ describe('InvokeAI opt-in sync trace', () => {
         trace.committedBatch(id, 1_000, 850, 150);
         trace.observeOperation({ ...operation(id, 'completed'), imported: 850, updated: 150 });
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.committedBatches).toBe(2);
         expect(completed.committedImages).toBe(1_000);
         expect(completed.imported).toBe(850);
@@ -238,15 +291,20 @@ describe('InvokeAI opt-in sync trace', () => {
         trace.dockCommitted(operation(first, 'completed'), true);
         await Promise.resolve();
         await Promise.resolve();
-        const firstCompleted = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
-        expect(firstCompleted.events.some((event: { kind: string; phase?: string }) =>
-            event.kind === 'dock-committed' && event.phase === 'completed')).toBe(true);
+        const firstCompleted = JSON.parse(
+            writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content
+        );
+        expect(
+            firstCompleted.events.some(
+                (event: { kind: string; phase?: string }) => event.kind === 'dock-committed' && event.phase === 'completed'
+            )
+        ).toBe(true);
         trace.observeOperation(operation(second));
         trace.dockCommitted(operation(first, 'completed'), false);
         trace.observeOperation(operation(second, 'completed'));
         trace.dockCommitted(operation(first, 'completed'), false);
         for (let index = 0; index < 8; index += 1) await Promise.resolve();
-        const latest = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
+        const latest = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
         expect(latest.runId).toBe('run-2');
         expect(latest.events.some((event: { kind: string }) => event.kind === 'dock-committed')).toBe(false);
     });
@@ -267,7 +325,7 @@ describe('InvokeAI opt-in sync trace', () => {
         trace.presentationCommitted(first, false, false);
         trace.presentationCommitted(first, false, false);
         for (let index = 0; index < 6; index += 1) await Promise.resolve();
-        const completed = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
+        const completed = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
         expect(completed.presentationSummary).toEqual({
             firstPrivacyBlockedAtMs: 0,
             lastPrivacyUnblockedAtMs: 100,
@@ -279,7 +337,7 @@ describe('InvokeAI opt-in sync trace', () => {
         trace.observeOperation(operation(second, 'completed'));
         trace.presentationCommitted(first, true, true);
         for (let index = 0; index < 6; index += 1) await Promise.resolve();
-        const latest = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
+        const latest = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content);
         expect(latest.runId).toBe('run-2');
         expect(latest.presentationSummary).toEqual({});
     });
@@ -296,7 +354,7 @@ describe('InvokeAI opt-in sync trace', () => {
         await vi.advanceTimersByTimeAsync(31_000);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.displayStallSuspected).toBe(false);
         expect(completed.events.some((event: { progressCategory?: string }) => event.progressCategory === 'gallery')).toBe(true);
         expect(JSON.stringify(completed)).not.toContain('Updating gallery...');
@@ -314,10 +372,14 @@ describe('InvokeAI opt-in sync trace', () => {
         await vi.advanceTimersByTimeAsync(30_000);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.displayStallSuspected).toBe(true);
-        expect(completed.events.some((event: { kind: string; documentVisible?: boolean; gapMs?: number }) =>
-            event.kind === 'heartbeat' && event.documentVisible === true && event.gapMs === 2_000)).toBe(true);
+        expect(
+            completed.events.some(
+                (event: { kind: string; documentVisible?: boolean; gapMs?: number }) =>
+                    event.kind === 'heartbeat' && event.documentVisible === true && event.gapMs === 2_000
+            )
+        ).toBe(true);
         expect(completed.events.some((event: { kind: string }) => event.kind === 'suspected-display-stall')).toBe(true);
         const count = writes.length;
         await vi.advanceTimersByTimeAsync(10_000);
@@ -336,7 +398,7 @@ describe('InvokeAI opt-in sync trace', () => {
         await vi.advanceTimersByTimeAsync(30_000);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.displayStallSuspected).toBe(false);
     });
 
@@ -348,7 +410,10 @@ describe('InvokeAI opt-in sync trace', () => {
         const unsubscribe = vi.fn();
         const { trace, writes } = setup({
             documentVisible: () => visible,
-            subscribeVisibility: callback => { listener = callback; return unsubscribe; },
+            subscribeVisibility: (callback) => {
+                listener = callback;
+                return unsubscribe;
+            },
         });
         const id = Symbol();
         trace.observeOperation(operation(id));
@@ -361,13 +426,13 @@ describe('InvokeAI opt-in sync trace', () => {
         visible = true;
         listener?.(true);
         await vi.advanceTimersByTimeAsync(2_000);
-        const afterReturn = JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content);
+        const afterReturn = JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content);
         expect(afterReturn.displayStallSuspected).toBe(false);
         trace.coordinatorProgress(id, 3, 5);
         await vi.advanceTimersByTimeAsync(32_000);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.displayStallSuspected).toBe(true);
         expect(completed.events.filter((event: { kind: string }) => event.kind === 'visibility')).toHaveLength(2);
         expect(unsubscribe).toHaveBeenCalledOnce();
@@ -382,7 +447,10 @@ describe('InvokeAI opt-in sync trace', () => {
         const { trace } = setup({
             runId: () => `run-${++call}`,
             write: async (fileName, content) => {
-                if (!release) await new Promise<void>(resolve => { release = resolve; });
+                if (!release)
+                    await new Promise<void>((resolve) => {
+                        release = resolve;
+                    });
                 writes.push({ fileName, content });
             },
         });
@@ -395,15 +463,26 @@ describe('InvokeAI opt-in sync trace', () => {
         trace.observeOperation(operation(second, 'completed'));
         release?.();
         for (let index = 0; index < 8; index += 1) await Promise.resolve();
-        expect(JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content).runId).toBe('run-2');
-        expect(JSON.parse(writes.filter(entry => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content).runId).toBe('run-2');
+        expect(JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-active.json').at(-1)!.content).runId).toBe(
+            'run-2'
+        );
+        expect(JSON.parse(writes.filter((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json').at(-1)!.content).runId).toBe(
+            'run-2'
+        );
     });
 
     it('keeps task values and original errors while a write is pending or fails', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
         let release: (() => void) | undefined;
-        const write = vi.fn().mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }))
+        const write = vi
+            .fn()
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        release = resolve;
+                    })
+            )
             .mockRejectedValue(new Error('disk failure'));
         const { trace } = setup({ write });
         const id = Symbol();
@@ -411,13 +490,17 @@ describe('InvokeAI opt-in sync trace', () => {
         await vi.advanceTimersByTimeAsync(2_000);
         expect(await trace.measure(id, 'filesystem', async () => 'result')).toBe('result');
         const taskError = new Error('private task failure');
-        await expect(trace.measure(id, 'references', async () => { throw taskError; })).rejects.toBe(taskError);
+        await expect(
+            trace.measure(id, 'references', async () => {
+                throw taskError;
+            })
+        ).rejects.toBe(taskError);
         trace.observeOperation(operation(id, 'failed'));
         release?.();
         await Promise.resolve();
         await Promise.resolve();
         expect(write).toHaveBeenCalled();
-        expect(write.mock.calls.map(call => call[1] as string).join('')).not.toContain(taskError.message);
+        expect(write.mock.calls.map((call) => call[1] as string).join('')).not.toContain(taskError.message);
     });
 
     it('suspends on unmount and resumes the same run after a StrictMode remount', async () => {
@@ -441,7 +524,7 @@ describe('InvokeAI opt-in sync trace', () => {
         await vi.advanceTimersByTimeAsync(2_000);
         trace.observeOperation(operation(id, 'completed'));
         await Promise.resolve();
-        const completed = JSON.parse(writes.find(entry => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
+        const completed = JSON.parse(writes.find((entry) => entry.fileName === 'invoke-sync-trace-last-completed.json')!.content);
         expect(completed.runId).toBe('opaque-test-run');
         expect(completed.terminal).toBe('completed');
         expect(completed.displayStallSuspected).toBe(false);

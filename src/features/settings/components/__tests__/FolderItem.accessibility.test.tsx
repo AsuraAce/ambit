@@ -14,14 +14,7 @@ describe('FolderItem', () => {
         };
         const onRemove = vi.fn();
 
-        render(
-            <FolderItem
-                folder={folder}
-                scanningIds={new Set()}
-                onRescan={vi.fn()}
-                onRemove={onRemove}
-            />
-        );
+        render(<FolderItem folder={folder} scanningIds={new Set()} onRescan={vi.fn()} onRemove={onRemove} />);
 
         const removeButton = screen.getByRole('button', { name: 'Remove Folder: C:/images/outputs' });
         expect(removeButton.getAttribute('title')).toBeNull();

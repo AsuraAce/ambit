@@ -28,9 +28,9 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
     showFilename = true,
     imageClassName = '',
     overlayActions,
-    isMissing = false
+    isMissing = false,
 }) => {
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
     const effectiveMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
     const isMasked = !isRevealed && effectiveMasked;
@@ -47,7 +47,9 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
             >
                 <div className="relative w-full h-full">
                     {useVideoPlaceholder ? (
-                        <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${imageClassName} ${isMasked ? 'blur-xl scale-110' : ''} ${isMissing ? 'opacity-50 grayscale' : ''}`}>
+                        <div
+                            className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${imageClassName} ${isMasked ? 'blur-xl scale-110' : ''} ${isMissing ? 'opacity-50 grayscale' : ''}`}
+                        >
                             <Video className="h-10 w-10 text-white/30" aria-hidden="true" />
                         </div>
                     ) : (
@@ -61,7 +63,9 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
 
                     {isMissing && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-900/10 pointer-events-none">
-                            <span className="bg-red-600 text-white text-[9px] font-bold uppercase px-2 py-0.5 rounded shadow-lg">Missing Source</span>
+                            <span className="bg-red-600 text-white text-[9px] font-bold uppercase px-2 py-0.5 rounded shadow-lg">
+                                Missing Source
+                            </span>
                         </div>
                     )}
 

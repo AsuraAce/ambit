@@ -16,6 +16,6 @@ export const getImageViewerTabs = (image: AIImage): readonly ViewerTabDefinition
     return !isGenerated
         ? IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW
         : image.metadata.workflowJson || image.metadata.hasWorkflowHint !== false
-            ? IMAGE_VIEWER_TABS
-            : IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW;
+          ? IMAGE_VIEWER_TABS
+          : IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW;
 };

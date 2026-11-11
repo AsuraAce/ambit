@@ -8,7 +8,7 @@ const NEGATIVE_PROMPT_KEYS = new Set(['neg', 'negative']);
 
 const EMPTY_HIGHLIGHTS: PromptHighlightSpec = {
     positivePrompt: [],
-    negativePrompt: []
+    negativePrompt: [],
 };
 
 const cleanSearchTerm = (term: string): string => {
@@ -35,7 +35,7 @@ export const derivePromptHighlightSpec = (searchQuery: string): PromptHighlightS
 
     const highlights: PromptHighlightSpec = {
         positivePrompt: [],
-        negativePrompt: []
+        negativePrompt: [],
     };
     const seenPositive = new Set<string>();
     const seenNegative = new Set<string>();

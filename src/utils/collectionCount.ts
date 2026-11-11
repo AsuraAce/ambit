@@ -14,11 +14,7 @@ export const getCollectionCountLabel = (collection: Collection): string | undefi
     return getCollectionCount(collection) === undefined ? 'Count not calculated' : undefined;
 };
 
-export const compareCollectionsByCount = (
-    a: Collection,
-    b: Collection,
-    direction: CollectionCountSortDirection
-): number => {
+export const compareCollectionsByCount = (a: Collection, b: Collection, direction: CollectionCountSortDirection): number => {
     const aCount = getCollectionCount(a);
     const bCount = getCollectionCount(b);
 

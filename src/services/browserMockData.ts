@@ -1,4 +1,15 @@
-import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, LibraryScopeCounts, SmartCollection, SortOption, getEffectiveSourceKind } from '../types';
+import {
+    AIImage,
+    AppSettings,
+    Collection,
+    FacetType,
+    FilterState,
+    GeneratorTool,
+    LibraryScopeCounts,
+    SmartCollection,
+    SortOption,
+    getEffectiveSourceKind,
+} from '../types';
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
 import { getDateFilterBounds, getSearchDateBounds } from '../utils/dateFilters';
@@ -79,32 +90,27 @@ const createMockImages = (): AIImage[] => {
         const isPortrait = index % 3 === 0;
         const width = isPortrait ? 832 : 1216;
         const height = isPortrait ? 1216 : 832;
-        const tool = index % 5 === 0
-            ? GeneratorTool.AUTOMATIC1111
-            : index % 4 === 0
-                ? GeneratorTool.INVOKEAI
-                : GeneratorTool.COMFYUI;
+        const tool = index % 5 === 0 ? GeneratorTool.AUTOMATIC1111 : index % 4 === 0 ? GeneratorTool.INVOKEAI : GeneratorTool.COMFYUI;
         const model = MODELS[index % MODELS.length];
         const prompt = PROMPTS[index % PROMPTS.length];
         const filename = isPhoto
             ? `mock_photo_${String(index - 119).padStart(4, '0')}.jpg`
             : isOther
-                ? `mock_reference_${String(index - 149).padStart(4, '0')}.webp`
-                : `mock_generation_${String(index + 1).padStart(4, '0')}.png`;
-        const invokeImageCategory = tool === GeneratorTool.INVOKEAI
-            ? INVOKE_IMAGE_CATEGORIES[Math.floor(index / 4) % INVOKE_IMAGE_CATEGORIES.length]
-            : undefined;
-        const timestamp = now - (index * 6 * 60 * 60 * 1000);
+              ? `mock_reference_${String(index - 149).padStart(4, '0')}.webp`
+              : `mock_generation_${String(index + 1).padStart(4, '0')}.png`;
+        const invokeImageCategory =
+            tool === GeneratorTool.INVOKEAI ? INVOKE_IMAGE_CATEGORIES[Math.floor(index / 4) % INVOKE_IMAGE_CATEGORIES.length] : undefined;
+        const timestamp = now - index * 6 * 60 * 60 * 1000;
         const captureDate = new Date(timestamp - 14 * 24 * 60 * 60 * 1000);
         const captureWallTimeMs = isPhoto
             ? Date.UTC(
-                captureDate.getFullYear(),
-                captureDate.getMonth(),
-                captureDate.getDate(),
-                captureDate.getHours(),
-                captureDate.getMinutes(),
-                captureDate.getSeconds()
-            )
+                  captureDate.getFullYear(),
+                  captureDate.getMonth(),
+                  captureDate.getDate(),
+                  captureDate.getHours(),
+                  captureDate.getMinutes(),
+                  captureDate.getSeconds()
+              )
             : undefined;
         const pad = (value: number) => String(value).padStart(2, '0');
         const capturedAt = `${captureDate.getFullYear()}:${pad(captureDate.getMonth() + 1)}:${pad(captureDate.getDate())} ${pad(captureDate.getHours())}:${pad(captureDate.getMinutes())}:${pad(captureDate.getSeconds())}`;
@@ -126,38 +132,42 @@ const createMockImages = (): AIImage[] => {
             sourceKind,
             captureWallTimeMs,
             mediaType: isVideo ? 'video' : 'image',
-            ...(isVideo ? {
-                mediaContainer: 'mp4',
-                mediaMimeType: 'video/mp4',
-                durationMs: 45_000 + index * 1_000,
-                videoCodec: 'h264',
-                videoProfile: 'High',
-                audioPresent: true,
-                audioCodec: 'aac',
-                frameRateNum: 30,
-                frameRateDen: 1,
-                rotationDegrees: 0 as const,
-                probeStatus: 'ready' as const,
-                playbackStatus: 'external_required' as const,
-            } : {}),
-            photoMetadata: isPhoto ? {
-                capturedAt: { local: capturedAt, offset: index % 2 === 0 ? '+02:00' : null, subsecond: null },
-                captureTimeRaw: capturedAt,
-                cameraMake: index % 2 === 0 ? 'Fujifilm' : 'Sony',
-                cameraModel: index % 2 === 0 ? 'X-T5' : 'ILCE-7M4',
-                lensMake: index % 3 === 0 ? null : 'Mock Optics',
-                lensModel: index % 3 === 0 ? null : '35mm F1.8',
-                focalLengthMm: 35,
-                focalLength35Mm: 35,
-                apertureFNumber: 2.8,
-                exposureTimeSeconds: 0.004,
-                iso: 200 + (index % 4) * 100,
-                orientation: index % 2 === 0 ? 6 : 1,
-                artist: null,
-                copyright: null,
-                gpsLatitude: index % 5 === 0 ? 52.52 : null,
-                gpsLongitude: index % 5 === 0 ? 13.405 : null,
-            } : undefined,
+            ...(isVideo
+                ? {
+                      mediaContainer: 'mp4',
+                      mediaMimeType: 'video/mp4',
+                      durationMs: 45_000 + index * 1_000,
+                      videoCodec: 'h264',
+                      videoProfile: 'High',
+                      audioPresent: true,
+                      audioCodec: 'aac',
+                      frameRateNum: 30,
+                      frameRateDen: 1,
+                      rotationDegrees: 0 as const,
+                      probeStatus: 'ready' as const,
+                      playbackStatus: 'external_required' as const,
+                  }
+                : {}),
+            photoMetadata: isPhoto
+                ? {
+                      capturedAt: { local: capturedAt, offset: index % 2 === 0 ? '+02:00' : null, subsecond: null },
+                      captureTimeRaw: capturedAt,
+                      cameraMake: index % 2 === 0 ? 'Fujifilm' : 'Sony',
+                      cameraModel: index % 2 === 0 ? 'X-T5' : 'ILCE-7M4',
+                      lensMake: index % 3 === 0 ? null : 'Mock Optics',
+                      lensModel: index % 3 === 0 ? null : '35mm F1.8',
+                      focalLengthMm: 35,
+                      focalLength35Mm: 35,
+                      apertureFNumber: 2.8,
+                      exposureTimeSeconds: 0.004,
+                      iso: 200 + (index % 4) * 100,
+                      orientation: index % 2 === 0 ? 6 : 1,
+                      artist: null,
+                      copyright: null,
+                      gpsLatitude: index % 5 === 0 ? 52.52 : null,
+                      gpsLongitude: index % 5 === 0 ? 13.405 : null,
+                  }
+                : undefined,
             thumbnailVersion: 2,
             width,
             height,
@@ -168,38 +178,39 @@ const createMockImages = (): AIImage[] => {
             notes: index % 10 === 0 ? 'Browser mock note for UI review.' : undefined,
             invokeImageName: tool === GeneratorTool.INVOKEAI ? filename : undefined,
             invokeImageCategory,
-            invokeImageOrigin: tool === GeneratorTool.INVOKEAI
-                ? (index % 2 === 0 ? 'internal' : 'external')
-                : undefined,
-            metadata: sourceKind === 'generated' ? {
-                tool,
-                model,
-                seed: 100_000 + index * 1337,
-                steps: 18 + (index % 32),
-                cfg: Number((4 + (index % 8) * 0.5).toFixed(1)),
-                sampler: SAMPLERS[index % SAMPLERS.length],
-                positivePrompt: prompt,
-                negativePrompt: 'low quality, blurry, watermark',
-                workflowJson: tool === GeneratorTool.COMFYUI ? '{"mock":true,"nodes":[]}' : undefined,
-                rawParameters: `${prompt}\nSteps: ${18 + (index % 32)}, Sampler: ${SAMPLERS[index % SAMPLERS.length]}`,
-                loras,
-                embeddings,
-                controlNets,
-                ipAdapters,
-                generationType: index % 5 === 0 ? 'img2img' : 'txt2img',
-                isGrid: index % 17 === 0,
-                isIntermediate: index % 11 === 0,
-                modelHash: `mockhash${index % MODELS.length}`,
-            } : {
-                tool: GeneratorTool.UNKNOWN,
-                model: 'Unknown',
-                steps: 0,
-                cfg: 0,
-                sampler: 'Unknown',
-                positivePrompt: '',
-                negativePrompt: '',
-                generationType: 'unknown',
-            },
+            invokeImageOrigin: tool === GeneratorTool.INVOKEAI ? (index % 2 === 0 ? 'internal' : 'external') : undefined,
+            metadata:
+                sourceKind === 'generated'
+                    ? {
+                          tool,
+                          model,
+                          seed: 100_000 + index * 1337,
+                          steps: 18 + (index % 32),
+                          cfg: Number((4 + (index % 8) * 0.5).toFixed(1)),
+                          sampler: SAMPLERS[index % SAMPLERS.length],
+                          positivePrompt: prompt,
+                          negativePrompt: 'low quality, blurry, watermark',
+                          workflowJson: tool === GeneratorTool.COMFYUI ? '{"mock":true,"nodes":[]}' : undefined,
+                          rawParameters: `${prompt}\nSteps: ${18 + (index % 32)}, Sampler: ${SAMPLERS[index % SAMPLERS.length]}`,
+                          loras,
+                          embeddings,
+                          controlNets,
+                          ipAdapters,
+                          generationType: index % 5 === 0 ? 'img2img' : 'txt2img',
+                          isGrid: index % 17 === 0,
+                          isIntermediate: index % 11 === 0,
+                          modelHash: `mockhash${index % MODELS.length}`,
+                      }
+                    : {
+                          tool: GeneratorTool.UNKNOWN,
+                          model: 'Unknown',
+                          steps: 0,
+                          cfg: 0,
+                          sampler: 'Unknown',
+                          positivePrompt: '',
+                          negativePrompt: '',
+                          generationType: 'unknown',
+                      },
         };
     });
 };
@@ -267,13 +278,14 @@ interface BrowserMockState extends AppState {
 
 let state: BrowserMockState = defaultState();
 
-const normalizeMockSettings =(settings: Partial<AppSettings>): AppSettings => createDefaultAppSettings({
-    ...DEFAULT_SETTINGS,
-    ...settings,
-    // Omitted legacy media settings must be inferred from the raw remembered kind.
-    libraryMediaType: settings.libraryMediaType,
-    promptMaskingEnabled: inferPromptMaskingEnabled(settings),
-});
+const normalizeMockSettings = (settings: Partial<AppSettings>): AppSettings =>
+    createDefaultAppSettings({
+        ...DEFAULT_SETTINGS,
+        ...settings,
+        // Omitted legacy media settings must be inferred from the raw remembered kind.
+        libraryMediaType: settings.libraryMediaType,
+        promptMaskingEnabled: inferPromptMaskingEnabled(settings),
+    });
 
 const loadStoredState = (): BrowserMockState => {
     if (typeof localStorage === 'undefined') return state;
@@ -304,13 +316,16 @@ const persistState = (): void => {
     if (typeof localStorage === 'undefined') return;
 
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            collections: state.collections,
-            smartCollections: state.smartCollections,
-            settings: state.settings,
-            recentSearches: state.recentSearches,
-            invokeBoardMemberships: state.invokeBoardMemberships,
-        }));
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                collections: state.collections,
+                smartCollections: state.smartCollections,
+                settings: state.settings,
+                recentSearches: state.recentSearches,
+                invokeBoardMemberships: state.invokeBoardMemberships,
+            })
+        );
     } catch (error) {
         console.error('[BrowserMock] Failed to persist mock state', error);
         throw error;
@@ -350,10 +365,9 @@ export class BrowserMockRepository implements IRepository {
         return {
             transactionId,
             state: nextState,
-            message: 'Browser mock library cleared for this session.'
+            message: 'Browser mock library cleared for this session.',
         };
     }
-
 }
 
 export const getBrowserMockImages = (): AIImage[] => loadStoredState().images;
@@ -373,11 +387,7 @@ export const getBrowserMockCollections = (): Collection[] => {
 
 const getCollectionCount = (collection: Collection, collections: Collection[]): number => {
     if (collection.filters) {
-        return filterImages(
-            state.images,
-            createDefaultFilters({ collectionId: collection.id }),
-            collections
-        ).length;
+        return filterImages(state.images, createDefaultFilters({ collectionId: collection.id }), collections).length;
     }
 
     return collection.imageIds.length;
@@ -385,17 +395,11 @@ const getCollectionCount = (collection: Collection, collections: Collection[]): 
 
 const isSmartCollection = (collection: Collection): collection is SmartCollection => !!collection.filters;
 
-const matchesSelectedValues = (
-    values: string[] | undefined,
-    selected: string[] | undefined,
-    matchMode: 'any' | 'all' = 'any'
-): boolean => {
+const matchesSelectedValues = (values: string[] | undefined, selected: string[] | undefined, matchMode: 'any' | 'all' = 'any'): boolean => {
     if (!selected || selected.length === 0) return true;
     const lowerValues = new Set((values ?? []).map((value) => value.toLowerCase()));
     const matches = (value: string) => lowerValues.has(value.toLowerCase());
-    return matchMode === 'all'
-        ? selected.every(matches)
-        : selected.some(matches);
+    return matchMode === 'all' ? selected.every(matches) : selected.some(matches);
 };
 
 interface BrowserSearchToken {
@@ -413,9 +417,7 @@ const tokenizeBrowserSearchQuery = (query: string): BrowserSearchToken[] => {
         const isNegative = !!match[1];
         const rawTerm = match[2];
         const isQuoted = rawTerm.startsWith('"') && rawTerm.endsWith('"');
-        const term = isQuoted
-            ? rawTerm.slice(1, -1).replace(/\\"/g, '"')
-            : rawTerm;
+        const term = isQuoted ? rawTerm.slice(1, -1).replace(/\\"/g, '"') : rawTerm;
 
         tokens.push({
             term,
@@ -429,14 +431,11 @@ const tokenizeBrowserSearchQuery = (query: string): BrowserSearchToken[] => {
 
 const isPositivePromptSearchToken = (token: BrowserSearchToken): boolean => {
     const lowerTerm = token.term.toLowerCase();
-    return !token.isNegative
-        && !token.isOrOperator
-        && !(lowerTerm.includes(':') && !lowerTerm.startsWith(':'));
+    return !token.isNegative && !token.isOrOperator && !(lowerTerm.includes(':') && !lowerTerm.startsWith(':'));
 };
 
-const includesText = (value: string | number | undefined, term: string): boolean => (
-    value !== undefined && String(value).toLowerCase().includes(term)
-);
+const includesText = (value: string | number | undefined, term: string): boolean =>
+    value !== undefined && String(value).toLowerCase().includes(term);
 
 const matchesNumberExpression = (value: number | undefined, expression: string): boolean => {
     if (value === undefined) return false;
@@ -461,7 +460,10 @@ const matchesScopedSearchToken = (image: AIImage, token: BrowserSearchToken): bo
         image.metadata.positivePrompt,
         image.metadata.negativePrompt,
         ...(image.metadata.loras ?? []),
-    ].filter(Boolean).join(' ').toLowerCase();
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
 
     let matched: boolean | null = null;
     const dateBounds = getSearchDateBounds(key, val);
@@ -536,7 +538,7 @@ const filterImages = (
     collections: Collection[],
     excludeScopeFilters = false,
     applyVisibilityFilters = true,
-    privacy?: BrowserMockPrivacyOptions,
+    privacy?: BrowserMockPrivacyOptions
 ): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
     const dateBounds = getDateFilterBounds(filters);
@@ -544,28 +546,17 @@ const filterImages = (
     const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
     const imageKind = getEffectiveImageKind(filters);
     const maskedKeywords = privacy ? getEffectiveMaskedKeywords(privacy.settings) : [];
-    const selectedCollection = filters.collectionId
-        ? collections.find((collection) => collection.id === filters.collectionId)
-        : null;
-    const collectionIds = selectedCollection && !selectedCollection.filters
-        ? new Set(selectedCollection.imageIds)
-        : null;
+    const selectedCollection = filters.collectionId ? collections.find((collection) => collection.id === filters.collectionId) : null;
+    const collectionIds = selectedCollection && !selectedCollection.filters ? new Set(selectedCollection.imageIds) : null;
     const smartFilters = selectedCollection?.filters
         ? {
-            ...selectedCollection.filters,
-            collectionId: null,
-            ...(hasGlobalDateFilter ? { dateRange: 'all' as const, dateFrom: undefined, dateTo: undefined } : {})
-        }
+              ...selectedCollection.filters,
+              collectionId: null,
+              ...(hasGlobalDateFilter ? { dateRange: 'all' as const, dateFrom: undefined, dateTo: undefined } : {}),
+          }
         : null;
     const smartMatches = smartFilters
-        ? new Set(filterImages(
-            images,
-            smartFilters,
-            collections,
-            false,
-            false,
-            privacy,
-        ).map((image) => image.id))
+        ? new Set(filterImages(images, smartFilters, collections, false, false, privacy).map((image) => image.id))
         : null;
     const smartExclusions = smartFilters ? new Set(selectedCollection?.manualExclusions) : null;
 
@@ -608,11 +599,16 @@ const sortImages = (images: AIImage[], sortOption: SortOption): AIImage[] => {
     sorted.sort((a, b) => {
         if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
         switch (sortOption) {
-            case 'date_asc': return getEffectiveDisplayTimestamp(a) - getEffectiveDisplayTimestamp(b) || a.id.localeCompare(b.id);
-            case 'name_asc': return a.filename.localeCompare(b.filename);
-            case 'name_desc': return b.filename.localeCompare(a.filename);
-            case 'size_asc': return (a.fileSize ?? 0) - (b.fileSize ?? 0);
-            case 'size_desc': return (b.fileSize ?? 0) - (a.fileSize ?? 0);
+            case 'date_asc':
+                return getEffectiveDisplayTimestamp(a) - getEffectiveDisplayTimestamp(b) || a.id.localeCompare(b.id);
+            case 'name_asc':
+                return a.filename.localeCompare(b.filename);
+            case 'name_desc':
+                return b.filename.localeCompare(a.filename);
+            case 'size_asc':
+                return (a.fileSize ?? 0) - (b.fileSize ?? 0);
+            case 'size_desc':
+                return (b.fileSize ?? 0) - (a.fileSize ?? 0);
             case 'date_desc':
             default:
                 return getEffectiveDisplayTimestamp(b) - getEffectiveDisplayTimestamp(a) || b.id.localeCompare(a.id);
@@ -626,7 +622,7 @@ export const searchBrowserMockImages = (
     sortOption: SortOption,
     limit: number,
     cursorId?: string,
-    privacy?: BrowserMockPrivacyOptions,
+    privacy?: BrowserMockPrivacyOptions
 ): { images: AIImage[]; totalCount: number; globalCount: number } => {
     const current = loadStoredState();
     const collections = getBrowserMockCollections();
@@ -635,19 +631,20 @@ export const searchBrowserMockImages = (
     return {
         images: filtered.slice(start, start + limit),
         totalCount: filtered.length,
-        globalCount: current.images.filter((image) => !image.isDeleted && !(
-            privacy?.privacyEnabled
-            && privacy.settings.maskingMode === 'hide'
-            && isImageMasked(image, true, getEffectiveMaskedKeywords(privacy.settings))
-        )).length,
+        globalCount: current.images.filter(
+            (image) =>
+                !image.isDeleted &&
+                !(
+                    privacy?.privacyEnabled &&
+                    privacy.settings.maskingMode === 'hide' &&
+                    isImageMasked(image, true, getEffectiveMaskedKeywords(privacy.settings))
+                )
+        ).length,
     };
 };
 
 /** Contextual dropdown counts are optional work, separate from gallery retrieval. */
-export const getBrowserMockScopeCounts = (
-    filters: FilterState,
-    privacy?: BrowserMockPrivacyOptions,
-): LibraryScopeCounts => {
+export const getBrowserMockScopeCounts = (filters: FilterState, privacy?: BrowserMockPrivacyOptions): LibraryScopeCounts => {
     const current = loadStoredState();
     const images = filterImages(
         current.images,
@@ -655,17 +652,14 @@ export const getBrowserMockScopeCounts = (
         getBrowserMockCollections(),
         true,
         true,
-        privacy,
+        privacy
     );
     const counts = createEmptyLibraryScopeCounts();
-    images.forEach(image => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
+    images.forEach((image) => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
     return counts;
 };
 
-export const getBrowserMockScopeAvailability = (
-    filters: FilterState,
-    privacy: BrowserMockPrivacyOptions,
-): LibraryScopeCounts => {
+export const getBrowserMockScopeAvailability = (filters: FilterState, privacy: BrowserMockPrivacyOptions): LibraryScopeCounts => {
     const current = loadStoredState();
     const visibilityFilters = createDefaultFilters({
         showIntermediates: filters.showIntermediates,
@@ -673,8 +667,9 @@ export const getBrowserMockScopeAvailability = (
         showInvokeImageAssets: filters.showInvokeImageAssets,
     });
     const counts = createEmptyLibraryScopeCounts();
-    filterImages(current.images, visibilityFilters, getBrowserMockCollections(), false, true, privacy)
-        .forEach((image) => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
+    filterImages(current.images, visibilityFilters, getBrowserMockCollections(), false, true, privacy).forEach((image) =>
+        addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image))
+    );
     return counts;
 };
 
@@ -729,9 +724,8 @@ const getFacetSourceFilters = (filters: FilterState, type: FacetType): FilterSta
 export const getBrowserMockFacets = (filters?: FilterState): Facets => {
     const current = loadStoredState();
     const collections = getBrowserMockCollections();
-    const sourceFor = (type: FacetType) => (
-        filters ? filterImages(current.images, getFacetSourceFilters(filters, type), collections) : current.images
-    );
+    const sourceFor = (type: FacetType) =>
+        filters ? filterImages(current.images, getFacetSourceFilters(filters, type), collections) : current.images;
     const tools = buildFacetItems(sourceFor('tools'), 'tools').map((item) => item.name);
 
     return {
@@ -748,9 +742,7 @@ export const getBrowserMockFacets = (filters?: FilterState): Facets => {
 export const getBrowserMockStatsSummary = (filters: FilterState): LibraryStatsSummary => {
     const current = loadStoredState();
     const images = filterImages(current.images, filters, getBrowserMockCollections());
-    const recordedSteps = images
-        .map((image) => image.metadata.steps)
-        .filter((steps) => steps > 0);
+    const recordedSteps = images.map((image) => image.metadata.steps).filter((steps) => steps > 0);
     const modelCounts = new Map<string, number>();
 
     images.forEach((image) => {
@@ -759,17 +751,15 @@ export const getBrowserMockStatsSummary = (filters: FilterState): LibraryStatsSu
 
     return {
         totalItems: images.length,
-        totalImages: images.filter(image => (image.mediaType ?? 'image') === 'image').length,
-        totalVideos: images.filter(image => image.mediaType === 'video').length,
+        totalImages: images.filter((image) => (image.mediaType ?? 'image') === 'image').length,
+        totalVideos: images.filter((image) => image.mediaType === 'video').length,
         totalBytes: images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0),
         totalGenerations: images.length,
-        avgSteps: recordedSteps.length
-            ? Math.round(recordedSteps.reduce((sum, steps) => sum + steps, 0) / recordedSteps.length)
-            : 0,
+        avgSteps: recordedSteps.length ? Math.round(recordedSteps.reduce((sum, steps) => sum + steps, 0) / recordedSteps.length) : 0,
         estSizeMB: (images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0) / (1024 * 1024)).toFixed(1),
         modelStats: Array.from(modelCounts.entries())
             .sort((a, b) => b[1] - a[1])
-            .map(([name, count]) => ({ name, fullName: name, count }))
+            .map(([name, count]) => ({ name, fullName: name, count })),
     };
 };
 
@@ -779,22 +769,25 @@ export const getBrowserMockKeywordStats = (filters: FilterState): LibraryStats['
     const keywordCounts = new Map<string, number>();
 
     images.forEach((image) => {
-        image.metadata.positivePrompt.toLowerCase().split(/[^a-z0-9]+/).forEach((word) => {
-            if (word.length > 3) keywordCounts.set(word, (keywordCounts.get(word) ?? 0) + 1);
-        });
+        image.metadata.positivePrompt
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .forEach((word) => {
+                if (word.length > 3) keywordCounts.set(word, (keywordCounts.get(word) ?? 0) + 1);
+            });
     });
 
     return Array.from(keywordCounts.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 40)
-            .map(([text, value]) => ({ text, value }));
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 40)
+        .map(([text, value]) => ({ text, value }));
 };
 
 export const getBrowserMockStats = (filters: FilterState): LibraryStats => {
     const summary = getBrowserMockStatsSummary(filters);
     return {
         ...summary,
-        keywordStats: getBrowserMockKeywordStats(filters)
+        keywordStats: getBrowserMockKeywordStats(filters),
     };
 };
 
@@ -817,9 +810,9 @@ export const setBrowserMockInvokeMembershipSnapshot = (collectionId: string, ima
     persistState();
 };
 
-export const getBrowserMockInvokeMembershipSnapshot = (collectionId: string): string[] => (
-    [...(loadStoredState().invokeBoardMemberships?.[collectionId] ?? [])]
-);
+export const getBrowserMockInvokeMembershipSnapshot = (collectionId: string): string[] => [
+    ...(loadStoredState().invokeBoardMemberships?.[collectionId] ?? []),
+];
 
 export const upsertBrowserMockCollection = (collection: Partial<Collection> & { id: string; name: string }): void => {
     const collections = getBrowserMockCollections();
@@ -835,9 +828,8 @@ export const upsertBrowserMockCollection = (collection: Partial<Collection> & { 
         updatedAt: Date.now(),
     };
 
-    const nextCollections = existingIndex >= 0
-        ? collections.map((item) => item.id === collection.id ? next : item)
-        : [...collections, next];
+    const nextCollections =
+        existingIndex >= 0 ? collections.map((item) => (item.id === collection.id ? next : item)) : [...collections, next];
 
     state.collections = nextCollections.filter((item) => !isSmartCollection(item));
     state.smartCollections = nextCollections.filter(isSmartCollection);
@@ -877,7 +869,7 @@ export const removeBrowserMockImagesFromCollection = (collectionId: string, imag
 };
 
 export const updateBrowserMockImage = (id: string, update: Partial<AIImage>): void => {
-    state.images = state.images.map((image) => image.id === id ? { ...image, ...update } : image);
+    state.images = state.images.map((image) => (image.id === id ? { ...image, ...update } : image));
 };
 
 export const deleteBrowserMockImages = (ids: string[]): void => {

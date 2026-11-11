@@ -24,7 +24,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
                 Choose whose InvokeAI images Ambit may show. Display names and stable IDs are shown; email addresses are never read.
             </p>
-            {discovery.owners.map(owner => {
+            {discovery.owners.map((owner) => {
                 const selected = selection?.mode === 'owner' && selection.ownerId === owner.ownerId;
                 const intermediateImageCount = owner.intermediateImageCount ?? 0;
                 const standardImageCount = owner.imageCount - intermediateImageCount;
@@ -42,14 +42,15 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                                 ownerId: owner.ownerId,
                             });
                         }}
-                        className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selected
-                            ? 'border-sage-500 bg-sage-500/10'
-                            : 'border-gray-200 hover:border-sage-500/50 dark:border-white/10'}`}
+                        className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selected ? 'border-sage-500 bg-sage-500/10' : 'border-gray-200 hover:border-sage-500/50 dark:border-white/10'
+                        }`}
                     >
                         <span className="flex items-center justify-between gap-3">
                             <span className="min-w-0">
                                 <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">
-                                    {owner.displayName || 'Unnamed owner'}{owner.isStale ? ' (not currently represented)' : ''}
+                                    {owner.displayName || 'Unnamed owner'}
+                                    {owner.isStale ? ' (not currently represented)' : ''}
                                 </span>
                                 <span className="block break-all font-mono text-[10px] text-gray-500">{owner.ownerId}</span>
                             </span>
@@ -92,13 +93,17 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                     if (selection?.mode === 'all') return;
                     void onSelect({ dbPath: discovery.dbPath, mode: 'all' });
                 }}
-                className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selection?.mode === 'all'
-                    ? 'border-ember-500 bg-ember-500/10'
-                    : 'border-gray-200 hover:border-ember-500/50 dark:border-white/10'}`}
+                className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                    selection?.mode === 'all'
+                        ? 'border-ember-500 bg-ember-500/10'
+                        : 'border-gray-200 hover:border-ember-500/50 dark:border-white/10'
+                }`}
             >
                 <span className="flex items-center justify-between gap-3">
                     <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
-                    {selection?.mode === 'all' ? <Check className="h-4 w-4 shrink-0 text-ember-600 dark:text-ember-300" aria-hidden="true" /> : null}
+                    {selection?.mode === 'all' ? (
+                        <Check className="h-4 w-4 shrink-0 text-ember-600 dark:text-ember-300" aria-hidden="true" />
+                    ) : null}
                 </span>
                 <span className="block text-[10px] leading-4 text-gray-500">
                     Show every owner's images and boards, including unassigned rows.
@@ -110,7 +115,6 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                     Select an owner or explicitly choose All users. InvokeAI rows remain hidden until then.
                 </div>
             )}
-
         </div>
     );
 };

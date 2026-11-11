@@ -20,14 +20,8 @@ interface ResourcesSectionProps {
     onExpandedChange?: (expanded: boolean) => void;
 }
 
-export const ResourcesSection: React.FC<ResourcesSectionProps> = ({
-    groups,
-    onSearch,
-    onClose,
-    expanded,
-    onExpandedChange,
-}) => {
-    const visibleGroups = groups.filter(group => Array.isArray(group.items) && group.items.length > 0);
+export const ResourcesSection: React.FC<ResourcesSectionProps> = ({ groups, onSearch, onClose, expanded, onExpandedChange }) => {
+    const visibleGroups = groups.filter((group) => Array.isArray(group.items) && group.items.length > 0);
     const totalCount = visibleGroups.reduce((total, group) => total + (group.items?.length ?? 0), 0);
 
     if (visibleGroups.length === 0) return null;
@@ -41,7 +35,7 @@ export const ResourcesSection: React.FC<ResourcesSectionProps> = ({
             onExpandedChange={onExpandedChange}
             contentClassName="mt-3 space-y-4 pl-6"
         >
-            {visibleGroups.map(group => {
+            {visibleGroups.map((group) => {
                 const Icon = group.icon;
                 const items = group.items ?? [];
                 return (
@@ -50,16 +44,22 @@ export const ResourcesSection: React.FC<ResourcesSectionProps> = ({
                             <h4 className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-500">
                                 <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                                 <span className="truncate">{group.title}</span>
-                                <span aria-hidden="true" className="text-[10px] font-medium text-gray-400 dark:text-zinc-600">{items.length}</span>
+                                <span aria-hidden="true" className="text-[10px] font-medium text-gray-400 dark:text-zinc-600">
+                                    {items.length}
+                                </span>
                             </h4>
                             {group.source ? <MetadataSourceBadge source={group.source} /> : null}
                         </div>
                         <ResourceChips
                             items={items}
-                            onSelect={onSearch ? name => {
-                                onSearch(group.filterKind ? buildResourceSearchTerm(group.filterKind, name) : name);
-                                onClose?.();
-                            } : undefined}
+                            onSelect={
+                                onSearch
+                                    ? (name) => {
+                                          onSearch(group.filterKind ? buildResourceSearchTerm(group.filterKind, name) : name);
+                                          onClose?.();
+                                      }
+                                    : undefined
+                            }
                         />
                     </section>
                 );

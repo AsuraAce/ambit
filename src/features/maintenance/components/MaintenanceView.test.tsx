@@ -32,24 +32,24 @@ const maintenanceDataMock = vi.hoisted(() => ({
 const imageRepoMock = vi.hoisted(() => ({
     getImagesByIds: vi.fn().mockResolvedValue([]),
     getRemovedImagesByIds: vi.fn().mockResolvedValue([]),
-    toggleImageIntermediate: vi.fn().mockResolvedValue(undefined)
+    toggleImageIntermediate: vi.fn().mockResolvedValue(undefined),
 }));
 
 const thumbnailServiceMock = vi.hoisted(() => ({
-    regenerateAllUnoptimized: vi.fn().mockResolvedValue(0)
+    regenerateAllUnoptimized: vi.fn().mockResolvedValue(0),
 }));
 
 const thumbnailConsumerRefreshMock = vi.hoisted(() => ({
-    refreshThumbnailConsumers: vi.fn().mockResolvedValue(undefined)
+    refreshThumbnailConsumers: vi.fn().mockResolvedValue(undefined),
 }));
 
 const toastMock = vi.hoisted(() => ({
-    addToast: vi.fn()
+    addToast: vi.fn(),
 }));
 
 const libraryContextMock = vi.hoisted(() => ({
     activeSqlWhere: 'WHERE model_name = ?',
-    activeSqlParams: ['model-a'] as unknown[]
+    activeSqlParams: ['model-a'] as unknown[],
 }));
 
 const createImage = (overrides: Partial<AIImage> = {}): AIImage => ({
@@ -69,9 +69,9 @@ const createImage = (overrides: Partial<AIImage> = {}): AIImage => ({
         cfg: 0,
         sampler: '',
         positivePrompt: '',
-        negativePrompt: ''
+        negativePrompt: '',
     },
-    ...overrides
+    ...overrides,
 });
 
 const createVideo = (overrides: Partial<VideoAsset> = {}): VideoAsset => ({
@@ -111,15 +111,15 @@ vi.mock('../../../hooks/useMaintenanceData', () => ({
         setLocalMissingImages: maintenanceDataMock.setLocalMissingImages,
         setLocalDuplicateCandidates: maintenanceDataMock.setLocalDuplicateCandidates,
         setLocalIntermediateImages: maintenanceDataMock.setLocalIntermediateImages,
-    })
+    }),
 }));
 
 vi.mock('../../../hooks/useToast', () => ({
-    useToast: () => toastMock
+    useToast: () => toastMock,
 }));
 
 vi.mock('../../../contexts/LibraryContext', () => ({
-    useLibraryContext: () => libraryContextMock
+    useLibraryContext: () => libraryContextMock,
 }));
 
 vi.mock('./MaintenanceTabs', () => ({
@@ -131,16 +131,15 @@ vi.mock('./MaintenanceTabs', () => ({
         { id: 'intermediates', label: 'Intermediates' },
         { id: 'trash', label: 'Removed' },
     ],
-    MaintenanceTabs: ({ activeTab, onTabChange }: {
-        activeTab: MaintenanceTab;
-        onTabChange: (tab: MaintenanceTab) => void;
-    }) => (
+    MaintenanceTabs: ({ activeTab, onTabChange }: { activeTab: MaintenanceTab; onTabChange: (tab: MaintenanceTab) => void }) => (
         <div data-testid="maintenance-tabs" data-active-tab={activeTab}>
-            {(['missing', 'trash', 'untagged', 'thumbnails', 'duplicates', 'intermediates'] as MaintenanceTab[]).map(tab => (
-                <button key={tab} onClick={() => onTabChange(tab)}>Tab {tab}</button>
+            {(['missing', 'trash', 'untagged', 'thumbnails', 'duplicates', 'intermediates'] as MaintenanceTab[]).map((tab) => (
+                <button key={tab} onClick={() => onTabChange(tab)}>
+                    Tab {tab}
+                </button>
             ))}
         </div>
-    )
+    ),
 }));
 
 vi.mock('./LibraryHealth', () => ({
@@ -149,11 +148,20 @@ vi.mock('./LibraryHealth', () => ({
             <button onClick={() => onScanComplete(['missing-scan'])}>Scan Missing</button>
             <button onClick={() => onScanComplete([])}>Clear Missing Scan</button>
         </div>
-    )
+    ),
 }));
 
 vi.mock('./MissingTab', () => ({
-    MissingTab: ({ images, onItemClick, onSelectAll, onDeleteSelected, onPurgeMissing, onViewImage, onRangeSelection, onBackgroundClick }: {
+    MissingTab: ({
+        images,
+        onItemClick,
+        onSelectAll,
+        onDeleteSelected,
+        onPurgeMissing,
+        onViewImage,
+        onRangeSelection,
+        onBackgroundClick,
+    }: {
         images: AIImage[];
         onItemClick: (id: string, index: number, event: React.MouseEvent) => void;
         onSelectAll: () => void;
@@ -166,18 +174,25 @@ vi.mock('./MissingTab', () => ({
         <div>
             <div data-testid="missing-count">{images.length}</div>
             {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Missing Viewer</button>}
-            {images[0] && <button onClick={event => onItemClick(images[0].id, 0, event)}>Select Missing Item</button>}
+            {images[0] && <button onClick={(event) => onItemClick(images[0].id, 0, event)}>Select Missing Item</button>}
             <button onClick={onSelectAll}>Select All Missing</button>
             <button onClick={onDeleteSelected}>Delete Missing</button>
             <button onClick={onPurgeMissing}>Purge Missing</button>
             <button onClick={() => onRangeSelection([0], true)}>Range Missing</button>
             <button onClick={onBackgroundClick}>Clear Missing Selection</button>
         </div>
-    )
+    ),
 }));
 
 vi.mock('./TrashTab', () => ({
-    TrashTab: ({ images, onSelectAll, onRestoreSelected, onDeleteSelected, onItemClick, busyAction }: {
+    TrashTab: ({
+        images,
+        onSelectAll,
+        onRestoreSelected,
+        onDeleteSelected,
+        onItemClick,
+        busyAction,
+    }: {
         images: AIImage[];
         onSelectAll: () => void;
         onRestoreSelected: () => void;
@@ -189,13 +204,19 @@ vi.mock('./TrashTab', () => ({
             <button onClick={onSelectAll}>Select All Trash</button>
             <button onClick={onRestoreSelected}>Restore Trash</button>
             <button onClick={onDeleteSelected}>Delete Trash</button>
-            {images[0] && <button onClick={event => onItemClick(images[0].id, 0, event)}>Open Trash Viewer</button>}
+            {images[0] && <button onClick={(event) => onItemClick(images[0].id, 0, event)}>Open Trash Viewer</button>}
         </div>
-    )
+    ),
 }));
 
 vi.mock('./UntaggedTab', () => ({
-    UntaggedTab: ({ images, onSelectAll, onRemoveFromLibrary, onScopeChange, onViewImage }: {
+    UntaggedTab: ({
+        images,
+        onSelectAll,
+        onRemoveFromLibrary,
+        onScopeChange,
+        onViewImage,
+    }: {
         images: AIImage[];
         onSelectAll: () => void;
         onRemoveFromLibrary: () => void;
@@ -208,11 +229,20 @@ vi.mock('./UntaggedTab', () => ({
             <button onClick={() => onScopeChange('filtered')}>Filter Untagged</button>
             {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Untagged Viewer</button>}
         </div>
-    )
+    ),
 }));
 
 vi.mock('./ThumbnailsTab', () => ({
-    ThumbnailsTab: ({ images, selectedIds, onItemClick, onSelectAll, onRegenerate, onScopeChange, onIncludeUpgradeableChange, onRepairComplete }: {
+    ThumbnailsTab: ({
+        images,
+        selectedIds,
+        onItemClick,
+        onSelectAll,
+        onRegenerate,
+        onScopeChange,
+        onIncludeUpgradeableChange,
+        onRepairComplete,
+    }: {
         images: AIImage[];
         selectedIds: Set<string>;
         onItemClick: (id: string, index: number, event: React.MouseEvent) => void;
@@ -223,7 +253,7 @@ vi.mock('./ThumbnailsTab', () => ({
         onRepairComplete: () => void;
     }) => (
         <div data-testid="thumbnails-tab">
-            {images[0] && <button onClick={event => onItemClick(images[0].id, 0, event)}>Open Thumbnail Viewer</button>}
+            {images[0] && <button onClick={(event) => onItemClick(images[0].id, 0, event)}>Open Thumbnail Viewer</button>}
             <button onClick={onSelectAll}>Select All Thumbnails</button>
             <button onClick={() => onRegenerate(Array.from(selectedIds))}>Regenerate Selected</button>
             <button onClick={() => onRegenerate()}>Regenerate All</button>
@@ -231,11 +261,18 @@ vi.mock('./ThumbnailsTab', () => ({
             <button onClick={() => onIncludeUpgradeableChange(true)}>Include Upgradeable</button>
             <button onClick={onRepairComplete}>Repair Complete</button>
         </div>
-    )
+    ),
 }));
 
 vi.mock('./IntermediatesTab', () => ({
-    IntermediatesTab: ({ images, onSelectAll, onDeleteSelected, onUnmarkSelected, onScopeChange, onViewImage }: {
+    IntermediatesTab: ({
+        images,
+        onSelectAll,
+        onDeleteSelected,
+        onUnmarkSelected,
+        onScopeChange,
+        onViewImage,
+    }: {
         images: AIImage[];
         onSelectAll: () => void;
         onDeleteSelected: () => void;
@@ -250,11 +287,17 @@ vi.mock('./IntermediatesTab', () => ({
             <button onClick={() => onScopeChange('filtered')}>Filter Intermediates</button>
             {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Intermediate Viewer</button>}
         </div>
-    )
+    ),
 }));
 
 vi.mock('./DuplicateFinder', () => ({
-    DuplicateFinder: ({ images, onResolve, onRefresh, onViewImage, onCompareImages }: {
+    DuplicateFinder: ({
+        images,
+        onResolve,
+        onRefresh,
+        onViewImage,
+        onCompareImages,
+    }: {
         images: AIImage[];
         onResolve: (resolutions: Array<{ keepId: string; removeIds: string[] }>) => void;
         onRefresh: () => void;
@@ -264,21 +307,42 @@ vi.mock('./DuplicateFinder', () => ({
         <div data-testid="duplicate-finder">
             {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Duplicate Viewer</button>}
             {images.length > 1 && <button onClick={() => onCompareImages(images[0], images[1])}>Compare Duplicates</button>}
-            {images.length > 1 && <button onClick={() => onResolve([{ keepId: images[0].id, removeIds: [images[1].id] }])}>Resolve Duplicates</button>}
+            {images.length > 1 && (
+                <button onClick={() => onResolve([{ keepId: images[0].id, removeIds: [images[1].id] }])}>Resolve Duplicates</button>
+            )}
             <button onClick={onRefresh}>Refresh Duplicates</button>
         </div>
-    )
+    ),
 }));
 
 vi.mock('./ScanPlaceholder', () => ({
-    ScanPlaceholder: ({ tab, onStartScan }: {
+    ScanPlaceholder: ({
+        tab,
+        onStartScan,
+    }: {
         tab: MaintenanceTab;
         onStartScan: (tab: MaintenanceTab, scope: 'global' | 'filtered') => void;
-    }) => <button onClick={() => onStartScan(tab, 'filtered')}>Start {tab} Scan</button>
+    }) => <button onClick={() => onStartScan(tab, 'filtered')}>Start {tab} Scan</button>,
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, onUpdatePrompt, onSetImageKind, isShortcutBlocked }: {
+    ImageViewer: ({
+        image,
+        onDelete,
+        onNext,
+        onPrev,
+        onClose,
+        onToggleFavorite,
+        onTogglePin,
+        onSetCollectionMembership,
+        onSearch,
+        onOpenSettings,
+        onRecoverMetadata,
+        onOpenReferencedImage,
+        onUpdatePrompt,
+        onSetImageKind,
+        isShortcutBlocked,
+    }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -295,15 +359,31 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onSetImageKind?: (id: string, sourceKindOverride: 'generated' | 'photograph' | 'other' | null) => void | Promise<void>;
         isShortcutBlocked?: boolean;
     }) => (
-        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-metadata={JSON.stringify(image.metadata)} data-original-chunks={JSON.stringify(image.originalChunks)} data-editable={String(Boolean(onUpdatePrompt))} data-kind-editable={String(Boolean(onSetImageKind))} data-source-kind={image.sourceKind ?? ''} data-source-kind-override={image.sourceKindOverride ?? ''} data-display-timestamp={image.displayTimestamp ?? ''} data-shortcuts-blocked={String(isShortcutBlocked)}>
+        <div
+            data-testid="maintenance-viewer"
+            data-image-id={image.id}
+            data-prompt={image.metadata.positivePrompt}
+            data-metadata={JSON.stringify(image.metadata)}
+            data-original-chunks={JSON.stringify(image.originalChunks)}
+            data-editable={String(Boolean(onUpdatePrompt))}
+            data-kind-editable={String(Boolean(onSetImageKind))}
+            data-source-kind={image.sourceKind ?? ''}
+            data-source-kind-override={image.sourceKindOverride ?? ''}
+            data-display-timestamp={image.displayTimestamp ?? ''}
+            data-shortcuts-blocked={String(isShortcutBlocked)}
+        >
             {onDelete && <button onClick={onDelete}>Viewer Cleanup</button>}
             <button onClick={onNext}>Viewer Next</button>
             <button onClick={onPrev}>Viewer Previous</button>
             <button onClick={onClose}>Close Viewer</button>
             {onToggleFavorite && <button onClick={() => onToggleFavorite(image.id)}>Favorite Viewer</button>}
             {onTogglePin && <button onClick={() => onTogglePin(image.id, true)}>Pin Viewer</button>}
-            {onSetCollectionMembership && <button onClick={() => void onSetCollectionMembership(image.id, 'collection', true)}>Add Viewer Collection</button>}
-            {onSetCollectionMembership && <button onClick={() => void onSetCollectionMembership(image.id, 'collection', false)}>Remove Viewer Collection</button>}
+            {onSetCollectionMembership && (
+                <button onClick={() => void onSetCollectionMembership(image.id, 'collection', true)}>Add Viewer Collection</button>
+            )}
+            {onSetCollectionMembership && (
+                <button onClick={() => void onSetCollectionMembership(image.id, 'collection', false)}>Remove Viewer Collection</button>
+            )}
             <button onClick={onSearch}>Viewer Search</button>
             <button onClick={onOpenSettings}>Viewer Settings</button>
             {onRecoverMetadata && <button onClick={onRecoverMetadata}>Recover Viewer Prompt</button>}
@@ -311,11 +391,19 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
             {onSetImageKind && <button onClick={() => void onSetImageKind(image.id, 'other')}>Set Viewer Other</button>}
             {onSetImageKind && <button onClick={() => void onSetImageKind(image.id, null)}>Set Viewer Automatic</button>}
         </div>
-    )
+    ),
 }));
 
 vi.mock('../../../features/viewer/components/VideoViewer', () => ({
-    VideoViewer: ({ video, onDelete, onClose, onToggleFavorite, onTogglePin, onUpdateNotes, onSetCollectionMembership }: {
+    VideoViewer: ({
+        video,
+        onDelete,
+        onClose,
+        onToggleFavorite,
+        onTogglePin,
+        onUpdateNotes,
+        onSetCollectionMembership,
+    }: {
         video: VideoAsset;
         onDelete?: (id: string) => void;
         onClose: () => void;
@@ -324,19 +412,33 @@ vi.mock('../../../features/viewer/components/VideoViewer', () => ({
         onUpdateNotes?: (id: string, notes: string) => void;
         onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     }) => (
-        <div data-testid="maintenance-video-viewer" data-video-id={video.id} data-metadata={JSON.stringify(video.metadata)} data-original-chunks={JSON.stringify(video.originalChunks)} data-editable={String(Boolean(onUpdateNotes))}>
+        <div
+            data-testid="maintenance-video-viewer"
+            data-video-id={video.id}
+            data-metadata={JSON.stringify(video.metadata)}
+            data-original-chunks={JSON.stringify(video.originalChunks)}
+            data-editable={String(Boolean(onUpdateNotes))}
+        >
             {onDelete && <button onClick={() => onDelete(video.id)}>Video Cleanup</button>}
             <button onClick={onClose}>Close Video Viewer</button>
             {onToggleFavorite && <button onClick={() => onToggleFavorite(video.id)}>Favorite Video Viewer</button>}
             {onTogglePin && <button onClick={() => onTogglePin(video.id, true)}>Pin Video Viewer</button>}
             {onUpdateNotes && <button onClick={() => onUpdateNotes(video.id, 'video notes')}>Update Video Notes</button>}
-            {onSetCollectionMembership && <button onClick={() => void onSetCollectionMembership(video.id, 'collection', true)}>Add Video Collection</button>}
+            {onSetCollectionMembership && (
+                <button onClick={() => void onSetCollectionMembership(video.id, 'collection', true)}>Add Video Collection</button>
+            )}
         </div>
-    )
+    ),
 }));
 
 vi.mock('../../../features/viewer/components/CompareModal', () => ({
-    CompareModal: ({ imageA, imageB, onClose, onToggleFavorite, onTogglePin }: {
+    CompareModal: ({
+        imageA,
+        imageB,
+        onClose,
+        onToggleFavorite,
+        onTogglePin,
+    }: {
         imageA: AIImage;
         imageB: AIImage;
         onClose: () => void;
@@ -349,21 +451,21 @@ vi.mock('../../../features/viewer/components/CompareModal', () => ({
             {onTogglePin && <button onClick={() => onTogglePin(imageA.id, true)}>Pin Compare</button>}
             {onTogglePin && <button onClick={() => onTogglePin(imageB.id, true)}>Pin Compare B</button>}
         </div>
-    )
+    ),
 }));
 
 vi.mock('../../../services/db/imageRepo', () => ({
     getImagesByIds: imageRepoMock.getImagesByIds,
     getRemovedImagesByIds: imageRepoMock.getRemovedImagesByIds,
-    toggleImageIntermediate: imageRepoMock.toggleImageIntermediate
+    toggleImageIntermediate: imageRepoMock.toggleImageIntermediate,
 }));
 
 vi.mock('../../../services/thumbnailService', () => ({
-    regenerateAllUnoptimized: thumbnailServiceMock.regenerateAllUnoptimized
+    regenerateAllUnoptimized: thumbnailServiceMock.regenerateAllUnoptimized,
 }));
 
 vi.mock('../../../services/thumbnailConsumerRefresh', () => ({
-    refreshThumbnailConsumers: thumbnailConsumerRefreshMock.refreshThumbnailConsumers
+    refreshThumbnailConsumers: thumbnailConsumerRefreshMock.refreshThumbnailConsumers,
 }));
 
 const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
@@ -391,7 +493,7 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onSearch: vi.fn(),
     onOpenSettings: vi.fn(),
     isShortcutBlocked: false,
-    onSetCollectionMembership: vi.fn().mockResolvedValue(true)
+    onSetCollectionMembership: vi.fn().mockResolvedValue(true),
 });
 
 const renderView = (overrides: Partial<React.ComponentProps<typeof MaintenanceView>> = {}) => {
@@ -415,13 +517,13 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.hasLoadedActiveTab = true;
         maintenanceDataMock.refreshData.mockResolvedValue(undefined);
         maintenanceDataMock.retryActiveTab.mockResolvedValue(undefined);
-        maintenanceDataMock.setLocalMissingImages.mockImplementation(update => {
-            maintenanceDataMock.localMissingImages = typeof update === 'function'
-                ? update(maintenanceDataMock.localMissingImages)
-                : update;
+        maintenanceDataMock.setLocalMissingImages.mockImplementation((update) => {
+            maintenanceDataMock.localMissingImages = typeof update === 'function' ? update(maintenanceDataMock.localMissingImages) : update;
         });
         imageRepoMock.getImagesByIds.mockResolvedValue([]);
-        imageRepoMock.getRemovedImagesByIds.mockImplementation(async (ids: string[]) => maintenanceDataMock.localDeletedImages.filter(image => ids.includes(image.id)));
+        imageRepoMock.getRemovedImagesByIds.mockImplementation(async (ids: string[]) =>
+            maintenanceDataMock.localDeletedImages.filter((image) => ids.includes(image.id))
+        );
         imageRepoMock.toggleImageIntermediate.mockResolvedValue(undefined);
         thumbnailServiceMock.regenerateAllUnoptimized.mockResolvedValue(0);
         thumbnailConsumerRefreshMock.refreshThumbnailConsumers.mockResolvedValue(undefined);
@@ -432,14 +534,18 @@ describe('MaintenanceView', () => {
         vi.restoreAllMocks();
     });
 
-    it.each(['image', 'video'] as const)('hydrates only the opened Removed %s for its viewer', async mediaType => {
+    it.each(['image', 'video'] as const)('hydrates only the opened Removed %s for its viewer', async (mediaType) => {
         const light = mediaType === 'video' ? createVideo() : createImage();
         const full = {
             ...light,
             metadata: {
-                ...light.metadata, model: 'Archived model', tool: GeneratorTool.COMFYUI,
-                positivePrompt: 'Current prompt', negativePrompt: 'Original negative',
-                steps: 28, workflowJson: '{"nodes":[]}',
+                ...light.metadata,
+                model: 'Archived model',
+                tool: GeneratorTool.COMFYUI,
+                positivePrompt: 'Current prompt',
+                negativePrompt: 'Original negative',
+                steps: 28,
+                workflowJson: '{"nodes":[]}',
             },
             originalChunks: { workflow: 'archived workflow' },
         };
@@ -451,8 +557,7 @@ describe('MaintenanceView', () => {
         expect(imageRepoMock.getRemovedImagesByIds).not.toHaveBeenCalled();
         fireEvent.click(await screen.findByText('Open Trash Viewer'));
         const viewerId = mediaType === 'video' ? 'maintenance-video-viewer' : 'maintenance-viewer';
-        await waitFor(() => expect(screen.getByTestId(viewerId).getAttribute('data-metadata'))
-            .toBe(JSON.stringify(full.metadata)));
+        await waitFor(() => expect(screen.getByTestId(viewerId).getAttribute('data-metadata')).toBe(JSON.stringify(full.metadata)));
         expect(screen.getByTestId(viewerId).getAttribute('data-original-chunks')).toBe(JSON.stringify(full.originalChunks));
         expect(imageRepoMock.getRemovedImagesByIds).toHaveBeenCalledExactlyOnceWith([light.id]);
         expect(maintenanceDataMock.localDeletedImages[0]).toBe(light);
@@ -465,7 +570,12 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.localDeletedImages = [first, second];
         let resolveFirst!: (images: AIImage[]) => void;
         imageRepoMock.getRemovedImagesByIds
-            .mockImplementationOnce(() => new Promise<AIImage[]>(resolve => { resolveFirst = resolve; }))
+            .mockImplementationOnce(
+                () =>
+                    new Promise<AIImage[]>((resolve) => {
+                        resolveFirst = resolve;
+                    })
+            )
             .mockResolvedValueOnce([{ ...second, metadata: { ...second.metadata, positivePrompt: 'Second full prompt' } }]);
         renderView();
         fireEvent.click(screen.getByText('Tab trash'));
@@ -487,7 +597,12 @@ describe('MaintenanceView', () => {
         renderView();
         fireEvent.click(screen.getByText('Tab trash'));
         fireEvent.click(await screen.findByText('Open Trash Viewer'));
-        await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith('Could not load removed item details. Close and reopen the viewer to retry.', 'error'));
+        await waitFor(() =>
+            expect(toastMock.addToast).toHaveBeenCalledWith(
+                'Could not load removed item details. Close and reopen the viewer to retry.',
+                'error'
+            )
+        );
         fireEvent.click(screen.getByText('Close Viewer'));
         fireEvent.click(screen.getByText('Open Trash Viewer'));
         await waitFor(() => expect(imageRepoMock.getRemovedImagesByIds).toHaveBeenCalledTimes(2));
@@ -515,7 +630,7 @@ describe('MaintenanceView', () => {
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('missing', false, {
             scope: 'global',
             includeUpgradeable: undefined,
-            runHashBackfill: false
+            runHashBackfill: false,
         });
     });
 
@@ -576,9 +691,7 @@ describe('MaintenanceView', () => {
     it('fetches missing audit results from both the store and LibraryHealth', async () => {
         const storeImage = createImage({ id: 'missing-store', isMissing: true });
         const scanImage = createImage({ id: 'missing-scan', isMissing: true });
-        imageRepoMock.getImagesByIds
-            .mockResolvedValueOnce([storeImage])
-            .mockResolvedValueOnce([scanImage]);
+        imageRepoMock.getImagesByIds.mockResolvedValueOnce([storeImage]).mockResolvedValueOnce([scanImage]);
 
         renderView();
         act(() => {
@@ -587,7 +700,7 @@ describe('MaintenanceView', () => {
                 total: 10,
                 missingIds: ['missing-store'],
                 sampleMissingPaths: ['missing-store.png'],
-                wasCancelled: false
+                wasCancelled: false,
             });
         });
 
@@ -639,7 +752,7 @@ describe('MaintenanceView', () => {
     it('purges the complete missing result and clears it immediately', async () => {
         maintenanceDataMock.localMissingImages = [
             createImage({ id: 'missing-a', isMissing: true }),
-            createImage({ id: 'missing-b', isMissing: true })
+            createImage({ id: 'missing-b', isMissing: true }),
         ];
         const onRemoveFromLibrary = vi.fn().mockResolvedValue(undefined);
         renderView({ onRemoveFromLibrary });
@@ -687,9 +800,12 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.initializedTabs = new Set(['missing', 'trash']);
         maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
         let resolveDelete: ((result: DeleteRemovedImagesResult) => void) | undefined;
-        const onDeleteFile = vi.fn(() => new Promise<DeleteRemovedImagesResult>(resolve => {
-            resolveDelete = resolve;
-        }));
+        const onDeleteFile = vi.fn(
+            () =>
+                new Promise<DeleteRemovedImagesResult>((resolve) => {
+                    resolveDelete = resolve;
+                })
+        );
         renderView({ onDeleteFile });
 
         fireEvent.click(screen.getByText('Tab trash'));
@@ -740,10 +856,7 @@ describe('MaintenanceView', () => {
         await waitFor(() => expect(onDeleteFile).toHaveBeenCalledWith(['trash-a']));
         await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Move files to OS Trash?' })).toBeNull());
         expect(maintenanceDataMock.setLocalDeletedImages).toHaveBeenCalledWith(expect.any(Function));
-        expect(errorSpy).toHaveBeenCalledWith(
-            '[Maintenance] Deletion completed, but the view failed to refresh',
-            expect.any(Error)
-        );
+        expect(errorSpy).toHaveBeenCalledWith('[Maintenance] Deletion completed, but the view failed to refresh', expect.any(Error));
         expect(errorSpy).not.toHaveBeenCalledWith('[Maintenance] Removed deletion failed', expect.anything());
         errorSpy.mockRestore();
     });
@@ -754,7 +867,8 @@ describe('MaintenanceView', () => {
             createImage({ id: 'trash-a', isDeleted: true }),
             createImage({ id: 'trash-b', isDeleted: true }),
         ];
-        const onDeleteFile = vi.fn()
+        const onDeleteFile = vi
+            .fn()
             .mockResolvedValueOnce({
                 clearedIds: ['trash-a'],
                 trashedIds: ['trash-a'],
@@ -875,7 +989,7 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails']);
         maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' }), createImage({ id: 'thumb-b' })];
         maintenanceDataMock.unoptimizedTotalCount = 2;
-        thumbnailServiceMock.regenerateAllUnoptimized.mockImplementationOnce(async onProgress => {
+        thumbnailServiceMock.regenerateAllUnoptimized.mockImplementationOnce(async (onProgress) => {
             onProgress(2, 2);
             return 2;
         });
@@ -890,13 +1004,15 @@ describe('MaintenanceView', () => {
         await waitFor(() => expect(onRegenerateThumbnails).toHaveBeenCalledWith(['thumb-a', 'thumb-b']));
 
         fireEvent.click(screen.getByText('Regenerate All'));
-        await waitFor(() => expect(thumbnailServiceMock.regenerateAllUnoptimized).toHaveBeenCalledWith(
-            expect.any(Function),
-            expect.any(AbortSignal),
-            'WHERE model_name = ?',
-            ['model-a'],
-            true
-        ));
+        await waitFor(() =>
+            expect(thumbnailServiceMock.regenerateAllUnoptimized).toHaveBeenCalledWith(
+                expect.any(Function),
+                expect.any(AbortSignal),
+                'WHERE model_name = ?',
+                ['model-a'],
+                true
+            )
+        );
         expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
         expect(useLibraryStore.getState().thumbnailProgress).toBeNull();
         expect(useLibraryStore.getState().thumbnailAbortController).toBeNull();
@@ -905,7 +1021,7 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Repair Complete'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('thumbnails', false, {
             scope: 'filtered',
-            includeUpgradeable: true
+            includeUpgradeable: true,
         });
     });
 
@@ -921,10 +1037,7 @@ describe('MaintenanceView', () => {
             fireEvent.click(screen.getByText('Tab thumbnails'));
             fireEvent.click(await screen.findByText('Regenerate All'));
 
-            await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith(
-                'Thumbnail optimization failed partway through',
-                'error'
-            ));
+            await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith('Thumbnail optimization failed partway through', 'error'));
             expect(thumbnailConsumerRefreshMock.refreshThumbnailConsumers).toHaveBeenCalledOnce();
             expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
             expect(useLibraryStore.getState().thumbnailProgress).toBeNull();
@@ -948,7 +1061,7 @@ describe('MaintenanceView', () => {
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', true, {
             scope: 'global',
             includeUpgradeable: undefined,
-            runHashBackfill: true
+            runHashBackfill: true,
         });
 
         maintenanceDataMock.initializedTabs = new Set(['missing', 'duplicates']);
@@ -961,24 +1074,28 @@ describe('MaintenanceView', () => {
                     missing: 0,
                     errors: 0,
                     remaining: 0,
-                    wasCancelled: false
-                }
+                    wasCancelled: false,
+                },
             });
         });
         view.rerender(<MaintenanceView {...view.props} />);
 
         expect(await screen.findByTestId('duplicate-finder')).toBeTruthy();
         fireEvent.click(screen.getByText('Resolve Duplicates'));
-        await waitFor(() => expect(onResolveDuplicate).toHaveBeenCalledWith([{
-            keepId: 'duplicate-a',
-            removeIds: ['duplicate-b'],
-        }]));
+        await waitFor(() =>
+            expect(onResolveDuplicate).toHaveBeenCalledWith([
+                {
+                    keepId: 'duplicate-a',
+                    removeIds: ['duplicate-b'],
+                },
+            ])
+        );
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', false, {
-            runHashBackfill: false
+            runHashBackfill: false,
         });
         fireEvent.click(screen.getByText('Refresh Duplicates'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', true, {
-            runHashBackfill: true
+            runHashBackfill: true,
         });
 
         fireEvent.click(screen.getByText('Compare Duplicates'));
@@ -1001,12 +1118,21 @@ describe('MaintenanceView', () => {
         const onViewerOpenChange = vi.fn();
         const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
         const onRecoverMetadata = vi.fn((id: string, onRecovered: (image: AIImage) => void) => {
-            onRecovered(createImage({
-                id,
-                metadata: { ...createImage().metadata, positivePrompt: 'Recovered maintenance prompt' }
-            }));
+            onRecovered(
+                createImage({
+                    id,
+                    metadata: { ...createImage().metadata, positivePrompt: 'Recovered maintenance prompt' },
+                })
+            );
         });
-        renderView({ onToggleFavorite, onTogglePin, onViewerOpenChange, onSetCollectionMembership, onRecoverMetadata, isShortcutBlocked: true });
+        renderView({
+            onToggleFavorite,
+            onTogglePin,
+            onViewerOpenChange,
+            onSetCollectionMembership,
+            onRecoverMetadata,
+            isShortcutBlocked: true,
+        });
 
         fireEvent.click(screen.getByText('Select Missing Item'));
         expect(onViewerOpenChange).toHaveBeenLastCalledWith(true);
@@ -1039,13 +1165,15 @@ describe('MaintenanceView', () => {
     });
 
     it('updates the active maintenance viewer cache after correcting and restoring an automatic image kind', async () => {
-        maintenanceDataMock.localMissingImages = [createImage({
-            id: 'photo-missing',
-            detectedSourceKind: 'photograph',
-            sourceKind: 'photograph',
-            captureWallTimeMs: 456_789,
-            displayTimestamp: 1,
-        })];
+        maintenanceDataMock.localMissingImages = [
+            createImage({
+                id: 'photo-missing',
+                detectedSourceKind: 'photograph',
+                sourceKind: 'photograph',
+                captureWallTimeMs: 456_789,
+                displayTimestamp: 1,
+            }),
+        ];
         const onSetImageKind = vi.fn().mockResolvedValue(undefined);
         const view = renderView({ onSetImageKind });
 
@@ -1099,24 +1227,31 @@ describe('MaintenanceView', () => {
     it('covers global thumbnail work, non-duplicate scans, and viewer cleanup variants', async () => {
         maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails', 'duplicates', 'trash']);
         maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' })];
-        maintenanceDataMock.localDuplicateCandidates = [
-            createImage({ id: 'duplicate-a' }),
-            createImage({ id: 'duplicate-b' }),
-        ];
+        maintenanceDataMock.localDuplicateCandidates = [createImage({ id: 'duplicate-a' }), createImage({ id: 'duplicate-b' })];
         maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
         const onRemoveFromLibrary = vi.fn().mockResolvedValue(undefined);
         const view = renderView({ onRemoveFromLibrary, onTogglePin: undefined });
 
         fireEvent.click(screen.getByText('Tab thumbnails'));
         fireEvent.click(await screen.findByText('Regenerate All'));
-        await waitFor(() => expect(thumbnailServiceMock.regenerateAllUnoptimized).toHaveBeenCalledWith(
-            expect.any(Function), expect.any(AbortSignal), '', [], false
-        ));
+        await waitFor(() =>
+            expect(thumbnailServiceMock.regenerateAllUnoptimized).toHaveBeenCalledWith(
+                expect.any(Function),
+                expect.any(AbortSignal),
+                '',
+                [],
+                false
+            )
+        );
         fireEvent.click(screen.getByText('Open Thumbnail Viewer'));
         fireEvent.click(screen.getByText('Viewer Cleanup'));
-        await waitFor(() => expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith(
-            'thumbnails', false, expect.objectContaining({ scope: 'global', includeUpgradeable: false })
-        ));
+        await waitFor(() =>
+            expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith(
+                'thumbnails',
+                false,
+                expect.objectContaining({ scope: 'global', includeUpgradeable: false })
+            )
+        );
 
         maintenanceDataMock.initializedTabs = new Set();
         view.rerender(<MaintenanceView {...view.props} />);
@@ -1154,11 +1289,9 @@ describe('MaintenanceView', () => {
             fireEvent.click(screen.getByText(`Tab ${tab}`));
             fireEvent.click(await screen.findByText(openLabel));
             fireEvent.click(screen.getByText('Viewer Cleanup'));
-            await waitFor(() => expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith(
-                tab,
-                false,
-                expect.objectContaining({ scope: 'global' })
-            ));
+            await waitFor(() =>
+                expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith(tab, false, expect.objectContaining({ scope: 'global' }))
+            );
         }
 
         fireEvent.click(screen.getByText('Tab duplicates'));
@@ -1213,7 +1346,7 @@ describe('MaintenanceView', () => {
         const scrollTo = vi.fn();
         Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
             configurable: true,
-            value: scrollTo
+            value: scrollTo,
         });
         renderView();
 

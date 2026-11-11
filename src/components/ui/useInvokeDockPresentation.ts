@@ -4,14 +4,10 @@ import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../store
 const STARTUP_REVEAL_MS = 2500;
 const SUCCESS_VISIBLE_MS = 5000;
 
-export const useInvokeDockPresentation = (
-    operation: InvokeOperationState | null,
-    canShowActive: boolean
-) => {
+export const useInvokeDockPresentation = (operation: InvokeOperationState | null, canShowActive: boolean) => {
     const operationId = operation?.id;
     const origin = operation?.origin;
-    const isActive = operation?.viewCommitted === true
-        && ['syncing', 'cancelling', 'settling'].includes(operation.phase);
+    const isActive = operation?.viewCommitted === true && ['syncing', 'cancelling', 'settling'].includes(operation.phase);
     const [revealedId, setRevealedId] = React.useState<symbol | null>(null);
     const [shownId, setShownId] = React.useState<symbol | null>(null);
     const [isDocumentVisible, setIsDocumentVisible] = React.useState(() => document.visibilityState !== 'hidden');
@@ -37,14 +33,12 @@ export const useInvokeDockPresentation = (
     }, [operationId, isActiveVisible, canShowActive, isDocumentVisible]);
 
     // Zero image counts cannot prove that board or ownership work was unchanged.
-    const isSilentStartupSuccess = origin === 'startup' && operation?.phase === 'completed'
-        && operation.hasChanges === false && shownId !== operationId;
+    const isSilentStartupSuccess =
+        origin === 'startup' && operation?.phase === 'completed' && operation.hasChanges === false && shownId !== operationId;
 
     return {
         isActiveVisible,
-        isResultVisible: operation !== null
-            && ['completed', 'cancelled', 'failed'].includes(operation.phase)
-            && !isSilentStartupSuccess,
+        isResultVisible: operation !== null && ['completed', 'cancelled', 'failed'].includes(operation.phase) && !isSilentStartupSuccess,
         isDocumentVisible,
     };
 };
@@ -80,9 +74,9 @@ export const useInvokeResultDismissal = (
         const budget = remaining.current;
         const visibleSince = performance.now();
         const timer = window.setTimeout(() => {
-            useInvokeOwnerScopeStore.getState().setOperation(current => (
-                current?.id === operationId && current.phase === 'completed' ? null : current
-            ));
+            useInvokeOwnerScopeStore
+                .getState()
+                .setOperation((current) => (current?.id === operationId && current.phase === 'completed' ? null : current));
         }, budget.milliseconds);
         return () => {
             window.clearTimeout(timer);

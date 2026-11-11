@@ -12,7 +12,13 @@ vi.mock('../../library/components/VirtualGrid', () => ({
     }: {
         items: DuplicateGroup[];
         renderItem: (item: DuplicateGroup, style: React.CSSProperties) => React.ReactNode;
-    }) => <>{items.map(item => <React.Fragment key={item.id}>{renderItem(item, {})}</React.Fragment>)}</>,
+    }) => (
+        <>
+            {items.map((item) => (
+                <React.Fragment key={item.id}>{renderItem(item, {})}</React.Fragment>
+            ))}
+        </>
+    ),
 }));
 
 const createImage = (id: string, timestamp: number): AIImage => ({

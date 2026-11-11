@@ -19,7 +19,7 @@ const toWebUIVariant = (value: string): WebUIVariant => {
 };
 
 const normalizeExistingPaths = (existingPaths: Set<string>): Set<string> =>
-    new Set(Array.from(existingPaths, path => normalizePath(path).toLowerCase()));
+    new Set(Array.from(existingPaths, (path) => normalizePath(path).toLowerCase()));
 
 const mapBackendCandidate = (
     candidate: BackendDiscoveryCandidate,
@@ -27,9 +27,7 @@ const mapBackendCandidate = (
     forcedVariant: WebUIVariant | 'Auto'
 ): DiscoveryCandidate => {
     const normalizedPath = normalizePath(candidate.path);
-    const variant = forcedVariant === 'Auto'
-        ? toWebUIVariant(candidate.variant)
-        : forcedVariant;
+    const variant = forcedVariant === 'Auto' ? toWebUIVariant(candidate.variant) : forcedVariant;
 
     return {
         path: normalizedPath,
@@ -38,14 +36,12 @@ const mapBackendCandidate = (
         inferredType: toFolderType(candidate.inferredType),
         isAlreadyLinked: existingPaths.has(normalizedPath.toLowerCase()),
         isPriority: candidate.isPriority,
-        variant
+        variant,
     };
 };
 
 export const getUnlinkedPriorityCandidatePaths = (candidates: DiscoveryCandidate[]): string[] =>
-    candidates
-        .filter(candidate => candidate.isPriority && !candidate.isAlreadyLinked)
-        .map(candidate => candidate.path);
+    candidates.filter((candidate) => candidate.isPriority && !candidate.isAlreadyLinked).map((candidate) => candidate.path);
 
 /**
  * Attempts to detect the specific WebUI variant (A1111, Forge, SD.Next, Anapnoe).
@@ -80,13 +76,9 @@ export const discoverA1111Candidates = async (
     }
 
     return {
-        detectedVariant: forcedVariant === 'Auto'
-            ? toWebUIVariant(result.detectedVariant)
-            : forcedVariant,
-        candidates: result.candidates.map(candidate =>
-            mapBackendCandidate(candidate, normalizedExistingPaths, forcedVariant)
-        ),
+        detectedVariant: forcedVariant === 'Auto' ? toWebUIVariant(result.detectedVariant) : forcedVariant,
+        candidates: result.candidates.map((candidate) => mapBackendCandidate(candidate, normalizedExistingPaths, forcedVariant)),
         logs,
-        warnings: [...result.warnings]
+        warnings: [...result.warnings],
     };
 };

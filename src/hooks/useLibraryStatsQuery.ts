@@ -1,11 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
-import { getFacets, getKeywordStats, getLibraryStatsSummary, Facets, LibraryStats, LibraryStatsSummary, getValidFacetNames, ValidFacetNames, type ScopedFacetCountInput } from '../services/db/searchRepo';
+import {
+    getFacets,
+    getKeywordStats,
+    getLibraryStatsSummary,
+    Facets,
+    LibraryStats,
+    LibraryStatsSummary,
+    getValidFacetNames,
+    ValidFacetNames,
+    type ScopedFacetCountInput,
+} from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
-import { getBrowserMockFacets, getBrowserMockKeywordStats, getBrowserMockStatsSummary, getBrowserMockValidFacetNames } from '../services/browserMockData';
+import {
+    getBrowserMockFacets,
+    getBrowserMockKeywordStats,
+    getBrowserMockStatsSummary,
+    getBrowserMockValidFacetNames,
+} from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
@@ -27,7 +42,7 @@ const INITIAL_STATS_SUMMARY: LibraryStatsSummary = {
     totalGenerations: 0,
     avgSteps: 0,
     estSizeMB: '0',
-    modelStats: []
+    modelStats: [],
 };
 
 const INITIAL_KEYWORD_STATS: LibraryStats['keywordStats'] = [];
@@ -39,7 +54,7 @@ const INITIAL_FACETS: Facets = {
     hypernetworks: [],
     controlNets: [],
     ipAdapters: [],
-    tools: []
+    tools: [],
 };
 
 const getSelfExcludedFacetTypes = (filters: FilterState): FacetType[] => {
@@ -61,14 +76,9 @@ const getExcludeKeyForFacetType = (facetType: FacetType): string => {
     return facetType;
 };
 
-const hasRangeFilter = (value: number | null | undefined): boolean =>
-    value !== undefined && value !== null;
+const hasRangeFilter = (value: number | null | undefined): boolean => value !== undefined && value !== null;
 
-export const shouldFetchValidFacets = (
-    filters: FilterState,
-    privacyEnabled: boolean,
-    maskingMode: AppSettings['maskingMode']
-): boolean => {
+export const shouldFetchValidFacets = (filters: FilterState, privacyEnabled: boolean, maskingMode: AppSettings['maskingMode']): boolean => {
     return (
         filters.models.length > 0 ||
         filters.loras.length > 0 ||
@@ -102,36 +112,32 @@ export const useLibraryStatsQuery = ({
     settingsLoaded = true,
     assetScope = 'used',
     validFacetsEnabled = true,
-    keywordStatsEnabled = false
+    keywordStatsEnabled = false,
 }: UseLibraryStatsQueryProps) => {
     const queryClient = useQueryClient();
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
-    const invokeOwnerScopeKey = useInvokeOwnerScopeStore(state => (
+    const invokeOwnerScopeKey = useInvokeOwnerScopeStore((state) =>
         getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
-    ));
-    const retainWithinOwnerScope = <T,>(
+    );
+    const retainWithinOwnerScope = <T>(
         previousData: T | undefined,
         previousQuery: { queryKey: readonly unknown[] } | undefined
-    ): T | undefined => previousQueryMatchesInvokeScope(previousQuery?.queryKey, invokeOwnerScopeKey)
-        ? previousData
-        : undefined;
+    ): T | undefined => (previousQueryMatchesInvokeScope(previousQuery?.queryKey, invokeOwnerScopeKey) ? previousData : undefined);
 
     // Stable reference: track the active collection scope that affects generated SQL.
     const activeCollectionId = sideQueryFilters.collectionId;
-    const activeCollection = useMemo(() =>
-        allCollections.find(c => c.id === activeCollectionId),
-        [allCollections, activeCollectionId]
-    );
+    const activeCollection = useMemo(() => allCollections.find((c) => c.id === activeCollectionId), [allCollections, activeCollectionId]);
 
-    const smartFilterHash = useMemo(() =>
-        activeCollection?.filters
-            ? JSON.stringify({
-                filters: activeCollection.filters,
-                manualExclusions: activeCollection.manualExclusions ?? []
-            })
-            : null,
+    const smartFilterHash = useMemo(
+        () =>
+            activeCollection?.filters
+                ? JSON.stringify({
+                      filters: activeCollection.filters,
+                      manualExclusions: activeCollection.manualExclusions ?? [],
+                  })
+                : null,
         [activeCollection?.filters, activeCollection?.manualExclusions]
     );
 
@@ -143,51 +149,38 @@ export const useLibraryStatsQuery = ({
     );
 
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch.
-    const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
-    const keywordStatsSemanticKey = useMemo(() => JSON.stringify({
-        dataRevision: facetCacheVersion,
-        filters: sideQueryFilters,
-        smartCollectionRules: smartFilterHash,
-        privacy: {
-            enabled: privacyEnabled,
-            maskingMode: settings.maskingMode,
-            maskedKeywords: effectiveMaskedKeywords
-        },
-        invokeOwnerScopeKey
-    }), [
-        effectiveMaskedKeywords,
-        facetCacheVersion,
-        invokeOwnerScopeKey,
-        privacyEnabled,
-        settings.maskingMode,
-        sideQueryFilters,
-        smartFilterHash
-    ]);
+    const facetCacheVersion = useLibraryStore((s) => s.facetCacheVersion);
+    const keywordStatsSemanticKey = useMemo(
+        () =>
+            JSON.stringify({
+                dataRevision: facetCacheVersion,
+                filters: sideQueryFilters,
+                smartCollectionRules: smartFilterHash,
+                privacy: {
+                    enabled: privacyEnabled,
+                    maskingMode: settings.maskingMode,
+                    maskedKeywords: effectiveMaskedKeywords,
+                },
+                invokeOwnerScopeKey,
+            }),
+        [
+            effectiveMaskedKeywords,
+            facetCacheVersion,
+            invokeOwnerScopeKey,
+            privacyEnabled,
+            settings.maskingMode,
+            sideQueryFilters,
+            smartFilterHash,
+        ]
+    );
 
     const queryInput = useMemo(() => {
         if (useBrowserMocks || !settingsLoaded) return null;
 
-        return buildSqlWhereClause(
-            sideQueryFilters,
-            privacyEnabled,
-            settings.maskingMode,
-            effectiveMaskedKeywords,
-            allCollections
-        );
-    }, [
-        allCollections,
-        privacyEnabled,
-        effectiveMaskedKeywords,
-        settings.maskingMode,
-        settingsLoaded,
-        sideQueryFilters,
-        useBrowserMocks
-    ]);
+        return buildSqlWhereClause(sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, allCollections);
+    }, [allCollections, privacyEnabled, effectiveMaskedKeywords, settings.maskingMode, settingsLoaded, sideQueryFilters, useBrowserMocks]);
 
-    const selfExcludedFacetTypes = useMemo(
-        () => getSelfExcludedFacetTypes(sideQueryFilters),
-        [sideQueryFilters]
-    );
+    const selfExcludedFacetTypes = useMemo(() => getSelfExcludedFacetTypes(sideQueryFilters), [sideQueryFilters]);
 
     const scopedCountOverrides = useMemo<Partial<Record<FacetType, ScopedFacetCountInput>> | undefined>(() => {
         if (useBrowserMocks || !settingsLoaded || selfExcludedFacetTypes.length === 0) return undefined;
@@ -209,7 +202,7 @@ export const useLibraryStatsQuery = ({
                 whereClause: partial.where,
                 params: partial.params,
                 collectionId: partial.collectionId,
-                loraName: partial.loraName
+                loraName: partial.loraName,
             };
         }
 
@@ -222,11 +215,22 @@ export const useLibraryStatsQuery = ({
         settings.maskingMode,
         settingsLoaded,
         sideQueryFilters,
-        useBrowserMocks
+        useBrowserMocks,
     ]);
 
     const facetsQuery = useQuery({
-        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, invokeOwnerScopeKey],
+        queryKey: [
+            'libraryStats',
+            'facets',
+            facetCacheVersion,
+            assetScope,
+            sideQueryFilters,
+            privacyEnabled,
+            settings.maskingMode,
+            effectiveMaskedKeywords,
+            smartFilterHash,
+            invokeOwnerScopeKey,
+        ],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return getBrowserMockFacets(sideQueryFilters);
@@ -236,16 +240,26 @@ export const useLibraryStatsQuery = ({
                 assetScope,
                 collectionId: queryInput!.collectionId,
                 loraName: queryInput!.loraName,
-                scopedCountOverrides
+                scopedCountOverrides,
             });
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: settingsLoaded
+        enabled: settingsLoaded,
     });
 
     const statsSummaryQuery = useQuery({
-        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, invokeOwnerScopeKey],
+        queryKey: [
+            'libraryStats',
+            'summary',
+            facetCacheVersion,
+            sideQueryFilters,
+            privacyEnabled,
+            settings.maskingMode,
+            effectiveMaskedKeywords,
+            smartFilterHash,
+            invokeOwnerScopeKey,
+        ],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return getBrowserMockStatsSummary(sideQueryFilters);
@@ -256,7 +270,7 @@ export const useLibraryStatsQuery = ({
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: settingsLoaded
+        enabled: settingsLoaded,
     });
     const [activeSummaryVersion, setActiveSummaryVersion] = useState(0);
     const [activeSummarySemanticKey, setActiveSummarySemanticKey] = useState<string | null>(null);
@@ -273,13 +287,12 @@ export const useLibraryStatsQuery = ({
         statsSummaryQuery.isFetching,
         statsSummaryQuery.isPlaceholderData,
         statsSummaryQuery.status,
-        keywordStatsSemanticKey
-    ]);
-    const keywordStatsQueryKey = useMemo(() => [
-        'libraryKeywordStats',
         keywordStatsSemanticKey,
-        activeSummaryVersion
-    ] as const, [activeSummaryVersion, keywordStatsSemanticKey]);
+    ]);
+    const keywordStatsQueryKey = useMemo(
+        () => ['libraryKeywordStats', keywordStatsSemanticKey, activeSummaryVersion] as const,
+        [activeSummaryVersion, keywordStatsSemanticKey]
+    );
 
     useEffect(() => {
         if (!keywordStatsEnabled) {
@@ -293,7 +306,18 @@ export const useLibraryStatsQuery = ({
     }, [keywordStatsEnabled, keywordStatsQueryKey, queryClient]);
 
     const validNamesQuery = useQuery({
-        queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, validFacetsEnabled, invokeOwnerScopeKey],
+        queryKey: [
+            'libraryStats',
+            'validNames',
+            facetCacheVersion,
+            sideQueryFilters,
+            privacyEnabled,
+            settings.maskingMode,
+            effectiveMaskedKeywords,
+            smartFilterHash,
+            validFacetsEnabled,
+            invokeOwnerScopeKey,
+        ],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null;
@@ -321,12 +345,7 @@ export const useLibraryStatsQuery = ({
                         [getExcludeKeyForFacetType(cat)]
                     );
 
-                    const result = await getValidFacetNames(
-                        partial.where,
-                        partial.params,
-                        partial.collectionId,
-                        partial.loraName
-                    );
+                    const result = await getValidFacetNames(partial.where, partial.params, partial.collectionId, partial.loraName);
                     return { cat, validNames: result?.[cat] ?? null };
                 });
 
@@ -345,7 +364,7 @@ export const useLibraryStatsQuery = ({
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: settingsLoaded
+        enabled: settingsLoaded,
     });
 
     const keywordQuery = useQuery({
@@ -357,7 +376,7 @@ export const useLibraryStatsQuery = ({
                 return {
                     summaryVersion: activeSummaryVersion,
                     semanticKey: keywordStatsSemanticKey,
-                    keywordStats: getBrowserMockKeywordStats(sideQueryFilters)
+                    keywordStats: getBrowserMockKeywordStats(sideQueryFilters),
                 };
             }
 
@@ -365,46 +384,57 @@ export const useLibraryStatsQuery = ({
             return {
                 summaryVersion: activeSummaryVersion,
                 semanticKey: keywordStatsSemanticKey,
-                keywordStats: await getKeywordStats(where, params, collectionId, loraName, signal)
+                keywordStats: await getKeywordStats(where, params, collectionId, loraName, signal),
             };
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: keywordStatsEnabled && settingsLoaded && activeSummaryVersion > 0 && activeSummarySemanticKey === keywordStatsSemanticKey && statsSummaryQuery.status === 'success' && !statsSummaryQuery.isFetching && !statsSummaryQuery.isPlaceholderData
+        enabled:
+            keywordStatsEnabled &&
+            settingsLoaded &&
+            activeSummaryVersion > 0 &&
+            activeSummarySemanticKey === keywordStatsSemanticKey &&
+            statsSummaryQuery.status === 'success' &&
+            !statsSummaryQuery.isFetching &&
+            !statsSummaryQuery.isPlaceholderData,
     });
 
-    const keywordStatsAreCurrent = useMemo(() => (
-        Boolean(keywordQuery.data)
-        && keywordQuery.data?.summaryVersion === activeSummaryVersion
-        && keywordQuery.data?.semanticKey === keywordStatsSemanticKey
-    ), [activeSummaryVersion, keywordQuery.data, keywordStatsSemanticKey]);
+    const keywordStatsAreCurrent = useMemo(
+        () =>
+            Boolean(keywordQuery.data) &&
+            keywordQuery.data?.summaryVersion === activeSummaryVersion &&
+            keywordQuery.data?.semanticKey === keywordStatsSemanticKey,
+        [activeSummaryVersion, keywordQuery.data, keywordStatsSemanticKey]
+    );
 
-    const currentKeywordStats = keywordStatsAreCurrent
-        ? (keywordQuery.data?.keywordStats ?? INITIAL_KEYWORD_STATS)
-        : INITIAL_KEYWORD_STATS;
+    const currentKeywordStats = keywordStatsAreCurrent ? (keywordQuery.data?.keywordStats ?? INITIAL_KEYWORD_STATS) : INITIAL_KEYWORD_STATS;
 
-    const isKeywordStatsLoading = keywordStatsEnabled
-        && statsSummaryQuery.status === 'success'
-        && !statsSummaryQuery.isFetching
-        && !statsSummaryQuery.isPlaceholderData
-        && !keywordStatsAreCurrent;
+    const isKeywordStatsLoading =
+        keywordStatsEnabled &&
+        statsSummaryQuery.status === 'success' &&
+        !statsSummaryQuery.isFetching &&
+        !statsSummaryQuery.isPlaceholderData &&
+        !keywordStatsAreCurrent;
 
-    const combinedStats = useMemo<LibraryStats>(() => ({
-        ...(statsSummaryQuery.data ?? INITIAL_STATS_SUMMARY),
-        keywordStats: currentKeywordStats
-    }), [currentKeywordStats, statsSummaryQuery.data]);
+    const combinedStats = useMemo<LibraryStats>(
+        () => ({
+            ...(statsSummaryQuery.data ?? INITIAL_STATS_SUMMARY),
+            keywordStats: currentKeywordStats,
+        }),
+        [currentKeywordStats, statsSummaryQuery.data]
+    );
 
     return {
         data: {
             facets: facetsQuery.data ?? INITIAL_FACETS,
             stats: combinedStats,
-            validNames: validNamesQuery.data ?? null
+            validNames: validNamesQuery.data ?? null,
         },
         isLoading: facetsQuery.isLoading || statsSummaryQuery.isLoading || validNamesQuery.isLoading || keywordQuery.isLoading,
         isFetching: facetsQuery.isFetching || statsSummaryQuery.isFetching || validNamesQuery.isFetching || keywordQuery.isFetching,
         isFacetsLoading: facetsQuery.isLoading,
         isFacetsFetching: facetsQuery.isFetching,
         isStatsSummaryLoading: statsSummaryQuery.isLoading,
-        isKeywordStatsLoading
+        isKeywordStatsLoading,
     };
 };

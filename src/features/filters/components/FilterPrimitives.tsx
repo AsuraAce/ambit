@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Check, Search, X, LucideIcon, ArrowDownWideNarrow } from 'lucide-react';
@@ -38,10 +37,11 @@ interface SelectableRowProps {
 export const SelectableRow: React.FC<SelectableRowProps> = ({ label, isSelected, onClick, className, disabled }) => (
     <div
         onClick={disabled ? undefined : onClick}
-        className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ease-spring border ${isSelected
-            ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
-            : 'bg-transparent border-transparent text-gray-500 dark:text-gray-400 hover:bg-white/40 dark:hover:bg-white/5'
-            } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} ${className || ''}`}
+        className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ease-spring border ${
+            isSelected
+                ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
+                : 'bg-transparent border-transparent text-gray-500 dark:text-gray-400 hover:bg-white/40 dark:hover:bg-white/5'
+        } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} ${className || ''}`}
     >
         <span>{label}</span>
         {isSelected ? (
@@ -102,30 +102,33 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
         setIsDragging(type);
     };
 
-    const handleWindowMouseMove = useCallback((e: MouseEvent) => {
-        if (!isDragging || !trackRef.current) return;
+    const handleWindowMouseMove = useCallback(
+        (e: MouseEvent) => {
+            if (!isDragging || !trackRef.current) return;
 
-        const rect = trackRef.current.getBoundingClientRect();
-        const rawPercent = (e.clientX - rect.left) / rect.width;
-        const rawValue = min + (rawPercent * (max - min));
+            const rect = trackRef.current.getBoundingClientRect();
+            const rawPercent = (e.clientX - rect.left) / rect.width;
+            const rawValue = min + rawPercent * (max - min);
 
-        // Snap to step
-        const steppedValue = Math.round(rawValue / step) * step;
-        const clampedValue = Math.min(Math.max(steppedValue, min), max);
+            // Snap to step
+            const steppedValue = Math.round(rawValue / step) * step;
+            const clampedValue = Math.min(Math.max(steppedValue, min), max);
 
-        // Read current latest values to enforce constraints
-        const currentVals = valuesRef.current;
+            // Read current latest values to enforce constraints
+            const currentVals = valuesRef.current;
 
-        if (isDragging === 'min') {
-            // Cannot cross max
-            const newMin = Math.min(clampedValue, currentVals.max - step);
-            setLocalMin(newMin);
-        } else {
-            // Cannot cross min
-            const newMax = Math.max(clampedValue, currentVals.min + step);
-            setLocalMax(newMax);
-        }
-    }, [isDragging, min, max, step]);
+            if (isDragging === 'min') {
+                // Cannot cross max
+                const newMin = Math.min(clampedValue, currentVals.max - step);
+                setLocalMin(newMin);
+            } else {
+                // Cannot cross min
+                const newMax = Math.max(clampedValue, currentVals.min + step);
+                setLocalMax(newMax);
+            }
+        },
+        [isDragging, min, max, step]
+    );
 
     const handleWindowMouseUp = useCallback(() => {
         setIsDragging(null);
@@ -172,7 +175,7 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
                     className="absolute h-1 bg-sage-500 rounded-full shadow-[0_0_10px_rgba(140,163,107,0.5)]"
                     style={{
                         left: `${getPercentage(localMin)}%`,
-                        width: `${getPercentage(localMax) - getPercentage(localMin)}%`
+                        width: `${getPercentage(localMax) - getPercentage(localMin)}%`,
                     }}
                 />
 
@@ -202,7 +205,7 @@ interface SearchInputProps {
     className?: string;
 }
 
-export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, placeholder = "Search...", className }) => (
+export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, placeholder = 'Search...', className }) => (
     <div className={`${className}`}>
         <div className="relative group size-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 group-focus-within:text-sage-500 transition-colors pointer-events-none" />
@@ -251,7 +254,7 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
     title,
     className,
     triggerClassName,
-    align = 'right'
+    align = 'right',
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -266,9 +269,11 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const resolvedTriggerClass = typeof triggerClassName === 'function'
-        ? triggerClassName(isOpen)
-        : triggerClassName || `p-1 rounded transition-colors ${isOpen ? 'text-sage-500 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`;
+    const resolvedTriggerClass =
+        typeof triggerClassName === 'function'
+            ? triggerClassName(isOpen)
+            : triggerClassName ||
+              `p-1 rounded transition-colors ${isOpen ? 'text-sage-500 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`;
 
     return (
         <div className={`relative ${className}`} ref={dropdownRef}>
@@ -283,7 +288,9 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
             </TooltipButton>
 
             {isOpen && (
-                <div className={`absolute mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-2xl z-[100] p-1 animate-in zoom-in-95 duration-200 ${align === 'right' ? 'right-0' : 'left-0'}`}>
+                <div
+                    className={`absolute mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-2xl z-[100] p-1 animate-in zoom-in-95 duration-200 ${align === 'right' ? 'right-0' : 'left-0'}`}
+                >
                     {title && (
                         <div className="text-[9px] font-bold text-gray-400 dark:text-zinc-500 px-3 py-1.5 uppercase tracking-wider">
                             {title}
@@ -298,10 +305,11 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
                                 onSelect(opt.id);
                                 setIsOpen(false);
                             }}
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors ${currentValue === opt.id
-                                ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300'
-                                : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'
-                                }`}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors ${
+                                currentValue === opt.id
+                                    ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300'
+                                    : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                            }`}
                         >
                             <div className="flex items-center gap-2 font-medium">
                                 {opt.icon && <opt.icon className="w-3 h-3" />}
@@ -332,7 +340,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
     groups,
     selected,
     onChange,
-    placeholder = "Search..."
+    placeholder = 'Search...',
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -358,20 +366,22 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
         if (!hasGroups || !groups) return [];
         if (!searchTerm) return groups;
 
-        return groups.map(g => ({
-            label: g.label,
-            items: g.items.filter(item => item.toLowerCase().includes(searchTerm.toLowerCase()))
-        })).filter(g => g.items.length > 0);
+        return groups
+            .map((g) => ({
+                label: g.label,
+                items: g.items.filter((item) => item.toLowerCase().includes(searchTerm.toLowerCase())),
+            }))
+            .filter((g) => g.items.length > 0);
     }, [groups, searchTerm, hasGroups]);
 
     const filteredOptions = useMemo(() => {
         if (hasGroups) return []; // Ignore options if groups exist
-        return options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
+        return options.filter((opt) => opt.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [options, searchTerm, hasGroups]);
 
     const toggleOption = (opt: string) => {
         if (selected.includes(opt)) {
-            onChange(selected.filter(s => s !== opt));
+            onChange(selected.filter((s) => s !== opt));
         } else {
             onChange([...selected, opt]);
         }
@@ -389,15 +399,19 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
             <button
                 key={opt}
                 onClick={() => toggleOption(opt)}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg transition-colors text-left group ${isSelected
-                    ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-800 dark:text-sage-200'
-                    : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'
-                    }`}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg transition-colors text-left group ${
+                    isSelected
+                        ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-800 dark:text-sage-200'
+                        : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                }`}
             >
-                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected
-                    ? 'bg-sage-500 border-sage-500'
-                    : 'border-gray-300 dark:border-white/20 group-hover:border-gray-400 dark:group-hover:border-white/30'
-                    }`}>
+                <div
+                    className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                        isSelected
+                            ? 'bg-sage-500 border-sage-500'
+                            : 'border-gray-300 dark:border-white/20 group-hover:border-gray-400 dark:group-hover:border-white/30'
+                    }`}
+                >
                     {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
                 </div>
                 <span className="truncate flex-1">{opt}</span>
@@ -425,11 +439,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
                     className={`w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-sage-500/50 transition-all ${isOpen ? 'ring-2 ring-sage-500/10 border-sage-500/50' : ''}`}
                 >
                     <span className="truncate">
-                        {selected.length === 0
-                            ? 'Select...'
-                            : selected.length === 1
-                                ? selected[0]
-                                : `${selected.length} selected`}
+                        {selected.length === 0 ? 'Select...' : selected.length === 1 ? selected[0] : `${selected.length} selected`}
                     </span>
                     <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -438,12 +448,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
                     <div className="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-2 animate-in fade-in zoom-in-95 duration-200">
                         {/* Only show search if enough items (arbitrary > 5 total items check difficult with groups, assume always show for groups or > 5 options) */}
                         {(hasGroups || options.length > 5) && (
-                            <SearchInput
-                                value={searchTerm}
-                                onChange={setSearchTerm}
-                                placeholder={placeholder}
-                                className="mb-2"
-                            />
+                            <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder={placeholder} className="mb-2" />
                         )}
 
                         <div className="max-h-60 overflow-y-auto space-y-0.5 pr-1">
@@ -456,19 +461,18 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
                             )}
 
                             {/* Render Flat List */}
-                            {!hasGroups && filteredOptions.map(opt => renderOption(opt))}
+                            {!hasGroups && filteredOptions.map((opt) => renderOption(opt))}
 
                             {/* Render Groups */}
-                            {hasGroups && filteredGroups.map(group => (
-                                <div key={group.label} className="mb-2 last:mb-0">
-                                    <div className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50 dark:bg-white/5 rounded mb-0.5 sticky top-0 backdrop-blur-sm z-10">
-                                        {group.label}
+                            {hasGroups &&
+                                filteredGroups.map((group) => (
+                                    <div key={group.label} className="mb-2 last:mb-0">
+                                        <div className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50 dark:bg-white/5 rounded mb-0.5 sticky top-0 backdrop-blur-sm z-10">
+                                            {group.label}
+                                        </div>
+                                        <div className="space-y-0.5 pl-1">{group.items.map((opt) => renderOption(opt))}</div>
                                     </div>
-                                    <div className="space-y-0.5 pl-1">
-                                        {group.items.map(opt => renderOption(opt))}
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
                         </div>
                     </div>
                 )}
@@ -493,7 +497,7 @@ export const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, selected
 
     const toggleOption = (opt: string) => {
         if (selected.includes(opt)) {
-            onChange(selected.filter(s => s !== opt));
+            onChange(selected.filter((s) => s !== opt));
         } else {
             onChange([...selected, opt]);
         }
@@ -512,7 +516,7 @@ export const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, selected
         <div className="space-y-2">
             {label && <div className="text-[10px] font-bold text-gray-500 dark:text-zinc-500 uppercase tracking-wider px-0.5">{label}</div>}
             <div className="flex flex-wrap gap-1.5">
-                {options.map(opt => {
+                {options.map((opt) => {
                     const isSelected = selected.includes(opt);
                     const available = isAvailable(opt);
                     const displayLabel = format(opt);
@@ -524,12 +528,13 @@ export const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, selected
                             onClick={() => available && toggleOption(opt)}
                             disabled={!available}
                             title={displayLabel}
-                            className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all max-w-full ${isSelected
-                                ? 'bg-sage-500/10 border-sage-500/50 text-sage-700 dark:text-sage-300 ring-1 ring-sage-500/20 shadow-sm shadow-sage-500/10'
-                                : available
-                                    ? 'bg-gray-50/50 dark:bg-white/[0.03] border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-400 hover:border-sage-400 dark:hover:border-sage-500/30 hover:bg-white dark:hover:bg-white/5'
-                                    : 'bg-gray-50/50 dark:bg-white/[0.03] border-gray-200 dark:border-white/10 text-gray-400 dark:text-zinc-600 opacity-50 cursor-not-allowed line-through'
-                                }`}
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all max-w-full ${
+                                isSelected
+                                    ? 'bg-sage-500/10 border-sage-500/50 text-sage-700 dark:text-sage-300 ring-1 ring-sage-500/20 shadow-sm shadow-sage-500/10'
+                                    : available
+                                      ? 'bg-gray-50/50 dark:bg-white/[0.03] border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-400 hover:border-sage-400 dark:hover:border-sage-500/30 hover:bg-white dark:hover:bg-white/5'
+                                      : 'bg-gray-50/50 dark:bg-white/[0.03] border-gray-200 dark:border-white/10 text-gray-400 dark:text-zinc-600 opacity-50 cursor-not-allowed line-through'
+                            }`}
                         >
                             <span className="flex items-center gap-1.5 truncate">
                                 {isSelected && <Check className="w-3 h-3 flex-shrink-0" />}
@@ -559,7 +564,7 @@ interface IconButtonSelectProps {
 export const IconButtonSelect: React.FC<IconButtonSelectProps> = ({ label, options, selected, onChange }) => {
     const toggleOption = (id: string) => {
         if (selected.includes(id)) {
-            onChange(selected.filter(s => s !== id));
+            onChange(selected.filter((s) => s !== id));
         } else {
             onChange([...selected, id]);
         }
@@ -569,7 +574,7 @@ export const IconButtonSelect: React.FC<IconButtonSelectProps> = ({ label, optio
         <div className="space-y-2">
             {label && <div className="text-[10px] font-bold text-gray-500 dark:text-zinc-500 uppercase tracking-wider px-0.5">{label}</div>}
             <div className="grid grid-cols-3 gap-2">
-                {options.map(opt => {
+                {options.map((opt) => {
                     const isSelected = selected.includes(opt.id);
                     const Icon = opt.icon;
                     return (
@@ -577,17 +582,22 @@ export const IconButtonSelect: React.FC<IconButtonSelectProps> = ({ label, optio
                             key={opt.id}
                             type="button"
                             onClick={() => toggleOption(opt.id)}
-                            className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl border transition-all aspect-square sm:aspect-auto sm:h-auto ${isSelected
+                            className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl border transition-all aspect-square sm:aspect-auto sm:h-auto ${
+                                isSelected
                                     ? 'bg-sage-500/10 border-sage-500/50 text-sage-800 dark:text-sage-300 ring-4 ring-sage-500/10 shadow-sm'
                                     : 'bg-white/50 dark:bg-white/[0.03] border-gray-100 dark:border-white/5 text-gray-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'
-                                }`}
+                            }`}
                         >
-                            <div className={`p-1.5 rounded-lg transition-colors ${isSelected ? 'bg-sage-500/20' : 'bg-gray-100 dark:bg-white/5'}`}>
-                                <Icon className={`w-4 h-4 ${isSelected ? 'text-sage-600 dark:text-sage-300' : 'text-gray-400 dark:text-zinc-500'}`} />
+                            <div
+                                className={`p-1.5 rounded-lg transition-colors ${isSelected ? 'bg-sage-500/20' : 'bg-gray-100 dark:bg-white/5'}`}
+                            >
+                                <Icon
+                                    className={`w-4 h-4 ${isSelected ? 'text-sage-600 dark:text-sage-300' : 'text-gray-400 dark:text-zinc-500'}`}
+                                />
                             </div>
                             <span className="text-[10px] font-semibold truncate w-full text-center">{opt.label}</span>
                         </button>
-                    )
+                    );
                 })}
             </div>
         </div>

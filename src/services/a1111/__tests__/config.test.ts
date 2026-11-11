@@ -1,24 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    detectWebUIVariation,
-    discoverA1111Candidates,
-    getUnlinkedPriorityCandidatePaths
-} from '../config';
+import { detectWebUIVariation, discoverA1111Candidates, getUnlinkedPriorityCandidatePaths } from '../config';
 import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../types';
 
 const mocks = vi.hoisted(() => ({
     discoverA1111Folders: vi.fn(),
-    ensureFolderAccessible: vi.fn(async () => true)
+    ensureFolderAccessible: vi.fn(async () => true),
 }));
 
 vi.mock('../../../bindings', () => ({
     commands: {
-        discoverA1111Folders: mocks.discoverA1111Folders
-    }
+        discoverA1111Folders: mocks.discoverA1111Folders,
+    },
 }));
 
 vi.mock('../../assetScope', () => ({
-    ensureFolderAccessible: mocks.ensureFolderAccessible
+    ensureFolderAccessible: mocks.ensureFolderAccessible,
 }));
 
 describe('discoverA1111Candidates', () => {
@@ -35,7 +31,7 @@ describe('discoverA1111Candidates', () => {
                         imageCount: 12,
                         inferredType: A1111FolderType.TXT2IMG,
                         isPriority: true,
-                        variant: WebUIVariant.A1111
+                        variant: WebUIVariant.A1111,
                     },
                     {
                         path: 'D:\\SD\\outputs\\custom',
@@ -43,12 +39,12 @@ describe('discoverA1111Candidates', () => {
                         imageCount: 4,
                         inferredType: A1111FolderType.UNKNOWN,
                         isPriority: false,
-                        variant: WebUIVariant.UNKNOWN
-                    }
+                        variant: WebUIVariant.UNKNOWN,
+                    },
                 ],
                 logs: ['[9:31:52 AM] backend log'],
-                warnings: ['count cap reached']
-            }
+                warnings: ['count cap reached'],
+            },
         });
     });
 
@@ -56,20 +52,18 @@ describe('discoverA1111Candidates', () => {
     // A1111 root is not registered by anything else.
     it.each([
         ['discovery', () => discoverA1111Candidates('D:/SD', new Set())],
-        ['variant detection', () => detectWebUIVariation('D:/SD')]
+        ['variant detection', () => detectWebUIVariation('D:/SD')],
     ])('registers the A1111 root before %s', async (_label, run) => {
         await run();
 
         expect(mocks.ensureFolderAccessible).toHaveBeenCalledWith('D:/SD');
-        expect(mocks.ensureFolderAccessible.mock.invocationCallOrder[0])
-            .toBeLessThan(mocks.discoverA1111Folders.mock.invocationCallOrder[0]);
+        expect(mocks.ensureFolderAccessible.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.discoverA1111Folders.mock.invocationCallOrder[0]
+        );
     });
 
     it('maps backend candidates and marks already linked folders', async () => {
-        const result = await discoverA1111Candidates(
-            'D:/SD/outputs',
-            new Set(['d:/sd/outputs/txt2img-images'])
-        );
+        const result = await discoverA1111Candidates('D:/SD/outputs', new Set(['d:/sd/outputs/txt2img-images']));
 
         expect(mocks.discoverA1111Folders).toHaveBeenCalledWith('D:/SD/outputs');
         expect(result.detectedVariant).toBe(WebUIVariant.A1111);
@@ -79,29 +73,22 @@ describe('discoverA1111Candidates', () => {
             inferredType: A1111FolderType.TXT2IMG,
             isAlreadyLinked: true,
             isPriority: true,
-            variant: WebUIVariant.A1111
+            variant: WebUIVariant.A1111,
         });
         expect(result.candidates[1]).toMatchObject({
             path: 'D:/SD/outputs/custom',
             inferredType: A1111FolderType.UNKNOWN,
             isAlreadyLinked: false,
             isPriority: false,
-            variant: WebUIVariant.UNKNOWN
+            variant: WebUIVariant.UNKNOWN,
         });
     });
 
     it('applies manual variant override without changing backend discovery', async () => {
-        const result = await discoverA1111Candidates(
-            'D:/SD/outputs',
-            new Set(),
-            WebUIVariant.FORGE
-        );
+        const result = await discoverA1111Candidates('D:/SD/outputs', new Set(), WebUIVariant.FORGE);
 
         expect(result.detectedVariant).toBe(WebUIVariant.FORGE);
-        expect(result.candidates.map(candidate => candidate.variant)).toEqual([
-            WebUIVariant.FORGE,
-            WebUIVariant.FORGE
-        ]);
+        expect(result.candidates.map((candidate) => candidate.variant)).toEqual([WebUIVariant.FORGE, WebUIVariant.FORGE]);
         expect(result.logs).toContain('[Info] Manual Override applied: Forced all candidates to Forge');
     });
 
@@ -112,14 +99,16 @@ describe('discoverA1111Candidates', () => {
             status: 'ok',
             data: {
                 detectedVariant: 'FutureUI',
-                candidates: [{
-                    path: 'D:/SD/output',
-                    name: 'output',
-                    imageCount: 1,
-                    inferredType: 'future-type',
-                    isPriority: false,
-                    variant: 'FutureUI',
-                }],
+                candidates: [
+                    {
+                        path: 'D:/SD/output',
+                        name: 'output',
+                        imageCount: 1,
+                        inferredType: 'future-type',
+                        isPriority: false,
+                        variant: 'FutureUI',
+                    },
+                ],
                 logs: [],
                 warnings: [],
             },
@@ -145,7 +134,7 @@ describe('getUnlinkedPriorityCandidatePaths', () => {
                 inferredType: A1111FolderType.IMG2IMG,
                 isAlreadyLinked: false,
                 isPriority: true,
-                variant: WebUIVariant.A1111
+                variant: WebUIVariant.A1111,
             },
             {
                 path: 'D:/SD/outputs/txt2img',
@@ -154,7 +143,7 @@ describe('getUnlinkedPriorityCandidatePaths', () => {
                 inferredType: A1111FolderType.TXT2IMG,
                 isAlreadyLinked: true,
                 isPriority: true,
-                variant: WebUIVariant.A1111
+                variant: WebUIVariant.A1111,
             },
             {
                 path: 'D:/SD/outputs/custom',
@@ -163,12 +152,10 @@ describe('getUnlinkedPriorityCandidatePaths', () => {
                 inferredType: A1111FolderType.UNKNOWN,
                 isAlreadyLinked: false,
                 isPriority: false,
-                variant: WebUIVariant.A1111
-            }
+                variant: WebUIVariant.A1111,
+            },
         ];
 
-        expect(getUnlinkedPriorityCandidatePaths(candidates)).toEqual([
-            'D:/SD/outputs/img2img-images'
-        ]);
+        expect(getUnlinkedPriorityCandidatePaths(candidates)).toEqual(['D:/SD/outputs/img2img-images']);
     });
 });

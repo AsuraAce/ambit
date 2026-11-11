@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-    formatInvokeImageCategory,
-    getInvokeImageAssetLabel,
-    isKnownInvokeImageAsset,
-} from '../invokeImageSource';
+import { formatInvokeImageCategory, getInvokeImageAssetLabel, isKnownInvokeImageAsset } from '../invokeImageSource';
 
 describe('InvokeAI image source classification', () => {
     it.each([
@@ -19,7 +15,7 @@ describe('InvokeAI image source classification', () => {
 
     it.each(['general', 'future-category', '', '   ', undefined, null])(
         'keeps output or unknown category %s outside the asset set',
-        category => {
+        (category) => {
             expect(isKnownInvokeImageAsset(category)).toBe(false);
             expect(getInvokeImageAssetLabel(category)).toBeUndefined();
         }

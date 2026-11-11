@@ -2,18 +2,10 @@ import * as React from 'react';
 import { FlaskConical, Cpu } from 'lucide-react';
 import { AppSettings, type AiThinkingMode } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
-import {
-    AI_MODELS,
-    getSupportedThinkingModes,
-    normalizeAiThinkingMode
-} from '../../../constants/aiModels';
+import { AI_MODELS, getSupportedThinkingModes, normalizeAiThinkingMode } from '../../../constants/aiModels';
 import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
 import { useSettingsStore } from '../../../stores/settingsStore';
-import {
-    areDeveloperFeaturesEnabled,
-    getEffectiveAiModel,
-    getEffectiveAiThinkingMode
-} from '../../../utils/settingsUtils';
+import { areDeveloperFeaturesEnabled, getEffectiveAiModel, getEffectiveAiThinkingMode } from '../../../utils/settingsUtils';
 
 interface TabProps {
     settings: AppSettings;
@@ -37,11 +29,8 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
     const [isVerifying, setIsVerifying] = React.useState(false);
     const [verificationStatus, setVerificationStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const [verificationError, setVerificationError] = React.useState<string | null>(null);
-    const apiKeyInputStatus = verificationStatus === 'idle'
-        && !!geminiApiKey
-        && localApiKey.trim() === geminiApiKey
-        ? 'configured'
-        : verificationStatus;
+    const apiKeyInputStatus =
+        verificationStatus === 'idle' && !!geminiApiKey && localApiKey.trim() === geminiApiKey ? 'configured' : verificationStatus;
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const effectiveAiModel = getEffectiveAiModel(settings);
     const effectiveAiThinkingMode = getEffectiveAiThinkingMode(settings);
@@ -56,7 +45,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
 
     const handleAIToggle = () => {
         const newValue = !settings.enableAI;
-        setSettings(prev => ({ ...prev, enableAI: newValue }));
+        setSettings((prev) => ({ ...prev, enableAI: newValue }));
         addToast(newValue ? 'AI features enabled' : 'AI features disabled', 'success');
     };
 
@@ -68,11 +57,11 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
 
     const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const modelId = e.target.value;
-        const model = AI_MODELS.find(m => m.id === modelId);
-        setSettings(prev => ({
+        const model = AI_MODELS.find((m) => m.id === modelId);
+        setSettings((prev) => ({
             ...prev,
             aiModel: modelId,
-            aiThinkingMode: normalizeAiThinkingMode(modelId, prev.aiThinkingMode)
+            aiThinkingMode: normalizeAiThinkingMode(modelId, prev.aiThinkingMode),
         }));
         setVerificationStatus('idle');
         setVerificationError(null);
@@ -85,7 +74,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
         const thinkingMode = e.target.value as AiThinkingMode;
         if (!supportedThinkingModes.includes(thinkingMode)) return;
 
-        setSettings(prev => ({ ...prev, aiThinkingMode: thinkingMode }));
+        setSettings((prev) => ({ ...prev, aiThinkingMode: thinkingMode }));
         addToast(`Thinking effort set to ${THINKING_MODE_LABELS[thinkingMode]}`, 'success');
     };
 
@@ -130,13 +119,14 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                 </h4>
 
                 <div className="space-y-6">
-                    <div
-                        onClick={handleAIToggle}
-                        className="flex items-center justify-between cursor-pointer group"
-                    >
+                    <div onClick={handleAIToggle} className="flex items-center justify-between cursor-pointer group">
                         <div className="min-w-0 pr-4">
-                            <div className="text-base font-medium text-gray-900 transition-colors group-hover:text-amethyst-600 dark:text-gray-200 dark:group-hover:text-amethyst-300">Enable AI Features</div>
-                            <div className="text-sm text-gray-500">Unlocks natural language search, prompt analysis, and metadata recovery through on-demand Gemini requests.</div>
+                            <div className="text-base font-medium text-gray-900 transition-colors group-hover:text-amethyst-600 dark:text-gray-200 dark:group-hover:text-amethyst-300">
+                                Enable AI Features
+                            </div>
+                            <div className="text-sm text-gray-500">
+                                Unlocks natural language search, prompt analysis, and metadata recovery through on-demand Gemini requests.
+                            </div>
                         </div>
                         <button
                             type="button"
@@ -145,7 +135,9 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                             aria-label="Enable AI Features"
                             className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${settings.enableAI ? 'bg-amethyst-600' : 'bg-gray-200 dark:bg-white/10'}`}
                         >
-                            <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.enableAI ? 'left-6' : 'left-1'}`} />
+                            <div
+                                className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.enableAI ? 'left-6' : 'left-1'}`}
+                            />
                         </button>
                     </div>
 
@@ -198,7 +190,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                             onChange={handleModelChange}
                                             className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 outline-none transition-colors focus:border-amethyst-500 dark:border-white/10 dark:bg-black/20 dark:text-gray-300"
                                         >
-                                            {AI_MODELS.map(model => (
+                                            {AI_MODELS.map((model) => (
                                                 <option key={model.id} value={model.id} className="dark:bg-zinc-900">
                                                     {model.name}
                                                     {model.isExperimental ? ' (Preview)' : ''}
@@ -207,7 +199,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                             ))}
                                         </select>
                                         <p className="text-[10px] text-gray-500 mt-2 ml-1">
-                                            {AI_MODELS.find(m => m.id === effectiveAiModel)?.description}
+                                            {AI_MODELS.find((m) => m.id === effectiveAiModel)?.description}
                                         </p>
                                     </div>
 
@@ -220,14 +212,15 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                             onChange={handleThinkingModeChange}
                                             className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 outline-none transition-colors focus:border-amethyst-500 dark:border-white/10 dark:bg-black/20 dark:text-gray-300"
                                         >
-                                            {supportedThinkingModes.map(mode => (
+                                            {supportedThinkingModes.map((mode) => (
                                                 <option key={mode} value={mode} className="dark:bg-zinc-900">
                                                     {THINKING_MODE_LABELS[mode]}
                                                 </option>
                                             ))}
                                         </select>
                                         <p className="text-[10px] text-gray-500 mt-2 ml-1">
-                                            Changes the reasoning effort used by Ambit AI requests so response quality and speed can be compared.
+                                            Changes the reasoning effort used by Ambit AI requests so response quality and speed can be
+                                            compared.
                                         </p>
                                     </div>
                                 </div>

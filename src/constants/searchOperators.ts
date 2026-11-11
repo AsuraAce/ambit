@@ -142,8 +142,8 @@ export const SEARCH_OPERATOR_DEFINITIONS = [
     },
 ] as const satisfies readonly SearchOperatorDefinition[];
 
-export const SEARCH_OPERATOR_SUGGESTIONS = SEARCH_OPERATOR_DEFINITIONS.flatMap(
-    definition => definition.suggestions.map(value => ({
+export const SEARCH_OPERATOR_SUGGESTIONS = SEARCH_OPERATOR_DEFINITIONS.flatMap((definition) =>
+    definition.suggestions.map((value) => ({
         value,
         description: definition.description,
     }))

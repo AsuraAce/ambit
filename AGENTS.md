@@ -47,12 +47,13 @@ Start here for common tasks:
 - Desktop dev app: `pnpm run app:dev`
 - Frontend build: `pnpm run build`
 - Desktop build: `pnpm run app:build`
-- Lint: `pnpm run lint`
+- Lint (ESLint, Stylelint and the Prettier check; warnings and unformatted files fail): `pnpm run lint`
+- Format TypeScript, JavaScript, CSS and root JSON with Prettier: `pnpm run format`
 - TypeScript check: `pnpm run typecheck`
 - Frontend tests: `pnpm run test` for watch mode, `pnpm run test:run` for CI-style one-shot runs
 - Coverage: `pnpm run coverage`
 - Rust tests: `pnpm run test:rust`
-- Rust lint (Clippy, warnings fail): `pnpm run lint:rust`
+- Rust lint (`cargo fmt --check`, then Clippy with warnings failing): `pnpm run lint:rust`
 - Generate Specta bindings: `pnpm run bindings:generate`
 - Check generated binding drift: `pnpm run bindings:check`
 - Tauri compatibility build without packaging: `pnpm run tauri:check`

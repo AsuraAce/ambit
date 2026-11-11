@@ -27,23 +27,22 @@ export type ImagesQueryKey = readonly [
     AppSettings['maskingMode'],
     AppSettings['maskedKeywords'],
     string | null,
-    string
+    string,
 ];
 
-const hasMatchingPrivacyScope = (
-    previousKey: readonly unknown[] | undefined,
-    currentKey: ImagesQueryKey
-): boolean => {
+const hasMatchingPrivacyScope = (previousKey: readonly unknown[] | undefined, currentKey: ImagesQueryKey): boolean => {
     if (!previousKey || previousKey.length < 8) return false;
 
     const previousKeywords = previousKey[5];
     if (!Array.isArray(previousKeywords)) return false;
 
-    return previousKey[3] === currentKey[3]
-        && previousKey[4] === currentKey[4]
-        && previousKeywords.length === currentKey[5].length
-        && previousKeywords.every((keyword, index) => keyword === currentKey[5][index])
-        && previousQueryMatchesInvokeScope(previousKey, currentKey[7]);
+    return (
+        previousKey[3] === currentKey[3] &&
+        previousKey[4] === currentKey[4] &&
+        previousKeywords.length === currentKey[5].length &&
+        previousKeywords.every((keyword, index) => keyword === currentKey[5][index]) &&
+        previousQueryMatchesInvokeScope(previousKey, currentKey[7])
+    );
 };
 
 export const useImagesQuery = ({
@@ -52,40 +51,39 @@ export const useImagesQuery = ({
     settings,
     privacyEnabled,
     allCollections,
-    settingsLoaded = true
+    settingsLoaded = true,
 }: UseImagesQueryProps) => {
-
     const PAGE_SIZE = 1000;
     const useBrowserMocks = isBrowserMockMode();
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
-    const invokeOwnerScopeKey = useInvokeOwnerScopeStore(state => (
+    const invokeOwnerScopeKey = useInvokeOwnerScopeStore((state) =>
         getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
-    ));
+    );
 
     // Stable reference: only track the active collection's smart filter definition
     const activeCollectionId = filters.collectionId;
-    const activeCollection = useMemo(() =>
-        allCollections.find(c => c.id === activeCollectionId),
-        [allCollections, activeCollectionId]
-    );
+    const activeCollection = useMemo(() => allCollections.find((c) => c.id === activeCollectionId), [allCollections, activeCollectionId]);
 
     // Create stable fingerprint of smart collection filters (if any)
     // This prevents cache invalidation when unrelated collection counts change
-    const smartFilterHash = useMemo(() =>
-        activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null,
+    const smartFilterHash = useMemo(
+        () => (activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null),
         [activeCollection?.filters]
     );
 
-    const imagesQueryKey = useMemo<ImagesQueryKey>(() => [
-        'images',
-        filters,
-        sortOption,
-        privacyEnabled,
-        settings.maskingMode,
-        effectiveMaskedKeywords,
-        smartFilterHash,
-        invokeOwnerScopeKey
-    ], [effectiveMaskedKeywords, filters, invokeOwnerScopeKey, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]);
+    const imagesQueryKey = useMemo<ImagesQueryKey>(
+        () => [
+            'images',
+            filters,
+            sortOption,
+            privacyEnabled,
+            settings.maskingMode,
+            effectiveMaskedKeywords,
+            smartFilterHash,
+            invokeOwnerScopeKey,
+        ],
+        [effectiveMaskedKeywords, filters, invokeOwnerScopeKey, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]
+    );
 
     const query = useInfiniteQuery({
         queryKey: imagesQueryKey,
@@ -107,12 +105,31 @@ export const useImagesQuery = ({
             let sortOrder: 'ASC' | 'DESC' = 'DESC';
 
             switch (sortOption) {
-                case 'date_asc': sortField = 'display_timestamp'; sortOrder = 'ASC'; break;
-                case 'name_asc': sortField = 'path'; sortOrder = 'ASC'; break;
-                case 'name_desc': sortField = 'path'; sortOrder = 'DESC'; break;
-                case 'size_desc': sortField = 'file_size'; sortOrder = 'DESC'; break;
-                case 'size_asc': sortField = 'file_size'; sortOrder = 'ASC'; break;
-                case 'date_desc': default: sortField = 'display_timestamp'; sortOrder = 'DESC'; break;
+                case 'date_asc':
+                    sortField = 'display_timestamp';
+                    sortOrder = 'ASC';
+                    break;
+                case 'name_asc':
+                    sortField = 'path';
+                    sortOrder = 'ASC';
+                    break;
+                case 'name_desc':
+                    sortField = 'path';
+                    sortOrder = 'DESC';
+                    break;
+                case 'size_desc':
+                    sortField = 'file_size';
+                    sortOrder = 'DESC';
+                    break;
+                case 'size_asc':
+                    sortField = 'file_size';
+                    sortOrder = 'ASC';
+                    break;
+                case 'date_desc':
+                default:
+                    sortField = 'display_timestamp';
+                    sortOrder = 'DESC';
+                    break;
             }
 
             const prioritizePinned = filters.collectionId !== null;
@@ -121,18 +138,30 @@ export const useImagesQuery = ({
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
             if (pageParam === undefined) {
                 const startedAt = performance.now();
-                const [images, totalCount, globalCount] = await measureStartupPhase('first-page', () => Promise.all([
-                    searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
-                    countImages(where, params, collectionId, loraName),
-                    countGlobalImages(), // Fast path: no JOIN, simple indexed count
-                ]));
+                const [images, totalCount, globalCount] = await measureStartupPhase('first-page', () =>
+                    Promise.all([
+                        searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
+                        countImages(where, params, collectionId, loraName),
+                        countGlobalImages(), // Fast path: no JOIN, simple indexed count
+                    ])
+                );
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
                 return { images, totalCount, globalCount };
             } else {
                 const cursor = pageParam;
                 const startedAt = performance.now();
-                const images = await searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, cursor);
+                const images = await searchImages(
+                    where,
+                    params,
+                    PAGE_SIZE,
+                    sortField,
+                    sortOrder,
+                    prioritizePinned,
+                    collectionId,
+                    loraName,
+                    cursor
+                );
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: load more ${elapsedMs}ms`);
                 return { images, totalCount: -1, globalCount: -1 };
@@ -155,7 +184,7 @@ export const useImagesQuery = ({
             return {
                 val,
                 id: lastImage.id,
-                isPinned: lastImage.isPinned ? 1 : 0
+                isPinned: lastImage.isPinned ? 1 : 0,
             };
         },
         placeholderData: (previousData, previousQuery) => {
@@ -164,9 +193,7 @@ export const useImagesQuery = ({
             // Search, sort, and collection changes can safely retain their prior page,
             // including an empty one. Privacy changes must fail closed until a page
             // produced with the new privacy scope is ready.
-            return hasMatchingPrivacyScope(previousQuery?.queryKey, imagesQueryKey)
-                ? previousData
-                : undefined;
+            return hasMatchingPrivacyScope(previousQuery?.queryKey, imagesQueryKey) ? previousData : undefined;
         },
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries

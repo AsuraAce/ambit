@@ -89,6 +89,30 @@ fn between<'a>(source: &'a str, prefix: &str, end: char) -> ProbeResult<&'a str>
         .ok_or(Failure::Drift)
 }
 
+/// Reads the value of `const NAME = <quoted literal>` regardless of the quote
+/// character or a line break after `=`, so formatting the TypeScript source does
+/// not register as drift while any change to the literal itself still does.
+fn string_constant<'a>(source: &'a str, name: &str) -> ProbeResult<&'a str> {
+    let value = source
+        .split_once(&format!("const {name} ="))
+        .ok_or(Failure::Drift)?
+        .1
+        .trim_start();
+    let quote = value
+        .chars()
+        .next()
+        .filter(|quote| matches!(quote, '\'' | '"' | '`'))
+        .ok_or(Failure::Drift)?;
+    value[1..]
+        .split_once(quote)
+        .map(|(literal, _)| literal)
+        .ok_or(Failure::Drift)
+}
+
+fn collapse_whitespace(source: &str) -> String {
+    source.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn queries() -> ProbeResult<[String; 4]> {
     let count_source = SEARCH
         .split_once("export const countImages =")
@@ -98,8 +122,9 @@ fn queries() -> ProbeResult<[String; 4]> {
                 .map(|(body, _)| body)
         })
         .ok_or(Failure::Drift)?;
-    let base = between(SEARCH, "const BASE_VISIBLE_WHERE = \"", '"')?;
-    let default = between(SEARCH, "const DEFAULT_VISIBLE_WHERE = `", '`')?;
+    let count_source = collapse_whitespace(count_source);
+    let base = string_constant(SEARCH, "BASE_VISIBLE_WHERE")?;
+    let default = string_constant(SEARCH, "DEFAULT_VISIBLE_WHERE")?;
     if default.matches("${BASE_VISIBLE_WHERE}").count() != 1
         || !count_source.contains("const fromClause = 'FROM scoped_images AS images';")
         || !count_source

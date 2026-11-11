@@ -8,17 +8,13 @@ import { getFilename, normalizePath } from '../../utils/pathUtils';
 import { getInvokeSourceDatabase } from './connection';
 import { throwIfInvokeAborted } from './abort';
 
-const normalizeRelativePath = (path: string): string =>
-    normalizePath(path).replace(/^\/+/, '');
+const normalizeRelativePath = (path: string): string => normalizePath(path).replace(/^\/+/, '');
 
 const buildPathMatchKeys = (path: string): string[] => {
     const normalized = normalizeRelativePath(path);
     const withoutOutputPrefix = normalized.replace(/^outputs\/images\//i, '');
 
-    return Array.from(new Set([
-        normalized,
-        withoutOutputPrefix
-    ].filter(Boolean)));
+    return Array.from(new Set([normalized, withoutOutputPrefix].filter(Boolean)));
 };
 
 const buildInvokeRowPath = (imageName: string, imageSubfolder?: string | null): string => {
@@ -66,7 +62,7 @@ export const scanForOrphans = async (
     throwIfInvokeAborted(signal);
     const existingRows = await ambitDb.select<{ id: string }[]>('SELECT id FROM images');
     throwIfInvokeAborted(signal);
-    const ambitExistingIds = new Set(existingRows.map(r => r.id));
+    const ambitExistingIds = new Set(existingRows.map((r) => r.id));
 
     let knownIntermediates = new Set<string>();
     if (!options.importIntermediates) {
@@ -76,17 +72,15 @@ export const scanForOrphans = async (
             throwIfInvokeAborted(signal);
             const tableInfo = await invokeDb.select<Array<{ name: string }>>('PRAGMA table_info(images)');
             throwIfInvokeAborted(signal);
-            const hasImageSubfolder = tableInfo.some(column => column.name === 'image_subfolder');
-            const interRows = await invokeDb.select<Array<{ image_name: string, image_subfolder?: string | null }>>(
+            const hasImageSubfolder = tableInfo.some((column) => column.name === 'image_subfolder');
+            const interRows = await invokeDb.select<Array<{ image_name: string; image_subfolder?: string | null }>>(
                 `SELECT image_name ${hasImageSubfolder ? ', image_subfolder' : ''} FROM images WHERE is_intermediate = 1`
             );
             throwIfInvokeAborted(signal);
-            knownIntermediates = new Set(interRows.flatMap((r) =>
-                buildIntermediateMatchKeys(r.image_name, r.image_subfolder)
-            ));
+            knownIntermediates = new Set(interRows.flatMap((r) => buildIntermediateMatchKeys(r.image_name, r.image_subfolder)));
         } catch (e) {
             throwIfInvokeAborted(signal);
-            console.error("[Hybrid Sync] ERROR loading intermediates:", e);
+            console.error('[Hybrid Sync] ERROR loading intermediates:', e);
         }
     }
 
@@ -104,14 +98,15 @@ export const scanForOrphans = async (
         return 0;
     }
 
-    const orphans = allFiles.filter(f => {
+    const orphans = allFiles.filter((f) => {
         const pathMatchKeys = buildPathMatchKeys(f);
         const filename = getFilename(f);
-        if (!options.importIntermediates && (
-            pathMatchKeys.some(key => knownIntermediates.has(key)) ||
-            (filename && knownIntermediates.has(filename))
-        )) return false;
-        if (pathMatchKeys.some(key => syncedIds.has(key))) return false;
+        if (
+            !options.importIntermediates &&
+            (pathMatchKeys.some((key) => knownIntermediates.has(key)) || (filename && knownIntermediates.has(filename)))
+        )
+            return false;
+        if (pathMatchKeys.some((key) => syncedIds.has(key))) return false;
 
         // f is relative to root (e.g. "outputs/images/uuid.png")
         // So we just join it with root.
@@ -129,7 +124,7 @@ export const scanForOrphans = async (
     for (let i = 0; i < total; i += CHUNK_SIZE) {
         throwIfInvokeAborted(signal);
         const chunk = orphans.slice(i, i + CHUNK_SIZE);
-        const chunkAbsPaths = chunk.map(rel => {
+        const chunkAbsPaths = chunk.map((rel) => {
             return `${imagesRoot}/${rel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
         });
 
@@ -159,7 +154,7 @@ export const scanForOrphans = async (
                     controlNets: meta.metadata?.controlNets || [],
                     workflowJson: meta.metadata?.workflowJson ?? undefined,
                     rawParameters: meta.metadata?.rawParameters ?? undefined,
-                    isIntermediate: !!meta.metadata?.isIntermediate || !meta.metadata
+                    isIntermediate: !!meta.metadata?.isIntermediate || !meta.metadata,
                 };
 
                 const newImg: AIImage = {
@@ -175,7 +170,7 @@ export const scanForOrphans = async (
                     isPinned: false,
                     isDeleted: false,
                     isMissing: false,
-                    metadata: finalMeta
+                    metadata: finalMeta,
                 };
 
                 batchToInsert.push(newImg);

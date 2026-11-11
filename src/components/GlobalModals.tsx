@@ -6,16 +6,30 @@ import type { ImportResult } from '../services/importService';
 import { createDefaultFilters } from '../utils/filterState';
 import type { AmbitCollectionScopeTarget } from '../services/db/collectionRepo';
 
-const SettingsModal = React.lazy(() => import('../features/settings/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
-const ExportModal = React.lazy(() => import('../features/library/components/ExportModal').then(module => ({ default: module.ExportModal })));
-const SlideshowModal = React.lazy(() => import('../features/viewer/components/SlideshowModal').then(module => ({ default: module.SlideshowModal })));
-const MetadataRecoveryModal = React.lazy(() => import('../features/library/components/MetadataRecoveryModal').then(module => ({ default: module.MetadataRecoveryModal })));
-const AddToCollectionModal = React.lazy(() => import('../features/collections/components/AddToCollectionModal').then(module => ({ default: module.AddToCollectionModal })));
-const CommandPalette = React.lazy(() => import('./ui/CommandPalette').then(module => ({ default: module.CommandPalette })));
-const ShortcutsModal = React.lazy(() => import('./ui/ShortcutsModal').then(module => ({ default: module.ShortcutsModal })));
-const CompareModal = React.lazy(() => import('../features/viewer/components/CompareModal').then(module => ({ default: module.CompareModal })));
-const DonationModal = React.lazy(() => import('./ui/DonationModal').then(module => ({ default: module.DonationModal })));
-const CollectionEditorModal = React.lazy(() => import('../features/collections/components/CollectionEditorModal').then(module => ({ default: module.CollectionEditorModal })));
+const SettingsModal = React.lazy(() =>
+    import('../features/settings/components/SettingsModal').then((module) => ({ default: module.SettingsModal }))
+);
+const ExportModal = React.lazy(() =>
+    import('../features/library/components/ExportModal').then((module) => ({ default: module.ExportModal }))
+);
+const SlideshowModal = React.lazy(() =>
+    import('../features/viewer/components/SlideshowModal').then((module) => ({ default: module.SlideshowModal }))
+);
+const MetadataRecoveryModal = React.lazy(() =>
+    import('../features/library/components/MetadataRecoveryModal').then((module) => ({ default: module.MetadataRecoveryModal }))
+);
+const AddToCollectionModal = React.lazy(() =>
+    import('../features/collections/components/AddToCollectionModal').then((module) => ({ default: module.AddToCollectionModal }))
+);
+const CommandPalette = React.lazy(() => import('./ui/CommandPalette').then((module) => ({ default: module.CommandPalette })));
+const ShortcutsModal = React.lazy(() => import('./ui/ShortcutsModal').then((module) => ({ default: module.ShortcutsModal })));
+const CompareModal = React.lazy(() =>
+    import('../features/viewer/components/CompareModal').then((module) => ({ default: module.CompareModal }))
+);
+const DonationModal = React.lazy(() => import('./ui/DonationModal').then((module) => ({ default: module.DonationModal })));
+const CollectionEditorModal = React.lazy(() =>
+    import('../features/collections/components/CollectionEditorModal').then((module) => ({ default: module.CollectionEditorModal }))
+);
 
 interface GlobalModalsProps {
     modals: Record<string, boolean>;
@@ -38,7 +52,8 @@ interface GlobalModalsProps {
     isRecoveringMetadata: boolean;
     isExporting: boolean;
     slideshowShuffle: boolean;
-    initialSettingsTab: 'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+    initialSettingsTab:
+        'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
     shortcutsModalTab: 'shortcuts' | 'search' | 'setup';
     onOpenSetupGuide?: () => void;
     onResetFirstRunOnboarding?: () => void;
@@ -61,7 +76,7 @@ interface GlobalModalsProps {
     onSaveCollectionFilters?: (id: string, filters: FilterState | undefined) => void | Promise<void>;
     onUpdateCollectionScope?: (id: string, target: AmbitCollectionScopeTarget) => Promise<boolean>;
     onResetInvokeCollection?: (id: string) => Promise<boolean>;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
+    onScanFolder?: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     hasPendingUpdate: boolean;
     pendingUpdateVersion: string | null;
@@ -116,17 +131,16 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     updateStatus,
     onCheckForUpdates,
     onOpenUpdatePrompt,
-    onNavigateToMaintenance
+    onNavigateToMaintenance,
 }) => {
     const deletePendingRef = React.useRef(false);
     const collectionDeletePendingRef = React.useRef(false);
     const [isDeletePending, setIsDeletePending] = React.useState(false);
     const [isCollectionDeletePending, setIsCollectionDeletePending] = React.useState(false);
-    const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
-    const imageOnlyResults = filteredImages.filter(image => !isVideoAsset(image));
+    const closeModal = (name: string) => setModals((p) => ({ ...p, [name]: false }));
+    const imageOnlyResults = filteredImages.filter((image) => !isVideoAsset(image));
     const deleteTargetCount = pendingViewerDeleteId ? 1 : selectedIds.size;
-    const collectionToDelete = [...collections, ...smartCollections]
-        .find(collection => collection.id === collectionToDeleteId);
+    const collectionToDelete = [...collections, ...smartCollections].find((collection) => collection.id === collectionToDeleteId);
     const handleDeleteConfirm = async () => {
         if (deletePendingRef.current) return;
 
@@ -181,7 +195,10 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 {modals.export && (
                     <ExportModal
                         isOpen={modals.export}
-                        onClose={() => { closeModal('export'); onCloseExport(); }}
+                        onClose={() => {
+                            closeModal('export');
+                            onCloseExport();
+                        }}
                         count={exportIds.size > 0 ? exportIds.size : selectedIds.size}
                         onConfirm={onExportConfirm}
                         isExporting={isExporting}
@@ -244,11 +261,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 )}
 
                 {modals.commandPalette && (
-                    <CommandPalette
-                        isOpen={modals.commandPalette}
-                        onClose={() => closeModal('commandPalette')}
-                        {...commandPaletteProps}
-                    />
+                    <CommandPalette isOpen={modals.commandPalette} onClose={() => closeModal('commandPalette')} {...commandPaletteProps} />
                 )}
 
                 {modals.shortcuts && (
@@ -262,28 +275,23 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
 
                 {modals.compare && imageOnlyResults.length >= 2 && Array.from(selectedIds).length >= 2 && (
                     <CompareModal
-                        imageA={imageOnlyResults.find(i => i.id === Array.from(selectedIds)[0]) || imageOnlyResults[0]}
-                        imageB={imageOnlyResults.find(i => i.id === Array.from(selectedIds)[1]) || imageOnlyResults[1]}
+                        imageA={imageOnlyResults.find((i) => i.id === Array.from(selectedIds)[0]) || imageOnlyResults[0]}
+                        imageB={imageOnlyResults.find((i) => i.id === Array.from(selectedIds)[1]) || imageOnlyResults[1]}
                         onClose={() => closeModal('compare')}
                         onToggleFavorite={toggleFavorite}
                         onTogglePin={togglePin}
                     />
                 )}
 
-                {modals.donation && (
-                    <DonationModal
-                        isOpen={modals.donation}
-                        onClose={() => closeModal('donation')}
-                    />
-                )}
+                {modals.donation && <DonationModal isOpen={modals.donation} onClose={() => closeModal('donation')} />}
 
                 {modals.collectionEditor && (
                     <CollectionEditorModal
                         isOpen={modals.collectionEditor}
                         onClose={() => closeModal('collectionEditor')}
-                        collection={[...collections, ...smartCollections].find(c => c.id === collectionToEditId) || null}
+                        collection={[...collections, ...smartCollections].find((c) => c.id === collectionToEditId) || null}
                         filters={filters ?? createDefaultFilters()}
-                        onSave={onSaveCollectionFilters || (() => { })}
+                        onSave={onSaveCollectionFilters || (() => {})}
                         onUpdateScope={onUpdateCollectionScope || (async () => false)}
                         onResetInvokeCollection={onResetInvokeCollection || (async () => false)}
                     />

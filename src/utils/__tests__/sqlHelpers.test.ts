@@ -5,10 +5,7 @@ import { toPhotoWallTimeBounds } from '../imageDates';
 
 const effectiveDateParams = (start?: number, end?: number): number[] => {
     const wall = toPhotoWallTimeBounds({ start, end });
-    return [
-        ...(start === undefined ? [] : [wall.start as number, start]),
-        ...(end === undefined ? [] : [wall.end as number, end]),
-    ];
+    return [...(start === undefined ? [] : [wall.start as number, start]), ...(end === undefined ? [] : [wall.end as number, end])];
 };
 
 describe('sqlHelpers', () => {
@@ -54,30 +51,20 @@ describe('sqlHelpers', () => {
         });
 
         it.each(['image', 'video'] as const)('filters the library to %s assets', (mediaType) => {
-            const { where, params } = buildSqlWhereClause(
-                { ...defaultFilters, mediaType },
-                false,
-                'blur',
-                []
-            );
+            const { where, params } = buildSqlWhereClause({ ...defaultFilters, mediaType }, false, 'blur', []);
 
             expect(where).toContain('media_type = ?');
             expect(params).toEqual([mediaType]);
         });
 
         it('does not constrain media type for the All filter', () => {
-            const { where, params } = buildSqlWhereClause(
-                { ...defaultFilters, mediaType: 'all' },
-                false,
-                'blur',
-                []
-            );
+            const { where, params } = buildSqlWhereClause({ ...defaultFilters, mediaType: 'all' }, false, 'blur', []);
 
             expect(where).not.toContain('media_type = ?');
             expect(params).toEqual([]);
         });
 
-        it.each(['all', 'video'] as const)('ignores remembered Photos in %s media scope', mediaType => {
+        it.each(['all', 'video'] as const)('ignores remembered Photos in %s media scope', (mediaType) => {
             const query = buildSqlWhereClause({ ...defaultFilters, mediaType, sourceKind: 'photograph' }, false, 'blur', []);
             expect(query.where).not.toContain('source_kind = ?');
             expect(query.params).not.toContain('photograph');
@@ -86,7 +73,12 @@ describe('sqlHelpers', () => {
         it('counts scope alternatives without dropping privacy, owner, or search restrictions', () => {
             const query = buildSqlWhereClause(
                 { ...defaultFilters, mediaType: 'image', sourceKind: 'photograph', searchQuery: 'portrait' },
-                true, 'hide', [], [], false, ['sourceKind', 'mediaType']
+                true,
+                'hide',
+                [],
+                [],
+                false,
+                ['sourceKind', 'mediaType']
             );
             expect(query.where).not.toContain('media_type = ?');
             expect(query.where).not.toContain('source_kind = ?');
@@ -98,44 +90,58 @@ describe('sqlHelpers', () => {
 
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
-            expect(where).toContain("resolved_model_name = ?");
+            expect(where).toContain('resolved_model_name = ?');
             expect(params).toEqual(['SDXL', 'Flux']);
         });
 
         it('should always OR checkpoint models even if stale matchModes requests ALL', () => {
-            const { where, params } = buildSqlWhereClause({
-                ...defaultFilters,
-                models: ['SDXL', 'Flux'],
-                matchModes: { models: 'all' }
-            }, false, 'blur', []);
+            const { where, params } = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    models: ['SDXL', 'Flux'],
+                    matchModes: { models: 'all' },
+                },
+                false,
+                'blur',
+                []
+            );
 
-            expect(where).toContain("resolved_model_name = ? COLLATE NOCASE OR resolved_model_name = ? COLLATE NOCASE");
-            expect(where).not.toContain("resolved_model_name = ? COLLATE NOCASE AND resolved_model_name = ? COLLATE NOCASE");
+            expect(where).toContain('resolved_model_name = ? COLLATE NOCASE OR resolved_model_name = ? COLLATE NOCASE');
+            expect(where).not.toContain('resolved_model_name = ? COLLATE NOCASE AND resolved_model_name = ? COLLATE NOCASE');
             expect(params).toEqual(['SDXL', 'Flux']);
         });
 
         it('should filter model aliases as one selected asset', () => {
-            const { where, params } = buildSqlWhereClause({
-                ...defaultFilters,
-                models: ['Pony Diffusion V6 XL'],
-                assetFilterAliases: {
-                    models: {
-                        'Pony Diffusion V6 XL': ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']
-                    }
-                }
-            }, false, 'blur', []);
+            const { where, params } = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    models: ['Pony Diffusion V6 XL'],
+                    assetFilterAliases: {
+                        models: {
+                            'Pony Diffusion V6 XL': ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL'],
+                        },
+                    },
+                },
+                false,
+                'blur',
+                []
+            );
 
-            expect(where).toContain("(resolved_model_name = ? COLLATE NOCASE OR resolved_model_name = ? COLLATE NOCASE)");
+            expect(where).toContain('(resolved_model_name = ? COLLATE NOCASE OR resolved_model_name = ? COLLATE NOCASE)');
             expect(params).toEqual(['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']);
         });
 
         it('should handle tools filter', () => {
-            const { where, params } = buildSqlWhereClause({ ...defaultFilters, tools: [GeneratorTool.COMFYUI, GeneratorTool.UNKNOWN] }, false, 'blur', []);
-            expect(where).toContain("tool = ?");
-            expect(where).toContain("tool IS NULL");
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, tools: [GeneratorTool.COMFYUI, GeneratorTool.UNKNOWN] },
+                false,
+                'blur',
+                []
+            );
+            expect(where).toContain('tool = ?');
+            expect(where).toContain('tool IS NULL');
             expect(params).toEqual([GeneratorTool.COMFYUI]);
         });
-
 
         it('should return loraName for single LoRA filter (INNER JOIN optimization)', () => {
             const { where, params, loraName } = buildSqlWhereClause({ ...defaultFilters, loras: ['MyLora'] }, false, 'blur', []);
@@ -146,10 +152,15 @@ describe('sqlHelpers', () => {
         });
 
         it('should canonicalize weighted single LoRA filters for the optimized path', () => {
-            const { where, params, loraName } = buildSqlWhereClause({
-                ...defaultFilters,
-                loras: ['detail___add_detail (0.20)']
-            }, false, 'blur', []);
+            const { where, params, loraName } = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    loras: ['detail___add_detail (0.20)'],
+                },
+                false,
+                'blur',
+                []
+            );
 
             expect(loraName).toBe('detail___add_detail');
             expect(where).not.toContain('image_loras');
@@ -157,15 +168,20 @@ describe('sqlHelpers', () => {
         });
 
         it('should keep canonical-only weighted LoRA aliases on the optimized path', () => {
-            const { where, params, loraName } = buildSqlWhereClause({
-                ...defaultFilters,
-                loras: ['detail___add_detail'],
-                assetFilterAliases: {
-                    loras: {
-                        detail___add_detail: ['detail___add_detail', 'detail___add_detail (0.20)']
-                    }
-                }
-            }, false, 'blur', []);
+            const { where, params, loraName } = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    loras: ['detail___add_detail'],
+                    assetFilterAliases: {
+                        loras: {
+                            detail___add_detail: ['detail___add_detail', 'detail___add_detail (0.20)'],
+                        },
+                    },
+                },
+                false,
+                'blur',
+                []
+            );
 
             expect(loraName).toBe('detail___add_detail');
             expect(where).not.toContain('image_loras');
@@ -173,33 +189,38 @@ describe('sqlHelpers', () => {
         });
 
         it('should expand merged LoRA aliases instead of using the single-LoRA optimization', () => {
-            const { where, params, loraName } = buildSqlWhereClause({
-                ...defaultFilters,
-                loras: ['Detailer-Style'],
-                assetFilterAliases: {
-                    loras: {
-                        'Detailer-Style': ['Detailer-Style', 'detailer style']
-                    }
-                }
-            }, false, 'blur', []);
+            const { where, params, loraName } = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    loras: ['Detailer-Style'],
+                    assetFilterAliases: {
+                        loras: {
+                            'Detailer-Style': ['Detailer-Style', 'detailer style'],
+                        },
+                    },
+                },
+                false,
+                'blur',
+                []
+            );
 
             expect(loraName).toBeUndefined();
             expect(where).toContain("instr(il.lora_name, ' (')");
-            expect(where).toContain(") OR EXISTS");
+            expect(where).toContain(') OR EXISTS');
             expect(params).toEqual(['Detailer-Style', 'detailer style']);
         });
 
         it('should use junction table for Embedding filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, embeddings: ['EasyNegative'] }, false, 'blur', []);
-            expect(where).toContain("EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND (CASE");
-            expect(where).toContain("ie.embedding_name");
+            expect(where).toContain('EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND (CASE');
+            expect(where).toContain('ie.embedding_name');
             expect(params).toEqual(['EasyNegative']);
         });
 
         it('should use junction table for Hypernetwork filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, hypernetworks: ['HyperNet'] }, false, 'blur', []);
-            expect(where).toContain("EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND (CASE");
-            expect(where).toContain("ih.hypernetwork_name");
+            expect(where).toContain('EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND (CASE');
+            expect(where).toContain('ih.hypernetwork_name');
             expect(params).toEqual(['HyperNet']);
         });
 
@@ -222,88 +243,104 @@ describe('sqlHelpers', () => {
         });
 
         it('should handle custom exact-day date ranges', () => {
-            const result = buildSqlWhereClause({
-                ...defaultFilters,
-                dateRange: 'custom',
-                dateFrom: '2026-04-15',
-                dateTo: '2026-04-15'
-            }, false, 'blur', []);
+            const result = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    dateRange: 'custom',
+                    dateFrom: '2026-04-15',
+                    dateTo: '2026-04-15',
+                },
+                false,
+                'blur',
+                []
+            );
 
             expect(result.where).toContain('timestamp >= ?');
             expect(result.where).toContain('timestamp < ?');
-            expect(result.params).toEqual(effectiveDateParams(
-                new Date(2026, 3, 15).getTime(),
-                new Date(2026, 3, 16).getTime()
-            ));
+            expect(result.params).toEqual(effectiveDateParams(new Date(2026, 3, 15).getTime(), new Date(2026, 3, 16).getTime()));
         });
 
         it('should handle custom bounded and one-sided date ranges', () => {
-            const bounded = buildSqlWhereClause({
-                ...defaultFilters,
-                dateRange: 'custom',
-                dateFrom: '2026-04-01',
-                dateTo: '2026-04-30'
-            }, false, 'blur', []);
-            expect(bounded.params).toEqual(effectiveDateParams(
-                new Date(2026, 3, 1).getTime(),
-                new Date(2026, 4, 1).getTime()
-            ));
+            const bounded = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    dateRange: 'custom',
+                    dateFrom: '2026-04-01',
+                    dateTo: '2026-04-30',
+                },
+                false,
+                'blur',
+                []
+            );
+            expect(bounded.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime(), new Date(2026, 4, 1).getTime()));
 
-            const fromOnly = buildSqlWhereClause({
-                ...defaultFilters,
-                dateRange: 'custom',
-                dateFrom: '2026-04-01'
-            }, false, 'blur', []);
+            const fromOnly = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    dateRange: 'custom',
+                    dateFrom: '2026-04-01',
+                },
+                false,
+                'blur',
+                []
+            );
             expect(fromOnly.where).toContain('timestamp >= ?');
             expect(fromOnly.where).not.toContain('timestamp < ?');
             expect(fromOnly.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime()));
 
-            const toOnly = buildSqlWhereClause({
-                ...defaultFilters,
-                dateRange: 'custom',
-                dateTo: '2026-04-30'
-            }, false, 'blur', []);
+            const toOnly = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    dateRange: 'custom',
+                    dateTo: '2026-04-30',
+                },
+                false,
+                'blur',
+                []
+            );
             expect(toOnly.where).not.toContain('timestamp >= ?');
             expect(toOnly.where).toContain('timestamp < ?');
             expect(toOnly.params).toEqual(effectiveDateParams(undefined, new Date(2026, 4, 1).getTime()));
         });
 
         it('should normalize inverted custom date ranges', () => {
-            const result = buildSqlWhereClause({
-                ...defaultFilters,
-                dateRange: 'custom',
-                dateFrom: '2026-04-30',
-                dateTo: '2026-04-01'
-            }, false, 'blur', []);
+            const result = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    dateRange: 'custom',
+                    dateFrom: '2026-04-30',
+                    dateTo: '2026-04-01',
+                },
+                false,
+                'blur',
+                []
+            );
 
-            expect(result.params).toEqual(effectiveDateParams(
-                new Date(2026, 3, 1).getTime(),
-                new Date(2026, 4, 1).getTime()
-            ));
+            expect(result.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime(), new Date(2026, 4, 1).getTime()));
         });
 
         describe('Search Query Parsing', () => {
             it('should handle simple text search', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'sunset' }, false, 'blur', []);
-                expect(where).toContain("positive_prompt LIKE ?");
+                expect(where).toContain('positive_prompt LIKE ?');
                 expect(params).toEqual(['%sunset%']);
             });
 
             it('should handle negative text search', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-bird' }, false, 'blur', []);
-                expect(where).toContain("positive_prompt NOT LIKE ?");
+                expect(where).toContain('positive_prompt NOT LIKE ?');
                 expect(params).toEqual(['%bird%']);
             });
 
             it('should handle key:val filters (cfg)', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'cfg:7' }, false, 'blur', []);
-                expect(where).toContain("cfg = ?");
+                expect(where).toContain('cfg = ?');
                 expect(params).toEqual([7]);
             });
 
             it('should handle key:val comparison (steps)', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'steps:>20' }, false, 'blur', []);
-                expect(where).toContain("steps > ?");
+                expect(where).toContain('steps > ?');
                 expect(params).toEqual([20]);
             });
 
@@ -340,7 +377,7 @@ describe('sqlHelpers', () => {
 
             it('handles model and all-field scoped searches in positive and negative forms', () => {
                 const model = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'model:pony' }, false, 'blur', []);
-                expect(model.where).toContain('(resolved_model_name LIKE ? OR json_extract(metadata_json, \'$.model\') LIKE ?)');
+                expect(model.where).toContain("(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)");
                 expect(model.params).toEqual(['%pony%', '%pony%']);
 
                 const all = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'all:detail' }, false, 'blur', []);
@@ -362,31 +399,36 @@ describe('sqlHelpers', () => {
 
             it('should handle quoted phrases', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '"golden hour"' }, false, 'blur', []);
-                expect(where).toContain("positive_prompt LIKE ?");
+                expect(where).toContain('positive_prompt LIKE ?');
                 expect(params).toEqual(['%golden hour%']);
             });
 
             it('should group explicit OR prompt terms', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc OR elf' }, false, 'blur', []);
-                expect(where).toContain("(positive_prompt LIKE ? OR positive_prompt LIKE ?)");
+                expect(where).toContain('(positive_prompt LIKE ? OR positive_prompt LIKE ?)');
                 expect(params).toEqual(['%orc%', '%elf%']);
             });
 
             it('should keep space-separated prompt terms as AND filters', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc elf' }, false, 'blur', []);
-                expect(where).toContain("positive_prompt LIKE ? AND positive_prompt LIKE ?");
+                expect(where).toContain('positive_prompt LIKE ? AND positive_prompt LIKE ?');
                 expect(params).toEqual(['%orc%', '%elf%']);
             });
 
             it('should group explicit OR with quoted phrases', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '"dark elf" OR orc' }, false, 'blur', []);
-                expect(where).toContain("(positive_prompt LIKE ? OR positive_prompt LIKE ?)");
+                expect(where).toContain('(positive_prompt LIKE ? OR positive_prompt LIKE ?)');
                 expect(params).toEqual(['%dark elf%', '%orc%']);
             });
 
             it('should AND OR prompt groups with advanced filters', () => {
-                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc OR elf model:pony' }, false, 'blur', []);
-                expect(where).toContain("(positive_prompt LIKE ? OR positive_prompt LIKE ?)");
+                const { where, params } = buildSqlWhereClause(
+                    { ...defaultFilters, searchQuery: 'orc OR elf model:pony' },
+                    false,
+                    'blur',
+                    []
+                );
+                expect(where).toContain('(positive_prompt LIKE ? OR positive_prompt LIKE ?)');
                 expect(where).toContain("(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)");
                 expect(params).toEqual(['%orc%', '%elf%', '%pony%', '%pony%']);
             });
@@ -413,53 +455,38 @@ describe('sqlHelpers', () => {
             it('should handle exact date search syntax', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04-15' }, false, 'blur', []);
                 expect(where).toContain('display_timestamp >= ?');
-                expect(params).toEqual(effectiveDateParams(
-                    new Date(2026, 3, 15).getTime(),
-                    new Date(2026, 3, 16).getTime()
-                ));
+                expect(params).toEqual(effectiveDateParams(new Date(2026, 3, 15).getTime(), new Date(2026, 3, 16).getTime()));
             });
 
             it('should handle date range search syntax', () => {
-                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04-01..2026-04-30' }, false, 'blur', []);
+                const { where, params } = buildSqlWhereClause(
+                    { ...defaultFilters, searchQuery: 'date:2026-04-01..2026-04-30' },
+                    false,
+                    'blur',
+                    []
+                );
                 expect(where).toContain('display_timestamp >= ?');
-                expect(params).toEqual(effectiveDateParams(
-                    new Date(2026, 3, 1).getTime(),
-                    new Date(2026, 4, 1).getTime()
-                ));
+                expect(params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime(), new Date(2026, 4, 1).getTime()));
             });
 
             it('should handle partial ISO date search syntax', () => {
                 const year = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2025' }, false, 'blur', []);
                 expect(year.where).toContain('display_timestamp >= ?');
-                expect(year.params).toEqual(effectiveDateParams(
-                    new Date(2025, 0, 1).getTime(),
-                    new Date(2026, 0, 1).getTime()
-                ));
+                expect(year.params).toEqual(effectiveDateParams(new Date(2025, 0, 1).getTime(), new Date(2026, 0, 1).getTime()));
 
                 const month = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04' }, false, 'blur', []);
                 expect(month.where).toContain('display_timestamp >= ?');
-                expect(month.params).toEqual(effectiveDateParams(
-                    new Date(2026, 3, 1).getTime(),
-                    new Date(2026, 4, 1).getTime()
-                ));
+                expect(month.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime(), new Date(2026, 4, 1).getTime()));
 
                 const mixedRange = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2025..2026-04' }, false, 'blur', []);
                 expect(mixedRange.where).toContain('display_timestamp >= ?');
-                expect(mixedRange.params).toEqual(effectiveDateParams(
-                    new Date(2025, 0, 1).getTime(),
-                    new Date(2026, 4, 1).getTime()
-                ));
+                expect(mixedRange.params).toEqual(effectiveDateParams(new Date(2025, 0, 1).getTime(), new Date(2026, 4, 1).getTime()));
             });
 
             it('should reject malformed date range search syntax', () => {
-                const malformedRanges = [
-                    'date:2025..2026-13',
-                    'date:2026-13..2027',
-                    'date:2025..',
-                    'date:..2026'
-                ];
+                const malformedRanges = ['date:2025..2026-13', 'date:2026-13..2027', 'date:2025..', 'date:..2026'];
 
-                malformedRanges.forEach(searchQuery => {
+                malformedRanges.forEach((searchQuery) => {
                     const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery }, false, 'blur', []);
                     expect(where).not.toContain('timestamp >= ?');
                     expect(where).not.toContain('timestamp < ?');
@@ -508,11 +535,17 @@ describe('sqlHelpers', () => {
                     imageIds: [],
                     createdAt: Date.now(),
                     filters: { ...defaultFilters, searchQuery: 'ocean' },
-                }
+                },
             ];
 
             it('should handle manual collections by returning collectionId for INNER JOIN', () => {
-                const { where, params, collectionId } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col1' }, false, 'blur', [], mockCollections);
+                const { where, params, collectionId } = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: 'col1' },
+                    false,
+                    'blur',
+                    [],
+                    mockCollections
+                );
                 // Manual collections don't add WHERE clause - INNER JOIN is used in searchRepo instead
                 expect(collectionId).toBe('col1');
                 // Base conditions should still be present
@@ -520,8 +553,14 @@ describe('sqlHelpers', () => {
             });
 
             it('should handle smart collections (hybrid mode)', () => {
-                const { where, params } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col2' }, false, 'blur', [], mockCollections);
-                expect(where).toContain("positive_prompt LIKE ?"); // From smart filters
+                const { where, params } = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: 'col2' },
+                    false,
+                    'blur',
+                    [],
+                    mockCollections
+                );
+                expect(where).toContain('positive_prompt LIKE ?'); // From smart filters
                 expect(params).toContain('%ocean%');
             });
 
@@ -542,11 +581,7 @@ describe('sqlHelpers', () => {
                 );
 
                 expect(where).toContain('invoke_source_id IS NULL OR (invoke_source_id = ? AND invoke_owner_id = ?)');
-                expect(params).toEqual([
-                    '%ocean%',
-                    'C:/Invoke/databases/invokeai.db',
-                    'jupiter',
-                ]);
+                expect(params).toEqual(['%ocean%', 'C:/Invoke/databases/invokeai.db', 'jupiter']);
             });
 
             it('should pre-empt smart collection date if global date is set', () => {
@@ -559,7 +594,10 @@ describe('sqlHelpers', () => {
                 };
                 const { where, params } = buildSqlWhereClause(
                     { ...defaultFilters, collectionId: 'col_date', dateRange: 'today' },
-                    false, 'blur', [], [smartColWithDate]
+                    false,
+                    'blur',
+                    [],
+                    [smartColWithDate]
                 );
 
                 // The output should contain the global today cutoff, not the week cutoff twice or conflictingly.
@@ -580,7 +618,7 @@ describe('sqlHelpers', () => {
                         ...defaultFilters,
                         dateRange: 'custom',
                         dateFrom: '2026-03-01',
-                        dateTo: '2026-03-31'
+                        dateTo: '2026-03-31',
                     },
                 };
                 const { where, params } = buildSqlWhereClause(
@@ -589,17 +627,17 @@ describe('sqlHelpers', () => {
                         collectionId: 'col_custom_date',
                         dateRange: 'custom',
                         dateFrom: '2026-04-01',
-                        dateTo: '2026-04-30'
+                        dateTo: '2026-04-30',
                     },
-                    false, 'blur', [], [smartColWithDate]
+                    false,
+                    'blur',
+                    [],
+                    [smartColWithDate]
                 );
 
                 expect(where.match(/display_timestamp >= \?/g) ?? []).toHaveLength(2);
                 expect(where.match(/display_timestamp < \?/g) ?? []).toHaveLength(2);
-                expect(params).toEqual(effectiveDateParams(
-                    new Date(2026, 3, 1).getTime(),
-                    new Date(2026, 4, 1).getTime()
-                ));
+                expect(params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime(), new Date(2026, 4, 1).getTime()));
             });
 
             it('intersects the active image-kind scope with the saved smart-collection kind', () => {
@@ -649,13 +687,14 @@ describe('sqlHelpers', () => {
 
             it('applies smart collection manual exclusions', () => {
                 const collection: Collection = {
-                    id: 'smart-exclusions', name: 'Smart exclusions', imageIds: [], createdAt: 1,
+                    id: 'smart-exclusions',
+                    name: 'Smart exclusions',
+                    imageIds: [],
+                    createdAt: 1,
                     filters: { ...defaultFilters, favoritesOnly: true },
-                    manualExclusions: ['image-1', 'image-2']
+                    manualExclusions: ['image-1', 'image-2'],
                 };
-                const result = buildSqlWhereClause(
-                    { ...defaultFilters, collectionId: collection.id }, false, 'blur', [], [collection]
-                );
+                const result = buildSqlWhereClause({ ...defaultFilters, collectionId: collection.id }, false, 'blur', [], [collection]);
                 expect(result.where).toContain('id NOT IN (?,?)');
                 expect(result.params).toEqual(['image-1', 'image-2']);
             });
@@ -672,19 +711,26 @@ describe('sqlHelpers', () => {
                 ipAdapters: ['Face', 'Style'],
                 samplers: ['DPM++_2M-Karras'],
                 generationTypes: ['txt2img', 'img2img'],
-                minSteps: 10, maxSteps: 40, minCfg: 3, maxCfg: 12,
+                minSteps: 10,
+                maxSteps: 40,
+                minCfg: 3,
+                maxCfg: 12,
                 matchModes: {
-                    tools: 'all', embeddings: 'all', hypernetworks: 'all', controlNets: 'all', ipAdapters: 'all'
+                    tools: 'all',
+                    embeddings: 'all',
+                    hypernetworks: 'all',
+                    controlNets: 'all',
+                    ipAdapters: 'all',
                 },
                 assetFilterAliases: {
                     embeddings: { Easy: [' Easy ', 'easy', '', 'Easy (1.0)'] },
                     hypernetworks: { 'Hyper A': ['Hyper A', 'Hyper A:0.8'] },
                     controlNets: { Canny: ['Canny', 'Canny (0.5)'] },
-                    ipAdapters: { Face: ['Face', 'Face:0.7'] }
-                }
+                    ipAdapters: { Face: ['Face', 'Face:0.7'] },
+                },
             };
             const { where, params } = buildSqlWhereClause(filters, false, 'blur', []);
-            expect(where).toContain("resolved_model_name IS NULL");
+            expect(where).toContain('resolved_model_name IS NULL');
             expect(where).toContain('tool = ? COLLATE NOCASE AND tool = ? COLLATE NOCASE');
             expect(where).toContain('steps >= ?');
             expect(where).toContain('steps <= ?');
@@ -698,14 +744,27 @@ describe('sqlHelpers', () => {
         it('omits every explicitly excluded facet category', () => {
             const filters: FilterState = {
                 ...defaultFilters,
-                models: ['Flux'], tools: [GeneratorTool.COMFYUI], loras: ['Lora A', 'Lora B'],
-                embeddings: ['Embed'], hypernetworks: ['Hyper'], controlNets: ['Canny'],
-                ipAdapters: ['Face'], samplers: ['Euler'], generationTypes: ['txt2img']
+                models: ['Flux'],
+                tools: [GeneratorTool.COMFYUI],
+                loras: ['Lora A', 'Lora B'],
+                embeddings: ['Embed'],
+                hypernetworks: ['Hyper'],
+                controlNets: ['Canny'],
+                ipAdapters: ['Face'],
+                samplers: ['Euler'],
+                generationTypes: ['txt2img'],
             };
-            const result = buildSqlWhereClause(
-                filters, false, 'blur', [], undefined, false,
-                ['models', 'tools', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'samplers', 'generationTypes']
-            );
+            const result = buildSqlWhereClause(filters, false, 'blur', [], undefined, false, [
+                'models',
+                'tools',
+                'loras',
+                'embeddings',
+                'hypernetworks',
+                'controlNets',
+                'ipAdapters',
+                'samplers',
+                'generationTypes',
+            ]);
             expect(result.where).not.toContain('resolved_model_name = ?');
             expect(result.where).not.toContain('image_loras');
             expect(result.where).not.toContain('sampler = ?');
@@ -713,15 +772,20 @@ describe('sqlHelpers', () => {
         });
 
         it('allows hidden image types and uses Match Any for ControlNet and IP-Adapter filters', () => {
-            const result = buildSqlWhereClause({
-                ...defaultFilters,
-                showIntermediates: true,
-                showGrids: true,
-                showInvokeImageAssets: true,
-                controlNets: ['Canny', 'Depth'],
-                ipAdapters: ['Face', 'Style'],
-                matchModes: { controlNets: 'any', ipAdapters: 'any' }
-            }, false, 'blur', []);
+            const result = buildSqlWhereClause(
+                {
+                    ...defaultFilters,
+                    showIntermediates: true,
+                    showGrids: true,
+                    showInvokeImageAssets: true,
+                    controlNets: ['Canny', 'Depth'],
+                    ipAdapters: ['Face', 'Style'],
+                    matchModes: { controlNets: 'any', ipAdapters: 'any' },
+                },
+                false,
+                'blur',
+                []
+            );
             expect(result.where).not.toContain('is_intermediate_gen');
             expect(result.where).not.toContain('is_grid_gen');
             expect(result.where).not.toContain('is_invoke_asset_gen');
@@ -746,11 +810,16 @@ describe('sqlHelpers', () => {
             });
 
             it('should use AND logic when matchMode is ALL', () => {
-                const { where } = buildSqlWhereClause({
-                    ...defaultFilters,
-                    loras: ['LoraA', 'LoraB'],
-                    matchModes: { loras: 'all' }
-                }, false, 'blur', []);
+                const { where } = buildSqlWhereClause(
+                    {
+                        ...defaultFilters,
+                        loras: ['LoraA', 'LoraB'],
+                        matchModes: { loras: 'all' },
+                    },
+                    false,
+                    'blur',
+                    []
+                );
 
                 // Should use AND between EXISTS
                 expect(where).toContain(') AND EXISTS (');
@@ -759,17 +828,22 @@ describe('sqlHelpers', () => {
             });
 
             it('should keep alias groups OR-ed while Match All combines selected assets with AND', () => {
-                const { where, params } = buildSqlWhereClause({
-                    ...defaultFilters,
-                    loras: ['Detailer-Style', 'PortraitBoost'],
-                    matchModes: { loras: 'all' },
-                    assetFilterAliases: {
-                        loras: {
-                            'Detailer-Style': ['Detailer-Style', 'detailer style'],
-                            PortraitBoost: ['PortraitBoost']
-                        }
-                    }
-                }, false, 'blur', []);
+                const { where, params } = buildSqlWhereClause(
+                    {
+                        ...defaultFilters,
+                        loras: ['Detailer-Style', 'PortraitBoost'],
+                        matchModes: { loras: 'all' },
+                        assetFilterAliases: {
+                            loras: {
+                                'Detailer-Style': ['Detailer-Style', 'detailer style'],
+                                PortraitBoost: ['PortraitBoost'],
+                            },
+                        },
+                    },
+                    false,
+                    'blur',
+                    []
+                );
 
                 expect(where).toContain("instr(il.lora_name, ' (')");
                 expect(where).toContain(') OR EXISTS');
@@ -778,11 +852,16 @@ describe('sqlHelpers', () => {
             });
 
             it('should use OR logic when matchMode is explicitly ANY', () => {
-                const { where } = buildSqlWhereClause({
-                    ...defaultFilters,
-                    loras: ['LoraA', 'LoraB'],
-                    matchModes: { loras: 'any' }
-                }, false, 'blur', []);
+                const { where } = buildSqlWhereClause(
+                    {
+                        ...defaultFilters,
+                        loras: ['LoraA', 'LoraB'],
+                        matchModes: { loras: 'any' },
+                    },
+                    false,
+                    'blur',
+                    []
+                );
                 expect(where).toContain(') OR EXISTS (');
             });
         });

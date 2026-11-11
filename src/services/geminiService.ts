@@ -1,31 +1,14 @@
+import { GoogleGenAI, GenerateContentResponse, ThinkingLevel, Type, type ThinkingConfig } from '@google/genai';
+import { FilterState, RecoveryStyle, ImageMetadata, type AiThinkingMode } from '../types';
+import { AI_PROMPTS, AIPromptKey, RECOVERY_STYLES } from '../constants/aiPrompts';
+import { GeminiFilterResponseSchema, GeminiMetadataResponseSchema, PromptVariationsSchema, safeParse } from '../utils/validation';
 
-
-import {
-    GoogleGenAI,
-    GenerateContentResponse,
-    ThinkingLevel,
-    Type,
-    type ThinkingConfig
-} from "@google/genai";
-import { FilterState, RecoveryStyle, ImageMetadata, type AiThinkingMode } from "../types";
-import { AI_PROMPTS, AIPromptKey, RECOVERY_STYLES } from "../constants/aiPrompts";
-import {
-    GeminiFilterResponseSchema,
-    GeminiMetadataResponseSchema,
-    PromptVariationsSchema,
-    safeParse
-} from "../utils/validation";
-
-import {
-    DEFAULT_AI_MODEL,
-    DEFAULT_AI_THINKING_MODE,
-    normalizeAiThinkingMode
-} from "../constants/aiModels";
-import { formatDateInputValue } from "../utils/dateFilters";
+import { DEFAULT_AI_MODEL, DEFAULT_AI_THINKING_MODE, normalizeAiThinkingMode } from '../constants/aiModels';
+import { formatDateInputValue } from '../utils/dateFilters';
 
 const getAIClient = (apiKey: string) => {
     const key = apiKey || process.env.API_KEY;
-    if (!key) throw new Error("API Key is missing. Please add it in Settings > Intelligence.");
+    if (!key) throw new Error('API Key is missing. Please add it in Settings > Intelligence.');
     return new GoogleGenAI({ apiKey: key });
 };
 
@@ -54,7 +37,7 @@ export const getGeminiThinkingConfig = (
  */
 export const verifyApiKey = async (apiKey: string, modelId: string = DEFAULT_AI_MODEL): Promise<{ valid: boolean; error?: string }> => {
     try {
-        if (!apiKey) return { valid: false, error: "API Key is required" };
+        if (!apiKey) return { valid: false, error: 'API Key is required' };
         const ai = new GoogleGenAI({ apiKey });
 
         // Minimal operation: generate content with 1 token output
@@ -63,31 +46,31 @@ export const verifyApiKey = async (apiKey: string, modelId: string = DEFAULT_AI_
             model: modelId,
             contents: 'ping',
             config: {
-                maxOutputTokens: 1
-            }
+                maxOutputTokens: 1,
+            },
         });
 
         if (result) {
             return { valid: true };
         }
-        return { valid: false, error: "Invalid response from Gemini API" };
+        return { valid: false, error: 'Invalid response from Gemini API' };
     } catch (error: unknown) {
         // Log error but be selective about what we expose to UI
-        console.error("Gemini Verification Error:", error);
+        console.error('Gemini Verification Error:', error);
 
         let message: string;
         const errorStr = String(error).toLowerCase();
 
-        if (errorStr.includes("api_key_invalid") || errorStr.includes("invalid api key")) {
-            message = "Invalid API Key";
-        } else if (errorStr.includes("quota") || errorStr.includes("rate limit")) {
-            message = "Quota exceeded";
-        } else if (errorStr.includes("network") || errorStr.includes("fetch")) {
-            message = "Network error";
-        } else if (errorStr.includes("permission") || errorStr.includes("not found")) {
-            message = "Model not found or access denied";
+        if (errorStr.includes('api_key_invalid') || errorStr.includes('invalid api key')) {
+            message = 'Invalid API Key';
+        } else if (errorStr.includes('quota') || errorStr.includes('rate limit')) {
+            message = 'Quota exceeded';
+        } else if (errorStr.includes('network') || errorStr.includes('fetch')) {
+            message = 'Network error';
+        } else if (errorStr.includes('permission') || errorStr.includes('not found')) {
+            message = 'Model not found or access denied';
         } else {
-            message = error instanceof Error ? error.message : "Unknown error";
+            message = error instanceof Error ? error.message : 'Unknown error';
         }
 
         return { valid: false, error: message };
@@ -120,12 +103,12 @@ export const analyzePromptAndSuggest = async (
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
-            config: thinkingConfig ? { thinkingConfig } : undefined
+            config: thinkingConfig ? { thinkingConfig } : undefined,
         });
 
-        return response.text || "No suggestions available.";
+        return response.text || 'No suggestions available.';
     } catch (error) {
-        console.error("Gemini API Error:", error);
+        console.error('Gemini API Error:', error);
         throw error;
     }
 };
@@ -150,13 +133,13 @@ export const generatePromptVariations = async (
             model: modelId,
             contents: prompt,
             config: {
-                responseMimeType: "application/json",
+                responseMimeType: 'application/json',
                 responseSchema: {
                     type: Type.ARRAY,
-                    items: { type: Type.STRING }
+                    items: { type: Type.STRING },
                 },
-                ...(thinkingConfig ? { thinkingConfig } : {})
-            }
+                ...(thinkingConfig ? { thinkingConfig } : {}),
+            },
         });
 
         if (response.text) {
@@ -165,7 +148,7 @@ export const generatePromptVariations = async (
         }
         return [];
     } catch (error) {
-        console.error("Variation Error:", error);
+        console.error('Variation Error:', error);
         throw error;
     }
 };
@@ -189,11 +172,11 @@ export const generateTitleFromPrompt = async (
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
-            config: thinkingConfig ? { thinkingConfig } : undefined
+            config: thinkingConfig ? { thinkingConfig } : undefined,
         });
-        return response.text?.trim() || "Untitled Creation";
+        return response.text?.trim() || 'Untitled Creation';
     } catch {
-        return "Untitled";
+        return 'Untitled';
     }
 };
 
@@ -211,16 +194,14 @@ export const generateFiltersFromQuery = async (
         const ai = getAIClient(apiKey);
 
         const template = resolvePrompt('FILTERS', prompts);
-        const prompt = template
-            .replace('{{query}}', query)
-            .replace('{{today}}', formatDateInputValue(new Date()));
+        const prompt = template.replace('{{query}}', query).replace('{{today}}', formatDateInputValue(new Date()));
         const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
         const response = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
             config: {
-                responseMimeType: "application/json",
+                responseMimeType: 'application/json',
                 // Schema remains hardcoded as it defines internal logic
                 responseSchema: {
                     type: Type.OBJECT,
@@ -233,11 +214,11 @@ export const generateFiltersFromQuery = async (
                         dateTo: { type: Type.STRING },
                         favoritesOnly: { type: Type.BOOLEAN },
                         minSteps: { type: Type.NUMBER },
-                        minCfg: { type: Type.NUMBER }
-                    }
+                        minCfg: { type: Type.NUMBER },
+                    },
                 },
-                ...(thinkingConfig ? { thinkingConfig } : {})
-            }
+                ...(thinkingConfig ? { thinkingConfig } : {}),
+            },
         });
 
         if (response.text) {
@@ -248,7 +229,7 @@ export const generateFiltersFromQuery = async (
         }
         return { searchQuery: query };
     } catch (error) {
-        console.error("NL Search Error:", error);
+        console.error('NL Search Error:', error);
         return { searchQuery: query }; // Fallback to raw text search
     }
 };
@@ -268,9 +249,9 @@ export const recoverImageMetadata = async (
 
     const stylePrompt = RECOVERY_STYLES[style] || RECOVERY_STYLES.generic;
     const template = resolvePrompt('RECOVERY_GENERIC', prompts); // Use generic template key, could make specific keys if needed
-    // NOTE: For recovery, we are only templating the wrapping instruction. 
-    // The specific style instructions are still hardcoded in RECOVERY_STYLES for simplicity, 
-    // unless we want to explode that into multiple full prompt templates. 
+    // NOTE: For recovery, we are only templating the wrapping instruction.
+    // The specific style instructions are still hardcoded in RECOVERY_STYLES for simplicity,
+    // unless we want to explode that into multiple full prompt templates.
     // For now, let's keep it simple: The "Master Template" is exposed.
 
     // We might need a slightly different template handling for recovery since it inserts `stylePrompt` mid-string.
@@ -285,13 +266,10 @@ export const recoverImageMetadata = async (
     const response = await ai.models.generateContent({
         model: modelId,
         contents: {
-            parts: [
-                { inlineData: { mimeType, data: cleanBase64 } },
-                { text: prompt }
-            ]
+            parts: [{ inlineData: { mimeType, data: cleanBase64 } }, { text: prompt }],
         },
         config: {
-            responseMimeType: "application/json",
+            responseMimeType: 'application/json',
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
@@ -301,12 +279,12 @@ export const recoverImageMetadata = async (
                     steps: { type: Type.NUMBER },
                     seed: { type: Type.NUMBER },
                     model: { type: Type.STRING },
-                    tool: { type: Type.STRING }
+                    tool: { type: Type.STRING },
                 },
-                required: ["positivePrompt"]
+                required: ['positivePrompt'],
             },
-            ...(thinkingConfig ? { thinkingConfig } : {})
-        }
+            ...(thinkingConfig ? { thinkingConfig } : {}),
+        },
     });
 
     if (response.text) {
@@ -314,14 +292,14 @@ export const recoverImageMetadata = async (
         const validated = safeParse(GeminiMetadataResponseSchema, rawData);
 
         if (!validated) {
-            throw new Error("Failed to validate Gemini response");
+            throw new Error('Failed to validate Gemini response');
         }
 
         // SCOPE REDUCTION: Only return positivePrompt.
         return {
-            positivePrompt: validated.positivePrompt
+            positivePrompt: validated.positivePrompt,
         };
     }
 
-    throw new Error("Failed to generate metadata");
+    throw new Error('Failed to generate metadata');
 };

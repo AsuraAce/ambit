@@ -36,9 +36,7 @@ describe('database connection', () => {
         await getDb();
 
         expect(getMainDatabaseUrlMock).toHaveBeenCalledTimes(1);
-        expect(databaseLoadMock).toHaveBeenCalledWith(
-            'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db'
-        );
+        expect(databaseLoadMock).toHaveBeenCalledWith('sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db');
     });
 
     it('shares one database URL lookup across concurrent startup loads', async () => {
@@ -55,7 +53,7 @@ describe('database connection', () => {
         const mutex = new Mutex();
         const events: string[] = [];
         let releaseFirst!: () => void;
-        const firstGate = new Promise<void>(resolve => {
+        const firstGate = new Promise<void>((resolve) => {
             releaseFirst = resolve;
         });
 
@@ -109,9 +107,7 @@ describe('database connection', () => {
     });
 
     it('retries database loading after the plugin rejects', async () => {
-        databaseLoadMock
-            .mockRejectedValueOnce(new Error('file locked'))
-            .mockResolvedValueOnce(createDatabaseMock());
+        databaseLoadMock.mockRejectedValueOnce(new Error('file locked')).mockResolvedValueOnce(createDatabaseMock());
         const { getDb } = await import('../connection');
 
         await expect(getDb()).rejects.toThrow('file locked');
@@ -141,7 +137,7 @@ describe('database connection', () => {
     it.each([1, 6])('holds every caller until optional index operation %i settles', async (heldCall) => {
         const database = createDatabaseMock();
         let releaseInitialization!: () => void;
-        const initializationGate = new Promise<void>(resolve => {
+        const initializationGate = new Promise<void>((resolve) => {
             releaseInitialization = resolve;
         });
         let calls = 0;
@@ -153,7 +149,11 @@ describe('database connection', () => {
         const { getDb } = await import('../connection');
 
         const returned = vi.fn();
-        const load = () => getDb().then(db => { returned(); return db; });
+        const load = () =>
+            getDb().then((db) => {
+                returned();
+                return db;
+            });
         const first = load();
         const second = load();
         await vi.waitFor(() => expect(database.execute).toHaveBeenCalledTimes(6 + heldCall));

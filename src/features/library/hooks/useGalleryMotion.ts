@@ -45,7 +45,7 @@ export const useGalleryMotion = ({
     isScrolling = false,
     layoutDurationMs = DEFAULT_LAYOUT_DURATION_MS,
     gridDurationMs = DEFAULT_GRID_DURATION_MS,
-    maxLayoutItems = DEFAULT_MAX_LAYOUT_ITEMS
+    maxLayoutItems = DEFAULT_MAX_LAYOUT_ITEMS,
 }: UseGalleryMotionOptions): GalleryMotionState => {
     const [prefersReducedMotion, setPrefersReducedMotion] = useState(readPrefersReducedMotion);
     const [layoutWindowActive, setLayoutWindowActive] = useState(false);
@@ -133,8 +133,8 @@ export const useGalleryMotion = ({
         layoutTransition: [
             `transform ${layoutDurationMs}ms cubic-bezier(0.2, 1.12, 0.22, 1)`,
             `width ${DEFAULT_LAYOUT_SIZE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
-            `height ${DEFAULT_LAYOUT_SIZE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`
+            `height ${DEFAULT_LAYOUT_SIZE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
         ].join(', '),
-        gridTransition: `opacity ${gridDurationMs}ms ease-out`
+        gridTransition: `opacity ${gridDurationMs}ms ease-out`,
     };
 };

@@ -1,6 +1,6 @@
 /**
  * Zod validation schemas for external data sources.
- * 
+ *
  * These schemas validate data entering the application from:
  * - Gemini AI API responses
  * - CivitAI API responses  
@@ -19,7 +19,7 @@ import { isValidDateInput } from './dateFilters';
  * Schema for Gemini's generateFiltersFromQuery response
  */
 const OptionalDateInputSchema = z.preprocess(
-    value => value === '' ? undefined : value,
+    (value) => (value === '' ? undefined : value),
     z.string().refine(isValidDateInput, 'Expected a real YYYY-MM-DD date').optional()
 );
 
@@ -68,15 +68,22 @@ export const CivitAIModelSchema = z.object({
     id: z.number(),
     modelId: z.number().optional(),
     name: z.string(),
-    model: z.object({
-        name: z.string(),
-        type: z.string().optional(),
-    }).optional(),
-    images: z.array(z.object({
-        url: z.string().url(),
-        width: z.number().optional(),
-        height: z.number().optional(),
-    })).optional().default([]),
+    model: z
+        .object({
+            name: z.string(),
+            type: z.string().optional(),
+        })
+        .optional(),
+    images: z
+        .array(
+            z.object({
+                url: z.string().url(),
+                width: z.number().optional(),
+                height: z.number().optional(),
+            })
+        )
+        .optional()
+        .default([]),
 });
 
 export type CivitAIModel = z.infer<typeof CivitAIModelSchema>;
@@ -88,7 +95,7 @@ export type CivitAIModel = z.infer<typeof CivitAIModelSchema>;
 /**
  * Safely parse and validate data with Zod schema.
  * Returns the parsed data or null if validation fails.
- * 
+ *
  * @example
  * const filters = safeParse(GeminiFilterResponseSchema, apiResponse);
  * if (filters) {
@@ -107,7 +114,7 @@ export function safeParse<T>(schema: z.ZodSchema<T>, data: unknown): T | null {
 /**
  * Parse and validate data, throwing an error if validation fails.
  * Use when you want to catch and handle validation errors explicitly.
- * 
+ *
  * @throws {z.ZodError} If validation fails
  */
 export function parseOrThrow<T>(schema: z.ZodSchema<T>, data: unknown): T {

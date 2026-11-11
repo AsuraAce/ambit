@@ -8,12 +8,7 @@ describe('AddFolderForm', () => {
         const onChange = vi.fn();
         const onBrowse = vi.fn();
         const onSubmit = vi.fn((event: FormEvent) => event.preventDefault());
-        render(<AddFolderForm
-            value="D:/Images"
-            onChange={onChange}
-            onBrowse={onBrowse}
-            onSubmit={onSubmit}
-        />);
+        render(<AddFolderForm value="D:/Images" onChange={onChange} onBrowse={onBrowse} onSubmit={onSubmit} />);
 
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'E:/Images' } });
         fireEvent.click(screen.getByRole('button', { name: 'Browse for Folder' }));
@@ -26,13 +21,7 @@ describe('AddFolderForm', () => {
     });
 
     it('disables submission for whitespace-only paths and honors a custom placeholder', () => {
-        render(<AddFolderForm
-            value="  "
-            onChange={vi.fn()}
-            onBrowse={vi.fn()}
-            onSubmit={vi.fn()}
-            placeholder="Choose output"
-        />);
+        render(<AddFolderForm value="  " onChange={vi.fn()} onBrowse={vi.fn()} onSubmit={vi.fn()} placeholder="Choose output" />);
 
         expect(screen.getByRole('button', { name: 'Add' }).hasAttribute('disabled')).toBe(true);
         expect(screen.getByPlaceholderText('Choose output')).toBeTruthy();

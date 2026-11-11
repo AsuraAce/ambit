@@ -50,12 +50,8 @@ describe('osOpen helpers', () => {
     it('does not call Tauri commands in browser mock mode', async () => {
         mocks.isBrowserMockMode.mockReturnValue(true);
 
-        const {
-            isOsOpenUnavailable,
-            openFileInDefaultApp,
-            showPathInFolder,
-            OS_OPEN_BROWSER_UNAVAILABLE_MESSAGE
-        } = await import('../osOpen');
+        const { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder, OS_OPEN_BROWSER_UNAVAILABLE_MESSAGE } =
+            await import('../osOpen');
         await expect(openFileInDefaultApp('C:/library/image.png')).resolves.toEqual({
             status: 'error',
             error: OS_OPEN_BROWSER_UNAVAILABLE_MESSAGE,

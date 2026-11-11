@@ -9,13 +9,13 @@ const { mockAddToast, mockRebuildFacetCacheIncrementalBatchStrict, listenerCallb
     mockRebuildFacetCacheIncrementalBatchStrict: vi.fn(),
     listenerCallbacks: new Map<string, (event: { payload: unknown }) => void>(),
     listenerCleanups: [] as ReturnType<typeof vi.fn>[],
-    runtimeMock: { browserMode: false }
+    runtimeMock: { browserMode: false },
 }));
 
 vi.mock('../useToast', () => ({
     useToast: () => ({
-        addToast: mockAddToast
-    })
+        addToast: mockAddToast,
+    }),
 }));
 
 vi.mock('../../utils/tauriListener', () => ({
@@ -24,15 +24,15 @@ vi.mock('../../utils/tauriListener', () => ({
         const cleanup = vi.fn();
         listenerCleanups.push(cleanup);
         return { cleanup };
-    })
+    }),
 }));
 
 vi.mock('../../services/runtime', () => ({
-    isBrowserMockMode: () => runtimeMock.browserMode
+    isBrowserMockMode: () => runtimeMock.browserMode,
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
-    rebuildFacetCacheIncrementalBatchStrict: mockRebuildFacetCacheIncrementalBatchStrict
+    rebuildFacetCacheIncrementalBatchStrict: mockRebuildFacetCacheIncrementalBatchStrict,
 }));
 
 const flushAsyncWork = async () => {
@@ -62,7 +62,7 @@ describe('useMetadataRefresh', () => {
             syncStatus: 'idle',
             isMetadataRefreshPending: false,
             isRefreshingMetadata: false,
-            refreshProgress: null
+            refreshProgress: null,
         });
         mockRebuildFacetCacheIncrementalBatchStrict.mockResolvedValue(7);
     });
@@ -86,8 +86,10 @@ describe('useMetadataRefresh', () => {
 
     it('does not start a second automatic reparse when readiness changes during a native run', async () => {
         let finishReparse!: (value: TestRefreshResult) => void;
-        const reparse = new Promise<TestRefreshResult>(resolve => { finishReparse = resolve; });
-        vi.mocked(invoke).mockImplementation(command => {
+        const reparse = new Promise<TestRefreshResult>((resolve) => {
+            finishReparse = resolve;
+        });
+        vi.mocked(invoke).mockImplementation((command) => {
             if (command === 'get_reparse_count') return Promise.resolve(12);
             if (command === 'start_reparse_job') return reparse;
             return Promise.resolve({ processed: 0, updated: 0, errors: 0, wasCancelled: false });
@@ -105,7 +107,11 @@ describe('useMetadataRefresh', () => {
 
     it('does not retry a stale count failure after readiness is withdrawn', async () => {
         let rejectCount!: (reason: string) => void;
-        vi.mocked(invoke).mockReturnValue(new Promise((_, reject) => { rejectCount = reject; }));
+        vi.mocked(invoke).mockReturnValue(
+            new Promise((_, reject) => {
+                rejectCount = reject;
+            })
+        );
         const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
         await act(async () => vi.advanceTimersByTimeAsync(3_000));
         view.rerender({ ready: false });
@@ -130,7 +136,7 @@ describe('useMetadataRefresh', () => {
                     processed: 12,
                     updated: 12,
                     errors: 0,
-                    wasCancelled: false
+                    wasCancelled: false,
                 });
             }
             return Promise.resolve(undefined);
@@ -147,20 +153,14 @@ describe('useMetadataRefresh', () => {
             'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
-        expect(mockAddToast).not.toHaveBeenCalledWith(
-            expect.stringContaining('Failed to start refresh'),
-            'error'
-        );
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed to start refresh'), 'error');
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(15000);
         });
 
         expect(startAttempts).toBe(2);
-        expect(mockAddToast).not.toHaveBeenCalledWith(
-            expect.stringContaining('Failed to start refresh'),
-            'error'
-        );
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed to start refresh'), 'error');
     });
 
     it('keeps automatic startup refresh pending while startup catch-up is still checking', async () => {
@@ -173,7 +173,7 @@ describe('useMetadataRefresh', () => {
                     processed: 12,
                     updated: 12,
                     errors: 0,
-                    wasCancelled: false
+                    wasCancelled: false,
                 });
             }
             return Promise.resolve(undefined);
@@ -201,7 +201,7 @@ describe('useMetadataRefresh', () => {
             forceReparse: false,
             filterRoot: null,
             filterTool: null,
-            refreshPhotoMetadata: false
+            refreshPhotoMetadata: false,
         });
     });
 
@@ -212,7 +212,7 @@ describe('useMetadataRefresh', () => {
                 return Promise.resolve(12);
             }
             if (command === 'start_reparse_job') {
-                return new Promise(resolve => {
+                return new Promise((resolve) => {
                     resolveStart = resolve;
                 });
             }
@@ -238,8 +238,8 @@ describe('useMetadataRefresh', () => {
                     updated: 0,
                     errors: 0,
                     phase: 'counting',
-                    message: 'Calculating total images...'
-                }
+                    message: 'Calculating total images...',
+                },
             });
         });
 
@@ -259,8 +259,8 @@ describe('useMetadataRefresh', () => {
                     updated: 0,
                     errors: 0,
                     phase: 'starting',
-                    message: 'Found 12 images to refresh'
-                }
+                    message: 'Found 12 images to refresh',
+                },
             });
         });
 
@@ -280,17 +280,19 @@ describe('useMetadataRefresh', () => {
                     updated: 10,
                     errors: 0,
                     phase: 'processing',
-                    message: 'Processed 1/12'
-                }
+                    message: 'Processed 1/12',
+                },
             });
         });
 
         expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(true);
-        expect(useLibraryStore.getState().refreshProgress).toEqual(expect.objectContaining({
-            current: 1,
-            phase: 'processing'
-        }));
+        expect(useLibraryStore.getState().refreshProgress).toEqual(
+            expect.objectContaining({
+                current: 1,
+                phase: 'processing',
+            })
+        );
         expect(mockAddToast).toHaveBeenCalledWith(
             'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
@@ -301,7 +303,7 @@ describe('useMetadataRefresh', () => {
                 processed: 12,
                 updated: 12,
                 errors: 0,
-                wasCancelled: false
+                wasCancelled: false,
             });
         });
     });
@@ -316,7 +318,7 @@ describe('useMetadataRefresh', () => {
                     processed: 12,
                     updated: 12,
                     errors: 0,
-                    wasCancelled: false
+                    wasCancelled: false,
                 });
             }
             return Promise.resolve(undefined);
@@ -339,7 +341,7 @@ describe('useMetadataRefresh', () => {
             'hypernetworks',
             'controlNets',
             'ipAdapters',
-            'tools'
+            'tools',
         ]);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
     });
@@ -353,8 +355,8 @@ describe('useMetadataRefresh', () => {
                     processed: 12,
                     updated: 3,
                     errors: 0,
-                    wasCancelled: false
-                }
+                    wasCancelled: false,
+                },
             });
         });
 
@@ -367,13 +369,10 @@ describe('useMetadataRefresh', () => {
             'hypernetworks',
             'controlNets',
             'ipAdapters',
-            'tools'
+            'tools',
         ]);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
-        expect(mockAddToast).not.toHaveBeenCalledWith(
-            expect.stringContaining('asset counts may be stale'),
-            'warning'
-        );
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('asset counts may be stale'), 'warning');
     });
 
     it('skips facet refresh when metadata refresh has no updates', async () => {
@@ -385,8 +384,8 @@ describe('useMetadataRefresh', () => {
                     processed: 12,
                     updated: 0,
                     errors: 0,
-                    wasCancelled: false
-                }
+                    wasCancelled: false,
+                },
             });
         });
 
@@ -403,8 +402,8 @@ describe('useMetadataRefresh', () => {
                     processed: 5,
                     updated: 2,
                     errors: 0,
-                    wasCancelled: true
-                }
+                    wasCancelled: true,
+                },
             });
         });
 
@@ -417,7 +416,7 @@ describe('useMetadataRefresh', () => {
             'hypernetworks',
             'controlNets',
             'ipAdapters',
-            'tools'
+            'tools',
         ]);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
     });
@@ -433,8 +432,8 @@ describe('useMetadataRefresh', () => {
                 updated: 1,
                 errors: 0,
                 phase: 'processing',
-                message: 'Processing'
-            }
+                message: 'Processing',
+            },
         });
         renderHook(() => useMetadataRefresh(true));
 
@@ -444,8 +443,8 @@ describe('useMetadataRefresh', () => {
                     processed: 2,
                     updated: 1,
                     errors: 0,
-                    wasCancelled: false
-                }
+                    wasCancelled: false,
+                },
             });
         });
 
@@ -466,7 +465,7 @@ describe('useMetadataRefresh', () => {
             processed: 8,
             updated: 4,
             errors: 0,
-            wasCancelled: false
+            wasCancelled: false,
         });
         const { result } = renderHook(() => useMetadataRefresh(true));
 
@@ -479,7 +478,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
         expect(invoke).toHaveBeenCalledWith('refresh_video_metadata', {
             filterRoot: null,
-            forceReparse: false
+            forceReparse: false,
         });
     });
 
@@ -488,10 +487,14 @@ describe('useMetadataRefresh', () => {
         let resolveVideos: ((value: TestRefreshResult) => void) | undefined;
         vi.mocked(invoke).mockImplementation((command) => {
             if (command === 'start_reparse_job') {
-                return new Promise(resolve => { resolveImages = resolve; });
+                return new Promise((resolve) => {
+                    resolveImages = resolve;
+                });
             }
             if (command === 'refresh_video_metadata') {
-                return new Promise(resolve => { resolveVideos = resolve; });
+                return new Promise((resolve) => {
+                    resolveVideos = resolve;
+                });
             }
             return Promise.resolve(undefined);
         });
@@ -501,9 +504,11 @@ describe('useMetadataRefresh', () => {
         act(() => {
             refreshPromise = result.current.startRefresh();
         });
-        act(() => listenerCallbacks.get('refresh-complete')?.({
-            payload: { processed: 2, updated: 1, errors: 0, wasCancelled: false }
-        }));
+        act(() =>
+            listenerCallbacks.get('refresh-complete')?.({
+                payload: { processed: 2, updated: 1, errors: 0, wasCancelled: false },
+            })
+        );
         expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Refresh complete'), expect.anything());
 
         await act(async () => {
@@ -529,7 +534,7 @@ describe('useMetadataRefresh', () => {
             processed: 8,
             updated: 4,
             errors: 0,
-            wasCancelled: false
+            wasCancelled: false,
         });
         const { result } = renderHook(() => useMetadataRefresh(true));
 
@@ -546,7 +551,7 @@ describe('useMetadataRefresh', () => {
         let resolveStart: ((value: unknown) => void) | undefined;
         vi.mocked(invoke).mockImplementation((command) => {
             if (command === 'start_reparse_job') {
-                return new Promise(resolve => {
+                return new Promise((resolve) => {
                     resolveStart = resolve;
                 });
             }
@@ -566,16 +571,16 @@ describe('useMetadataRefresh', () => {
                     updated: 4,
                     errors: 0,
                     phase: 'processing',
-                    message: 'Processed 1/8'
-                }
+                    message: 'Processed 1/8',
+                },
             });
             listenerCallbacks.get('refresh-complete')?.({
                 payload: {
                     processed: 8,
                     updated: 4,
                     errors: 0,
-                    wasCancelled: false
-                }
+                    wasCancelled: false,
+                },
             });
             listenerCallbacks.get('refresh-progress')?.({
                 payload: {
@@ -584,15 +589,15 @@ describe('useMetadataRefresh', () => {
                     updated: 4,
                     errors: 0,
                     phase: 'complete',
-                    message: 'Completed 8 / 8 images'
-                }
+                    message: 'Completed 8 / 8 images',
+                },
             });
         });
         resolveStart?.({
             processed: 8,
             updated: 4,
             errors: 0,
-            wasCancelled: false
+            wasCancelled: false,
         });
         await startPromise;
         await flushAsyncWork();
@@ -610,10 +615,7 @@ describe('useMetadataRefresh', () => {
             await result.current.startRefresh();
         });
 
-        expect(mockAddToast).toHaveBeenCalledWith(
-            'Failed to start refresh: database is locked',
-            'error'
-        );
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: database is locked', 'error');
     });
 
     it('disables refresh controls and listeners in browser mock mode', async () => {
@@ -636,19 +638,23 @@ describe('useMetadataRefresh', () => {
         const { unmount } = renderHook(() => useMetadataRefresh(true));
         expect(listenerCleanups).toHaveLength(2);
         unmount();
-        expect(listenerCleanups.every(cleanup => cleanup.mock.calls.length === 1)).toBe(true);
+        expect(listenerCleanups.every((cleanup) => cleanup.mock.calls.length === 1)).toBe(true);
     });
 
     it('reports completion warnings and suppresses empty completion toasts', () => {
         renderHook(() => useMetadataRefresh(true));
-        act(() => listenerCallbacks.get('refresh-complete')?.({
-            payload: { processed: 5, updated: 0, errors: 2, wasCancelled: false }
-        }));
+        act(() =>
+            listenerCallbacks.get('refresh-complete')?.({
+                payload: { processed: 5, updated: 0, errors: 2, wasCancelled: false },
+            })
+        );
         expect(mockAddToast).toHaveBeenCalledWith('Refresh complete: 0 updated, 2 errors', 'warning');
         mockAddToast.mockClear();
-        act(() => listenerCallbacks.get('refresh-complete')?.({
-            payload: { processed: 0, updated: 0, errors: 0, wasCancelled: false }
-        }));
+        act(() =>
+            listenerCallbacks.get('refresh-complete')?.({
+                payload: { processed: 0, updated: 0, errors: 0, wasCancelled: false },
+            })
+        );
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
@@ -684,7 +690,7 @@ describe('useMetadataRefresh', () => {
             forceReparse: false,
             filterRoot: 'D:/Images',
             filterTool: 'ComfyUI',
-            refreshPhotoMetadata: false
+            refreshPhotoMetadata: false,
         });
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
@@ -700,34 +706,32 @@ describe('useMetadataRefresh', () => {
         expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
     });
 
-    it.each([
-        { isImporting: true },
-        { syncStatus: 'syncing' as const },
-    ])('defers startup refresh while another library task is active', async (busyState) => {
-        vi.mocked(invoke).mockImplementation(command => command === 'get_reparse_count'
-            ? Promise.resolve(2)
-            : Promise.resolve({ processed: 2, updated: 0, errors: 0, wasCancelled: false }));
-        useLibraryStore.setState(busyState);
-        renderHook(() => useMetadataRefresh(true));
-        await act(async () => vi.advanceTimersByTimeAsync(3000));
-        expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
-    });
+    it.each([{ isImporting: true }, { syncStatus: 'syncing' as const }])(
+        'defers startup refresh while another library task is active',
+        async (busyState) => {
+            vi.mocked(invoke).mockImplementation((command) =>
+                command === 'get_reparse_count'
+                    ? Promise.resolve(2)
+                    : Promise.resolve({ processed: 2, updated: 0, errors: 0, wasCancelled: false })
+            );
+            useLibraryStore.setState(busyState);
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3000));
+            expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
+        }
+    );
 
-    it.each([
-        'database table is locked',
-        'database schema is locked',
-        'database busy',
-        'SQLITE_BUSY',
-    ])('retries transient startup count failures: %s', async (error) => {
-        vi.mocked(invoke)
-            .mockRejectedValueOnce(error)
-            .mockResolvedValueOnce(0);
-        renderHook(() => useMetadataRefresh(true));
-        await act(async () => vi.advanceTimersByTimeAsync(3000));
-        expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
-        await act(async () => vi.advanceTimersByTimeAsync(15000));
-        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(2);
-    });
+    it.each(['database table is locked', 'database schema is locked', 'database busy', 'SQLITE_BUSY'])(
+        'retries transient startup count failures: %s',
+        async (error) => {
+            vi.mocked(invoke).mockRejectedValueOnce(error).mockResolvedValueOnce(0);
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3000));
+            expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
+            await act(async () => vi.advanceTimersByTimeAsync(15000));
+            expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(2);
+        }
+    );
 
     it('reports non-transient startup count failures', async () => {
         const error = new Error('count unavailable');
@@ -741,9 +745,9 @@ describe('useMetadataRefresh', () => {
     });
 
     it('reports non-transient startup start failures once', async () => {
-        vi.mocked(invoke).mockImplementation(command => command === 'get_reparse_count'
-            ? Promise.resolve(2)
-            : Promise.reject('permission denied'));
+        vi.mocked(invoke).mockImplementation((command) =>
+            command === 'get_reparse_count' ? Promise.resolve(2) : Promise.reject('permission denied')
+        );
         renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.runAllTimersAsync());
         expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: permission denied', 'error');
@@ -751,7 +755,11 @@ describe('useMetadataRefresh', () => {
 
     it('ignores a startup count result that resolves after unmount', async () => {
         let resolveCount!: (count: number) => void;
-        vi.mocked(invoke).mockReturnValueOnce(new Promise(resolve => { resolveCount = resolve; }));
+        vi.mocked(invoke).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveCount = resolve;
+            })
+        );
         const view = renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         view.unmount();

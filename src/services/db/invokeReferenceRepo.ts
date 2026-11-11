@@ -5,9 +5,8 @@ import { getDb } from './connection';
 
 export const INVOKE_REFERENCE_QUERY_KEY = ['invoke-image-references'] as const;
 
-export const invalidateInvokeReferenceQueries = (queryClient: QueryClient): Promise<void> => (
-    queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY })
-);
+export const invalidateInvokeReferenceQueries = (queryClient: QueryClient): Promise<void> =>
+    queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
 
 export const INVOKE_REFERENCE_ROLE_ORDER: readonly InvokeImageReferenceRole[] = [
     'init_image',
@@ -80,7 +79,7 @@ const compareNames = (left: string, right: string): number => {
 const groupEdges = (edges: ReferenceEdge[]): InvokeReferenceGroup[] => {
     const grouped = new Map<string, InvokeReferenceGroup>();
 
-    edges.forEach(edge => {
+    edges.forEach((edge) => {
         const key = `${edge.availability}\u0000${edge.imageId ?? ''}\u0000${edge.invokeImageName}`;
         const current = grouped.get(key);
         if (current) {
@@ -97,12 +96,11 @@ const groupEdges = (edges: ReferenceEdge[]): InvokeReferenceGroup[] => {
     });
 
     return [...grouped.values()]
-        .map(group => ({
+        .map((group) => ({
             ...group,
-            roles: [...group.roles].sort((left, right) => (
-                (roleRank.get(left) ?? Number.MAX_SAFE_INTEGER)
-                - (roleRank.get(right) ?? Number.MAX_SAFE_INTEGER)
-            )),
+            roles: [...group.roles].sort(
+                (left, right) => (roleRank.get(left) ?? Number.MAX_SAFE_INTEGER) - (roleRank.get(right) ?? Number.MAX_SAFE_INTEGER)
+            ),
         }))
         .sort((left, right) => compareNames(left.invokeImageName, right.invokeImageName));
 };
@@ -150,24 +148,30 @@ export const getInvokeReferenceGraph = async (imageId: string): Promise<InvokeRe
         ),
     ]);
 
-    const sourceImages = groupEdges(forwardRows.map(row => ({
-        imageId: row.active_target_id,
-        invokeImageName: row.target_invoke_image_name,
-        availability: row.active_target_id ? 'available' : 'unresolved',
-        role: row.role,
-    })));
-
-    const usedBy = groupEdges(backlinkRows.map(row => {
-        const availability: InvokeReferenceAvailability = row.active_source_id
-            ? 'available'
-            : (row.removed_source_id ? 'removed' : 'unresolved');
-        return {
-            imageId: row.active_source_id,
-            invokeImageName: row.source_invoke_image_name?.trim() || fallbackNameFromId(row.source_image_id),
-            availability,
+    const sourceImages = groupEdges(
+        forwardRows.map((row) => ({
+            imageId: row.active_target_id,
+            invokeImageName: row.target_invoke_image_name,
+            availability: row.active_target_id ? 'available' : 'unresolved',
             role: row.role,
-        };
-    }));
+        }))
+    );
+
+    const usedBy = groupEdges(
+        backlinkRows.map((row) => {
+            const availability: InvokeReferenceAvailability = row.active_source_id
+                ? 'available'
+                : row.removed_source_id
+                  ? 'removed'
+                  : 'unresolved';
+            return {
+                imageId: row.active_source_id,
+                invokeImageName: row.source_invoke_image_name?.trim() || fallbackNameFromId(row.source_image_id),
+                availability,
+                role: row.role,
+            };
+        })
+    );
 
     return { sourceImages, usedBy };
 };

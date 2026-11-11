@@ -92,9 +92,7 @@ describe('DevTab', () => {
         listenWithCleanupMock.mockReturnValue({ cleanup: listenerCleanupMock });
         settingsStoreMock.settings = createSettings();
         settingsStoreMock.setSettings.mockImplementation((updater: React.SetStateAction<AppSettings>) => {
-            settingsStoreMock.settings = typeof updater === 'function'
-                ? updater(settingsStoreMock.settings)
-                : updater;
+            settingsStoreMock.settings = typeof updater === 'function' ? updater(settingsStoreMock.settings) : updater;
         });
     });
 
@@ -136,7 +134,9 @@ describe('DevTab', () => {
         fireEvent.click(screen.getByRole('button', { name: /tools/i }));
 
         fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }));
-        expect(screen.getByText(/does not delete library data, prompt keywords, masking behavior, API keys, or other settings/i)).not.toBeNull();
+        expect(
+            screen.getByText(/does not delete library data, prompt keywords, masking behavior, API keys, or other settings/i)
+        ).not.toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(onResetFirstRunOnboarding).not.toHaveBeenCalled();
 

@@ -35,9 +35,8 @@ let ordinaryCountRead: { ticket: CountTicket; promise: Promise<Map<string, numbe
 let pendingOrdinaryCounts: CountTicket | null = null;
 let ordinaryCountHydration: Promise<void> | null = null;
 
-const isCurrentCountTicket = (ticket: CountTicket) => (
-    ticket.generation === initializationGeneration && ticket.revision === collectionRefreshRunId
-);
+const isCurrentCountTicket = (ticket: CountTicket) =>
+    ticket.generation === initializationGeneration && ticket.revision === collectionRefreshRunId;
 
 // Runtime authoritative reads and deferred reads share the same physical operation
 // only for the same revision. Superseded waiters never start another query.
@@ -47,7 +46,11 @@ const readOrdinaryCounts = async (ticket: CountTicket): Promise<Map<string, numb
         if (running.ticket.generation === ticket.generation && running.ticket.revision === ticket.revision) {
             return running.promise;
         }
-        try { await running.promise; } catch { /* The next revision has its own outcome. */ }
+        try {
+            await running.promise;
+        } catch {
+            /* The next revision has its own outcome. */
+        }
     }
     if (!isCurrentCountTicket(ticket)) throw new Error(COLLECTION_REFRESH_SUPERSEDED_ERROR);
     const read = { ticket, promise: getOrdinaryCollectionCounts() };
@@ -90,13 +93,15 @@ const prepareCollectionStorage = async (): Promise<void> => {
             const hasLegacyData = legacyCols.length > 0 || legacySmart.length > 0;
 
             if (hasLegacyData) {
-                console.log(`[CollectionStore] Starting migration from JSON (${legacyCols.length} regular, ${legacySmart.length} smart)...`);
+                console.log(
+                    `[CollectionStore] Starting migration from JSON (${legacyCols.length} regular, ${legacySmart.length} smart)...`
+                );
                 await migrateLegacyCollections([...legacyCols, ...legacySmart]);
             }
 
             // The native import receipt makes a retry safe when this JSON marker
             // write fails after the import has already committed.
-            await appRepository.update(current => ({
+            await appRepository.update((current) => ({
                 ...current,
                 collections: [],
                 smartCollections: [],
@@ -126,8 +131,8 @@ const prepareCollectionStorage = async (): Promise<void> => {
     }
 };
 
-const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-const chunk = <T,>(items: T[], size: number): T[][] => {
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const chunk = <T>(items: T[], size: number): T[][] => {
     const chunks: T[][] = [];
     for (let i = 0; i < items.length; i += size) {
         chunks.push(items.slice(i, i + size));
@@ -146,24 +151,21 @@ const shouldShowThumbnailHydrationPending = (collection: Collection, force: bool
     return imageCount === undefined || imageCount > 0;
 };
 
-const shouldHydrateCollectionThumbnail = (collection: Collection, force: boolean): boolean => (
-    shouldShowThumbnailHydrationPending(collection, force)
-);
+const shouldHydrateCollectionThumbnail = (collection: Collection, force: boolean): boolean =>
+    shouldShowThumbnailHydrationPending(collection, force);
 
-const sortForThumbnailHydration = (collections: Collection[]): Collection[] => (
+const sortForThumbnailHydration = (collections: Collection[]): Collection[] =>
     [...collections].sort((a, b) => {
         if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
         return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
-    })
-);
+    });
 
-const buildPendingThumbnailMap = (collections: Collection[], force: boolean): Record<string, true> => (
+const buildPendingThumbnailMap = (collections: Collection[], force: boolean): Record<string, true> =>
     Object.fromEntries(
         collections
-            .filter(collection => shouldShowThumbnailHydrationPending(collection, force))
-            .map(collection => [collection.id, true] as const)
-    )
-);
+            .filter((collection) => shouldShowThumbnailHydrationPending(collection, force))
+            .map((collection) => [collection.id, true] as const)
+    );
 
 interface RefreshSmartCountsOptions {
     includeArchived?: boolean;
@@ -219,10 +221,7 @@ interface SupersedingDebounce {
 
 const collectionDebounce: SupersedingDebounce = { timer: null, resolve: null };
 const thumbnailDebounce: SupersedingDebounce = { timer: null, resolve: null };
-const scheduleSupersedingDebounce = (
-    state: SupersedingDebounce,
-    task: () => Promise<void>
-): Promise<void> => {
+const scheduleSupersedingDebounce = (state: SupersedingDebounce, task: () => Promise<void>): Promise<void> => {
     if (state.timer) {
         clearTimeout(state.timer);
         state.timer = null;
@@ -231,20 +230,24 @@ const scheduleSupersedingDebounce = (
     }
     return new Promise((resolve, reject) => {
         // The async body settles the returned promise, so failures reach the caller.
-        const timer = setTimeout(() => void (async () => {
-            try {
-                await task();
-                resolve();
-            } catch (error) {
-                // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- forwards whatever the scheduled task threw so the caller sees the original failure
-                reject(error);
-            } finally {
-                if (state.timer === timer) {
-                    state.timer = null;
-                    state.resolve = null;
-                }
-            }
-        })(), 300);
+        const timer = setTimeout(
+            () =>
+                void (async () => {
+                    try {
+                        await task();
+                        resolve();
+                    } catch (error) {
+                        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- forwards whatever the scheduled task threw so the caller sees the original failure
+                        reject(error);
+                    } finally {
+                        if (state.timer === timer) {
+                            state.timer = null;
+                            state.resolve = null;
+                        }
+                    }
+                })(),
+            300
+        );
         state.timer = timer;
         state.resolve = resolve;
     });
@@ -282,34 +285,46 @@ export const useCollectionStore = create<CollectionState>()(
                                 pendingOrdinaryCounts = ticket;
                                 return;
                             }
-                            set(state => ({ collections: state.collections.map(collection => (
-                                collection.filters ? collection : {
-                                    ...collection, count: counts.get(collection.id) ?? 0, countState: 'ready',
-                                }
-                            )) }));
+                            set((state) => ({
+                                collections: state.collections.map((collection) =>
+                                    collection.filters
+                                        ? collection
+                                        : {
+                                              ...collection,
+                                              count: counts.get(collection.id) ?? 0,
+                                              countState: 'ready',
+                                          }
+                                ),
+                            }));
                         } catch {
                             if (!isCurrentCountTicket(ticket)) continue;
-                            set(state => ({ collections: state.collections.map(collection => (
-                                collection.filters ? collection : { ...collection, count: undefined, countState: 'failed' }
-                            )) }));
+                            set((state) => ({
+                                collections: state.collections.map((collection) =>
+                                    collection.filters ? collection : { ...collection, count: undefined, countState: 'failed' }
+                                ),
+                            }));
                             // The repository retains classified timing evidence. No automatic retry.
                             console.warn('[Collections] Ordinary counts unavailable.');
                         }
                     }
                 })();
                 ordinaryCountHydration = hydration;
-                try { await hydration; } finally {
+                try {
+                    await hydration;
+                } finally {
                     if (ordinaryCountHydration === hydration) ordinaryCountHydration = null;
                     if (get().ordinaryCountsReady && pendingOrdinaryCounts) void get().refreshPendingOrdinaryCounts();
                 }
             },
 
             retryOrdinaryCounts: () => {
-                if (!get().collections.some(collection => !collection.filters && collection.countState === 'failed')) return;
+                if (!get().collections.some((collection) => !collection.filters && collection.countState === 'failed')) return;
                 pendingOrdinaryCounts = { generation: initializationGeneration, revision: collectionRefreshRunId };
-                set(state => ({ collections: state.collections.map(collection => (
-                    collection.filters ? collection : { ...collection, count: undefined, countState: 'pending' }
-                )) }));
+                set((state) => ({
+                    collections: state.collections.map((collection) =>
+                        collection.filters ? collection : { ...collection, count: undefined, countState: 'pending' }
+                    ),
+                }));
                 void get().refreshPendingOrdinaryCounts();
             },
 
@@ -331,13 +346,19 @@ export const useCollectionStore = create<CollectionState>()(
                             try {
                                 cols = await getAllCollectionsWithStats({
                                     includeThumbnails: options.includeThumbnails,
-                                    ...(deferCounts ? { includeCounts: false } : {
-                                        readCounts: () => readOrdinaryCounts({ generation: refreshGeneration, revision: currentRunId }),
-                                    }),
+                                    ...(deferCounts
+                                        ? { includeCounts: false }
+                                        : {
+                                              readCounts: () =>
+                                                  readOrdinaryCounts({ generation: refreshGeneration, revision: currentRunId }),
+                                          }),
                                 });
                             } catch (error) {
-                                if (isAuthoritative && refreshGeneration === initializationGeneration
-                                    && currentRunId !== collectionRefreshRunId) {
+                                if (
+                                    isAuthoritative &&
+                                    refreshGeneration === initializationGeneration &&
+                                    currentRunId !== collectionRefreshRunId
+                                ) {
                                     currentRunId = invalidateCollectionRefreshes();
                                     continue;
                                 }
@@ -356,7 +377,7 @@ export const useCollectionStore = create<CollectionState>()(
                             }
 
                             set({ collections: cols });
-                            if (deferCounts && cols.some(collection => !collection.filters)) {
+                            if (deferCounts && cols.some((collection) => !collection.filters)) {
                                 pendingOrdinaryCounts = { generation: refreshGeneration, revision: currentRunId };
                                 void get().refreshPendingOrdinaryCounts();
                             }
@@ -372,11 +393,13 @@ export const useCollectionStore = create<CollectionState>()(
                         // their background read. Failure must leave a retryable state,
                         // but must never publish into a newer refresh or owner scope.
                         if (isCurrentCountTicket({ generation: refreshGeneration, revision: currentRunId })) {
-                            set(state => ({ collections: state.collections.map(collection => (
-                                !collection.filters && collection.countState === 'pending'
-                                    ? { ...collection, count: undefined, countState: 'failed' }
-                                    : collection
-                            )) }));
+                            set((state) => ({
+                                collections: state.collections.map((collection) =>
+                                    !collection.filters && collection.countState === 'pending'
+                                        ? { ...collection, count: undefined, countState: 'failed' }
+                                        : collection
+                                ),
+                            }));
                         }
                         console.error('[CollectionStore] Failed to refresh collections', e);
                         if (isAuthoritative) throw e;
@@ -384,9 +407,7 @@ export const useCollectionStore = create<CollectionState>()(
                 };
 
                 if (isAuthoritative) {
-                    const authoritativeRun = authoritativeCollectionRefreshTail.then(() => (
-                        run(invalidateCollectionRefreshes())
-                    ));
+                    const authoritativeRun = authoritativeCollectionRefreshTail.then(() => run(invalidateCollectionRefreshes()));
                     authoritativeCollectionRefreshTail = authoritativeRun.catch(() => undefined);
                     await authoritativeRun;
                     return;
@@ -410,7 +431,7 @@ export const useCollectionStore = create<CollectionState>()(
                             return;
                         }
                         const currentCollections = sortForThumbnailHydration(
-                            get().collections.filter(collection => shouldHydrateCollectionThumbnail(collection, force))
+                            get().collections.filter((collection) => shouldHydrateCollectionThumbnail(collection, force))
                         );
                         set({ thumbnailHydrationPendingIds: buildPendingThumbnailMap(currentCollections, force) });
 
@@ -434,9 +455,10 @@ export const useCollectionStore = create<CollectionState>()(
                                     return summary ? { ...collection, ...summary } : collection;
                                 }),
                                 thumbnailHydrationPendingIds: Object.fromEntries(
-                                    Object.entries(state.thumbnailHydrationPendingIds)
-                                        .filter(([collectionId]) => !collectionBatch.some(collection => collection.id === collectionId))
-                                )
+                                    Object.entries(state.thumbnailHydrationPendingIds).filter(
+                                        ([collectionId]) => !collectionBatch.some((collection) => collection.id === collectionId)
+                                    )
+                                ),
                             }));
 
                             await delay(COLLECTION_THUMBNAIL_YIELD_MS);
@@ -469,9 +491,7 @@ export const useCollectionStore = create<CollectionState>()(
 
             refreshSmartCounts: async (input = {}) => {
                 const collectionsSnapshot = Array.isArray(input) ? input : undefined;
-                const options: RefreshSmartCountsOptions = Array.isArray(input)
-                    ? { includePromptSearch: true }
-                    : input;
+                const options: RefreshSmartCountsOptions = Array.isArray(input) ? { includePromptSearch: true } : input;
                 const isAuthoritative = options.consistency === 'authoritative';
                 const refreshGeneration = initializationGeneration;
                 const includeThumbnails = options.includeThumbnails !== false;
@@ -496,18 +516,19 @@ export const useCollectionStore = create<CollectionState>()(
 
                     const currentCols = collectionsSnapshot ?? get().collections;
                     const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
-                    const eligibleSmartCols = currentCols.filter(c =>
-                        !!c.filters
-                        && (!!collectionsSnapshot || options.includeArchived || !c.isArchived)
-                        && (!allowedIds || allowedIds.has(c.id))
-                        && (options.includePromptSearch || shouldAutoRefreshSmartCollectionSummary(c))
+                    const eligibleSmartCols = currentCols.filter(
+                        (c) =>
+                            !!c.filters &&
+                            (!!collectionsSnapshot || options.includeArchived || !c.isArchived) &&
+                            (!allowedIds || allowedIds.has(c.id)) &&
+                            (options.includePromptSearch || shouldAutoRefreshSmartCollectionSummary(c))
                     );
 
                     if (eligibleSmartCols.length === 0) return;
 
                     runId = ++smartCountRunId;
                     const includesPromptSearch = !!options.includePromptSearch;
-                    smartCols = eligibleSmartCols.filter(collection => {
+                    smartCols = eligibleSmartCols.filter((collection) => {
                         const activeRun = smartCountRunsByCollection.get(collection.id);
                         if (activeRun?.includesPromptSearch && !includesPromptSearch) return false;
 
@@ -520,7 +541,7 @@ export const useCollectionStore = create<CollectionState>()(
                     if (shouldManagePending) {
                         set((state) => {
                             const pending = { ...state.smartSummaryPendingIds };
-                            smartCols.forEach(collection => {
+                            smartCols.forEach((collection) => {
                                 delete pending[collection.id];
                                 if (!collection.thumbnail && !collection.customThumbnail) {
                                     pending[collection.id] = true;
@@ -531,7 +552,7 @@ export const useCollectionStore = create<CollectionState>()(
                     } else {
                         set((state) => {
                             const pending = { ...state.smartSummaryPendingIds };
-                            smartCols.forEach(collection => delete pending[collection.id]);
+                            smartCols.forEach((collection) => delete pending[collection.id]);
                             return { smartSummaryPendingIds: pending };
                         });
                     }
@@ -547,8 +568,8 @@ export const useCollectionStore = create<CollectionState>()(
                     let wasSuperseded = false;
                     for (const smartCol of smartCols) {
                         if (
-                            refreshGeneration !== initializationGeneration
-                            || smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
+                            refreshGeneration !== initializationGeneration ||
+                            smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
                         ) {
                             wasSuperseded = true;
                             continue;
@@ -556,8 +577,8 @@ export const useCollectionStore = create<CollectionState>()(
 
                         const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
                         if (
-                            refreshGeneration !== initializationGeneration
-                            || smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
+                            refreshGeneration !== initializationGeneration ||
+                            smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
                         ) {
                             wasSuperseded = true;
                             continue;
@@ -565,37 +586,33 @@ export const useCollectionStore = create<CollectionState>()(
                         const summary = summaries[smartCol.id];
 
                         if (summary) {
-                            await cacheSmartCollectionCount(
-                                smartCol.id,
-                                summary.count,
-                                smartCol.updatedAt ?? smartCol.createdAt
-                            );
+                            await cacheSmartCollectionCount(smartCol.id, summary.count, smartCol.updatedAt ?? smartCol.createdAt);
                             if (
-                                refreshGeneration !== initializationGeneration
-                                || smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
+                                refreshGeneration !== initializationGeneration ||
+                                smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
                             ) {
                                 wasSuperseded = true;
                                 continue;
                             }
 
                             set((state) => ({
-                                collections: state.collections.map(c =>
+                                collections: state.collections.map((c) =>
                                     c.id === smartCol.id && c.filters
                                         ? c.customThumbnail || !includeThumbnails
                                             ? {
-                                                ...c,
-                                                count: summary.count
-                                            }
+                                                  ...c,
+                                                  count: summary.count,
+                                              }
                                             : {
-                                                ...c,
-                                                count: summary.count,
-                                                thumbnail: summary.thumbnail,
-                                                safeThumbnail: summary.safeThumbnail,
-                                                thumbnailIsSensitive: summary.thumbnailIsSensitive,
-                                                thumbnailSourceKind: summary.thumbnailSourceKind
-                                            }
+                                                  ...c,
+                                                  count: summary.count,
+                                                  thumbnail: summary.thumbnail,
+                                                  safeThumbnail: summary.safeThumbnail,
+                                                  thumbnailIsSensitive: summary.thumbnailIsSensitive,
+                                                  thumbnailSourceKind: summary.thumbnailSourceKind,
+                                              }
                                         : c
-                                )
+                                ),
                             }));
                             if (shouldManagePending) {
                                 set((state) => {
@@ -633,15 +650,15 @@ export const useCollectionStore = create<CollectionState>()(
                 } catch (e) {
                     if (runId > 0) {
                         const ownedIds = smartCols
-                            .filter(collection => smartCountRunsByCollection.get(collection.id)?.runId === runId)
-                            .map(collection => collection.id);
+                            .filter((collection) => smartCountRunsByCollection.get(collection.id)?.runId === runId)
+                            .map((collection) => collection.id);
                         if (ownedIds.length > 0) {
                             set((state) => {
                                 const remaining = { ...state.smartSummaryPendingIds };
-                                ownedIds.forEach(id => delete remaining[id]);
+                                ownedIds.forEach((id) => delete remaining[id]);
                                 return { smartSummaryPendingIds: remaining };
                             });
-                            ownedIds.forEach(id => smartCountRunsByCollection.delete(id));
+                            ownedIds.forEach((id) => smartCountRunsByCollection.delete(id));
                         }
                     }
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
@@ -651,13 +668,11 @@ export const useCollectionStore = create<CollectionState>()(
 
             setCollections: (cols) => {
                 set((state) => {
-                    const nextCollections = typeof cols === 'function'
-                        ? cols(state.collections)
-                        : cols;
+                    const nextCollections = typeof cols === 'function' ? cols(state.collections) : cols;
 
                     if (nextCollections !== state.collections) {
                         invalidateCollectionRefreshes();
-                        if (nextCollections.some(collection => collection.countState === 'pending')) {
+                        if (nextCollections.some((collection) => collection.countState === 'pending')) {
                             pendingOrdinaryCounts = { generation: initializationGeneration, revision: collectionRefreshRunId };
                         }
                     }
@@ -697,11 +712,7 @@ export const useCollectionStore = create<CollectionState>()(
             getInitializationGeneration: () => initializationGeneration,
 
             finishInitializationHydration: (generation, authoritativeSummaries = false) => {
-                if (
-                    generation !== initializationGeneration ||
-                    !get().isLoaded ||
-                    initialHydrationCompleted
-                ) return;
+                if (generation !== initializationGeneration || !get().isLoaded || initialHydrationCompleted) return;
 
                 if (authoritativeSummaries) {
                     pendingInitialHydrationGeneration = null;
@@ -712,28 +723,24 @@ export const useCollectionStore = create<CollectionState>()(
 
                 pendingInitialHydrationGeneration = generation;
                 const thumbnailHydration = Promise.resolve(get().refreshCollectionThumbnails());
-                const smartHydration = Promise.resolve(get().refreshSmartCounts({
-                    includeArchived: false,
-                    delayMs: STARTUP_SMART_COUNT_DELAY_MS,
-                    includeThumbnails: false
-                })).then(() => {
-                    if (
-                        generation !== initializationGeneration
-                        || pendingInitialHydrationGeneration !== generation
-                    ) return;
+                const smartHydration = Promise.resolve(
+                    get().refreshSmartCounts({
+                        includeArchived: false,
+                        delayMs: STARTUP_SMART_COUNT_DELAY_MS,
+                        includeThumbnails: false,
+                    })
+                ).then(() => {
+                    if (generation !== initializationGeneration || pendingInitialHydrationGeneration !== generation) return;
                     return get().refreshSmartCounts({
                         includeArchived: false,
                         delayMs: 500,
-                        markPending: true
+                        markPending: true,
                     });
                 });
 
                 void Promise.all([thumbnailHydration, smartHydration])
                     .then(() => {
-                        if (
-                            generation === initializationGeneration
-                            && pendingInitialHydrationGeneration === generation
-                        ) {
+                        if (generation === initializationGeneration && pendingInitialHydrationGeneration === generation) {
                             pendingInitialHydrationGeneration = null;
                             initialHydrationCompleted = true;
                         }
@@ -804,7 +811,7 @@ export const useCollectionStore = create<CollectionState>()(
                         initPromiseGeneration = null;
                     }
                 }
-            }
+            },
         }),
         { name: 'CollectionStore' }
     )

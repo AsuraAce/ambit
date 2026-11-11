@@ -6,20 +6,14 @@ import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings, getInvokeSourceDatabase, resolveInvokePaths, type InvokeBoardInfo } from './connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage, FacetType } from '../../types';
-import {
-    debugLiveWatchPerf,
-    elapsedMs,
-    infoLiveWatchPerf,
-    InvokeLiveWatchPerfContext,
-    liveWatchNow,
-} from '../../utils/liveWatchPerf';
+import { debugLiveWatchPerf, elapsedMs, infoLiveWatchPerf, InvokeLiveWatchPerfContext, liveWatchNow } from '../../utils/liveWatchPerf';
 import {
     collectTouchedFacetResourcesFromMetadataDiff,
     collectTouchedFacetTypesFromMetadataDiff,
     createEmptyTouchedFacetResources,
     mergeTouchedFacetResources,
     orderFacetTypes,
-    TouchedFacetResources
+    TouchedFacetResources,
 } from '../../utils/touchedFacetTypes';
 import { insertImagesBatch } from '../db';
 import {
@@ -30,7 +24,7 @@ import {
     ImagePathIdentityMove,
     moveImagePathIdentities,
     moveImagePathIdentity,
-    syncCollectionImages
+    syncCollectionImages,
 } from '../db/imageRepo';
 import { reconcileInvokeBoardSnapshot, upsertInvokeBoardCollection } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
@@ -101,8 +95,7 @@ interface InvokeRepairCandidate {
     resolvedPath: ResolvedInvokeImagePath;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
 const hasMatchingInvokeImageName = (image: AIImage, imageName: string): boolean =>
     !image.invokeImageName || normalizePath(image.invokeImageName) === normalizePath(imageName);
@@ -112,7 +105,17 @@ export const syncImages = async (
     onProgressInput: (current: number, total: number, message?: string) => void,
     signal: AbortSignal | undefined,
     options: InvokeSyncOptions
-): Promise<{ imported: number, updated: number, pathsRepaired: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, InvokeBoardInfo>, boardsChanged: boolean, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
+): Promise<{
+    imported: number;
+    updated: number;
+    pathsRepaired: number;
+    maxTimestamp: number | null;
+    syncedIds: Set<string>;
+    boardMapping: Map<string, InvokeBoardInfo>;
+    boardsChanged: boolean;
+    touchedFacetTypes: FacetType[];
+    touchedFacetResources: TouchedFacetResources;
+}> => {
     const onProgress = (current: number, total: number, message?: string) => {
         invokeSyncTrace.serviceProgress(options.traceOperationId, current, total, message);
         onProgressInput(current, total, message);
@@ -124,21 +127,34 @@ export const syncImages = async (
     const logSyncDebug = (label: string, data: Record<string, unknown>) => {
         debugLiveWatchPerf(label, {
             cycleId,
-            ...data
+            ...data,
         });
     };
     const logSyncInfo = (label: string, data: Record<string, unknown>) => {
         infoLiveWatchPerf(label, {
             cycleId,
-            ...data
+            ...data,
         });
     };
-    if (!rootPath) return { imported: 0, updated: 0, pathsRepaired: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), boardsChanged: false, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+    if (!rootPath)
+        return {
+            imported: 0,
+            updated: 0,
+            pathsRepaired: 0,
+            maxTimestamp: null,
+            syncedIds: new Set(),
+            boardMapping: new Map(),
+            boardsChanged: false,
+            touchedFacetTypes: [],
+            touchedFacetResources: createEmptyTouchedFacetResources(),
+        };
 
     const resolvedPaths = resolveInvokePaths(rootPath);
     const scope = options.scope;
-    if (normalizePath(resolvedPaths.dbPath) !== normalizePath(scope.dbPath)
-        || normalizePath(resolvedPaths.imagesRoot) !== normalizePath(scope.imagesRoot)) {
+    if (
+        normalizePath(resolvedPaths.dbPath) !== normalizePath(scope.dbPath) ||
+        normalizePath(resolvedPaths.imagesRoot) !== normalizePath(scope.imagesRoot)
+    ) {
         throw new Error('InvokeAI sync scope does not match the configured database and image root.');
     }
     const { dbPath, imagesRoot } = scope;
@@ -155,24 +171,24 @@ export const syncImages = async (
     throwIfInvokeAborted(signal);
     logSyncDebug('Invoke DB connect complete', {
         dbPath,
-        connectMs: elapsedMs(connectStartedAt)
+        connectMs: elapsedMs(connectStartedAt),
     });
 
     onProgress(0, 0, 'Analyzing database schema...');
     const schemaStartedAt = liveWatchNow();
     const tableInfo = await invokeDb.select<Array<{ name: string }>>('PRAGMA table_info(images)');
     throwIfInvokeAborted(signal);
-    const columns = tableInfo.map(c => c.name);
+    const columns = tableInfo.map((c) => c.name);
 
     const allTablesRows = await invokeDb.select<Array<{ name: string }>>("SELECT name FROM sqlite_master WHERE type='table'");
     throwIfInvokeAborted(signal);
-    const allTables = allTablesRows.map(t => t.name);
+    const allTables = allTablesRows.map((t) => t.name);
     const hasGraphsTable = allTables.includes('graphs');
     logSyncDebug('Invoke DB schema analyzed', {
         schemaMs: elapsedMs(schemaStartedAt),
         columnCount: columns.length,
         tableCount: allTables.length,
-        hasGraphsTable
+        hasGraphsTable,
     });
 
     const hasMetadataJson = columns.includes('metadata_json');
@@ -191,7 +207,7 @@ export const syncImages = async (
         throw new Error('This InvokeAI database cannot enforce the selected owner because images.user_id is missing.');
     }
 
-    const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
+    const metaCol = hasMetadataJson ? 'metadata_json' : hasMetadata ? 'metadata' : null;
 
     if (!metaCol) {
         throw new Error("Could not find metadata column (checked 'metadata_json' and 'metadata')");
@@ -241,36 +257,33 @@ export const syncImages = async (
         logSyncDebug('Invoke candidate detection complete', {
             mode: options.mode,
             hasCandidates,
-            candidateCheckMs: elapsedMs(candidateCheckStartedAt)
+            candidateCheckMs: elapsedMs(candidateCheckStartedAt),
         });
         if (options.mode === 'startup' && !hasCandidates) {
             console.info('[Startup Catch-up] Invoke sync skipped; no candidates after saved cursor.', {
                 afterTimestamp: options.afterTimestamp,
-                candidateCheckMs: elapsedMs(candidateCheckStartedAt)
+                candidateCheckMs: elapsedMs(candidateCheckStartedAt),
             });
         }
     }
 
     if (hasCandidates) {
         const countStartedAt = liveWatchNow();
-        const countRes = await invokeDb.select<CountRow[]>(
-            `SELECT count(*) as count FROM images i ${whereClause} `,
-            queryParams
-        );
+        const countRes = await invokeDb.select<CountRow[]>(`SELECT count(*) as count FROM images i ${whereClause} `, queryParams);
         throwIfInvokeAborted(signal);
         totalToImport = countRes[0]?.count || 0;
         logSyncDebug('Invoke sync candidate count computed', {
             totalToImport,
             countMs: elapsedMs(countStartedAt),
             hasUpdatedAt,
-            importIntermediates: options.importIntermediates ?? false
+            importIntermediates: options.importIntermediates ?? false,
         });
     } else {
         logSyncDebug('Invoke sync candidate count computed', {
             totalToImport,
             countMs: 0,
             hasUpdatedAt,
-            importIntermediates: options.importIntermediates ?? false
+            importIntermediates: options.importIntermediates ?? false,
         });
     }
 
@@ -281,7 +294,9 @@ export const syncImages = async (
     onProgress(0, 0, `Scanning ${APP_NAME} library...`);
     const pathResolver = createInvokeImagePathResolver(imagesRoot, async () => {
         throwIfInvokeAborted(signal);
-        const files = await invokeSyncTrace.measure(options.traceOperationId, 'filesystem', () => unwrap(commands.listInvokeaiImages(imagesRoot)));
+        const files = await invokeSyncTrace.measure(options.traceOperationId, 'filesystem', () =>
+            unwrap(commands.listInvokeaiImages(imagesRoot))
+        );
         throwIfInvokeAborted(signal);
         return files;
     });
@@ -302,28 +317,23 @@ export const syncImages = async (
         }
     };
     const outputImagesRootAvailable = await probeOutputImagesRoot();
-    const reconciledExistingCount = options.reconcileSourceFacts && options.mode !== 'live'
-        ? await reconcileInvokeSourceFacts({
-            db: invokeDb,
-            columns: new Set(columns),
-            pathResolver,
-            scope,
-            onProgress,
-            signal,
-        })
-        : 0;
+    const reconciledExistingCount =
+        options.reconcileSourceFacts && options.mode !== 'live'
+            ? await reconcileInvokeSourceFacts({
+                  db: invokeDb,
+                  columns: new Set(columns),
+                  pathResolver,
+                  scope,
+                  onProgress,
+                  signal,
+              })
+            : 0;
     throwIfInvokeAborted(signal);
 
-    const resolveThumbnailPathsForRows = async (
-        rows: InvokeImageRow[],
-        resolvedPaths: ResolvedInvokeImagePath[]
-    ): Promise<string[]> => {
+    const resolveThumbnailPathsForRows = async (rows: InvokeImageRow[], resolvedPaths: ResolvedInvokeImagePath[]): Promise<string[]> => {
         throwIfInvokeAborted(signal);
         const candidatesByRow = rows.map((row, index) =>
-            pathResolver.getThumbnailPathCandidates(
-                hasThumbnailName ? row.thumbnail_name : undefined,
-                resolvedPaths[index]
-            )
+            pathResolver.getThumbnailPathCandidates(hasThumbnailName ? row.thumbnail_name : undefined, resolvedPaths[index])
         );
         const allCandidates = Array.from(new Set(candidatesByRow.flat()));
         let existingThumbnailPaths: Set<string> | undefined;
@@ -332,10 +342,8 @@ export const syncImages = async (
             try {
                 const missingPaths = await unwrap(commands.verifyImagePaths(allCandidates));
                 throwIfInvokeAborted(signal);
-                const missingSet = new Set(missingPaths.map(path => path.replace(/\\/g, '/')));
-                existingThumbnailPaths = new Set(
-                    allCandidates.filter(path => !missingSet.has(path.replace(/\\/g, '/')))
-                );
+                const missingSet = new Set(missingPaths.map((path) => path.replace(/\\/g, '/')));
+                existingThumbnailPaths = new Set(allCandidates.filter((path) => !missingSet.has(path.replace(/\\/g, '/'))));
             } catch (error) {
                 throwIfInvokeAborted(signal);
                 console.warn('[InvokeAI Sync] Failed to verify InvokeAI thumbnail paths; using source image fallback.', error);
@@ -343,12 +351,15 @@ export const syncImages = async (
             }
         }
 
-        return resolvedPaths.map((resolvedPath, index) =>
-            pathResolver.resolveThumbnailPath(
-                hasThumbnailName ? rows[index].thumbnail_name : undefined,
-                resolvedPath,
-                existingThumbnailPaths
-            ) || resolvedPath.absolutePath || ''
+        return resolvedPaths.map(
+            (resolvedPath, index) =>
+                pathResolver.resolveThumbnailPath(
+                    hasThumbnailName ? rows[index].thumbnail_name : undefined,
+                    resolvedPath,
+                    existingThumbnailPaths
+                ) ||
+                resolvedPath.absolutePath ||
+                ''
         );
     };
 
@@ -401,24 +412,21 @@ export const syncImages = async (
                 const staleName = getFilename(row.image_name).toLowerCase();
                 if (!stalePathByName.has(staleName)) return;
 
-                const key = [
-                    normalizePath(row.image_name).toLowerCase(),
-                    normalizePath(row.image_subfolder || '').toLowerCase()
-                ].join('|');
+                const key = [normalizePath(row.image_name).toLowerCase(), normalizePath(row.image_subfolder || '').toLowerCase()].join('|');
                 repairRowsByKey.set(key, row);
             });
         };
 
-        const repairWhereClause = [
-            `${normalizedImageNameExpr} IN (SELECT value FROM json_each(?))`,
-            ...repairConditions
-        ].join(' AND ');
-        let repairRows = await invokeDb.select<InvokeImageRow[]>(`
+        const repairWhereClause = [`${normalizedImageNameExpr} IN (SELECT value FROM json_each(?))`, ...repairConditions].join(' AND ');
+        let repairRows = await invokeDb.select<InvokeImageRow[]>(
+            `
             SELECT ${repairSelectFields}
             FROM images i
             WHERE ${repairWhereClause}
             ORDER BY i.created_at ASC, i.image_name ASC
-        `, [JSON.stringify(Array.from(stalePathByName.keys())), ...repairParams]);
+        `,
+            [JSON.stringify(Array.from(stalePathByName.keys())), ...repairParams]
+        );
         throwIfInvokeAborted(signal);
         addRepairRows(repairRows);
         // eslint-disable-next-line no-useless-assignment -- releases the large row array before the remaining awaits of the repair pass
@@ -426,16 +434,16 @@ export const syncImages = async (
 
         // Relative names can conflict with an already matched flat name, so
         // collect them once before choosing any source-to-target identity.
-        const relativeRepairWhereClause = [
-            "instr(REPLACE(i.image_name, '\\', '/'), '/') > 0",
-            ...repairConditions
-        ].join(' AND ');
-        let relativeRepairRows = await invokeDb.select<InvokeImageRow[]>(`
+        const relativeRepairWhereClause = ["instr(REPLACE(i.image_name, '\\', '/'), '/') > 0", ...repairConditions].join(' AND ');
+        let relativeRepairRows = await invokeDb.select<InvokeImageRow[]>(
+            `
             SELECT ${repairSelectFields}
             FROM images i
             WHERE ${relativeRepairWhereClause}
             ORDER BY i.created_at ASC, i.image_name ASC
-        `, repairParams);
+        `,
+            repairParams
+        );
         throwIfInvokeAborted(signal);
         const relativeRowsScanned = relativeRepairRows.length;
         addRepairRows(relativeRepairRows);
@@ -456,7 +464,7 @@ export const syncImages = async (
             throwIfInvokeAborted(signal);
             const repairRows = repairCandidates.slice(offset, offset + REPAIR_MOVE_BATCH_SIZE);
             const resolvedPaths = await Promise.all(
-                repairRows.map(row => pathResolver.resolveImagePath(row.image_name, row.image_subfolder))
+                repairRows.map((row) => pathResolver.resolveImagePath(row.image_name, row.image_subfolder))
             );
             throwIfInvokeAborted(signal);
             for (let i = 0; i < repairRows.length; i++) {
@@ -480,11 +488,12 @@ export const syncImages = async (
                     if (firstTarget !== targetPath) candidatesBySource.set(legacyFlatPath, null);
                     continue;
                 }
-                candidatesBySource.set(legacyFlatPath, legacyFlatPath === targetPath
-                    ? legacyFlatPath
-                    : { legacyFlatPath, targetPath, row, resolvedPath });
+                candidatesBySource.set(
+                    legacyFlatPath,
+                    legacyFlatPath === targetPath ? legacyFlatPath : { legacyFlatPath, targetPath, row, resolvedPath }
+                );
             }
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
         }
         repairCandidates.length = 0;
         stalePathByName.clear();
@@ -509,7 +518,7 @@ export const syncImages = async (
         for (let offset = 0; offset < changedCandidates.length; offset += REPAIR_MOVE_BATCH_SIZE) {
             throwIfInvokeAborted(signal);
             const candidates = changedCandidates.slice(offset, offset + REPAIR_MOVE_BATCH_SIZE);
-            const targetPaths = candidates.map(candidate => candidate.targetPath);
+            const targetPaths = candidates.map((candidate) => candidate.targetPath);
             let sizes: number[] = [];
             try {
                 sizes = await unwrap(commands.getFileSizesBulk(targetPaths));
@@ -519,13 +528,10 @@ export const syncImages = async (
                 console.warn('[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.', error);
                 sizes = new Array<number>(targetPaths.length).fill(0);
             }
-            const lookupPaths = Array.from(new Set([
-                ...targetPaths,
-                ...candidates.map(candidate => candidate.legacyFlatPath)
-            ]));
+            const lookupPaths = Array.from(new Set([...targetPaths, ...candidates.map((candidate) => candidate.legacyFlatPath)]));
             const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
             throwIfInvokeAborted(signal);
-            const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+            const existingMap = new Map(existingImagesInBatch.map((img) => [img.id, img]));
             const verifiedCandidates = candidates.filter((candidate, index) => {
                 if ((sizes[index] || 0) <= 0) {
                     skippedTargetMissing++;
@@ -549,8 +555,8 @@ export const syncImages = async (
                 return true;
             });
             const thumbnailPaths = await resolveThumbnailPathsForRows(
-                verifiedCandidates.map(candidate => candidate.row),
-                verifiedCandidates.map(candidate => candidate.resolvedPath)
+                verifiedCandidates.map((candidate) => candidate.row),
+                verifiedCandidates.map((candidate) => candidate.resolvedPath)
             );
             throwIfInvokeAborted(signal);
 
@@ -561,12 +567,12 @@ export const syncImages = async (
                     oldId: candidate.legacyFlatPath,
                     newId: candidate.targetPath,
                     thumbnailPath,
-                    thumbnailSource: thumbnailPath === candidate.targetPath ? null : 'invokeai'
+                    thumbnailSource: thumbnailPath === candidate.targetPath ? null : 'invokeai',
                 });
             });
             checkedRows += candidates.length;
             reportPathCheckProgress('checking', checkedRows, matchedRows);
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
         }
         changedCandidates.length = 0;
 
@@ -602,9 +608,9 @@ export const syncImages = async (
                 skippedTargetMissing,
                 skippedSourceMissing,
                 skippedAmbiguous,
-                skippedUnresolved
+                skippedUnresolved,
             });
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
         }
 
         throwIfInvokeAborted(signal);
@@ -617,7 +623,7 @@ export const syncImages = async (
             skippedTargetMissing,
             skippedSourceMissing,
             skippedAmbiguous,
-            skippedUnresolved
+            skippedUnresolved,
         });
         return repairedCount;
     };
@@ -631,9 +637,11 @@ export const syncImages = async (
 
     let hasBoardsTable = false;
     try {
-        const boardsTable = await invokeDb.select<Array<{ name: string }>>("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
+        const boardsTable = await invokeDb.select<Array<{ name: string }>>(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='boards'"
+        );
         throwIfInvokeAborted(signal);
-        hasBoardsTable = boardsTable.some(table => table.name === 'boards');
+        hasBoardsTable = boardsTable.some((table) => table.name === 'boards');
     } catch {
         throwIfInvokeAborted(signal);
     }
@@ -653,7 +661,7 @@ export const syncImages = async (
         logSyncDebug('Invoke board mappings loaded', {
             boardCount: boards.size,
             imageBoardLinks: imageToBoardId.size,
-            boardMappingMs: elapsedMs(boardMappingStartedAt)
+            boardMappingMs: elapsedMs(boardMappingStartedAt),
         });
     }
 
@@ -678,11 +686,13 @@ export const syncImages = async (
             deleteMissingCollections: true,
         });
         throwIfInvokeAborted(signal);
-        boardsChanged = boardResult.collectionsUpdated
-            + boardResult.collectionsDeleted
-            + boardResult.imagesUpdated
-            + boardResult.membershipsDeleted
-            + boardResult.membershipsInserted > 0;
+        boardsChanged =
+            boardResult.collectionsUpdated +
+                boardResult.collectionsDeleted +
+                boardResult.imagesUpdated +
+                boardResult.membershipsDeleted +
+                boardResult.membershipsInserted >
+            0;
         boards.forEach((_, boardId) => createdBoardIds.add(boardId));
     }
 
@@ -693,9 +703,19 @@ export const syncImages = async (
             importedCount: 0,
             updatedCount: repairedExistingCount + reconciledExistingCount,
             batchCount: 0,
-            totalMs: elapsedMs(syncStartedAt)
+            totalMs: elapsedMs(syncStartedAt),
         });
-        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, pathsRepaired, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map<string, InvokeBoardInfo>(), boardsChanged, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return {
+            imported: 0,
+            updated: repairedExistingCount + reconciledExistingCount,
+            pathsRepaired,
+            maxTimestamp: options.afterTimestamp || 0,
+            syncedIds,
+            boardMapping: options.syncBoards ? boards : new Map<string, InvokeBoardInfo>(),
+            boardsChanged,
+            touchedFacetTypes: [],
+            touchedFacetResources: createEmptyTouchedFacetResources(),
+        };
     }
 
     let processed = 0;
@@ -705,7 +725,7 @@ export const syncImages = async (
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
 
-    const favCol = hasStarred ? ', i.starred' : (hasIsStarred ? ', i.is_starred' : '');
+    const favCol = hasStarred ? ', i.starred' : hasIsStarred ? ', i.is_starred' : '';
     const thumbCol = hasThumbnailName ? ', i.thumbnail_name' : '';
     const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
@@ -742,14 +762,9 @@ export const syncImages = async (
         throwIfInvokeAborted(signal);
         const thumbnailPaths = await resolveThumbnailPathsForRows(rows, resolvedPaths);
         throwIfInvokeAborted(signal);
-        const batchPaths = resolvedPaths
-            .map((resolved) => resolved.absolutePath)
-            .filter((path): path is string => !!path);
+        const batchPaths = resolvedPaths.map((resolved) => resolved.absolutePath).filter((path): path is string => !!path);
         const legacyFlatPaths = rows.map((row) => pathResolver.getLegacyFlatImagePath(row.image_name));
-        const lookupPaths = Array.from(new Set([
-            ...batchPaths,
-            ...legacyFlatPaths.filter((path): path is string => !!path)
-        ]));
+        const lookupPaths = Array.from(new Set([...batchPaths, ...legacyFlatPaths.filter((path): path is string => !!path)]));
 
         let pathProbes: FileMetadataProbe[] = [];
         const fileSizeProbeStartedAt = liveWatchNow();
@@ -764,7 +779,7 @@ export const syncImages = async (
             }
         }
         let batchRootAvailable = outputImagesRootAvailable;
-        if (pathProbes.some(probe => probe.status === 'missing')) {
+        if (pathProbes.some((probe) => probe.status === 'missing')) {
             batchRootAvailable = await probeOutputImagesRoot();
         }
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
@@ -773,12 +788,15 @@ export const syncImages = async (
         const [existingImagesInBatch, removedImagesInBatch, removedInvokeImageNames] = await Promise.all([
             getImagesByIds(lookupPaths, { includeOwnerHidden: true }),
             getRemovedImagesByIds(lookupPaths),
-            getRemovedInvokeImageNames(scope.dbPath, rows.map(row => row.image_name)),
+            getRemovedInvokeImageNames(
+                scope.dbPath,
+                rows.map((row) => row.image_name)
+            ),
         ]);
         throwIfInvokeAborted(signal);
-        const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+        const existingMap = new Map(existingImagesInBatch.map((img) => [img.id, img]));
         const probeByPath = new Map(batchPaths.map((path, index) => [path, pathProbes[index]]));
-        const tombstonedIds = new Set(removedImagesInBatch.map(img => normalizePath(img.id)));
+        const tombstonedIds = new Set(removedImagesInBatch.map((img) => normalizePath(img.id)));
         const tombstonedInvokeImageNames = new Set(removedInvokeImageNames);
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
@@ -799,9 +817,11 @@ export const syncImages = async (
             const legacyFlatPath = legacyFlatPaths[i];
             const normalizedFullPath = normalizePath(fullPath);
             const normalizedLegacyFlatPath = legacyFlatPath ? normalizePath(legacyFlatPath) : undefined;
-            if (tombstonedInvokeImageNames.has(row.image_name)
-                || tombstonedIds.has(normalizedFullPath)
-                || (normalizedLegacyFlatPath && tombstonedIds.has(normalizedLegacyFlatPath))) {
+            if (
+                tombstonedInvokeImageNames.has(row.image_name) ||
+                tombstonedIds.has(normalizedFullPath) ||
+                (normalizedLegacyFlatPath && tombstonedIds.has(normalizedLegacyFlatPath))
+            ) {
                 processed++;
                 continue;
             }
@@ -833,9 +853,11 @@ export const syncImages = async (
                     const checkedTarget = checkedRepairTargets.get(normalizePath(legacyFlatPath));
                     // An eligible row must not bypass the full-source repair
                     // check or borrow a record with a different known source name.
-                    if (legacyExisting
-                        && (checkedTarget === undefined || checkedTarget === fullPath)
-                        && hasMatchingInvokeImageName(legacyExisting, row.image_name)) {
+                    if (
+                        legacyExisting &&
+                        (checkedTarget === undefined || checkedTarget === fullPath) &&
+                        hasMatchingInvokeImageName(legacyExisting, row.image_name)
+                    ) {
                         const repairedThumbnailPath = thumbnailPaths[i];
                         pathRepaired = await moveImagePathIdentity(
                             legacyFlatPath,
@@ -858,15 +880,13 @@ export const syncImages = async (
                                 thumbnailUrl: repairedThumbnailPath,
                                 thumbnailSource: repairedThumbnailPath === fullPath ? undefined : 'invokeai',
                                 filename: row.image_name.split(/[\\/]/).pop() as string,
-                                isMissing: legacyExisting.isMissing
+                                isMissing: legacyExisting.isMissing,
                             };
                             existingMap.set(fullPath, existing);
                         }
                     }
                 }
-                const fileSize = pathProbe?.status === 'present' && pathProbe.isFile
-                    ? pathProbe.size
-                    : existing?.fileSize ?? 0;
+                const fileSize = pathProbe?.status === 'present' && pathProbe.isFile ? pathProbe.size : (existing?.fileSize ?? 0);
 
                 if (sourceMissing && !existing) {
                     processed++;
@@ -874,7 +894,8 @@ export const syncImages = async (
                 }
 
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
-                    const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
+                    const isStarredInInvoke =
+                        (hasStarred && (row.starred === 1 || row.starred === true)) ||
                         (hasIsStarred && (row.is_starred === 1 || row.is_starred === true));
 
                     if (existing) {
@@ -948,15 +969,16 @@ export const syncImages = async (
                 }
 
                 let needsUpdate = false;
-                const isMissing = pathProbe?.status === 'present' && pathProbe.isFile
-                    ? false
-                    : pathProbe?.status === 'missing' && batchRootAvailable === true
-                        ? true
-                        : existing?.isMissing || false;
+                const isMissing =
+                    pathProbe?.status === 'present' && pathProbe.isFile
+                        ? false
+                        : pathProbe?.status === 'missing' && batchRootAvailable === true
+                          ? true
+                          : existing?.isMissing || false;
                 if (!existing) {
                     needsUpdate = true;
                 } else {
-                    // CRITICAL: If image is missing raw original chunks, we NEED to update it 
+                    // CRITICAL: If image is missing raw original chunks, we NEED to update it
                     // to backfill the data required for Refresh Metadata to work.
                     // Also check if existing originalMetadata looks like it was accidentally mapped already
                     // (Raw InvokeAI uses positive_prompt, while mapped uses positivePrompt)
@@ -967,15 +989,15 @@ export const syncImages = async (
                     const rawChunkValue = existing.originalChunks?.invokeai_metadata;
                     if (rawChunkValue) {
                         try {
-                            const parsedMeta: unknown = typeof rawChunkValue === 'string'
-                                ? JSON.parse(rawChunkValue)
-                                : rawChunkValue;
+                            const parsedMeta: unknown = typeof rawChunkValue === 'string' ? JSON.parse(rawChunkValue) : rawChunkValue;
                             const meta = isRecord(parsedMeta) ? parsedMeta : {};
 
                             // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
                             // Check for both snake_case and camelCase to determine if it's already mapped
-                            if ((meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
-                                (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
+                            if (
+                                (meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
+                                (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)
+                            ) {
                                 formatLooksMapped = true;
                             }
                         } catch {
@@ -997,12 +1019,13 @@ export const syncImages = async (
                 }
 
                 const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
-                const referenceSet = referenceExtraction.status === 'valid'
-                    ? {
-                        sourceImageId: fullPath,
-                        references: referenceExtraction.references,
-                    }
-                    : undefined;
+                const referenceSet =
+                    referenceExtraction.status === 'valid'
+                        ? {
+                              sourceImageId: fullPath,
+                              references: referenceExtraction.references,
+                          }
+                        : undefined;
 
                 if (!needsUpdate) {
                     if (referenceSet) referenceSets.push(referenceSet);
@@ -1015,12 +1038,17 @@ export const syncImages = async (
                 const thumbnailPath = thumbnailPaths[i];
 
                 // Capture originalState for new images (InvokeAI import-time values)
-                const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
+                const isStarredInInvoke =
+                    (hasStarred && (row.starred === 1 || row.starred === true)) ||
                     (hasIsStarred && (row.is_starred === 1 || row.is_starred === true));
                 const originalState = existing?.originalState || {
-                    isFavorite: isStarredInInvoke && options.starredAs !== 'none' && (options.starredAs === 'favorite' || options.starredAs === 'both'),
-                    isPinned: isStarredInInvoke && options.starredAs !== 'none' && (options.starredAs === 'pin' || options.starredAs === 'both'),
-                    boardId: invokeBoard
+                    isFavorite:
+                        isStarredInInvoke &&
+                        options.starredAs !== 'none' &&
+                        (options.starredAs === 'favorite' || options.starredAs === 'both'),
+                    isPinned:
+                        isStarredInInvoke && options.starredAs !== 'none' && (options.starredAs === 'pin' || options.starredAs === 'both'),
+                    boardId: invokeBoard,
                 };
 
                 // For existing images: preserve metadata (user edits are sacred)
@@ -1030,7 +1058,9 @@ export const syncImages = async (
 
                 // Preserve the raw object; the DB adapter serializes the complete chunk map once.
                 const parsedRawInvokeMeta: unknown = row.metadata_blob
-                    ? (typeof row.metadata_blob === 'string' ? JSON.parse(row.metadata_blob) : row.metadata_blob)
+                    ? typeof row.metadata_blob === 'string'
+                        ? JSON.parse(row.metadata_blob)
+                        : row.metadata_blob
                     : {};
                 const rawInvokeMeta = isRecord(parsedRawInvokeMeta) ? { ...parsedRawInvokeMeta } : {};
 
@@ -1058,7 +1088,7 @@ export const syncImages = async (
                     metadata: finalMetadata,
                     originalMetadata: finalOriginalMetadata,
                     originalChunks: {
-                        'invokeai_metadata': rawInvokeMeta as unknown as string
+                        invokeai_metadata: rawInvokeMeta as unknown as string,
                     },
                     originalState: originalState,
                     invokeImageName: row.image_name,
@@ -1073,7 +1103,7 @@ export const syncImages = async (
                     totalUpdated++;
                 }
 
-                collectTouchedFacetTypesFromMetadataDiff(existing?.metadata, finalMetadata).forEach(type => {
+                collectTouchedFacetTypesFromMetadataDiff(existing?.metadata, finalMetadata).forEach((type) => {
                     touchedFacetTypes.add(type);
                 });
                 touchedFacetResources = mergeTouchedFacetResources(
@@ -1102,7 +1132,11 @@ export const syncImages = async (
         let referenceWriteMs = 0;
         let collectionSyncMs = 0;
         const reportCommittedBatch = () => {
-            onProgress(Math.min(processed, totalToImport), totalToImport, `Processing images: ${Math.min(processed, totalToImport)} / ${totalToImport}`);
+            onProgress(
+                Math.min(processed, totalToImport),
+                totalToImport,
+                `Processing images: ${Math.min(processed, totalToImport)} / ${totalToImport}`
+            );
             options.onBatchCommitted?.({
                 processed,
                 imported: newImportedCount,
@@ -1115,7 +1149,7 @@ export const syncImages = async (
             // Lazy Board Creation
             if (shouldApplyBoardMappings) {
                 const boardCreateStartedAt = liveWatchNow();
-                const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
+                const batchBoardIds = new Set(currentBatch.map((img) => img.boardId).filter((id) => id && !createdBoardIds.has(id)));
                 for (const bId of batchBoardIds) {
                     throwIfInvokeAborted(signal);
                     const boardInfo = boards.get(bId!);
@@ -1146,7 +1180,7 @@ export const syncImages = async (
             if (shouldApplyBoardMappings) {
                 throwIfInvokeAborted(signal);
                 const collectionSyncStartedAt = liveWatchNow();
-                await syncCollectionImages(currentBatch.map(img => img.id));
+                await syncCollectionImages(currentBatch.map((img) => img.id));
                 collectionSyncMs = elapsedMs(collectionSyncStartedAt);
             }
         }
@@ -1172,10 +1206,10 @@ export const syncImages = async (
             insertMs,
             referenceWriteMs,
             collectionSyncMs,
-            batchMs: elapsedMs(batchStartedAt)
+            batchMs: elapsedMs(batchStartedAt),
         });
         offset += rows.length;
-        await new Promise(r => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
     }
 
     throwIfInvokeAborted(signal);
@@ -1184,7 +1218,7 @@ export const syncImages = async (
         importedCount: newImportedCount,
         updatedCount: totalUpdated,
         batchCount,
-        totalMs: elapsedMs(syncStartedAt)
+        totalMs: elapsedMs(syncStartedAt),
     });
 
     return {
@@ -1196,6 +1230,6 @@ export const syncImages = async (
         boardMapping: boards,
         boardsChanged,
         touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
-        touchedFacetResources
+        touchedFacetResources,
     };
 };

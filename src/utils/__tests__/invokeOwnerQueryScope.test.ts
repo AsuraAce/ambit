@@ -18,15 +18,17 @@ describe('Invoke owner query scope identity', () => {
         const upperCasePath = '/mnt/Invoke/databases/invokeai.db';
         const lowerCasePath = '/mnt/invoke/databases/invokeai.db';
 
-        expect(getInvokeOwnerQueryScopeKey(upperCasePath, readyOwnerScope(upperCasePath)))
-            .not.toBe(getInvokeOwnerQueryScopeKey(lowerCasePath, readyOwnerScope(lowerCasePath)));
+        expect(getInvokeOwnerQueryScopeKey(upperCasePath, readyOwnerScope(upperCasePath))).not.toBe(
+            getInvokeOwnerQueryScopeKey(lowerCasePath, readyOwnerScope(lowerCasePath))
+        );
     });
 
     it('shares a query cache identity for Windows path case variants', () => {
         const upperCasePath = 'C:\\Invoke\\databases\\invokeai.db';
         const lowerCasePath = 'c:/invoke/databases/invokeai.db';
 
-        expect(getInvokeOwnerQueryScopeKey(upperCasePath, readyOwnerScope(upperCasePath)))
-            .toBe(getInvokeOwnerQueryScopeKey(lowerCasePath, readyOwnerScope(lowerCasePath)));
+        expect(getInvokeOwnerQueryScopeKey(upperCasePath, readyOwnerScope(upperCasePath))).toBe(
+            getInvokeOwnerQueryScopeKey(lowerCasePath, readyOwnerScope(lowerCasePath))
+        );
     });
 });

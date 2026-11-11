@@ -40,9 +40,7 @@ describe('database connection', () => {
         await getDb();
 
         expect(getMainDatabaseUrlMock).toHaveBeenCalledTimes(1);
-        expect(databaseLoadMock).toHaveBeenCalledWith(
-            'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db'
-        );
+        expect(databaseLoadMock).toHaveBeenCalledWith('sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db');
     });
 
     it('shares one database URL lookup across concurrent startup loads', async () => {
@@ -82,7 +80,9 @@ describe('database connection', () => {
         let nowMs = 0;
         vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
         const timedDatabase = createDatabaseMock();
-        timedDatabase.execute.mockImplementation(async () => { nowMs += 1; });
+        timedDatabase.execute.mockImplementation(async () => {
+            nowMs += 1;
+        });
         databaseLoadMock.mockImplementation(async () => {
             nowMs += 10;
             return timedDatabase;

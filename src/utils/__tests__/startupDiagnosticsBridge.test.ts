@@ -5,15 +5,21 @@ describe('startup diagnostic bridge', () => {
     it('records count completion after readiness without changing the readiness milestone', async () => {
         let now = 100;
         const send = vi.fn();
-        const bridge = createStartupDiagnosticBridge({ now: () => now, send,
-            getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 0 }), originMs: 0 });
+        const bridge = createStartupDiagnosticBridge({
+            now: () => now,
+            send,
+            getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 0 }),
+            originMs: 0,
+        });
         await bridge.connect();
         bridge.mark('ready');
         const finish = bridge.start('collection-counts');
         now = 2100;
         finish();
         expect(send.mock.calls.map(([event]) => [event.phase, event.status, event.elapsedMs])).toEqual([
-            ['ready', 'completed', 100], ['collection-counts', 'started', 100], ['collection-counts', 'completed', 2100],
+            ['ready', 'completed', 100],
+            ['collection-counts', 'started', 100],
+            ['collection-counts', 'completed', 2100],
         ]);
         expect(send.mock.calls[2][0].durationMs).toBe(2000);
     });
@@ -23,7 +29,10 @@ describe('startup diagnostic bridge', () => {
         const bridge = createStartupDiagnosticBridge({
             now: () => 90,
             send,
-            getLaunch: () => new Promise(resolve => { resolveLaunch = resolve; }),
+            getLaunch: () =>
+                new Promise((resolve) => {
+                    resolveLaunch = resolve;
+                }),
             originMs: 90,
         });
 
@@ -34,9 +43,13 @@ describe('startup diagnostic bridge', () => {
         resolveLaunch?.({ launchId: 'native-launch', processElapsedMs: 12 });
         await connecting;
 
-        expect(send).toHaveBeenCalledWith(expect.objectContaining({
-            launchId: 'native-launch', phase: 'frontend-entry', elapsedMs: 0,
-        }));
+        expect(send).toHaveBeenCalledWith(
+            expect.objectContaining({
+                launchId: 'native-launch',
+                phase: 'frontend-entry',
+                elapsedMs: 0,
+            })
+        );
     });
 
     it('reserves terminal startup events when its bounded buffer is full', async () => {
@@ -45,7 +58,10 @@ describe('startup diagnostic bridge', () => {
         const bridge = createStartupDiagnosticBridge({
             now: () => 0,
             send,
-            getLaunch: () => new Promise(resolve => { resolveLaunch = resolve; }),
+            getLaunch: () =>
+                new Promise((resolve) => {
+                    resolveLaunch = resolve;
+                }),
             maxBufferedEvents: 2,
         });
 
@@ -68,15 +84,24 @@ describe('startup diagnostic bridge', () => {
             getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 1 }),
         });
 
-        bridge.ingestBootstrapEvents([{
-            phase: 'renderer-stall', status: 'completed', elapsedMs: 15_000,
-            durationMs: 15_000, cacheAction: null,
-        }]);
+        bridge.ingestBootstrapEvents([
+            {
+                phase: 'renderer-stall',
+                status: 'completed',
+                elapsedMs: 15_000,
+                durationMs: 15_000,
+                cacheAction: null,
+            },
+        ]);
         await bridge.connect();
 
-        expect(send).toHaveBeenCalledWith(expect.objectContaining({
-            phase: 'renderer-stall', status: 'completed', elapsedMs: 15_000,
-        }));
+        expect(send).toHaveBeenCalledWith(
+            expect.objectContaining({
+                phase: 'renderer-stall',
+                status: 'completed',
+                elapsedMs: 15_000,
+            })
+        );
     });
 
     it('continues to send terminal events after connected diagnostics reach their normal-event bound', async () => {
@@ -110,11 +135,10 @@ describe('startup diagnostic bridge', () => {
         bridge.mark('ready');
         bridge.mark('ready');
 
-        expect(send.mock.calls.map(([event]) => [event.phase, event.status, event.failureKind]))
-            .toEqual([
-                ['startup-failure', 'failed', 'script-load'],
-                ['ready', 'completed', undefined],
-            ]);
+        expect(send.mock.calls.map(([event]) => [event.phase, event.status, event.failureKind])).toEqual([
+            ['startup-failure', 'failed', 'script-load'],
+            ['ready', 'completed', undefined],
+        ]);
     });
 
     it('drains buffered diagnostics when launch lookup or a launch listener throws', async () => {
@@ -136,13 +160,18 @@ describe('startup diagnostic bridge', () => {
             send,
             getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 1 }),
         });
-        resolvedBridge.subscribe(() => { throw new Error('listener failure'); });
+        resolvedBridge.subscribe(() => {
+            throw new Error('listener failure');
+        });
         resolvedBridge.mark('frontend-entry');
         await resolvedBridge.connect();
 
-        expect(send).toHaveBeenCalledWith(expect.objectContaining({
-            launchId: 'native-launch', phase: 'frontend-entry',
-        }));
+        expect(send).toHaveBeenCalledWith(
+            expect.objectContaining({
+                launchId: 'native-launch',
+                phase: 'frontend-entry',
+            })
+        );
     });
 
     it('notifies startup-failure listeners for direct and bootstrap failures', async () => {
@@ -155,10 +184,16 @@ describe('startup diagnostic bridge', () => {
         bridge.subscribeFailures(onFailure);
 
         bridge.fail('startup-failure', 'script-load');
-        bridge.ingestBootstrapEvents([{
-            phase: 'startup-failure', status: 'failed', elapsedMs: 2, durationMs: null,
-            cacheAction: null, failureKind: 'uncaught-error',
-        }]);
+        bridge.ingestBootstrapEvents([
+            {
+                phase: 'startup-failure',
+                status: 'failed',
+                elapsedMs: 2,
+                durationMs: null,
+                cacheAction: null,
+                failureKind: 'uncaught-error',
+            },
+        ]);
 
         expect(onFailure).toHaveBeenCalledTimes(2);
         const lateFailureListener = vi.fn();
@@ -170,11 +205,12 @@ describe('startup diagnostic bridge', () => {
         const bridge = createStartupDiagnosticBridge({
             now: () => 0,
             send: vi.fn(),
-            getLaunch: async () => { throw new Error('unavailable'); },
+            getLaunch: async () => {
+                throw new Error('unavailable');
+            },
         });
 
         await expect(bridge.connect()).resolves.toBeUndefined();
         expect(bridge.getLaunchId()).toBeNull();
     });
-
 });

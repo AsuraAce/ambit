@@ -9,11 +9,7 @@ let dbInitializationPromise: Promise<Database> | null = null;
 let dbUrlPromise: Promise<string> | null = null;
 const SLOW_STARTUP_PHASE_MS = 1000;
 
-export type StartupDbPhase =
-    | 'Preparing library database'
-    | 'Updating database schema'
-    | 'Optimizing database'
-    | 'Loading library';
+export type StartupDbPhase = 'Preparing library database' | 'Updating database schema' | 'Optimizing database' | 'Loading library';
 
 interface GetDbOptions {
     onPhase?: (phase: StartupDbPhase) => void;
@@ -33,9 +29,9 @@ const logStartupDbPhase = (phase: string, startedAt: number) => {
 export class Mutex {
     private mutex = Promise.resolve();
     lock(): Promise<() => void> {
-        return new Promise(resolve => {
+        return new Promise((resolve) => {
             this.mutex = this.mutex.then(() => {
-                return new Promise<void>(unlock => {
+                return new Promise<void>((unlock) => {
                     resolve(unlock);
                 });
             });
@@ -105,12 +101,24 @@ export const getDb = async (options: GetDbOptions = {}) => {
                 const indexStartedAt = performance.now();
                 const finishIndexes = startupDiagnostics.start('database-indexes');
                 try {
-                    await activeDb.execute('CREATE INDEX IF NOT EXISTS idx_images_fast_sort_v3 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), timestamp DESC, id DESC)');
-                    await activeDb.execute('CREATE INDEX IF NOT EXISTS idx_images_model_stats_v2 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), resolved_model_name, model_name)');
-                    await activeDb.execute('CREATE INDEX IF NOT EXISTS idx_images_privacy_fast_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), privacy_hidden, timestamp DESC, id DESC)');
-                    await activeDb.execute('CREATE INDEX IF NOT EXISTS idx_images_privacy_model_stats_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), privacy_hidden, resolved_model_name, model_name)');
-                    await activeDb.execute('CREATE INDEX IF NOT EXISTS idx_images_name_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), path ASC, id ASC)');
-                    await activeDb.execute('CREATE INDEX IF NOT EXISTS idx_images_size_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), file_size DESC, id DESC)');
+                    await activeDb.execute(
+                        'CREATE INDEX IF NOT EXISTS idx_images_fast_sort_v3 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), timestamp DESC, id DESC)'
+                    );
+                    await activeDb.execute(
+                        'CREATE INDEX IF NOT EXISTS idx_images_model_stats_v2 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), resolved_model_name, model_name)'
+                    );
+                    await activeDb.execute(
+                        'CREATE INDEX IF NOT EXISTS idx_images_privacy_fast_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), privacy_hidden, timestamp DESC, id DESC)'
+                    );
+                    await activeDb.execute(
+                        'CREATE INDEX IF NOT EXISTS idx_images_privacy_model_stats_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), privacy_hidden, resolved_model_name, model_name)'
+                    );
+                    await activeDb.execute(
+                        'CREATE INDEX IF NOT EXISTS idx_images_name_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), path ASC, id ASC)'
+                    );
+                    await activeDb.execute(
+                        'CREATE INDEX IF NOT EXISTS idx_images_size_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), file_size DESC, id DESC)'
+                    );
                     logStartupDbPhase('Frontend covering indexes', indexStartedAt);
                     finishIndexes();
                 } catch (error) {

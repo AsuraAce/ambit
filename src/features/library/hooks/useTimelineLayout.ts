@@ -32,14 +32,12 @@ interface UseTimelineLayoutProps {
     scrollTop: number;
 }
 
-const chunk = <T,>(arr: T[], size: number): T[][] => {
-    return Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
-        arr.slice(i * size, i * size + size)
-    );
+const chunk = <T>(arr: T[], size: number): T[][] => {
+    return Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
 };
 
 export const useTimelineLayout = ({ groups, width, thumbnailSize, scrollTop }: UseTimelineLayoutProps) => {
-    const [activeHeaderData, setActiveHeaderData] = useState<{ date: string, count: number } | null>(null);
+    const [activeHeaderData, setActiveHeaderData] = useState<{ date: string; count: number } | null>(null);
     const activeHeaderIdRef = useRef<string | null>(null);
 
     const { layoutItems, totalHeight, headers } = useMemo(() => {
@@ -47,7 +45,7 @@ export const useTimelineLayout = ({ groups, width, thumbnailSize, scrollTop }: U
 
         const padding = 24;
         const gap = 16;
-        const effectiveWidth = width - (padding * 2);
+        const effectiveWidth = width - padding * 2;
         const cols = Math.max(1, Math.floor((effectiveWidth + gap) / (thumbnailSize + gap)));
         const itemWidth = (effectiveWidth - (cols - 1) * gap) / cols;
         const rowHeight = itemWidth;
@@ -58,14 +56,14 @@ export const useTimelineLayout = ({ groups, width, thumbnailSize, scrollTop }: U
         let currentY = padding;
         let globalImageIndex = 0;
 
-        groups.forEach(group => {
+        groups.forEach((group) => {
             const headerItem: LayoutItem = {
                 type: 'header',
                 date: group.date,
                 id: group.id,
                 count: group.images.length,
                 y: currentY,
-                height: headerHeight
+                height: headerHeight,
             };
             items.push(headerItem);
             headersList.push(headerItem);
@@ -73,20 +71,20 @@ export const useTimelineLayout = ({ groups, width, thumbnailSize, scrollTop }: U
             currentY += headerHeight;
 
             const rows = chunk(group.images, cols);
-            rows.forEach(rowImages => {
+            rows.forEach((rowImages) => {
                 const rowItems = rowImages.map((img, colIndex) => ({
                     image: img,
                     x: padding + colIndex * (itemWidth + gap),
                     width: itemWidth,
                     height: rowHeight,
-                    globalIndex: globalImageIndex++
+                    globalIndex: globalImageIndex++,
                 }));
 
                 items.push({
                     type: 'row',
                     items: rowItems,
                     y: currentY,
-                    height: rowHeight
+                    height: rowHeight,
                 });
 
                 currentY += rowHeight + gap;
@@ -138,6 +136,6 @@ export const useTimelineLayout = ({ groups, width, thumbnailSize, scrollTop }: U
         visibleItems,
         activeHeaderData,
         setActiveHeaderData,
-        activeHeaderIdRef
+        activeHeaderIdRef,
     };
 };

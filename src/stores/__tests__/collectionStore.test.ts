@@ -14,7 +14,7 @@ const collectionRepoMocks = vi.hoisted(() => ({
     mockMigrateLegacyCollections: vi.fn(),
     mockGetScopedCollectionRows: vi.fn(),
     mockGetCollectionImageIdsStrict: vi.fn(),
-    mockDeleteCollectionFromDb: vi.fn()
+    mockDeleteCollectionFromDb: vi.fn(),
 }));
 const appRepositoryMocks = vi.hoisted(() => ({
     mockLoad: vi.fn(),
@@ -22,22 +22,22 @@ const appRepositoryMocks = vi.hoisted(() => ({
     mockUpdate: vi.fn<(updater: (state: AppState) => AppState) => Promise<AppState>>(),
 }));
 const libraryStoreMocks = vi.hoisted(() => ({
-    isImporting: false
+    isImporting: false,
 }));
 
 const {
     mockGetAllCollectionsWithStats,
     mockGetSmartCollectionSummaries,
     mockCacheSmartCollectionCount,
-    mockGetCollectionThumbnailSummaries
+    mockGetCollectionThumbnailSummaries,
 } = collectionRepoMocks;
 
 vi.mock('../libraryStore', () => ({
     useLibraryStore: {
         getState: () => ({
-            isImporting: libraryStoreMocks.isImporting
-        })
-    }
+            isImporting: libraryStoreMocks.isImporting,
+        }),
+    },
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
@@ -49,7 +49,7 @@ vi.mock('../../services/db/collectionRepo', () => ({
     migrateLegacyCollections: collectionRepoMocks.mockMigrateLegacyCollections,
     getScopedCollectionRows: collectionRepoMocks.mockGetScopedCollectionRows,
     getCollectionImageIdsStrict: collectionRepoMocks.mockGetCollectionImageIdsStrict,
-    deleteCollectionFromDb: collectionRepoMocks.mockDeleteCollectionFromDb
+    deleteCollectionFromDb: collectionRepoMocks.mockDeleteCollectionFromDb,
 }));
 
 vi.mock('../../services/repository', () => ({
@@ -57,14 +57,14 @@ vi.mock('../../services/repository', () => ({
         load: appRepositoryMocks.mockLoad,
         save: appRepositoryMocks.mockSave,
         update: appRepositoryMocks.mockUpdate,
-    }
+    },
 }));
 
 const resetCollectionStore = () => {
     useCollectionStore.setState(useCollectionStore.getInitialState(), true);
 };
 
-const createDeferred = <T,>() => {
+const createDeferred = <T>() => {
     let resolve!: (value: T | PromiseLike<T>) => void;
     let reject!: (reason?: unknown) => void;
     const promise = new Promise<T>((resolvePromise, rejectPromise) => {
@@ -83,7 +83,7 @@ const makeStaticCollection = (overrides: Partial<Collection> = {}): Collection =
     source: 'ambit',
     count: 0,
     imageIds: [],
-    ...overrides
+    ...overrides,
 });
 
 describe('collectionStore smart count refresh', () => {
@@ -100,9 +100,7 @@ describe('collectionStore smart count refresh', () => {
         collectionRepoMocks.mockDeleteCollectionFromDb.mockResolvedValue(undefined);
         appRepositoryMocks.mockLoad.mockResolvedValue({ collections: [], smartCollections: [] });
         appRepositoryMocks.mockSave.mockResolvedValue(undefined);
-        appRepositoryMocks.mockUpdate.mockImplementation(async updater => (
-            updater(await appRepositoryMocks.mockLoad())
-        ));
+        appRepositoryMocks.mockUpdate.mockImplementation(async (updater) => updater(await appRepositoryMocks.mockLoad()));
         libraryStoreMocks.isImporting = false;
         resetCollectionStore();
     });
@@ -117,7 +115,7 @@ describe('collectionStore smart count refresh', () => {
         act(() => {
             useCollectionStore.setState({
                 collections: [makeStaticCollection({ id: 'existing', name: 'Existing' })],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -131,16 +129,14 @@ describe('collectionStore smart count refresh', () => {
                 id: 'assets-showcase',
                 name: 'Assets: Showcase',
                 createdAt: 2,
-                updatedAt: 2
-            })
+                updatedAt: 2,
+            }),
         ]);
         await act(async () => {
             await freshRun;
         });
 
-        staleRefresh.resolve([
-            makeStaticCollection({ id: 'existing', name: 'Existing' })
-        ]);
+        staleRefresh.resolve([makeStaticCollection({ id: 'existing', name: 'Existing' })]);
         await act(async () => {
             await staleRun;
         });
@@ -148,8 +144,8 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections).toEqual([
             expect.objectContaining({
                 id: 'assets-showcase',
-                name: 'Assets: Showcase'
-            })
+                name: 'Assets: Showcase',
+            }),
         ]);
     });
 
@@ -197,9 +193,7 @@ describe('collectionStore smart count refresh', () => {
         requiredRetry.resolve([makeStaticCollection({ id: 'odin', name: 'Odin' })]);
 
         await expect(requiredRun).resolves.toBeUndefined();
-        expect(useCollectionStore.getState().collections).toEqual([
-            expect.objectContaining({ id: 'odin', name: 'Odin' })
-        ]);
+        expect(useCollectionStore.getState().collections).toEqual([expect.objectContaining({ id: 'odin', name: 'Odin' })]);
     });
 
     it('serializes overlapping required collection refreshes without superseding each other', async () => {
@@ -224,9 +218,7 @@ describe('collectionStore smart count refresh', () => {
         await secondRun;
 
         expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2);
-        expect(useCollectionStore.getState().collections).toEqual([
-            expect.objectContaining({ id: 'second', name: 'Second' })
-        ]);
+        expect(useCollectionStore.getState().collections).toEqual([expect.objectContaining({ id: 'second', name: 'Second' })]);
     });
 
     it('does not let an in-flight refresh overwrite a newer debounced refresh request', async () => {
@@ -239,7 +231,7 @@ describe('collectionStore smart count refresh', () => {
         act(() => {
             useCollectionStore.setState({
                 collections: [makeStaticCollection({ id: 'initial', name: 'Initial' })],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -247,9 +239,7 @@ describe('collectionStore smart count refresh', () => {
         await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
         const debouncedRun = useCollectionStore.getState().refreshCollections(true);
 
-        staleRefresh.resolve([
-            makeStaticCollection({ id: 'stale', name: 'Stale' })
-        ]);
+        staleRefresh.resolve([makeStaticCollection({ id: 'stale', name: 'Stale' })]);
         await act(async () => {
             await staleRun;
         });
@@ -257,8 +247,8 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections).toEqual([
             expect.objectContaining({
                 id: 'initial',
-                name: 'Initial'
-            })
+                name: 'Initial',
+            }),
         ]);
 
         await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
@@ -267,8 +257,8 @@ describe('collectionStore smart count refresh', () => {
                 id: 'assets-showcase',
                 name: 'Assets: Showcase',
                 createdAt: 2,
-                updatedAt: 2
-            })
+                updatedAt: 2,
+            }),
         ]);
         await act(async () => {
             await debouncedRun;
@@ -277,8 +267,8 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections).toEqual([
             expect.objectContaining({
                 id: 'assets-showcase',
-                name: 'Assets: Showcase'
-            })
+                name: 'Assets: Showcase',
+            }),
         ]);
     });
 
@@ -289,7 +279,7 @@ describe('collectionStore smart count refresh', () => {
         act(() => {
             useCollectionStore.setState({
                 collections: [makeStaticCollection({ id: 'existing', name: 'Existing' })],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -297,20 +287,18 @@ describe('collectionStore smart count refresh', () => {
         await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
 
         act(() => {
-            useCollectionStore.getState().setCollections(prev => [
+            useCollectionStore.getState().setCollections((prev) => [
                 ...prev,
                 makeStaticCollection({
                     id: 'assets-showcase',
                     name: 'Assets: Showcase',
                     createdAt: 2,
-                    updatedAt: 2
-                })
+                    updatedAt: 2,
+                }),
             ]);
         });
 
-        staleRefresh.resolve([
-            makeStaticCollection({ id: 'existing', name: 'Existing' })
-        ]);
+        staleRefresh.resolve([makeStaticCollection({ id: 'existing', name: 'Existing' })]);
         await act(async () => {
             await staleRun;
         });
@@ -318,12 +306,12 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections).toEqual([
             expect.objectContaining({
                 id: 'existing',
-                name: 'Existing'
+                name: 'Existing',
             }),
             expect.objectContaining({
                 id: 'assets-showcase',
-                name: 'Assets: Showcase'
-            })
+                name: 'Assets: Showcase',
+            }),
         ]);
     });
 
@@ -334,7 +322,7 @@ describe('collectionStore smart count refresh', () => {
         act(() => {
             useCollectionStore.setState({
                 collections: [makeStaticCollection({ id: 'initial', name: 'Initial' })],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -342,7 +330,7 @@ describe('collectionStore smart count refresh', () => {
         await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
 
         act(() => {
-            useCollectionStore.getState().setCollections(prev => prev);
+            useCollectionStore.getState().setCollections((prev) => prev);
         });
 
         refresh.resolve([
@@ -350,8 +338,8 @@ describe('collectionStore smart count refresh', () => {
                 id: 'db-refresh',
                 name: 'DB Refresh',
                 createdAt: 2,
-                updatedAt: 2
-            })
+                updatedAt: 2,
+            }),
         ]);
         await act(async () => {
             await refreshRun;
@@ -360,8 +348,8 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections).toEqual([
             expect.objectContaining({
                 id: 'db-refresh',
-                name: 'DB Refresh'
-            })
+                name: 'DB Refresh',
+            }),
         ]);
     });
 
@@ -379,7 +367,7 @@ describe('collectionStore smart count refresh', () => {
             ipAdapters: [],
             dateRange: 'all',
             favoritesOnly: false,
-            collectionId: null
+            collectionId: null,
         };
         mockGetSmartCollectionSummaries.mockResolvedValue({ 'smart-1': { count: 42 } });
 
@@ -394,7 +382,7 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: smartFilters
+                        filters: smartFilters,
                     },
                     {
                         id: 'static-1',
@@ -403,20 +391,18 @@ describe('collectionStore smart count refresh', () => {
                         updatedAt: 2,
                         source: 'ambit',
                         count: 3,
-                        imageIds: []
-                    }
+                        imageIds: [],
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
-        const refreshPromise = useCollectionStore.getState().refreshSmartCounts([
-            ...useCollectionStore.getState().collections
-        ]);
+        const refreshPromise = useCollectionStore.getState().refreshSmartCounts([...useCollectionStore.getState().collections]);
 
         act(() => {
             useCollectionStore.setState((state) => ({
-                collections: state.collections.filter((collection) => collection.id !== 'smart-1')
+                collections: state.collections.filter((collection) => collection.id !== 'smart-1'),
             }));
         });
 
@@ -424,8 +410,8 @@ describe('collectionStore smart count refresh', () => {
 
         expect(useCollectionStore.getState().collections).toEqual([
             expect.objectContaining({
-                id: 'static-1'
-            })
+                id: 'static-1',
+            }),
         ]);
     });
 
@@ -443,7 +429,7 @@ describe('collectionStore smart count refresh', () => {
             ipAdapters: [],
             dateRange: 'all',
             favoritesOnly: false,
-            collectionId: null
+            collectionId: null,
         };
         mockGetSmartCollectionSummaries.mockResolvedValue({
             'smart-1': {
@@ -451,43 +437,45 @@ describe('collectionStore smart count refresh', () => {
                 thumbnail: 'dynamic-thumb.webp',
                 safeThumbnail: 'dynamic-safe.webp',
                 thumbnailIsSensitive: true,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-1',
-                    name: 'Smart One',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 0,
-                    imageIds: [],
-                    filters: smartFilters,
-                    customThumbnail: 'custom-image-id',
-                    thumbnail: 'custom-thumb.webp',
-                    safeThumbnail: 'custom-safe.webp',
-                    thumbnailIsSensitive: false,
-                    thumbnailSourceKind: 'customImage'
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-1',
+                        name: 'Smart One',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: smartFilters,
+                        customThumbnail: 'custom-image-id',
+                        thumbnail: 'custom-thumb.webp',
+                        safeThumbnail: 'custom-safe.webp',
+                        thumbnailIsSensitive: false,
+                        thumbnailSourceKind: 'customImage',
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
-        await useCollectionStore.getState().refreshSmartCounts([
-            ...useCollectionStore.getState().collections
-        ]);
+        await useCollectionStore.getState().refreshSmartCounts([...useCollectionStore.getState().collections]);
 
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 7,
-            customThumbnail: 'custom-image-id',
-            thumbnail: 'custom-thumb.webp',
-            safeThumbnail: 'custom-safe.webp',
-            thumbnailIsSensitive: false,
-            thumbnailSourceKind: 'customImage'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 7,
+                customThumbnail: 'custom-image-id',
+                thumbnail: 'custom-thumb.webp',
+                safeThumbnail: 'custom-safe.webp',
+                thumbnailIsSensitive: false,
+                thumbnailSourceKind: 'customImage',
+            })
+        );
     });
 
     it('updates smart collection counts without clearing thumbnails when thumbnail refresh is skipped', async () => {
@@ -504,59 +492,62 @@ describe('collectionStore smart count refresh', () => {
             ipAdapters: [],
             dateRange: 'all',
             favoritesOnly: false,
-            collectionId: null
+            collectionId: null,
         };
         mockGetSmartCollectionSummaries.mockResolvedValue({
             'smart-1': {
                 count: 9,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-1',
-                    name: 'Smart One',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 0,
-                    imageIds: [],
-                    filters: smartFilters,
-                    thumbnail: 'existing-thumb.webp',
-                    safeThumbnail: 'existing-safe.webp',
-                    thumbnailIsSensitive: true,
-                    thumbnailSourceKind: 'dynamic'
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-1',
+                        name: 'Smart One',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: smartFilters,
+                        thumbnail: 'existing-thumb.webp',
+                        safeThumbnail: 'existing-safe.webp',
+                        thumbnailIsSensitive: true,
+                        thumbnailSourceKind: 'dynamic',
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         await useCollectionStore.getState().refreshSmartCounts({
             includeThumbnails: false,
-            includePromptSearch: true
+            includePromptSearch: true,
         });
 
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
-            [expect.objectContaining({ id: 'smart-1' })],
-            { includeThumbnails: false }
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-1' })], {
+            includeThumbnails: false,
+        });
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 9,
+                thumbnail: 'existing-thumb.webp',
+                safeThumbnail: 'existing-safe.webp',
+                thumbnailIsSensitive: true,
+                thumbnailSourceKind: 'dynamic',
+            })
         );
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 9,
-            thumbnail: 'existing-thumb.webp',
-            safeThumbnail: 'existing-safe.webp',
-            thumbnailIsSensitive: true,
-            thumbnailSourceKind: 'dynamic'
-        }));
     });
 
     it('skips prompt-search smart collections during automatic smart count refreshes', async () => {
         mockGetSmartCollectionSummaries.mockResolvedValue({
             'smart-date': {
                 count: 12,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
@@ -570,7 +561,7 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: createDefaultFilters({ searchQuery: 'apple' })
+                        filters: createDefaultFilters({ searchQuery: 'apple' }),
                     },
                     {
                         id: 'smart-date',
@@ -580,48 +571,52 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: createDefaultFilters({ dateRange: 'today' })
-                    }
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
         await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
 
         expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1);
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
-            [expect.objectContaining({ id: 'smart-date' })],
-            { includeThumbnails: false }
-        );
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-date' })], {
+            includeThumbnails: false,
+        });
     });
 
     it('marks smart summary pending ids while smart thumbnails are loading', async () => {
         let resolveSummaries: ((value: Record<string, unknown>) => void) | undefined;
-        mockGetSmartCollectionSummaries.mockImplementationOnce(() => new Promise(resolve => {
-            resolveSummaries = resolve;
-        }));
+        mockGetSmartCollectionSummaries.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveSummaries = resolve;
+                })
+        );
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-date',
-                    name: 'Date Smart',
-                    createdAt: 2,
-                    updatedAt: 2,
-                    source: 'ambit',
-                    count: 0,
-                    imageIds: [],
-                    filters: createDefaultFilters({ dateRange: 'today' })
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-date',
+                        name: 'Date Smart',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         const refreshPromise = useCollectionStore.getState().refreshSmartCounts({ markPending: true });
 
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({
-            'smart-date': true
+            'smart-date': true,
         });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
 
@@ -631,61 +626,68 @@ describe('collectionStore smart count refresh', () => {
                 thumbnail: 'asset://smart-thumb.webp',
                 safeThumbnail: 'asset://smart-safe.webp',
                 thumbnailIsSensitive: false,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await refreshPromise;
 
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 12,
-            thumbnail: 'asset://smart-thumb.webp',
-            safeThumbnail: 'asset://smart-safe.webp',
-            thumbnailIsSensitive: false,
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 12,
+                thumbnail: 'asset://smart-thumb.webp',
+                safeThumbnail: 'asset://smart-safe.webp',
+                thumbnailIsSensitive: false,
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('clears stale smart pending ids when a non-pending refresh supersedes thumbnail hydration', async () => {
         let resolveStaleSummaries: ((value: Record<string, unknown>) => void) | undefined;
         mockGetSmartCollectionSummaries
-            .mockImplementationOnce(() => new Promise(resolve => {
-                resolveStaleSummaries = resolve;
-            }))
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resolveStaleSummaries = resolve;
+                    })
+            )
             .mockResolvedValueOnce({
                 'smart-date': {
                     count: 14,
                     thumbnail: 'asset://replacement-thumb.webp',
-                    thumbnailSourceKind: 'dynamic'
-                }
+                    thumbnailSourceKind: 'dynamic',
+                },
             });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-date',
-                    name: 'Date Smart',
-                    createdAt: 2,
-                    updatedAt: 2,
-                    source: 'ambit',
-                    count: 0,
-                    imageIds: [],
-                    filters: createDefaultFilters({ dateRange: 'today' })
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-date',
+                        name: 'Date Smart',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         const staleRun = useCollectionStore.getState().refreshSmartCounts({ markPending: true });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({
-            'smart-date': true
+            'smart-date': true,
         });
 
         const replacementRun = useCollectionStore.getState().refreshSmartCounts({
             collectionIds: ['smart-date'],
             includeArchived: true,
-            includePromptSearch: true
+            includePromptSearch: true,
         });
 
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
@@ -695,47 +697,54 @@ describe('collectionStore smart count refresh', () => {
             'smart-date': {
                 count: 12,
                 thumbnail: 'asset://stale-thumb.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await staleRun;
 
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 14,
-            thumbnail: 'asset://replacement-thumb.webp',
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 14,
+                thumbnail: 'asset://replacement-thumb.webp',
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
         expect(mockCacheSmartCollectionCount).toHaveBeenCalledTimes(1);
         expect(mockCacheSmartCollectionCount).toHaveBeenCalledWith('smart-date', 14, 2);
     });
 
     it('clears smart pending ids when an import-skip refresh supersedes thumbnail hydration', async () => {
         let resolveStaleSummaries: ((value: Record<string, unknown>) => void) | undefined;
-        mockGetSmartCollectionSummaries.mockImplementationOnce(() => new Promise(resolve => {
-            resolveStaleSummaries = resolve;
-        }));
+        mockGetSmartCollectionSummaries.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveStaleSummaries = resolve;
+                })
+        );
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-date',
-                    name: 'Date Smart',
-                    createdAt: 2,
-                    updatedAt: 2,
-                    source: 'ambit',
-                    count: 0,
-                    imageIds: [],
-                    filters: createDefaultFilters({ dateRange: 'today' })
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-date',
+                        name: 'Date Smart',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         const staleRun = useCollectionStore.getState().refreshSmartCounts({ markPending: true });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({
-            'smart-date': true
+            'smart-date': true,
         });
 
         libraryStoreMocks.isImporting = true;
@@ -748,15 +757,17 @@ describe('collectionStore smart count refresh', () => {
             'smart-date': {
                 count: 12,
                 thumbnail: 'asset://stale-thumb.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await staleRun;
 
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 0
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 0,
+            })
+        );
         expect(useCollectionStore.getState().collections[0].thumbnail).toBeUndefined();
     });
 
@@ -765,56 +776,62 @@ describe('collectionStore smart count refresh', () => {
             'smart-date': {
                 count: 12,
                 thumbnail: 'asset://fresh-smart-thumb.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-date',
-                    name: 'Date Smart',
-                    createdAt: 2,
-                    updatedAt: 2,
-                    source: 'ambit',
-                    count: 0,
-                    imageIds: [],
-                    filters: createDefaultFilters({ dateRange: 'today' }),
-                    thumbnail: 'asset://cached-smart-thumb.webp',
-                    safeThumbnail: 'asset://cached-smart-safe.webp',
-                    thumbnailIsSensitive: false,
-                    thumbnailSourceKind: 'dynamic'
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-date',
+                        name: 'Date Smart',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                        thumbnail: 'asset://cached-smart-thumb.webp',
+                        safeThumbnail: 'asset://cached-smart-safe.webp',
+                        thumbnailIsSensitive: false,
+                        thumbnailSourceKind: 'dynamic',
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         await useCollectionStore.getState().refreshSmartCounts({ markPending: true });
 
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 12,
-            thumbnail: 'asset://fresh-smart-thumb.webp',
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 12,
+                thumbnail: 'asset://fresh-smart-thumb.webp',
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('keeps cached prompt-search smart counts and thumbnails visible during automatic refreshes', async () => {
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-prompt',
-                    name: 'Prompt Smart',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 9,
-                    imageIds: [],
-                    filters: createDefaultFilters({ searchQuery: 'apple' }),
-                    thumbnail: 'asset://cached-prompt-thumb.webp',
-                    thumbnailSourceKind: 'dynamic'
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-prompt',
+                        name: 'Prompt Smart',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 9,
+                        imageIds: [],
+                        filters: createDefaultFilters({ searchQuery: 'apple' }),
+                        thumbnail: 'asset://cached-prompt-thumb.webp',
+                        thumbnailSourceKind: 'dynamic',
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
@@ -822,58 +839,64 @@ describe('collectionStore smart count refresh', () => {
 
         expect(mockGetSmartCollectionSummaries).not.toHaveBeenCalled();
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 9,
-            thumbnail: 'asset://cached-prompt-thumb.webp',
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 9,
+                thumbnail: 'asset://cached-prompt-thumb.webp',
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('automatically refreshes pinned prompt-search smart collections', async () => {
         mockGetSmartCollectionSummaries.mockResolvedValue({
             'smart-prompt': {
                 count: 11,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'smart-prompt',
-                    name: 'Pinned Prompt Smart',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    isPinned: true,
-                    count: 9,
-                    imageIds: [],
-                    filters: createDefaultFilters({ searchQuery: 'apple' })
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'smart-prompt',
+                        name: 'Pinned Prompt Smart',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        isPinned: true,
+                        count: 9,
+                        imageIds: [],
+                        filters: createDefaultFilters({ searchQuery: 'apple' }),
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
 
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
-            [expect.objectContaining({ id: 'smart-prompt', isPinned: true })],
-            { includeThumbnails: false }
-        );
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-prompt', isPinned: true })], {
+            includeThumbnails: false,
+        });
         expect(useCollectionStore.getState().collections[0].count).toBe(11);
     });
 
     it('does not let an automatic refresh cancel a selected pinned prompt collection refresh', async () => {
         let resolvePromptSummary: ((value: Record<string, unknown>) => void) | undefined;
         mockGetSmartCollectionSummaries
-            .mockImplementationOnce(() => new Promise(resolve => {
-                resolvePromptSummary = resolve;
-            }))
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resolvePromptSummary = resolve;
+                    })
+            )
             .mockResolvedValueOnce({
                 'smart-date': {
                     count: 12,
-                    thumbnailSourceKind: 'dynamic'
-                }
+                    thumbnailSourceKind: 'dynamic',
+                },
             });
 
         act(() => {
@@ -888,7 +911,7 @@ describe('collectionStore smart count refresh', () => {
                         isPinned: true,
                         count: 9,
                         imageIds: [],
-                        filters: createDefaultFilters({ searchQuery: 'apple' })
+                        filters: createDefaultFilters({ searchQuery: 'apple' }),
                     },
                     {
                         id: 'smart-date',
@@ -898,10 +921,10 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: createDefaultFilters({ dateRange: 'today' })
-                    }
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -909,7 +932,7 @@ describe('collectionStore smart count refresh', () => {
             collectionIds: ['smart-prompt'],
             includeArchived: true,
             includePromptSearch: true,
-            includeThumbnails: false
+            includeThumbnails: false,
         });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
 
@@ -917,21 +940,21 @@ describe('collectionStore smart count refresh', () => {
         resolvePromptSummary?.({
             'smart-prompt': {
                 count: 5,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await selectedRefresh;
 
         expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(2);
-        expect(mockGetSmartCollectionSummaries).toHaveBeenNthCalledWith(
-            2,
-            [expect.objectContaining({ id: 'smart-date' })],
-            { includeThumbnails: false }
+        expect(mockGetSmartCollectionSummaries).toHaveBeenNthCalledWith(2, [expect.objectContaining({ id: 'smart-date' })], {
+            includeThumbnails: false,
+        });
+        expect(useCollectionStore.getState().collections).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'smart-prompt', count: 5 }),
+                expect.objectContaining({ id: 'smart-date', count: 12 }),
+            ])
         );
-        expect(useCollectionStore.getState().collections).toEqual(expect.arrayContaining([
-            expect.objectContaining({ id: 'smart-prompt', count: 5 }),
-            expect.objectContaining({ id: 'smart-date', count: 12 })
-        ]));
     });
 
     it('hydrates prompt-search smart collections when explicitly selected', async () => {
@@ -939,8 +962,8 @@ describe('collectionStore smart count refresh', () => {
             'smart-prompt': {
                 count: 5,
                 thumbnail: 'asset://prompt-thumb.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
@@ -954,7 +977,7 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: createDefaultFilters({ searchQuery: 'apple' })
+                        filters: createDefaultFilters({ searchQuery: 'apple' }),
                     },
                     {
                         id: 'smart-date',
@@ -964,10 +987,10 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: createDefaultFilters({ dateRange: 'today' })
-                    }
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -975,19 +998,20 @@ describe('collectionStore smart count refresh', () => {
             collectionIds: ['smart-prompt'],
             includeArchived: true,
             includePromptSearch: true,
-            markPending: true
+            markPending: true,
         });
 
         expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1);
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
-            [expect.objectContaining({ id: 'smart-prompt' })],
-            { includeThumbnails: true }
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-prompt' })], {
+            includeThumbnails: true,
+        });
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 5,
+                thumbnail: 'asset://prompt-thumb.webp',
+                thumbnailSourceKind: 'dynamic',
+            })
         );
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 5,
-            thumbnail: 'asset://prompt-thumb.webp',
-            thumbnailSourceKind: 'dynamic'
-        }));
     });
 
     it('refreshes collection thumbnails without reloading collection rows', async () => {
@@ -996,37 +1020,39 @@ describe('collectionStore smart count refresh', () => {
                 thumbnail: 'asset://thumb.webp',
                 safeThumbnail: 'asset://safe.webp',
                 thumbnailIsSensitive: true,
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'static-1',
-                    name: 'Static One',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 3,
-                    imageIds: []
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'static-1',
+                        name: 'Static One',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 3,
+                        imageIds: [],
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         await useCollectionStore.getState().refreshCollectionThumbnails();
 
-        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
-            expect.objectContaining({ id: 'static-1' })
-        ]);
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            count: 3,
-            thumbnail: 'asset://thumb.webp',
-            safeThumbnail: 'asset://safe.webp',
-            thumbnailIsSensitive: true,
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'static-1' })]);
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                count: 3,
+                thumbnail: 'asset://thumb.webp',
+                safeThumbnail: 'asset://safe.webp',
+                thumbnailIsSensitive: true,
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('skips cached dynamic collection thumbnails during refresh', async () => {
@@ -1039,10 +1065,10 @@ describe('collectionStore smart count refresh', () => {
                         thumbnail: 'asset://cached.webp',
                         safeThumbnail: 'asset://cached-safe.webp',
                         thumbnailIsSensitive: true,
-                        thumbnailSourceKind: 'dynamic'
-                    })
+                        thumbnailSourceKind: 'dynamic',
+                    }),
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -1050,20 +1076,22 @@ describe('collectionStore smart count refresh', () => {
 
         expect(mockGetCollectionThumbnailSummaries).not.toHaveBeenCalled();
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({});
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://cached.webp',
-            safeThumbnail: 'asset://cached-safe.webp',
-            thumbnailIsSensitive: true,
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://cached.webp',
+                safeThumbnail: 'asset://cached-safe.webp',
+                thumbnailIsSensitive: true,
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('can force refresh cached dynamic thumbnails after thumbnail mutations', async () => {
         mockGetCollectionThumbnailSummaries.mockResolvedValue({
             'cached-static': {
                 thumbnail: 'asset://fresh.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
@@ -1073,35 +1101,35 @@ describe('collectionStore smart count refresh', () => {
                         id: 'cached-static',
                         count: 4,
                         thumbnail: 'asset://cached.webp',
-                        thumbnailSourceKind: 'dynamic'
-                    })
+                        thumbnailSourceKind: 'dynamic',
+                    }),
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
         const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails(false, true);
 
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
-            'cached-static': true
+            'cached-static': true,
         });
         await refreshPromise;
 
-        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
-            expect.objectContaining({ id: 'cached-static' })
-        ]);
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://fresh.webp',
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'cached-static' })]);
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://fresh.webp',
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('refreshes custom thumbnails even when a display thumbnail already exists', async () => {
         mockGetCollectionThumbnailSummaries.mockResolvedValue({
             'custom-static': {
                 thumbnail: 'asset://custom-fresh.webp',
-                thumbnailSourceKind: 'customImage'
-            }
+                thumbnailSourceKind: 'customImage',
+            },
         });
 
         act(() => {
@@ -1112,98 +1140,109 @@ describe('collectionStore smart count refresh', () => {
                         count: 0,
                         customThumbnail: 'img-custom',
                         thumbnail: 'asset://custom-stale.webp',
-                        thumbnailSourceKind: 'customImage'
-                    })
+                        thumbnailSourceKind: 'customImage',
+                    }),
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
         const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
 
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
-            'custom-static': true
+            'custom-static': true,
         });
         await refreshPromise;
 
         expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
-            expect.objectContaining({ id: 'custom-static', customThumbnail: 'img-custom' })
+            expect.objectContaining({ id: 'custom-static', customThumbnail: 'img-custom' }),
         ]);
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://custom-fresh.webp',
-            thumbnailSourceKind: 'customImage'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://custom-fresh.webp',
+                thumbnailSourceKind: 'customImage',
+            })
+        );
     });
 
     it('hydrates Invoke board collection thumbnails from derived summaries', async () => {
         mockGetCollectionThumbnailSummaries.mockResolvedValue({
             'invoke-board-1': {
                 thumbnail: 'asset://invoke-board-thumb.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [makeStaticCollection({
-                    id: 'invoke-board-1',
-                    name: 'Invoke Board',
-                    source: 'invoke',
-                    count: 2
-                })],
-                isLoaded: true
+                collections: [
+                    makeStaticCollection({
+                        id: 'invoke-board-1',
+                        name: 'Invoke Board',
+                        source: 'invoke',
+                        count: 2,
+                    }),
+                ],
+                isLoaded: true,
             });
         });
 
         const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
 
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
-            'invoke-board-1': true
+            'invoke-board-1': true,
         });
         await refreshPromise;
 
         expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
-            expect.objectContaining({ id: 'invoke-board-1', source: 'invoke' })
+            expect.objectContaining({ id: 'invoke-board-1', source: 'invoke' }),
         ]);
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://invoke-board-thumb.webp',
-            thumbnailSourceKind: 'dynamic'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://invoke-board-thumb.webp',
+                thumbnailSourceKind: 'dynamic',
+            })
+        );
     });
 
     it('marks thumbnail hydration pending ids while collection thumbnails are loading', async () => {
         let resolveSummaries: ((value: Record<string, unknown>) => void) | undefined;
-        mockGetCollectionThumbnailSummaries.mockImplementationOnce(() => new Promise(resolve => {
-            resolveSummaries = resolve;
-        }));
+        mockGetCollectionThumbnailSummaries.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveSummaries = resolve;
+                })
+        );
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'static-1',
-                    name: 'Static One',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 3,
-                    imageIds: []
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'static-1',
+                        name: 'Static One',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 3,
+                        imageIds: [],
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
         const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
 
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
-            'static-1': true
+            'static-1': true,
         });
         await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
 
         resolveSummaries?.({
             'static-1': {
                 thumbnail: 'asset://thumb.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await refreshPromise;
 
@@ -1212,9 +1251,12 @@ describe('collectionStore smart count refresh', () => {
 
     it('does not mark empty collections as thumbnail hydration pending', async () => {
         let resolveSummaries: ((value: Record<string, unknown>) => void) | undefined;
-        mockGetCollectionThumbnailSummaries.mockImplementationOnce(() => new Promise(resolve => {
-            resolveSummaries = resolve;
-        }));
+        mockGetCollectionThumbnailSummaries.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveSummaries = resolve;
+                })
+        );
 
         act(() => {
             useCollectionStore.setState({
@@ -1226,7 +1268,7 @@ describe('collectionStore smart count refresh', () => {
                         updatedAt: 1,
                         source: 'ambit',
                         count: 0,
-                        imageIds: []
+                        imageIds: [],
                     },
                     {
                         id: 'filled-static',
@@ -1235,7 +1277,7 @@ describe('collectionStore smart count refresh', () => {
                         updatedAt: 2,
                         source: 'ambit',
                         count: 1,
-                        imageIds: []
+                        imageIds: [],
                     },
                     {
                         id: 'cached-static',
@@ -1246,17 +1288,17 @@ describe('collectionStore smart count refresh', () => {
                         count: 1,
                         imageIds: [],
                         thumbnail: 'asset://cached.webp',
-                        thumbnailSourceKind: 'dynamic'
-                    }
+                        thumbnailSourceKind: 'dynamic',
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
         const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
 
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
-            'filled-static': true
+            'filled-static': true,
         });
         await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
 
@@ -1277,7 +1319,7 @@ describe('collectionStore smart count refresh', () => {
                         updatedAt: 1,
                         source: 'ambit',
                         count: 1,
-                        imageIds: []
+                        imageIds: [],
                     },
                     {
                         id: 'pinned-static',
@@ -1287,7 +1329,7 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 1,
                         imageIds: [],
-                        isPinned: true
+                        isPinned: true,
                     },
                     {
                         id: 'recent-static',
@@ -1296,30 +1338,31 @@ describe('collectionStore smart count refresh', () => {
                         updatedAt: 5,
                         source: 'ambit',
                         count: 1,
-                        imageIds: []
-                    }
+                        imageIds: [],
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
         await useCollectionStore.getState().refreshCollectionThumbnails();
 
         const [firstBatch] = mockGetCollectionThumbnailSummaries.mock.calls[0] as [Array<{ id: string }>];
-        expect(firstBatch.map(collection => collection.id)).toEqual([
-            'pinned-static',
-            'recent-static',
-            'old-static'
-        ]);
+        expect(firstBatch.map((collection) => collection.id)).toEqual(['pinned-static', 'recent-static', 'old-static']);
     });
 
     it('chunks collection thumbnail refreshes and skips smart collections', async () => {
-        mockGetCollectionThumbnailSummaries.mockImplementation(async (batch: Array<{ id: string }>) => Object.fromEntries(
-            batch.map((collection: { id: string }) => [collection.id, {
-                thumbnail: `asset://${collection.id}.webp`,
-                thumbnailSourceKind: 'dynamic'
-            }])
-        ));
+        mockGetCollectionThumbnailSummaries.mockImplementation(async (batch: Array<{ id: string }>) =>
+            Object.fromEntries(
+                batch.map((collection: { id: string }) => [
+                    collection.id,
+                    {
+                        thumbnail: `asset://${collection.id}.webp`,
+                        thumbnailSourceKind: 'dynamic',
+                    },
+                ])
+            )
+        );
 
         act(() => {
             useCollectionStore.setState({
@@ -1331,7 +1374,7 @@ describe('collectionStore smart count refresh', () => {
                         updatedAt: index,
                         source: 'ambit' as const,
                         count: 1,
-                        imageIds: []
+                        imageIds: [],
                     })),
                     {
                         id: 'smart-1',
@@ -1341,10 +1384,10 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 0,
                         imageIds: [],
-                        filters: createDefaultFilters({ dateRange: 'today' })
-                    }
+                        filters: createDefaultFilters({ dateRange: 'today' }),
+                    },
                 ],
-                isLoaded: true
+                isLoaded: true,
             });
         });
 
@@ -1360,28 +1403,33 @@ describe('collectionStore smart count refresh', () => {
     it('does not apply stale thumbnail refresh results after a newer run starts', async () => {
         let resolveFirst: ((value: Record<string, unknown>) => void) | undefined;
         mockGetCollectionThumbnailSummaries
-            .mockImplementationOnce(() => new Promise(resolve => {
-                resolveFirst = resolve;
-            }))
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resolveFirst = resolve;
+                    })
+            )
             .mockResolvedValueOnce({
                 'static-1': {
                     thumbnail: 'asset://fresh.webp',
-                    thumbnailSourceKind: 'dynamic'
-                }
+                    thumbnailSourceKind: 'dynamic',
+                },
             });
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'static-1',
-                    name: 'Static One',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 3,
-                    imageIds: []
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'static-1',
+                        name: 'Static One',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 3,
+                        imageIds: [],
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
@@ -1394,14 +1442,16 @@ describe('collectionStore smart count refresh', () => {
         resolveFirst?.({
             'static-1': {
                 thumbnail: 'asset://stale.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await staleRun;
 
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://fresh.webp'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://fresh.webp',
+            })
+        );
     });
 
     it('retries required thumbnail hydration when another run supersedes it', async () => {
@@ -1438,34 +1488,44 @@ describe('collectionStore smart count refresh', () => {
         });
 
         await expect(requiredRun).resolves.toBeUndefined();
-        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
-            thumbnail: 'asset://odin.webp'
-        }));
+        expect(useCollectionStore.getState().collections[0]).toEqual(
+            expect.objectContaining({
+                thumbnail: 'asset://odin.webp',
+            })
+        );
     });
 
     it('does not clear newer pending thumbnail state from stale refreshes', async () => {
         let resolveFirst: ((value: Record<string, unknown>) => void) | undefined;
         let resolveSecond: ((value: Record<string, unknown>) => void) | undefined;
         mockGetCollectionThumbnailSummaries
-            .mockImplementationOnce(() => new Promise(resolve => {
-                resolveFirst = resolve;
-            }))
-            .mockImplementationOnce(() => new Promise(resolve => {
-                resolveSecond = resolve;
-            }));
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resolveFirst = resolve;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resolveSecond = resolve;
+                    })
+            );
 
         act(() => {
             useCollectionStore.setState({
-                collections: [{
-                    id: 'static-1',
-                    name: 'Static One',
-                    createdAt: 1,
-                    updatedAt: 1,
-                    source: 'ambit',
-                    count: 3,
-                    imageIds: []
-                }],
-                isLoaded: true
+                collections: [
+                    {
+                        id: 'static-1',
+                        name: 'Static One',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 3,
+                        imageIds: [],
+                    },
+                ],
+                isLoaded: true,
             });
         });
 
@@ -1477,20 +1537,20 @@ describe('collectionStore smart count refresh', () => {
         resolveFirst?.({
             'static-1': {
                 thumbnail: 'asset://stale.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await staleRun;
 
         expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
-            'static-1': true
+            'static-1': true,
         });
 
         resolveSecond?.({
             'static-1': {
                 thumbnail: 'asset://fresh.webp',
-                thumbnailSourceKind: 'dynamic'
-            }
+                thumbnailSourceKind: 'dynamic',
+            },
         });
         await freshRun;
 
@@ -1515,9 +1575,11 @@ describe('collectionStore smart count refresh', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         mockGetAllCollectionsWithStats.mockRejectedValueOnce(error);
 
-        await expect(useCollectionStore.getState().refreshCollections(false, {
-            consistency: 'authoritative',
-        })).rejects.toBe(error);
+        await expect(
+            useCollectionStore.getState().refreshCollections(false, {
+                consistency: 'authoritative',
+            })
+        ).rejects.toBe(error);
         expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce();
         consoleError.mockRestore();
     });
@@ -1560,7 +1622,7 @@ describe('collectionStore smart count refresh', () => {
     it('clears pending smart summaries when refresh fails or returns no summary', async () => {
         const smart = makeStaticCollection({
             id: 'smart',
-            filters: createDefaultFilters({ dateRange: 'today' })
+            filters: createDefaultFilters({ dateRange: 'today' }),
         });
         useCollectionStore.setState({ collections: [smart] });
         await useCollectionStore.getState().refreshSmartCounts({ markPending: true });
@@ -1608,7 +1670,7 @@ describe('collectionStore smart count refresh', () => {
             ...concurrentState,
             recentSearches: ['old search'],
         });
-        appRepositoryMocks.mockUpdate.mockImplementationOnce(async updater => {
+        appRepositoryMocks.mockUpdate.mockImplementationOnce(async (updater) => {
             persistedState = updater(concurrentState);
             return persistedState;
         });
@@ -1634,9 +1696,7 @@ describe('collectionStore smart count refresh', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         appRepositoryMocks.mockLoad.mockResolvedValue(legacyState);
         mockGetAllCollectionsWithStats.mockResolvedValueOnce([legacy]);
-        collectionRepoMocks.mockMigrateLegacyCollections
-            .mockRejectedValueOnce(migrationError)
-            .mockResolvedValueOnce(undefined);
+        collectionRepoMocks.mockMigrateLegacyCollections.mockRejectedValueOnce(migrationError).mockResolvedValueOnce(undefined);
 
         vi.resetModules();
         let module = await import('../collectionStore');
@@ -1681,7 +1741,6 @@ describe('collectionStore smart count refresh', () => {
         consoleError.mockRestore();
     });
 
-
     it('does not replay completed legacy migration after all SQLite collections are deleted', async () => {
         const legacy = makeStaticCollection({ id: 'legacy-once', imageIds: ['one'] });
         mockGetAllCollectionsWithStats.mockResolvedValueOnce([legacy]);
@@ -1719,9 +1778,7 @@ describe('collectionStore smart count refresh', () => {
         const normal = makeStaticCollection({ id: 'normal', name: 'Normal' });
         collectionRepoMocks.mockGetScopedCollectionRows.mockResolvedValueOnce([emptyLegacy, usedLegacy, normal]);
         mockGetAllCollectionsWithStats.mockResolvedValueOnce([usedLegacy, normal]);
-        collectionRepoMocks.mockGetCollectionImageIdsStrict
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce(['image']);
+        collectionRepoMocks.mockGetCollectionImageIdsStrict.mockResolvedValueOnce([]).mockResolvedValueOnce(['image']);
 
         await freshStore.getState().initialize();
 
@@ -1751,19 +1808,19 @@ describe('collectionStore smart count refresh', () => {
         useCollectionStore.setState({
             collections: [
                 makeStaticCollection({ id: 'older', count: undefined, imageIds: ['one'], updatedAt: 0, createdAt: 1 }),
-                makeStaticCollection({ id: 'newer', count: undefined, imageIds: ['one'], updatedAt: 0, createdAt: 2 })
-            ]
+                makeStaticCollection({ id: 'newer', count: undefined, imageIds: ['one'], updatedAt: 0, createdAt: 2 }),
+            ],
         });
         await useCollectionStore.getState().refreshCollectionThumbnails();
         const [batch] = mockGetCollectionThumbnailSummaries.mock.calls[0] as [Collection[]];
-        expect(batch.map(collection => collection.id)).toEqual(['newer', 'older']);
+        expect(batch.map((collection) => collection.id)).toEqual(['newer', 'older']);
     });
 
     it('stops an older thumbnail run before its next chunk begins', async () => {
         vi.useFakeTimers();
         try {
             useCollectionStore.setState({
-                collections: Array.from({ length: 49 }, (_, index) => makeStaticCollection({ id: `item-${index}`, count: 1 }))
+                collections: Array.from({ length: 49 }, (_, index) => makeStaticCollection({ id: `item-${index}`, count: 1 })),
             });
             mockGetCollectionThumbnailSummaries.mockResolvedValue({});
             const stale = useCollectionStore.getState().refreshCollectionThumbnails();
@@ -1781,9 +1838,7 @@ describe('collectionStore smart count refresh', () => {
 
     it('does not let stale thumbnail and smart-count failures clear newer state', async () => {
         const thumbnailFailure = createDeferred<Record<string, unknown>>();
-        mockGetCollectionThumbnailSummaries
-            .mockReturnValueOnce(thumbnailFailure.promise)
-            .mockResolvedValueOnce({});
+        mockGetCollectionThumbnailSummaries.mockReturnValueOnce(thumbnailFailure.promise).mockResolvedValueOnce({});
         useCollectionStore.setState({ collections: [makeStaticCollection({ count: 1 })] });
         const staleThumbnail = useCollectionStore.getState().refreshCollectionThumbnails();
         await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledOnce());
@@ -1792,10 +1847,10 @@ describe('collectionStore smart count refresh', () => {
         await Promise.all([staleThumbnail, freshThumbnail]);
 
         const smartFailure = createDeferred<Record<string, unknown>>();
-        mockGetSmartCollectionSummaries
-            .mockReturnValueOnce(smartFailure.promise)
-            .mockResolvedValueOnce({});
-        useCollectionStore.setState({ collections: [makeStaticCollection({ id: 'smart', filters: createDefaultFilters({ dateRange: 'today' }) })] });
+        mockGetSmartCollectionSummaries.mockReturnValueOnce(smartFailure.promise).mockResolvedValueOnce({});
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({ id: 'smart', filters: createDefaultFilters({ dateRange: 'today' }) })],
+        });
         const staleSmart = useCollectionStore.getState().refreshSmartCounts({ markPending: true });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledOnce());
         const freshSmart = useCollectionStore.getState().refreshSmartCounts();
@@ -1815,7 +1870,9 @@ describe('collectionStore smart count refresh', () => {
     it('supersedes delayed smart refreshes before their loop starts', async () => {
         vi.useFakeTimers();
         try {
-            useCollectionStore.setState({ collections: [makeStaticCollection({ id: 'smart', filters: createDefaultFilters({ dateRange: 'today' }) })] });
+            useCollectionStore.setState({
+                collections: [makeStaticCollection({ id: 'smart', filters: createDefaultFilters({ dateRange: 'today' }) })],
+            });
             const stale = useCollectionStore.getState().refreshSmartCounts({ delayMs: 50 });
             const fresh = useCollectionStore.getState().refreshSmartCounts();
             await vi.runAllTimersAsync();
@@ -1835,10 +1892,12 @@ describe('collectionStore smart count refresh', () => {
             .mockImplementationOnce(() => competingRefresh.promise)
             .mockImplementationOnce(() => requiredRetry.promise);
         useCollectionStore.setState({
-            collections: [makeStaticCollection({
-                id: 'odin-smart',
-                filters: createDefaultFilters({ dateRange: 'today' }),
-            })],
+            collections: [
+                makeStaticCollection({
+                    id: 'odin-smart',
+                    filters: createDefaultFilters({ dateRange: 'today' }),
+                }),
+            ],
             isLoaded: true,
         });
 
@@ -1870,10 +1929,12 @@ describe('collectionStore smart count refresh', () => {
     it('stops an older smart refresh before its next collection begins', async () => {
         vi.useFakeTimers();
         try {
-            useCollectionStore.setState({ collections: [
-                makeStaticCollection({ id: 'smart-one', filters: createDefaultFilters({ dateRange: 'today' }) }),
-                makeStaticCollection({ id: 'smart-two', filters: createDefaultFilters({ dateRange: 'week' }) })
-            ] });
+            useCollectionStore.setState({
+                collections: [
+                    makeStaticCollection({ id: 'smart-one', filters: createDefaultFilters({ dateRange: 'today' }) }),
+                    makeStaticCollection({ id: 'smart-two', filters: createDefaultFilters({ dateRange: 'week' }) }),
+                ],
+            });
             mockGetSmartCollectionSummaries.mockResolvedValue({});
             const stale = useCollectionStore.getState().refreshSmartCounts();
             expect(mockGetSmartCollectionSummaries).toHaveBeenCalledOnce();
@@ -1982,7 +2043,7 @@ describe('collectionStore smart count refresh', () => {
         await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledTimes(2));
         await Promise.resolve();
         await Promise.resolve();
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
         const laterGeneration = freshStore.getState().invalidateInitialization();
         freshStore.getState().finishInitializationHydration(laterGeneration);
 
@@ -2019,10 +2080,12 @@ describe('collectionStore smart count refresh', () => {
         const staleSmart = createDeferred<void>();
         const winningSmartFirst = createDeferred<void>();
         const winningSmartSecond = createDeferred<void>();
-        const refreshCollectionThumbnails = vi.fn()
+        const refreshCollectionThumbnails = vi
+            .fn()
             .mockReturnValueOnce(staleThumbnail.promise)
             .mockReturnValueOnce(winningThumbnail.promise);
-        const refreshSmartCounts = vi.fn()
+        const refreshSmartCounts = vi
+            .fn()
             .mockReturnValueOnce(staleSmart.promise)
             .mockReturnValueOnce(winningSmartFirst.promise)
             .mockReturnValueOnce(winningSmartSecond.promise);
@@ -2047,7 +2110,7 @@ describe('collectionStore smart count refresh', () => {
         winningSmartSecond.resolve();
         await Promise.resolve();
         await Promise.resolve();
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         const laterGeneration = freshStore.getState().invalidateInitialization();
         freshStore.getState().finishInitializationHydration(laterGeneration);

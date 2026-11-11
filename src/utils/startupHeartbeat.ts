@@ -46,30 +46,35 @@ export const createStartupHeartbeat = ({
             stop();
             return;
         }
-        nextTimer = timers.setTimeout(() => {
-            nextTimer = null;
-            if (stopped || outstanding || !launchId || startedAt === null || now() - startedAt >= budgetMs) {
-                if (startedAt !== null && now() - startedAt >= budgetMs) stop();
-                return;
-            }
-            outstanding = true;
-            const currentLaunchId = launchId;
-            let request: Promise<unknown>;
-            try {
-                request = transport(currentLaunchId);
-            } catch {
-                outstanding = false;
-                schedule(intervalMs);
-                return;
-            }
-            void request.then(
-                () => undefined,
-                () => undefined,
-            ).then(() => {
-                outstanding = false;
-                schedule(intervalMs);
-            });
-        }, Math.min(delayMs, remainingMs));
+        nextTimer = timers.setTimeout(
+            () => {
+                nextTimer = null;
+                if (stopped || outstanding || !launchId || startedAt === null || now() - startedAt >= budgetMs) {
+                    if (startedAt !== null && now() - startedAt >= budgetMs) stop();
+                    return;
+                }
+                outstanding = true;
+                const currentLaunchId = launchId;
+                let request: Promise<unknown>;
+                try {
+                    request = transport(currentLaunchId);
+                } catch {
+                    outstanding = false;
+                    schedule(intervalMs);
+                    return;
+                }
+                void request
+                    .then(
+                        () => undefined,
+                        () => undefined
+                    )
+                    .then(() => {
+                        outstanding = false;
+                        schedule(intervalMs);
+                    });
+            },
+            Math.min(delayMs, remainingMs)
+        );
     };
 
     return {

@@ -46,8 +46,15 @@ describe('library media scopes over SQLite', () => {
     afterEach(() => sqlite.close());
 
     const count = async (overrides: Partial<FilterState> = {}, alternatives = false, collections: Collection[] = []) => {
-        const query = buildSqlWhereClause(createDefaultFilters(overrides), true, 'hide', [], collections, false,
-            alternatives ? ['mediaType', 'sourceKind'] : []);
+        const query = buildSqlWhereClause(
+            createDefaultFilters(overrides),
+            true,
+            'hide',
+            [],
+            collections,
+            false,
+            alternatives ? ['mediaType', 'sourceKind'] : []
+        );
         return countLibraryScopes(query.where, query.params, query.collectionId, query.loraName);
     };
 
@@ -64,14 +71,20 @@ describe('library media scopes over SQLite', () => {
     it('keeps contextual alternative counts inside search and collection while global availability survives empty search', async () => {
         expect((await count({ searchQuery: 'unmatched', sourceKind: 'photograph', mediaType: 'image' }, true)).media.all).toBe(0);
         expect((await count()).imageKinds.photograph).toBe(1);
-        const contextual = await count({ collectionId: 'selected', searchQuery: 'portrait', mediaType: 'image', sourceKind: 'photograph' }, true);
+        const contextual = await count(
+            { collectionId: 'selected', searchQuery: 'portrait', mediaType: 'image', sourceKind: 'photograph' },
+            true
+        );
         expect(contextual.media).toEqual({ all: 2, image: 1, video: 1 });
         expect(contextual.imageKinds).toEqual({ all: 1, generated: 0, photograph: 1, other: 0 });
     });
 
-    it.each([undefined, 'image'] as const)('only narrows a photo smart collection with saved mediaType %s', async mediaType => {
+    it.each([undefined, 'image'] as const)('only narrows a photo smart collection with saved mediaType %s', async (mediaType) => {
         const collection: Collection = {
-            id: 'photos', name: 'Photos', createdAt: 1, imageIds: [],
+            id: 'photos',
+            name: 'Photos',
+            createdAt: 1,
+            imageIds: [],
             filters: createDefaultFilters({ mediaType, sourceKind: 'photograph' }),
         };
         const scope = { collectionId: collection.id, mediaType: 'image' as const, sourceKind: 'generated' as const };
@@ -87,7 +100,10 @@ describe('library media scopes over SQLite', () => {
     it('retains search, favorites and manual exclusions inside smart scope counts', async () => {
         sqlite.exec("UPDATE images SET is_favorite = 1 WHERE id = 'photo'");
         const collection: Collection = {
-            id: 'photos', name: 'Photos', createdAt: 1, imageIds: [],
+            id: 'photos',
+            name: 'Photos',
+            createdAt: 1,
+            imageIds: [],
             filters: createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph' }),
         };
         const filters = { collectionId: collection.id, searchQuery: 'portrait', favoritesOnly: true };

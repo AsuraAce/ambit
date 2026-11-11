@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useEffect, useState, useRef, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { LayoutMode } from '../../../types';
@@ -8,644 +7,636 @@ import { useGalleryMotion } from '../hooks/useGalleryMotion';
 const SCROLL_MOTION_SUPPRESSION_MS = 120;
 
 interface VisibleGridItem<T> {
-  item: T;
-  index: number;
-  style: React.CSSProperties;
-  layout: { x: number, y: number, width: number, height: number };
+    item: T;
+    index: number;
+    style: React.CSSProperties;
+    layout: { x: number; y: number; width: number; height: number };
 }
 
 interface VirtualGridProps<T> {
-  items: T[];
-  layout: LayoutMode;
-  minItemWidth: number;
-  gap?: number;
-  padding?: number;
-  scrollContainerRef: React.RefObject<HTMLElement | null>;
-  renderItem: (item: T, style: React.CSSProperties, index: number, layout?: { x: number, y: number, width: number, height: number }) => React.ReactNode;
-  getItemRatio?: (item: T) => number;
-  onLayoutChange?: (columns: number, rowHeight: number) => void;
-  onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
-  onBackgroundClick?: () => void;
-  onEndReached?: () => void;
-  transitionKey?: string;
-  suspendResizeLayout?: boolean;
-  className?: string;
+    items: T[];
+    layout: LayoutMode;
+    minItemWidth: number;
+    gap?: number;
+    padding?: number;
+    scrollContainerRef: React.RefObject<HTMLElement | null>;
+    renderItem: (
+        item: T,
+        style: React.CSSProperties,
+        index: number,
+        layout?: { x: number; y: number; width: number; height: number }
+    ) => React.ReactNode;
+    getItemRatio?: (item: T) => number;
+    onLayoutChange?: (columns: number, rowHeight: number) => void;
+    onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
+    onBackgroundClick?: () => void;
+    onEndReached?: () => void;
+    transitionKey?: string;
+    suspendResizeLayout?: boolean;
+    className?: string;
 }
 
 export interface VirtualGridHandle {
-  // ... existing handle interface
-  navigate: (currentIndex: number, key: string) => number;
-  scrollToItem: (index: number) => void;
+    // ... existing handle interface
+    navigate: (currentIndex: number, key: string) => number;
+    scrollToItem: (index: number) => void;
 }
 
 const VirtualGridInternal = <T extends { id: string }>(
-  {
-    items,
-    layout,
-    minItemWidth,
-    gap = 16,
-    padding = 16,
-    scrollContainerRef,
-    renderItem,
-    getItemRatio = () => 1,
-    onLayoutChange,
-    onRangeSelection,
-    onBackgroundClick,
-    onEndReached,
-    transitionKey,
-    suspendResizeLayout = false,
-    className
-  }: VirtualGridProps<T>,
-  ref: React.Ref<VirtualGridHandle>
+    {
+        items,
+        layout,
+        minItemWidth,
+        gap = 16,
+        padding = 16,
+        scrollContainerRef,
+        renderItem,
+        getItemRatio = () => 1,
+        onLayoutChange,
+        onRangeSelection,
+        onBackgroundClick,
+        onEndReached,
+        transitionKey,
+        suspendResizeLayout = false,
+        className,
+    }: VirtualGridProps<T>,
+    ref: React.Ref<VirtualGridHandle>
 ) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [resizeMotionVersion, setResizeMotionVersion] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [gridOffset, setGridOffset] = useState(0);
-  const [isScrolling, setIsScrolling] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [containerWidth, setContainerWidth] = useState(0);
+    const [resizeMotionVersion, setResizeMotionVersion] = useState(0);
+    const [scrollTop, setScrollTop] = useState(0);
+    const [gridOffset, setGridOffset] = useState(0);
+    const [isScrolling, setIsScrolling] = useState(false);
 
-  // --- Visual State for Selection Box ---
-  const [dragBox, setDragBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+    // --- Visual State for Selection Box ---
+    const [dragBox, setDragBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  // --- Refs ---
-  const layoutResultRef = useRef<LayoutResult>({ positions: [], totalHeight: 0, columns: 1, rowHeight: 0 });
-  const onRangeSelectionRef = useRef(onRangeSelection);
-  const onBackgroundClickRef = useRef(onBackgroundClick);
-  const onEndReachedRef = useRef(onEndReached);
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
-  const gridOffsetRef = useRef(0);
-  const gridOffsetRafRef = useRef<number | null>(null);
-  const isScrollingRef = useRef(false);
-  const scrollMotionTimerRef = useRef<number | null>(null);
-  const containerWidthRef = useRef(0);
-  const pendingResizeWidthRef = useRef<number | null>(null);
-  const suspendResizeLayoutRef = useRef(suspendResizeLayout);
-  const wasResizeLayoutSuspendedRef = useRef(suspendResizeLayout);
+    // --- Refs ---
+    const layoutResultRef = useRef<LayoutResult>({ positions: [], totalHeight: 0, columns: 1, rowHeight: 0 });
+    const onRangeSelectionRef = useRef(onRangeSelection);
+    const onBackgroundClickRef = useRef(onBackgroundClick);
+    const onEndReachedRef = useRef(onEndReached);
+    const isDraggingRef = useRef(false);
+    const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+    const gridOffsetRef = useRef(0);
+    const gridOffsetRafRef = useRef<number | null>(null);
+    const isScrollingRef = useRef(false);
+    const scrollMotionTimerRef = useRef<number | null>(null);
+    const containerWidthRef = useRef(0);
+    const pendingResizeWidthRef = useRef<number | null>(null);
+    const suspendResizeLayoutRef = useRef(suspendResizeLayout);
+    const wasResizeLayoutSuspendedRef = useRef(suspendResizeLayout);
 
-  suspendResizeLayoutRef.current = suspendResizeLayout;
+    suspendResizeLayoutRef.current = suspendResizeLayout;
 
-  const measureGridOffset = useCallback(() => {
-    const off = containerRef.current!.offsetTop;
-    if (off !== gridOffsetRef.current) {
-      gridOffsetRef.current = off;
-      setGridOffset(off);
-    }
-  }, []);
+    const measureGridOffset = useCallback(() => {
+        const off = containerRef.current!.offsetTop;
+        if (off !== gridOffsetRef.current) {
+            gridOffsetRef.current = off;
+            setGridOffset(off);
+        }
+    }, []);
 
-  const scheduleGridOffsetMeasure = useCallback(() => {
-    if (gridOffsetRafRef.current !== null) {
-      cancelAnimationFrame(gridOffsetRafRef.current);
-    }
-
-    gridOffsetRafRef.current = requestAnimationFrame(() => {
-      gridOffsetRafRef.current = null;
-      measureGridOffset();
-    });
-  }, [measureGridOffset]);
-
-  const commitContainerWidth = useCallback((newWidth: number, shouldAnimateLayout = false) => {
-    if (!Number.isFinite(newWidth)) {
-      return false;
-    }
-
-    if (Math.abs(containerWidthRef.current - newWidth) < 1) {
-      return false;
-    }
-
-    containerWidthRef.current = newWidth;
-    setContainerWidth(newWidth);
-    scheduleGridOffsetMeasure();
-
-    if (shouldAnimateLayout) {
-      setResizeMotionVersion(version => version + 1);
-    }
-
-    return true;
-  }, [scheduleGridOffsetMeasure]);
-
-  const markScrolling = useCallback(() => {
-    if (!isScrollingRef.current) {
-      isScrollingRef.current = true;
-      setIsScrolling(true);
-    }
-
-    if (scrollMotionTimerRef.current !== null) {
-      window.clearTimeout(scrollMotionTimerRef.current);
-    }
-
-    scrollMotionTimerRef.current = window.setTimeout(() => {
-      scrollMotionTimerRef.current = null;
-      isScrollingRef.current = false;
-      setIsScrolling(false);
-    }, SCROLL_MOTION_SUPPRESSION_MS);
-  }, []);
-
-  useEffect(() => {
-    onRangeSelectionRef.current = onRangeSelection;
-    onBackgroundClickRef.current = onBackgroundClick;
-    onEndReachedRef.current = onEndReached;
-  }, [onRangeSelection, onBackgroundClick, onEndReached]);
-
-  // Measure container width
-  useLayoutEffect(() => {
-    let rafId: number | null = null;
-
-    // Throttling State
-    let lastUpdate = 0;
-    const THROTTLE_MS = 32; // ~30fps updates for layout calculation during resize
-
-    const observer = new ResizeObserver(entries => {
-      if (entries[0]) {
-        const newWidth = entries[0].contentRect.width;
-
-        if (suspendResizeLayoutRef.current) {
-          pendingResizeWidthRef.current = newWidth;
-          return;
+    const scheduleGridOffsetMeasure = useCallback(() => {
+        if (gridOffsetRafRef.current !== null) {
+            cancelAnimationFrame(gridOffsetRafRef.current);
         }
 
-        const now = Date.now();
-        if (now - lastUpdate < THROTTLE_MS) {
-          return;
-        }
-        lastUpdate = now;
-
-        // Cancel any pending update
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId);
-        }
-
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-
-          if (suspendResizeLayoutRef.current) {
-            pendingResizeWidthRef.current = newWidth;
-            return;
-          }
-
-          commitContainerWidth(newWidth);
+        gridOffsetRafRef.current = requestAnimationFrame(() => {
+            gridOffsetRafRef.current = null;
+            measureGridOffset();
         });
-      }
-    });
+    }, [measureGridOffset]);
 
-    observer.observe(containerRef.current!);
-    return () => {
-      observer.disconnect();
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-    };
-  }, [commitContainerWidth]);
+    const commitContainerWidth = useCallback(
+        (newWidth: number, shouldAnimateLayout = false) => {
+            if (!Number.isFinite(newWidth)) {
+                return false;
+            }
 
-  useEffect(() => {
-    const wasSuspended = wasResizeLayoutSuspendedRef.current;
-    wasResizeLayoutSuspendedRef.current = suspendResizeLayout;
+            if (Math.abs(containerWidthRef.current - newWidth) < 1) {
+                return false;
+            }
 
-    if (suspendResizeLayout || !wasSuspended) {
-      return;
-    }
+            containerWidthRef.current = newWidth;
+            setContainerWidth(newWidth);
+            scheduleGridOffsetMeasure();
 
-    const pendingWidth = pendingResizeWidthRef.current;
-    pendingResizeWidthRef.current = null;
+            if (shouldAnimateLayout) {
+                setResizeMotionVersion((version) => version + 1);
+            }
 
-    const fallbackWidth = containerRef.current?.getBoundingClientRect().width;
-    const finalWidth = pendingWidth ?? fallbackWidth;
-
-    commitContainerWidth(finalWidth!, true);
-  }, [suspendResizeLayout, commitContainerWidth]);
-
-  // Track scroll position with requestAnimationFrame
-  useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
-
-    let rafId: number;
-    let lastCallTime = 0;
-
-    const handleScroll = (suppressMotion: boolean) => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        if (suppressMotion) {
-          markScrolling();
-        }
-        setScrollTop(scrollContainer.scrollTop);
-        scheduleGridOffsetMeasure();
-
-        // Infinite Scroll Trigger
-        const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
-        if (scrollHeight - (scrollTop + clientHeight) < 6000) {
-          const now = Date.now();
-          if (now - lastCallTime > 200) {
-            lastCallTime = now;
-            onEndReachedRef.current?.();
-          }
-        }
-      });
-    };
-
-    // Also use a ResizeObserver on the document or body to catch layout shifts above us? 
-    // Or just rely on scroll events? Pinned Shelf animation doesn't trigger scroll event though!
-    // We need a loop to track offsetTop during animations if the user is NOT scrolling.
-    // The safest way is to read offsetTop during the RENDER PHASE or check it periodically?
-
-    const handleScrollEvent = () => handleScroll(true);
-
-    handleScroll(false);
-    scrollContainer.addEventListener('scroll', handleScrollEvent, { passive: true });
-
-    return () => {
-      scrollContainer.removeEventListener('scroll', handleScrollEvent);
-      cancelAnimationFrame(rafId);
-    };
-  }, [scrollContainerRef, scheduleGridOffsetMeasure, markScrolling]);
-
-  // --- Layout Engine Integration ---
-  const { positions, totalHeight, columns, rowHeight } = useMemo(() => {
-    const result = calculateLayout({
-      items,
-      layoutMode: layout,
-      containerWidth,
-      minItemWidth,
-      gap,
-      padding,
-      getItemRatio
-    });
-    return result;
-  }, [items, layout, containerWidth, minItemWidth, gap, padding, getItemRatio]);
-
-  useLayoutEffect(() => {
-    scheduleGridOffsetMeasure();
-
-    let frame = 0;
-    let rafId: number;
-    const settle = () => {
-      measureGridOffset();
-      frame += 1;
-      if (frame < 12) {
-        rafId = requestAnimationFrame(settle);
-      }
-    };
-
-    rafId = requestAnimationFrame(settle);
-    return () => cancelAnimationFrame(rafId);
-  }, [items.length, layout, totalHeight, scheduleGridOffsetMeasure, measureGridOffset]);
-
-  useEffect(() => {
-    return () => {
-      if (gridOffsetRafRef.current !== null) {
-        cancelAnimationFrame(gridOffsetRafRef.current);
-      }
-      if (scrollMotionTimerRef.current !== null) {
-        window.clearTimeout(scrollMotionTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Sync positions for event handlers and imperative handle
-  useEffect(() => {
-    layoutResultRef.current = { positions, totalHeight, columns, rowHeight };
-  }, [positions, totalHeight, columns, rowHeight]);
-
-  useEffect(() => {
-    if (onLayoutChange) {
-      onLayoutChange(columns, rowHeight);
-    }
-  }, [columns, rowHeight, onLayoutChange]);
-
-  // --- Exposed Methods ---
-  useImperativeHandle(ref, () => ({
-    navigate: (currentIndex: number, key: string) => {
-      const { positions } = layoutResultRef.current;
-      if (!positions || positions.length === 0) return 0;
-      if (currentIndex < 0) return 0;
-      if (currentIndex >= positions.length) return positions.length - 1;
-
-      // Sequential Nav
-      if (key === 'ArrowLeft') return Math.max(0, currentIndex - 1);
-      if (key === 'ArrowRight') return Math.min(positions.length - 1, currentIndex + 1);
-
-      // Spatial Nav
-      const currentPos = positions[currentIndex];
-      const cx = currentPos.left + currentPos.width / 2;
-      const cy = currentPos.top + currentPos.height / 2;
-
-      let bestIndex = -1;
-      let minScore = Infinity;
-
-      // Use a localized search for better performance in spatial nav too
-      // Only check items within a reasonable vertical range
-      const visibleRange = 2000;
-
-      positions.forEach((pos, index) => {
-        if (index === currentIndex) return;
-
-        // Optimization: Skip items too far away vertically
-        if (Math.abs(pos.top - currentPos.top) > visibleRange) return;
-
-        const tcx = pos.left + pos.width / 2;
-        const tcy = pos.top + pos.height / 2;
-
-        let isValid = false;
-        if (key === 'ArrowUp') {
-          if (tcy < cy) isValid = true;
-        } else if (key === 'ArrowDown') {
-          if (tcy > cy) isValid = true;
-        }
-
-        if (isValid) {
-          const dy = tcy - cy;
-          const dx = Math.abs(tcx - cx);
-          const score = (dx * dx * 4) + (dy * dy);
-
-          if (score < minScore) {
-            minScore = score;
-            bestIndex = index;
-          }
-        }
-      });
-
-      return bestIndex !== -1 ? bestIndex : currentIndex;
-    },
-    scrollToItem: (index: number) => {
-      const { positions } = layoutResultRef.current;
-      const container = scrollContainerRef.current;
-      if (!positions || !positions[index] || !container) return;
-
-      const pos = positions[index];
-      const itemTop = pos.top;
-      const itemBottom = pos.top + pos.height;
-      const viewportTop = container.scrollTop;
-      const viewportHeight = container.clientHeight;
-      const viewportBottom = viewportTop + viewportHeight;
-
-      const paddingOffset = 20;
-
-      if (itemTop < viewportTop + paddingOffset) {
-        container.scrollTo({ top: Math.max(0, itemTop - paddingOffset), behavior: 'smooth' });
-      } else if (itemBottom > viewportBottom - paddingOffset) {
-        container.scrollTo({ top: itemBottom - viewportHeight + paddingOffset, behavior: 'smooth' });
-      }
-    }
-  }));
-
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-
-    // Bypass if clicking on interactive elements (checkboxes, buttons, etc)
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('[role="button"]')) {
-      return;
-    }
-
-    // Check if we're clicking on a draggable item (ImageCard)
-    // data-drag-source is our custom marker on the ImageCard component
-    const isOverItem = !!(
-      target.closest('[data-drag-source="true"]') ||
-      target.tagName === 'IMG'
+            return true;
+        },
+        [scheduleGridOffsetMeasure]
     );
 
-    if (isOverItem) {
-      return;
-    }
-
-    if (!containerRef.current || !scrollContainerRef.current) return;
-
-
-
-    // Use currentTarget to get the container's rect for consistent coordinates
-    const rect = containerRef.current.getBoundingClientRect();
-    const startX = e.clientX - rect.left;
-    const startY = e.clientY - rect.top;
-
-    dragStartRef.current = { x: startX, y: startY };
-    isDraggingRef.current = false;
-
-    // Prevent default for background clicks to enable box selection
-    e.preventDefault();
-
-    const handleWindowMove = (we: MouseEvent) => {
-      if (!dragStartRef.current || !containerRef.current) return;
-
-      const currentRect = containerRef.current.getBoundingClientRect();
-      // getBoundingClientRect() accounts for scroll, so these are grid-absolute
-      const currentX = we.clientX - currentRect.left;
-      const currentY = we.clientY - currentRect.top;
-
-      if (!isDraggingRef.current) {
-        const dx = Math.abs(currentX - dragStartRef.current.x);
-        const dy = Math.abs(currentY - dragStartRef.current.y);
-        if (dx > 5 || dy > 5) {
-          isDraggingRef.current = true;
+    const markScrolling = useCallback(() => {
+        if (!isScrollingRef.current) {
+            isScrollingRef.current = true;
+            setIsScrolling(true);
         }
-      }
 
-      if (isDraggingRef.current) {
-        const x = Math.min(dragStartRef.current.x, currentX);
-        const y = Math.min(dragStartRef.current.y, currentY);
-        const w = Math.abs(currentX - dragStartRef.current.x);
-        const h = Math.abs(currentY - dragStartRef.current.y);
+        if (scrollMotionTimerRef.current !== null) {
+            window.clearTimeout(scrollMotionTimerRef.current);
+        }
 
-        setDragBox({ x, y, w, h });
-      }
-    };
+        scrollMotionTimerRef.current = window.setTimeout(() => {
+            scrollMotionTimerRef.current = null;
+            isScrollingRef.current = false;
+            setIsScrolling(false);
+        }, SCROLL_MOTION_SUPPRESSION_MS);
+    }, []);
 
-    const handleWindowUp = (we: MouseEvent) => {
-      window.removeEventListener('mousemove', handleWindowMove);
-      window.removeEventListener('mouseup', handleWindowUp);
+    useEffect(() => {
+        onRangeSelectionRef.current = onRangeSelection;
+        onBackgroundClickRef.current = onBackgroundClick;
+        onEndReachedRef.current = onEndReached;
+    }, [onRangeSelection, onBackgroundClick, onEndReached]);
 
-      if (isDraggingRef.current && dragStartRef.current && onRangeSelectionRef.current && containerRef.current) {
-        const currentRect = containerRef.current.getBoundingClientRect();
-        // getBoundingClientRect() accounts for scroll, so these are grid-absolute
-        const currentX = we.clientX - currentRect.left;
-        const currentY = we.clientY - currentRect.top;
+    // Measure container width
+    useLayoutEffect(() => {
+        let rafId: number | null = null;
 
-        // Box coordinates are already grid-absolute
-        const gx = Math.min(dragStartRef.current.x, currentX);
-        const gy = Math.min(dragStartRef.current.y, currentY);
-        const gw = Math.abs(currentX - dragStartRef.current.x);
-        const gh = Math.abs(currentY - dragStartRef.current.y);
+        // Throttling State
+        let lastUpdate = 0;
+        const THROTTLE_MS = 32; // ~30fps updates for layout calculation during resize
 
-        const selectedIndexes: number[] = [];
-        const currentPositions = layoutResultRef.current.positions;
+        const observer = new ResizeObserver((entries) => {
+            if (entries[0]) {
+                const newWidth = entries[0].contentRect.width;
 
-        // Check overlap using grid-absolute coordinates
-        currentPositions.forEach((pos, index) => {
-          // Vertical bounds check first
-          if (pos.top > gy + gh || pos.top + pos.height < gy) return;
+                if (suspendResizeLayoutRef.current) {
+                    pendingResizeWidthRef.current = newWidth;
+                    return;
+                }
 
-          const overlap = (
-            pos.left < gx + gw &&
-            pos.left + pos.width > gx &&
-            pos.top < gy + gh &&
-            pos.top + pos.height > gy
-          );
+                const now = Date.now();
+                if (now - lastUpdate < THROTTLE_MS) {
+                    return;
+                }
+                lastUpdate = now;
 
-          if (overlap) selectedIndexes.push(index);
+                // Cancel any pending update
+                if (rafId !== null) {
+                    cancelAnimationFrame(rafId);
+                }
+
+                rafId = requestAnimationFrame(() => {
+                    rafId = null;
+
+                    if (suspendResizeLayoutRef.current) {
+                        pendingResizeWidthRef.current = newWidth;
+                        return;
+                    }
+
+                    commitContainerWidth(newWidth);
+                });
+            }
         });
 
-        onRangeSelectionRef.current(selectedIndexes, we.shiftKey);
-      } else if (!isDraggingRef.current && !isOverItem && onBackgroundClickRef.current) {
-        // Background click - clear selection
-        onBackgroundClickRef.current();
-      }
+        observer.observe(containerRef.current!);
+        return () => {
+            observer.disconnect();
+            if (rafId !== null) {
+                cancelAnimationFrame(rafId);
+            }
+        };
+    }, [commitContainerWidth]);
 
-      setDragBox(null);
-      dragStartRef.current = null;
-      isDraggingRef.current = false;
+    useEffect(() => {
+        const wasSuspended = wasResizeLayoutSuspendedRef.current;
+        wasResizeLayoutSuspendedRef.current = suspendResizeLayout;
+
+        if (suspendResizeLayout || !wasSuspended) {
+            return;
+        }
+
+        const pendingWidth = pendingResizeWidthRef.current;
+        pendingResizeWidthRef.current = null;
+
+        const fallbackWidth = containerRef.current?.getBoundingClientRect().width;
+        const finalWidth = pendingWidth ?? fallbackWidth;
+
+        commitContainerWidth(finalWidth!, true);
+    }, [suspendResizeLayout, commitContainerWidth]);
+
+    // Track scroll position with requestAnimationFrame
+    useEffect(() => {
+        const scrollContainer = scrollContainerRef.current;
+        if (!scrollContainer) return;
+
+        let rafId: number;
+        let lastCallTime = 0;
+
+        const handleScroll = (suppressMotion: boolean) => {
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                if (suppressMotion) {
+                    markScrolling();
+                }
+                setScrollTop(scrollContainer.scrollTop);
+                scheduleGridOffsetMeasure();
+
+                // Infinite Scroll Trigger
+                const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
+                if (scrollHeight - (scrollTop + clientHeight) < 6000) {
+                    const now = Date.now();
+                    if (now - lastCallTime > 200) {
+                        lastCallTime = now;
+                        onEndReachedRef.current?.();
+                    }
+                }
+            });
+        };
+
+        // Also use a ResizeObserver on the document or body to catch layout shifts above us?
+        // Or just rely on scroll events? Pinned Shelf animation doesn't trigger scroll event though!
+        // We need a loop to track offsetTop during animations if the user is NOT scrolling.
+        // The safest way is to read offsetTop during the RENDER PHASE or check it periodically?
+
+        const handleScrollEvent = () => handleScroll(true);
+
+        handleScroll(false);
+        scrollContainer.addEventListener('scroll', handleScrollEvent, { passive: true });
+
+        return () => {
+            scrollContainer.removeEventListener('scroll', handleScrollEvent);
+            cancelAnimationFrame(rafId);
+        };
+    }, [scrollContainerRef, scheduleGridOffsetMeasure, markScrolling]);
+
+    // --- Layout Engine Integration ---
+    const { positions, totalHeight, columns, rowHeight } = useMemo(() => {
+        const result = calculateLayout({
+            items,
+            layoutMode: layout,
+            containerWidth,
+            minItemWidth,
+            gap,
+            padding,
+            getItemRatio,
+        });
+        return result;
+    }, [items, layout, containerWidth, minItemWidth, gap, padding, getItemRatio]);
+
+    useLayoutEffect(() => {
+        scheduleGridOffsetMeasure();
+
+        let frame = 0;
+        let rafId: number;
+        const settle = () => {
+            measureGridOffset();
+            frame += 1;
+            if (frame < 12) {
+                rafId = requestAnimationFrame(settle);
+            }
+        };
+
+        rafId = requestAnimationFrame(settle);
+        return () => cancelAnimationFrame(rafId);
+    }, [items.length, layout, totalHeight, scheduleGridOffsetMeasure, measureGridOffset]);
+
+    useEffect(() => {
+        return () => {
+            if (gridOffsetRafRef.current !== null) {
+                cancelAnimationFrame(gridOffsetRafRef.current);
+            }
+            if (scrollMotionTimerRef.current !== null) {
+                window.clearTimeout(scrollMotionTimerRef.current);
+            }
+        };
+    }, []);
+
+    // Sync positions for event handlers and imperative handle
+    useEffect(() => {
+        layoutResultRef.current = { positions, totalHeight, columns, rowHeight };
+    }, [positions, totalHeight, columns, rowHeight]);
+
+    useEffect(() => {
+        if (onLayoutChange) {
+            onLayoutChange(columns, rowHeight);
+        }
+    }, [columns, rowHeight, onLayoutChange]);
+
+    // --- Exposed Methods ---
+    useImperativeHandle(ref, () => ({
+        navigate: (currentIndex: number, key: string) => {
+            const { positions } = layoutResultRef.current;
+            if (!positions || positions.length === 0) return 0;
+            if (currentIndex < 0) return 0;
+            if (currentIndex >= positions.length) return positions.length - 1;
+
+            // Sequential Nav
+            if (key === 'ArrowLeft') return Math.max(0, currentIndex - 1);
+            if (key === 'ArrowRight') return Math.min(positions.length - 1, currentIndex + 1);
+
+            // Spatial Nav
+            const currentPos = positions[currentIndex];
+            const cx = currentPos.left + currentPos.width / 2;
+            const cy = currentPos.top + currentPos.height / 2;
+
+            let bestIndex = -1;
+            let minScore = Infinity;
+
+            // Use a localized search for better performance in spatial nav too
+            // Only check items within a reasonable vertical range
+            const visibleRange = 2000;
+
+            positions.forEach((pos, index) => {
+                if (index === currentIndex) return;
+
+                // Optimization: Skip items too far away vertically
+                if (Math.abs(pos.top - currentPos.top) > visibleRange) return;
+
+                const tcx = pos.left + pos.width / 2;
+                const tcy = pos.top + pos.height / 2;
+
+                let isValid = false;
+                if (key === 'ArrowUp') {
+                    if (tcy < cy) isValid = true;
+                } else if (key === 'ArrowDown') {
+                    if (tcy > cy) isValid = true;
+                }
+
+                if (isValid) {
+                    const dy = tcy - cy;
+                    const dx = Math.abs(tcx - cx);
+                    const score = dx * dx * 4 + dy * dy;
+
+                    if (score < minScore) {
+                        minScore = score;
+                        bestIndex = index;
+                    }
+                }
+            });
+
+            return bestIndex !== -1 ? bestIndex : currentIndex;
+        },
+        scrollToItem: (index: number) => {
+            const { positions } = layoutResultRef.current;
+            const container = scrollContainerRef.current;
+            if (!positions || !positions[index] || !container) return;
+
+            const pos = positions[index];
+            const itemTop = pos.top;
+            const itemBottom = pos.top + pos.height;
+            const viewportTop = container.scrollTop;
+            const viewportHeight = container.clientHeight;
+            const viewportBottom = viewportTop + viewportHeight;
+
+            const paddingOffset = 20;
+
+            if (itemTop < viewportTop + paddingOffset) {
+                container.scrollTo({ top: Math.max(0, itemTop - paddingOffset), behavior: 'smooth' });
+            } else if (itemBottom > viewportBottom - paddingOffset) {
+                container.scrollTo({ top: itemBottom - viewportHeight + paddingOffset, behavior: 'smooth' });
+            }
+        },
+    }));
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+
+        // Bypass if clicking on interactive elements (checkboxes, buttons, etc)
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('input') || target.closest('[role="button"]')) {
+            return;
+        }
+
+        // Check if we're clicking on a draggable item (ImageCard)
+        // data-drag-source is our custom marker on the ImageCard component
+        const isOverItem = !!(target.closest('[data-drag-source="true"]') || target.tagName === 'IMG');
+
+        if (isOverItem) {
+            return;
+        }
+
+        if (!containerRef.current || !scrollContainerRef.current) return;
+
+        // Use currentTarget to get the container's rect for consistent coordinates
+        const rect = containerRef.current.getBoundingClientRect();
+        const startX = e.clientX - rect.left;
+        const startY = e.clientY - rect.top;
+
+        dragStartRef.current = { x: startX, y: startY };
+        isDraggingRef.current = false;
+
+        // Prevent default for background clicks to enable box selection
+        e.preventDefault();
+
+        const handleWindowMove = (we: MouseEvent) => {
+            if (!dragStartRef.current || !containerRef.current) return;
+
+            const currentRect = containerRef.current.getBoundingClientRect();
+            // getBoundingClientRect() accounts for scroll, so these are grid-absolute
+            const currentX = we.clientX - currentRect.left;
+            const currentY = we.clientY - currentRect.top;
+
+            if (!isDraggingRef.current) {
+                const dx = Math.abs(currentX - dragStartRef.current.x);
+                const dy = Math.abs(currentY - dragStartRef.current.y);
+                if (dx > 5 || dy > 5) {
+                    isDraggingRef.current = true;
+                }
+            }
+
+            if (isDraggingRef.current) {
+                const x = Math.min(dragStartRef.current.x, currentX);
+                const y = Math.min(dragStartRef.current.y, currentY);
+                const w = Math.abs(currentX - dragStartRef.current.x);
+                const h = Math.abs(currentY - dragStartRef.current.y);
+
+                setDragBox({ x, y, w, h });
+            }
+        };
+
+        const handleWindowUp = (we: MouseEvent) => {
+            window.removeEventListener('mousemove', handleWindowMove);
+            window.removeEventListener('mouseup', handleWindowUp);
+
+            if (isDraggingRef.current && dragStartRef.current && onRangeSelectionRef.current && containerRef.current) {
+                const currentRect = containerRef.current.getBoundingClientRect();
+                // getBoundingClientRect() accounts for scroll, so these are grid-absolute
+                const currentX = we.clientX - currentRect.left;
+                const currentY = we.clientY - currentRect.top;
+
+                // Box coordinates are already grid-absolute
+                const gx = Math.min(dragStartRef.current.x, currentX);
+                const gy = Math.min(dragStartRef.current.y, currentY);
+                const gw = Math.abs(currentX - dragStartRef.current.x);
+                const gh = Math.abs(currentY - dragStartRef.current.y);
+
+                const selectedIndexes: number[] = [];
+                const currentPositions = layoutResultRef.current.positions;
+
+                // Check overlap using grid-absolute coordinates
+                currentPositions.forEach((pos, index) => {
+                    // Vertical bounds check first
+                    if (pos.top > gy + gh || pos.top + pos.height < gy) return;
+
+                    const overlap = pos.left < gx + gw && pos.left + pos.width > gx && pos.top < gy + gh && pos.top + pos.height > gy;
+
+                    if (overlap) selectedIndexes.push(index);
+                });
+
+                onRangeSelectionRef.current(selectedIndexes, we.shiftKey);
+            } else if (!isDraggingRef.current && !isOverItem && onBackgroundClickRef.current) {
+                // Background click - clear selection
+                onBackgroundClickRef.current();
+            }
+
+            setDragBox(null);
+            dragStartRef.current = null;
+            isDraggingRef.current = false;
+        };
+
+        window.addEventListener('mousemove', handleWindowMove);
+        window.addEventListener('mouseup', handleWindowUp);
     };
 
-    window.addEventListener('mousemove', handleWindowMove);
-    window.addEventListener('mouseup', handleWindowUp);
-  };
+    // --- Virtualization Rendering ---
+    const visibleItemDescriptors: VisibleGridItem<T>[] = [];
 
-  // --- Virtualization Rendering ---
-  const visibleItemDescriptors: VisibleGridItem<T>[] = [];
+    // Use container height if possible, fallback to window
+    const visibleHeight = scrollContainerRef.current?.clientHeight ?? window.innerHeight;
+    const buffer = 1500; // Reduced buffer to avoid texture thrashing
 
+    // Relative Scroll Position: Subtract the grid's top offset from container scrollTop
+    // This maps "Scroll Container Space" to "Grid Local Space"
+    const relativeScrollTop = scrollTop - gridOffset;
 
-  // Use container height if possible, fallback to window
-  const visibleHeight = scrollContainerRef.current?.clientHeight ?? window.innerHeight;
-  const buffer = 1500; // Reduced buffer to avoid texture thrashing
+    const minVisible = relativeScrollTop - buffer;
+    const maxVisible = relativeScrollTop + visibleHeight + buffer;
 
-  // Relative Scroll Position: Subtract the grid's top offset from container scrollTop
-  // This maps "Scroll Container Space" to "Grid Local Space"
-  const relativeScrollTop = scrollTop - gridOffset;
+    // Render Loop Optimization
+    // Since positions are generally sorted by 'top' (or close to it in masonry),
+    // we can optimize. However, Masonry isn't strictly sorted by index, but it IS roughly sorted.
+    // We can't do a strict binary search on 'positions' because index 10 might be above index 9 in masonry.
+    // But they are monotonic-ish.
+    // For safety and simplicity with performance:
+    // iterate, but if we find items significantly below maxVisible, we can STOP if we are sure subsequent items start lower.
+    // In our layout engine, items are added in order. In Masonry, an item might be placed higher than previous,
+    // but generally top values increase.
+    // Let's stick to full iteration but FAST checks, or finding a start index.
 
-  const minVisible = relativeScrollTop - buffer;
-  const maxVisible = relativeScrollTop + visibleHeight + buffer;
+    // Actually, 'positions' array is ordered by Index.
+    // In Grid: pos[i].top is non-decreasing.
+    // In Masonry: pos[i].top is roughly non-decreasing but can jitter.
 
-  // Render Loop Optimization
-  // Since positions are generally sorted by 'top' (or close to it in masonry),
-  // we can optimize. However, Masonry isn't strictly sorted by index, but it IS roughly sorted.
-  // We can't do a strict binary search on 'positions' because index 10 might be above index 9 in masonry.
-  // But they are monotonic-ish.
-  // For safety and simplicity with performance:
-  // iterate, but if we find items significantly below maxVisible, we can STOP if we are sure subsequent items start lower.
-  // In our layout engine, items are added in order. In Masonry, an item might be placed higher than previous, 
-  // but generally top values increase.
-  // Let's stick to full iteration but FAST checks, or finding a start index.
+    // Optimization: Find start index using binary search approximation or just linear search that breaks?
+    // Linear search that breaks is unsafe for Masonry if a small item is placed high up later.
+    // BUT, usually Masonry fills top-down. It's very unlikely item 1000 is at top:0 if item 500 is at top:5000.
+    // So we can find a safe start index.
 
-  // Actually, 'positions' array is ordered by Index.
-  // In Grid: pos[i].top is non-decreasing.
-  // In Masonry: pos[i].top is roughly non-decreasing but can jitter.
+    // Let's implement a "Safe Find":
+    // Scan blocks of 100? No, let's just iterate all for now but with the simple bound check.
+    // JS loops are fast. 10k items is 1ms.
+    // The React.createElement is the slow part.
+    // Binary search for the first potentially visible item
+    // We look for the first item where (item.top + item.height) > minVisible
+    let startIndex = 0;
+    let low = 0;
+    let high = positions.length - 1;
 
-  // Optimization: Find start index using binary search approximation or just linear search that breaks?
-  // Linear search that breaks is unsafe for Masonry if a small item is placed high up later.
-  // BUT, usually Masonry fills top-down. It's very unlikely item 1000 is at top:0 if item 500 is at top:5000.
-  // So we can find a safe start index.
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const pos = positions[mid];
 
-  // Let's implement a "Safe Find":
-  // Scan blocks of 100? No, let's just iterate all for now but with the simple bound check.
-  // JS loops are fast. 10k items is 1ms. 
-  // The React.createElement is the slow part.
-  // Binary search for the first potentially visible item
-  // We look for the first item where (item.top + item.height) > minVisible
-  let startIndex = 0;
-  let low = 0;
-  let high = positions.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const pos = positions[mid];
-
-    // If this item ends before our view starts, we need to look higher up the array (later items)
-    if (pos.top + pos.height < minVisible) {
-      low = mid + 1;
-    } else {
-      // This item is potentially visible, but maybe there's an earlier one too
-      startIndex = mid;
-      high = mid - 1;
-    }
-  }
-
-  const len = positions.length;
-  for (let i = startIndex; i < len; i++) {
-    const pos = positions[i];
-
-    // Fast bounds check
-    // Overlap: pos.bottom > minVisible && pos.top < maxVisible
-    if ((pos.top + pos.height) > minVisible && (pos.top) < maxVisible) {
-      visibleItemDescriptors.push({
-        item: items[i],
-        index: i,
-        style: {
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: pos.width,
-          height: pos.height,
-          transform: `translate3d(${pos.left}px, ${pos.top}px, 0)`
-        },
-        layout: { x: pos.left, y: pos.top, width: pos.width, height: pos.height }
-      });
+        // If this item ends before our view starts, we need to look higher up the array (later items)
+        if (pos.top + pos.height < minVisible) {
+            low = mid + 1;
+        } else {
+            // This item is potentially visible, but maybe there's an earlier one too
+            startIndex = mid;
+            high = mid - 1;
+        }
     }
 
-    // Optimization break: If we are WAY past maxVisible, we can stop.
-    // In masonry, it's possible the next item is higher, so we give a generous buffer before breaking.
-    // If current item top is > maxVisible + 2000, it's very unlikely a subsequent item is visible.
-    if (pos.top > maxVisible + 3000) {
-      break;
+    const len = positions.length;
+    for (let i = startIndex; i < len; i++) {
+        const pos = positions[i];
+
+        // Fast bounds check
+        // Overlap: pos.bottom > minVisible && pos.top < maxVisible
+        if (pos.top + pos.height > minVisible && pos.top < maxVisible) {
+            visibleItemDescriptors.push({
+                item: items[i],
+                index: i,
+                style: {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: pos.width,
+                    height: pos.height,
+                    transform: `translate3d(${pos.left}px, ${pos.top}px, 0)`,
+                },
+                layout: { x: pos.left, y: pos.top, width: pos.width, height: pos.height },
+            });
+        }
+
+        // Optimization break: If we are WAY past maxVisible, we can stop.
+        // In masonry, it's possible the next item is higher, so we give a generous buffer before breaking.
+        // If current item top is > maxVisible + 2000, it's very unlikely a subsequent item is visible.
+        if (pos.top > maxVisible + 3000) {
+            break;
+        }
     }
-  }
 
-  const motionTransitionKey = resizeMotionVersion > 0
-    ? `${transitionKey ?? 'gallery'}|resize:${resizeMotionVersion}`
-    : transitionKey;
+    const motionTransitionKey = resizeMotionVersion > 0 ? `${transitionKey ?? 'gallery'}|resize:${resizeMotionVersion}` : transitionKey;
 
-  const galleryMotion = useGalleryMotion({
-    transitionKey: motionTransitionKey,
-    visibleItemCount: visibleItemDescriptors.length,
-    isScrolling
-  });
+    const galleryMotion = useGalleryMotion({
+        transitionKey: motionTransitionKey,
+        visibleItemCount: visibleItemDescriptors.length,
+        isScrolling,
+    });
 
-  const visibleItems = visibleItemDescriptors.map(({ item, index, style, layout }) => {
-    const itemStyle: React.CSSProperties = galleryMotion.shouldAnimateLayout
-      ? {
-        ...style,
-        transition: galleryMotion.layoutTransition,
-        willChange: 'transform'
-      }
-      : style;
+    const visibleItems = visibleItemDescriptors.map(({ item, index, style, layout }) => {
+        const itemStyle: React.CSSProperties = galleryMotion.shouldAnimateLayout
+            ? {
+                  ...style,
+                  transition: galleryMotion.layoutTransition,
+                  willChange: 'transform',
+              }
+            : style;
 
-    return renderItem(item, itemStyle, index, layout);
-  });
+        return renderItem(item, itemStyle, index, layout);
+    });
 
-  const containerStyle: React.CSSProperties = {
-    height: Math.max(100, totalHeight),
-    position: 'relative',
-    width: '100%',
-    minHeight: '100%'
-  };
+    const containerStyle: React.CSSProperties = {
+        height: Math.max(100, totalHeight),
+        position: 'relative',
+        width: '100%',
+        minHeight: '100%',
+    };
 
-  const motionClassName = galleryMotion.shouldAnimateGrid ? 'gallery-grid-settle' : '';
+    const motionClassName = galleryMotion.shouldAnimateGrid ? 'gallery-grid-settle' : '';
 
-  return (
-    <div
-      ref={containerRef}
-      style={containerStyle}
-      className={`outline-none overflow-hidden ${motionClassName} ${className || ''}`}
-      onMouseDown={handleMouseDown}
-    >
-      {visibleItems}
+    return (
+        <div
+            ref={containerRef}
+            style={containerStyle}
+            className={`outline-none overflow-hidden ${motionClassName} ${className || ''}`}
+            onMouseDown={handleMouseDown}
+        >
+            {visibleItems}
 
-      {
-        dragBox && (
-          <div
-            className="absolute bg-sage-500/30 border-2 border-sage-400 z-[60] pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
-            style={{
-              left: dragBox.x,
-              top: dragBox.y,
-              width: dragBox.w,
-              height: dragBox.h
-            }}
-          />
-        )
-      }
-    </div>
-  );
+            {dragBox && (
+                <div
+                    className="absolute bg-sage-500/30 border-2 border-sage-400 z-[60] pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
+                    style={{
+                        left: dragBox.x,
+                        top: dragBox.y,
+                        width: dragBox.w,
+                        height: dragBox.h,
+                    }}
+                />
+            )}
+        </div>
+    );
 };
 
 export const VirtualGrid = forwardRef(VirtualGridInternal) as <T>(
-  props: VirtualGridProps<T> & { ref?: React.Ref<VirtualGridHandle> }
+    props: VirtualGridProps<T> & { ref?: React.Ref<VirtualGridHandle> }
 ) => React.ReactElement;

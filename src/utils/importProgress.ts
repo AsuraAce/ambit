@@ -12,11 +12,9 @@ interface StableImportProgressOptions {
     sourcePath?: string;
 }
 
-const folderLabel = (count: number): string =>
-    `${count} folders`;
+const folderLabel = (count: number): string => `${count} folders`;
 
-const withPrefix = (message: string, prefix?: string): string =>
-    prefix ? `${prefix}: ${message}` : message;
+const withPrefix = (message: string, prefix?: string): string => (prefix ? `${prefix}: ${message}` : message);
 
 export const formatStableImportProgress = ({
     current,
@@ -25,19 +23,23 @@ export const formatStableImportProgress = ({
     phase,
     prefix,
     sourceIndex,
-    sourcePath
+    sourcePath,
 }: StableImportProgressOptions): SyncProgress => {
     const isSingleFolder = sourceCount === 1;
-    const message = phase === 'finalizing'
-        ? withPrefix('Finalizing import...', prefix)
-        : phase === 'scanning'
-            ? withPrefix(isSingleFolder ? 'Scanning folder...' : `Scanning ${folderLabel(sourceCount)}...`, prefix)
-            : withPrefix(isSingleFolder ? 'Importing images from folder...' : `Importing images from ${folderLabel(sourceCount)}...`, prefix);
+    const message =
+        phase === 'finalizing'
+            ? withPrefix('Finalizing import...', prefix)
+            : phase === 'scanning'
+              ? withPrefix(isSingleFolder ? 'Scanning folder...' : `Scanning ${folderLabel(sourceCount)}...`, prefix)
+              : withPrefix(
+                    isSingleFolder ? 'Importing images from folder...' : `Importing images from ${folderLabel(sourceCount)}...`,
+                    prefix
+                );
 
     const progress: SyncProgress = {
         current,
         total,
-        message
+        message,
     };
 
     if (sourceCount === 1 && sourcePath) {

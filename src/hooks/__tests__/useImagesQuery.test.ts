@@ -25,34 +25,34 @@ const mocks = vi.hoisted(() => ({
     searchImages: vi.fn(),
     countImages: vi.fn(),
     countGlobalImages: vi.fn(),
-    countLibraryScopes: vi.fn()
+    countLibraryScopes: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
-    ...await importOriginal<typeof import('@tanstack/react-query')>(),
+    ...(await importOriginal<typeof import('@tanstack/react-query')>()),
     useInfiniteQuery: (config: unknown) => {
         mocks.config = config;
         return { status: 'success', data: undefined };
-    }
+    },
 }));
 
 vi.mock('../../services/runtime', () => ({
-    isBrowserMockMode: () => mocks.browserMockMode
+    isBrowserMockMode: () => mocks.browserMockMode,
 }));
 
 vi.mock('../../services/browserMockData', () => ({
-    searchBrowserMockImages: mocks.searchBrowserMockImages
+    searchBrowserMockImages: mocks.searchBrowserMockImages,
 }));
 
 vi.mock('../../utils/sqlHelpers', () => ({
-    buildSqlWhereClause: mocks.buildSqlWhereClause
+    buildSqlWhereClause: mocks.buildSqlWhereClause,
 }));
 
 vi.mock('../../services/db/searchRepo', () => ({
     searchImages: mocks.searchImages,
     countImages: mocks.countImages,
     countGlobalImages: mocks.countGlobalImages,
-    countLibraryScopes: mocks.countLibraryScopes
+    countLibraryScopes: mocks.countLibraryScopes,
 }));
 
 const settings: AppSettings = {
@@ -65,46 +65,59 @@ const settings: AppSettings = {
     promptMaskingEnabled: true,
     maskedKeywords: ['secret'],
     maskingMode: 'blur',
-    enableAI: false
+    enableAI: false,
 };
 
-const image = (overrides: Partial<AIImage> = {}): AIImage => ({
-    id: 'image-1',
-    path: 'C:/images/image.png',
-    filename: 'image.png',
-    timestamp: 100,
-    fileSize: 50,
-    isPinned: false,
-    ...overrides
-} as AIImage);
+const image = (overrides: Partial<AIImage> = {}): AIImage =>
+    ({
+        id: 'image-1',
+        path: 'C:/images/image.png',
+        filename: 'image.png',
+        timestamp: 100,
+        fileSize: 50,
+        isPinned: false,
+        ...overrides,
+    }) as AIImage;
 
 const renderImagesHook = (
     sortOption: SortOption = 'date_desc',
     collections: Collection[] = [],
     settingsLoaded = true,
     querySettings: AppSettings = settings
-) => renderHook(() => useImagesQuery({
-    filters: createDefaultFilters({ collectionId: collections[0]?.id ?? null }),
-    sortOption,
-    settings: querySettings,
-    privacyEnabled: true,
-    allCollections: collections,
-    settingsLoaded
-}));
+) =>
+    renderHook(() =>
+        useImagesQuery({
+            filters: createDefaultFilters({ collectionId: collections[0]?.id ?? null }),
+            sortOption,
+            settings: querySettings,
+            privacyEnabled: true,
+            allCollections: collections,
+            settingsLoaded,
+        })
+    );
 
 const config = (): InfiniteQueryConfig => mocks.config as InfiniteQueryConfig;
 
 describe('useImagesQuery', () => {
     it.each(['pending', 'failed'] as const)('delivers the gallery independently of %s optional scope counts', async (state) => {
-        mocks.countLibraryScopes.mockImplementation(() => state === 'pending'
-            ? new Promise(() => {})
-            : Promise.reject(new Error('Optional counts unavailable')));
+        mocks.countLibraryScopes.mockImplementation(() =>
+            state === 'pending' ? new Promise(() => {}) : Promise.reject(new Error('Optional counts unavailable'))
+        );
         mocks.searchImages.mockResolvedValue([image()]);
         renderImagesHook();
         // Drain the immediately resolved page requests; no wall-clock timing assumption.
         let page: QueryPage | undefined;
         let failure: unknown;
-        void config().queryFn({ pageParam: undefined }).then(value => { page = value; }, error => { failure = error; });
+        void config()
+            .queryFn({ pageParam: undefined })
+            .then(
+                (value) => {
+                    page = value;
+                },
+                (error) => {
+                    failure = error;
+                }
+            );
         for (let turn = 0; turn < 20; turn++) await Promise.resolve();
         expect(failure).toBeUndefined();
         expect(page?.images).toEqual([image()]);
@@ -125,7 +138,7 @@ describe('useImagesQuery', () => {
             where: 'WHERE hidden = ?',
             params: [0],
             collectionId: 'collection-1',
-            loraName: 'detail'
+            loraName: 'detail',
         });
         mocks.searchImages.mockResolvedValue([]);
         mocks.countImages.mockResolvedValue(7);
@@ -140,13 +153,15 @@ describe('useImagesQuery', () => {
 
     it('builds a smart-collection-aware query key and honors the settings gate', () => {
         const filters = createDefaultFilters({ searchQuery: 'portrait' });
-        const collections = [{
-            id: 'smart',
-            name: 'Smart',
-            imageIds: [],
-            createdAt: 1,
-            filters
-        } satisfies Collection];
+        const collections = [
+            {
+                id: 'smart',
+                name: 'Smart',
+                imageIds: [],
+                createdAt: 1,
+                filters,
+            } satisfies Collection,
+        ];
 
         const { result } = renderImagesHook('date_desc', collections, false);
 
@@ -158,7 +173,7 @@ describe('useImagesQuery', () => {
             'blur',
             ['secret'],
             JSON.stringify(filters),
-            'invoke:none'
+            'invoke:none',
         ]);
         expect(config().enabled).toBe(false);
     });
@@ -173,13 +188,15 @@ describe('useImagesQuery', () => {
     });
 
     it('enables fetching when settingsLoaded is omitted', () => {
-        renderHook(() => useImagesQuery({
-            filters: createDefaultFilters(),
-            sortOption: 'date_desc',
-            settings,
-            privacyEnabled: false,
-            allCollections: []
-        }));
+        renderHook(() =>
+            useImagesQuery({
+                filters: createDefaultFilters(),
+                sortOption: 'date_desc',
+                settings,
+                privacyEnabled: false,
+                allCollections: [],
+            })
+        );
 
         expect(config().enabled).toBe(true);
     });
@@ -194,9 +211,7 @@ describe('useImagesQuery', () => {
 
         expect(config().queryKey[5]).toEqual([]);
         await config().queryFn({ pageParam: undefined });
-        expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
-            expect.any(Object), true, 'blur', [], []
-        );
+        expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(expect.any(Object), true, 'blur', [], []);
         expect(disabledSettings.maskedKeywords).toEqual(['retained']);
     });
 
@@ -208,8 +223,22 @@ describe('useImagesQuery', () => {
 
         await expect(config().queryFn({ pageParam: undefined })).resolves.toBe(browserPage);
         await expect(config().queryFn({ pageParam: { val: 'image.png', id: 'cursor', isPinned: 0 } })).resolves.toBe(browserPage);
-        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(1, expect.any(Object), 'name_asc', 1000, undefined, expect.objectContaining({ settings: expect.any(Object) }));
-        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(2, expect.any(Object), 'name_asc', 1000, 'cursor', expect.objectContaining({ settings: expect.any(Object) }));
+        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(
+            1,
+            expect.any(Object),
+            'name_asc',
+            1000,
+            undefined,
+            expect.objectContaining({ settings: expect.any(Object) })
+        );
+        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(
+            2,
+            expect.any(Object),
+            'name_asc',
+            1000,
+            'cursor',
+            expect.objectContaining({ settings: expect.any(Object) })
+        );
         expect(mocks.buildSqlWhereClause).not.toHaveBeenCalled();
     });
 
@@ -219,7 +248,7 @@ describe('useImagesQuery', () => {
         ['name_desc', 'path', 'DESC'],
         ['size_desc', 'file_size', 'DESC'],
         ['size_asc', 'file_size', 'ASC'],
-        ['date_desc', 'display_timestamp', 'DESC']
+        ['date_desc', 'display_timestamp', 'DESC'],
     ] as const)('maps %s to the expected database ordering', async (sortOption, field, order) => {
         const firstPageImages = [image()];
         mocks.searchImages.mockResolvedValue(firstPageImages);
@@ -230,11 +259,17 @@ describe('useImagesQuery', () => {
             totalCount: 7,
             globalCount: 20,
         });
-        expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
-            expect.any(Object), true, 'blur', ['secret'], []
-        );
+        expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(expect.any(Object), true, 'blur', ['secret'], []);
         expect(mocks.searchImages).toHaveBeenCalledWith(
-            'WHERE hidden = ?', [0], 1000, field, order, false, 'collection-1', 'detail', undefined
+            'WHERE hidden = ?',
+            [0],
+            1000,
+            field,
+            order,
+            false,
+            'collection-1',
+            'detail',
+            undefined
         );
         expect(mocks.countImages).toHaveBeenCalledWith('WHERE hidden = ?', [0], 'collection-1', 'detail');
         expect(mocks.countGlobalImages).toHaveBeenCalled();
@@ -250,10 +285,18 @@ describe('useImagesQuery', () => {
         await expect(config().queryFn({ pageParam: cursor })).resolves.toEqual({
             images: nextImages,
             totalCount: -1,
-            globalCount: -1
+            globalCount: -1,
         });
         expect(mocks.searchImages).toHaveBeenCalledWith(
-            'WHERE hidden = ?', [0], 1000, 'display_timestamp', 'DESC', true, 'collection-1', 'detail', cursor
+            'WHERE hidden = ?',
+            [0],
+            1000,
+            'display_timestamp',
+            'DESC',
+            true,
+            'collection-1',
+            'detail',
+            cursor
         );
         expect(mocks.countImages).not.toHaveBeenCalled();
         expect(mocks.countGlobalImages).not.toHaveBeenCalled();
@@ -266,22 +309,28 @@ describe('useImagesQuery', () => {
         const page = (lastImage: AIImage): QueryPage => ({
             images: [...Array.from({ length: 999 }, (_, index) => image({ id: `filler-${index}` })), lastImage],
             totalCount: 2000,
-            globalCount: 2000
+            globalCount: 2000,
         });
 
         renderImagesHook('name_desc');
         expect(config().getNextPageParam(page(image({ id: 'name', filename: 'z.png', isPinned: true })))).toEqual({
-            val: 'z.png', id: 'name', isPinned: 1
+            val: 'z.png',
+            id: 'name',
+            isPinned: 1,
         });
 
         renderImagesHook('size_asc');
         expect(config().getNextPageParam(page(image({ id: 'size', fileSize: undefined })))).toEqual({
-            val: 0, id: 'size', isPinned: 0
+            val: 0,
+            id: 'size',
+            isPinned: 0,
         });
 
         renderImagesHook('date_asc');
         expect(config().getNextPageParam(page(image({ id: 'date', timestamp: 321 })))).toEqual({
-            val: 321, id: 'date', isPinned: 0
+            val: 321,
+            id: 'date',
+            isPinned: 0,
         });
     });
 
@@ -297,7 +346,7 @@ describe('useImagesQuery', () => {
             'blur',
             ['secret'],
             null,
-            'invoke:none'
+            'invoke:none',
         ];
         const previousQuery = { queryKey: previousSearchKey };
 
@@ -311,15 +360,21 @@ describe('useImagesQuery', () => {
         const previousData = { pages: [{ images: [image()], totalCount: 1, globalCount: 20 }] };
         const key = config().queryKey;
 
-        expect(config().placeholderData(previousData, {
-            queryKey: [...key.slice(0, 3), false, ...key.slice(4)]
-        })).toBeUndefined();
-        expect(config().placeholderData(previousData, {
-            queryKey: [...key.slice(0, 4), 'hide', ...key.slice(5)]
-        })).toBeUndefined();
-        expect(config().placeholderData(previousData, {
-            queryKey: [...key.slice(0, 5), ['different'], ...key.slice(6)]
-        })).toBeUndefined();
+        expect(
+            config().placeholderData(previousData, {
+                queryKey: [...key.slice(0, 3), false, ...key.slice(4)],
+            })
+        ).toBeUndefined();
+        expect(
+            config().placeholderData(previousData, {
+                queryKey: [...key.slice(0, 4), 'hide', ...key.slice(5)],
+            })
+        ).toBeUndefined();
+        expect(
+            config().placeholderData(previousData, {
+                queryKey: [...key.slice(0, 5), ['different'], ...key.slice(6)],
+            })
+        ).toBeUndefined();
         expect(config().placeholderData(previousData)).toBeUndefined();
     });
 
