@@ -172,7 +172,7 @@ const renderWithOpenParserDiagnostics = (image: AIImage = makeImage()) => {
 describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     beforeEach(() => {
         mockSettings.devMode = true;
-        mockClipboardWriteText.mockReset();
+        mockClipboardWriteText.mockReset().mockResolvedValue(undefined);
         mockSave.mockReset();
         mockWriteTextFile.mockReset();
         mockSave.mockResolvedValue('C:/exports/ambit-comfyui-support.json');

@@ -6,8 +6,8 @@ import { FoldersTab } from '../FoldersTab';
 
 const mocks = vi.hoisted(() => ({
     combinedFolders: [] as Array<Record<string, unknown>>,
-    handleRescan: vi.fn(),
-    forceRefresh: vi.fn(),
+    handleRescan: vi.fn().mockResolvedValue(undefined),
+    forceRefresh: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../hooks/useFoldersTabLogic', () => ({
@@ -149,7 +149,7 @@ describe('FoldersTab', () => {
         mocks.handleRescan.mockImplementation(async () => {
             events.push('sync');
         });
-        mocks.forceRefresh.mockImplementation(() => {
+        mocks.forceRefresh.mockImplementation(async () => {
             events.push('refresh');
         });
         render(<FoldersTab settings={settings} setSettings={vi.fn()} />);
