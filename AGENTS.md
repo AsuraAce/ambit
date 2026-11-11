@@ -56,6 +56,7 @@ Start here for common tasks:
 - Check generated binding drift: `pnpm run bindings:check`
 - Tauri compatibility build without packaging: `pnpm run tauri:check`
 - Release verification gate: `pnpm run verify:release`
+- Health report (unused code and dependencies, duplication, size and branch hot spots): `pnpm run health`. It is a report for milestone boundaries, never a gate; keep it out of `verify:release` and CI, and file significant findings as grouped `refactor` issues.
 
 Production app builds run `verify:release` before `tauri build --ci`.
 

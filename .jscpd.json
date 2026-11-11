@@ -1,0 +1,13 @@
+{
+  "minTokens": 70,
+  "reporters": ["console"],
+  "ignore": [
+    "src/bindings.ts",
+    "src/test/**",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "src-tauri/src/**/tests/**",
+    "src-tauri/src/**/tests.rs"
+  ]
+}
