@@ -1217,7 +1217,12 @@ mod tests {
         use std::time::Duration;
         use tauri_plugin_fs::FsExt;
 
-        let root = temp_dir("register-command");
+        // Grants are stored canonical, and the scopes canonicalize only a path that
+        // exists, so `readable` below asks about a missing `image.png` as spelled.
+        // A temp folder spelled another way (the runner's 8.3 `RUNNER~1`, a
+        // junction) would then never match, so spell the root canonically. Real
+        // asset requests name files that exist, which the scope does resolve.
+        let root = fs::canonicalize(temp_dir("register-command")).unwrap();
         let granted = root.join("granted");
         let beside = root.join("beside");
         fs::create_dir_all(granted.join("inside")).unwrap();
