@@ -58,6 +58,15 @@ const readF32 = (record: MetadataRecord, ...keys: string[]): number | undefined 
     return undefined;
 };
 
+// `model_hash` is a string (InvokeAI v2.x), sometimes a number, and may be a nested model record
+// whose `hash` carries a prefix such as "blake3:". Anything else yields '' rather than "[object Object]".
+const readModelHash = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return value ? String(value) : '';
+    if (isRecord(value) && typeof value.hash === 'string' && value.hash) return value.hash.split(':').pop() || value.hash;
+    return '';
+};
+
 const readResourceName = (record: MetadataRecord): string => {
     const model = asRecord(record.model);
     if (Object.keys(model).length > 0) return readString(model, 'model_name', 'name', 'default');
@@ -448,15 +457,11 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     }
 
     // Hash extraction (v2.x uses model_hash at root, v3.5+ uses model.hash)
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
-    if (rootRecord.model_hash) mapped.modelHash = String(rootRecord.model_hash);
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
-    else if (metaRecord.model_hash) mapped.modelHash = String(metaRecord.model_hash);
-    else if (asRecord(actualRoot.model).hash) {
-        // Strip prefixes like "blake3:" if present
-        const hashStr = String(asRecord(actualRoot.model).hash);
-        mapped.modelHash = hashStr.split(':').pop() || hashStr;
-    }
+    const modelHash =
+        readModelHash(rootRecord.model_hash) ||
+        readModelHash(metaRecord.model_hash) ||
+        (isRecord(actualRoot.model) ? readModelHash(actualRoot.model) : '');
+    if (modelHash) mapped.modelHash = modelHash;
 
     // Additional fields for parity with Rust ImageMetadata
     mapped.clipSkip = readNumber(actualRoot, 'clip_skip', 'clipSkip') ?? mapped.clipSkip;

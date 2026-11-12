@@ -552,6 +552,24 @@ describe('AppContextMenu', () => {
         expect(tauriMocks.invoke).not.toHaveBeenCalled();
     });
 
+    it('never offers an [object Object] checkpoint when the model name is itself a record', () => {
+        const image = createImage(
+            {},
+            {
+                model: { name: { key: 'abc', base: 'sdxl' } } as unknown as string,
+                modelHash: undefined,
+                loras: undefined,
+                embeddings: undefined,
+                hypernetworks: undefined,
+                controlNets: undefined,
+                ipAdapters: undefined,
+            }
+        );
+        renderMenu({ images: [image] });
+
+        expect(requireMenu().modelsForThumbnail).toEqual([]);
+    });
+
     it('uses checkpoint fallback names only when a model hash is available', () => {
         const namelessObject = createImage(
             {},

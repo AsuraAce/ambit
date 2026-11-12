@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { AIImage } from '../types';
 import MetadataWorker from '../workers/metadata.worker.ts?worker';
 import { startBackgroundDiagnostic } from '../utils/backgroundDiagnostics';
+import { readModelName } from '../utils/formatUtils';
 
 export interface StackGroup {
     id: string;
@@ -10,15 +11,6 @@ export interface StackGroup {
     reason: string;
     confidence: number;
 }
-
-const getModelName = (model: unknown): string => {
-    if (typeof model === 'string') return model;
-    if (model && typeof model === 'object' && 'name' in model) {
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
-        return String((model as { name?: unknown }).name || '');
-    }
-    return '';
-};
 
 // Global worker instance to prevent respawning
 let sharedWorker: Worker | null = null;
@@ -105,7 +97,7 @@ export const useStacking = (images: AIImage[]) => {
                 metadata: {
                     positivePrompt: img.metadata.positivePrompt,
                     seed: img.metadata.seed,
-                    model: getModelName(img.metadata.model),
+                    model: readModelName(img.metadata.model),
                     steps: img.metadata.steps,
                     cfg: img.metadata.cfg,
                     variationId: img.metadata.variationId,
