@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     refreshCollections: vi.fn(),
     refreshMetadata: vi.fn(),
     open: vi.fn(),
+    revokeLibraryGrant: vi.fn(),
     normalizePath: vi.fn((path: string) => path.replace(/\\/g, '/')),
     setImportProgress: vi.fn(),
     setIsImporting: vi.fn(),
@@ -43,7 +44,7 @@ vi.mock('../../../../services/a1111/config', () => ({
     getUnlinkedPriorityCandidatePaths: mocks.getUnlinkedPriorityCandidatePaths,
 }));
 
-vi.mock('../../../../services/assetScope', () => ({ pickLibraryFolder: mocks.open }));
+vi.mock('../../../../services/assetScope', () => ({ pickLibraryFolder: mocks.open, revokeLibraryGrant: mocks.revokeLibraryGrant }));
 vi.mock('../../../../utils/pathUtils', () => ({ normalizePath: mocks.normalizePath }));
 
 const createSettings = (): AppSettings => ({
@@ -490,6 +491,20 @@ describe('A1111Tab discovery warnings', () => {
         );
         expect(paths).toEqual(expect.arrayContaining(['E:/Archive', 'D:/Browsed/SD']));
         expect(mocks.open).toHaveBeenCalledWith('a1111Root', 'Select SD Folder');
+        // #392: Browse makes the picked root the setting, so the old root's grant goes.
+        await waitFor(() => expect(mocks.revokeLibraryGrant).toHaveBeenCalledWith('D:/SD/outputs', 'a1111Root'));
+    });
+
+    // #392: revoking the configured root when the same folder is picked again would
+    // remove the grant the pick just recorded.
+    it('keeps the grant when Browse picks the configured root again', async () => {
+        const setSettings = vi.fn();
+        mocks.open.mockResolvedValue('D:\\SD\\outputs');
+        render(<A1111Tab settings={createSettings()} setSettings={setSettings} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for Stable Diffusion Folder' }));
+        await waitFor(() => expect(setSettings).toHaveBeenCalledTimes(1));
+        expect(mocks.revokeLibraryGrant).not.toHaveBeenCalled();
     });
 
     it('keeps discovery disabled without a root path', () => {
@@ -513,6 +528,8 @@ describe('A1111Tab discovery warnings', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Browse for Stable Diffusion Folder' }));
         await waitFor(() => expect(console.error).toHaveBeenCalled());
         expect(setSettings).not.toHaveBeenCalled();
+        // A cancelled or failed pick leaves the configured root granted.
+        expect(mocks.revokeLibraryGrant).not.toHaveBeenCalled();
     });
 
     it('supports forced discovery, warnings with results, non-priority visibility, selection, and type correction', async () => {

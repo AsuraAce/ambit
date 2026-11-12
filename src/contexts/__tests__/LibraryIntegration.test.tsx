@@ -31,6 +31,7 @@ import type { AppState } from '../../services/repository';
 // --- Extensive Mocks for Integration ---
 
 const mocks = vi.hoisted(() => ({
+    revokeLibraryGrant: vi.fn(),
     searchImages: vi.fn().mockResolvedValue([]),
     countImages: vi.fn().mockResolvedValue(0),
     countGlobalImages: vi.fn().mockResolvedValue(0),
@@ -212,6 +213,8 @@ vi.mock('../../bindings', () => ({
         refreshPrivacyMaskIndex: vi.fn().mockResolvedValue({ status: 'ok', data: { changed: false, updated: 0 } }),
         getMainDatabaseUrl: vi.fn().mockResolvedValue({ status: 'ok', data: 'sqlite:test.db' }),
         registerLibraryPath: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+        revokeLibraryGrant: (...args: unknown[]) => mocks.revokeLibraryGrant(...args),
+        waitForLibraryGrants: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
         getInvokeDbSnapshot: (...args: unknown[]) => mocks.getInvokeDbSnapshot(...args),
         beginActiveInvokeScopeCacheBuild: (...args: unknown[]) => mocks.beginActiveInvokeScopeCacheBuild(...args),
         commitActiveInvokeScopeCache: (...args: unknown[]) => mocks.commitActiveInvokeScopeCache(...args),
@@ -6608,6 +6611,31 @@ describe('Library Integration (Provider Stack)', () => {
                 expect(mocks.syncImages).not.toHaveBeenCalled();
             }
         );
+
+        // #392: a root picked or tested in Settings is granted at once, while the
+        // configured root must stay granted until the new one is applied, or the
+        // library breaks after a restart if the user never connects.
+        it('revokes the previous root grant only once a new root is applied', async () => {
+            mocks.revokeLibraryGrant.mockResolvedValue({ status: 'ok', data: null });
+            const hook = await setup(true);
+
+            await act(async () => expect(await hook.applyInvokeConnection(draftFor('owner-b'))).toMatchObject({ status: 'completed' }));
+            expect(mocks.revokeLibraryGrant).not.toHaveBeenCalled();
+
+            mocks.inspectInvokeConnection.mockRejectedValueOnce(new Error('Source unavailable'));
+            await act(async () =>
+                expect(await hook.applyInvokeConnection(draftFor('owner-a', 'D:/InvokeNext'))).toMatchObject({ status: 'failed' })
+            );
+            expect(useSettingsStore.getState().settings.invokeAiPath).toBe('D:/Invoke');
+            expect(mocks.revokeLibraryGrant).not.toHaveBeenCalled();
+
+            await act(async () =>
+                expect(await hook.applyInvokeConnection(draftFor('owner-a', 'D:/InvokeNext'))).toMatchObject({ status: 'completed' })
+            );
+            expect(useSettingsStore.getState().settings.invokeAiPath).toBe('D:/InvokeNext');
+            expect(mocks.revokeLibraryGrant).toHaveBeenCalledTimes(1);
+            expect(mocks.revokeLibraryGrant).toHaveBeenCalledWith('D:/Invoke', 'invokeAiRoot');
+        });
 
         it('restores a current target cursor and skips image catch-up for an unchanged cached owner', async () => {
             const hook = await setup(true);

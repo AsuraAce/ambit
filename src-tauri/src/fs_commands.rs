@@ -125,8 +125,8 @@ pub(crate) fn grant_library_directory(
 
 /// Adds a folder already resolved and checked by the caller, and everything
 /// inside it, to the fs and asset-protocol scopes.
-pub(crate) fn grant_directory_scope(
-    app: &tauri::AppHandle<Wry>,
+pub(crate) fn grant_directory_scope<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
     folder: &Path,
 ) -> Result<(), String> {
     app.fs_scope()
