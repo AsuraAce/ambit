@@ -513,6 +513,16 @@ fn execute_deferred_purge_for_roots(
             }
             outcome.database_files_deleted += target_outcome.database_files_deleted;
             outcome.failures += target_outcome.failures;
+            // A factory reset forgets the user's folders, so it empties the grant
+            // registry. Deleting it instead would let the next start seed it from
+            // library.json, which still lists the folders until the webview saves
+            // the reset settings (#392).
+            if target.path.is_dir() {
+                if let Err(error) = crate::library_grants::reset_registry(&target.path) {
+                    eprintln!("[Purge] Failed to reset the library grant registry: {error}");
+                    outcome.failures += 1;
+                }
+            }
         }
 
         if outcome.failures == 0 {
@@ -1524,6 +1534,66 @@ mod identifier_migration_tests {
         );
         assert!(!local_profile.join(PURGE_MARKER_FILE).exists());
         assert!(!roaming_profile.join(PURGE_MARKER_FILE).exists());
+        cleanup(&root);
+    }
+
+    fn write_settings_with_folder(profile_dir: &Path, folder: &Path) {
+        write_file(
+            &profile_dir.join("library.json"),
+            &serde_json::json!({
+                "settings": { "monitoredFolders": [{ "id": "1", "path": folder }] }
+            })
+            .to_string(),
+        );
+    }
+
+    fn startup_folder_count(profile_dir: &Path) -> usize {
+        crate::library_grants::startup_registry(profile_dir, &profile_dir.join("images.db"), "test")
+            .expect("the start should open a registry")
+            .folder_count()
+    }
+
+    // #392: after a factory reset, the folders the user had granted are not granted
+    // again at the next start, although library.json still lists them then.
+    #[test]
+    fn deferred_purge_leaves_no_folder_grants_for_the_next_start() {
+        let root = unique_temp_root("deferred-purge-grants");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let folder = root.join("Images");
+        fs::create_dir_all(&folder).unwrap();
+        write_settings_with_folder(&local_profile, &folder);
+        assert_eq!(
+            startup_folder_count(&local_profile),
+            1,
+            "granted before the reset"
+        );
+        write_purge_marker(&local_profile);
+
+        let outcome = execute_deferred_purge_for_roots(&[local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(outcome.failures, 0);
+        assert_eq!(startup_folder_count(&local_profile), 0);
+        cleanup(&root);
+    }
+
+    // #392: the webview can write library.json and schedule a purge; the start that
+    // runs the purge must not grant what the webview wrote.
+    #[test]
+    fn webview_written_settings_and_a_purge_grant_nothing() {
+        let root = unique_temp_root("deferred-purge-forged");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let forged = root.join("Private");
+        fs::create_dir_all(&forged).unwrap();
+        fs::create_dir_all(&local_profile).unwrap();
+        crate::library_grants::reset_registry(&local_profile).unwrap();
+        write_settings_with_folder(&local_profile, &forged);
+        write_purge_marker(&local_profile);
+
+        execute_deferred_purge_for_roots(&[local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(startup_folder_count(&local_profile), 0);
         cleanup(&root);
     }
 

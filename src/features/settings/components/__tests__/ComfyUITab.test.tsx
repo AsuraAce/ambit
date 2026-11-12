@@ -7,6 +7,7 @@ import { ComfyUITab } from '../ComfyUITab';
 const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
     open: vi.fn(),
+    requestGrant: vi.fn(),
     normalizePath: vi.fn((path: string) => path.replace(/\\/g, '/')),
 }));
 
@@ -16,7 +17,10 @@ vi.mock('../../../../hooks/useToast', () => ({
     }),
 }));
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
+vi.mock('../../../../services/assetScope', () => ({
+    pickLibraryFolder: mocks.open,
+    requestLibraryFolderGrant: mocks.requestGrant,
+}));
 vi.mock('../../../../utils/pathUtils', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../../../utils/pathUtils')>()),
     normalizePath: mocks.normalizePath,
@@ -40,6 +44,7 @@ describe('ComfyUITab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.open.mockResolvedValue(null);
+        mocks.requestGrant.mockResolvedValue(true);
     });
 
     it('uses the shared sage integration treatment for ComfyUI controls', () => {
@@ -91,7 +96,7 @@ describe('ComfyUITab', () => {
         expect(setSettings).not.toHaveBeenCalled();
     });
 
-    it('links a new ComfyUI folder and preserves existing settings', () => {
+    it('links a new ComfyUI folder and preserves existing settings', async () => {
         vi.spyOn(Date, 'now').mockReturnValue(123);
         const setSettings = vi.fn((update: React.SetStateAction<AppSettings>) => {
             if (typeof update === 'function') update(settings);
@@ -100,6 +105,8 @@ describe('ComfyUITab', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /link output folder/i }));
 
+        await waitFor(() => expect(setSettings).toHaveBeenCalled());
+        expect(mocks.requestGrant).toHaveBeenCalledWith('D:/ComfyUI/output', 'monitoredFolder');
         const update = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         expect(update(settings).monitoredFolders).toEqual([
             {
@@ -115,7 +122,22 @@ describe('ComfyUITab', () => {
         vi.restoreAllMocks();
     });
 
-    it('reports a failed link when settings persistence throws', () => {
+    // #392: a typed folder is linked only after Rust records the user's grant.
+    it('does not link a folder the user declines access to', async () => {
+        mocks.requestGrant.mockResolvedValueOnce(false);
+        const setSettings = vi.fn();
+        render(<ComfyUITab settings={settings} setSettings={setSettings} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /link output folder/i }));
+
+        await waitFor(() => expect(mocks.requestGrant).toHaveBeenCalledWith('D:/ComfyUI/output', 'monitoredFolder'));
+        await Promise.resolve();
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(mocks.addToast).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed link when settings persistence throws', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const setSettings = vi.fn(() => {
             throw new Error('persistence failed');
         });
@@ -123,7 +145,8 @@ describe('ComfyUITab', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /link output folder/i }));
 
-        expect(screen.getByText('Failed to link folder.')).not.toBeNull();
+        expect(await screen.findByText('Failed to link folder.')).not.toBeNull();
+        error.mockRestore();
         expect(mocks.addToast).toHaveBeenCalledWith('Failed to link folder', 'error');
     });
 
@@ -135,27 +158,18 @@ describe('ComfyUITab', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
 
         await waitFor(() => expect(setSettings).toHaveBeenCalled());
-        expect(mocks.open).toHaveBeenCalledWith({
-            directory: true,
-            multiple: false,
-            title: 'Select ComfyUI Output Folder',
-        });
+        expect(mocks.open).toHaveBeenCalledWith('monitoredFolder', 'Select ComfyUI Output Folder');
         const update = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         expect(update(settings).comfyUiPath).toBe('E:/ComfyUI/output');
     });
 
-    it('ignores cancelled and non-string browse results and contains dialog errors', async () => {
+    it('ignores a cancelled browse and contains dialog errors', async () => {
         const setSettings = vi.fn();
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { rerender } = render(<ComfyUITab settings={settings} setSettings={setSettings} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
         await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
-        expect(setSettings).not.toHaveBeenCalled();
-
-        mocks.open.mockResolvedValueOnce(['E:/one', 'E:/two']);
-        fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
-        await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
         expect(setSettings).not.toHaveBeenCalled();
 
         mocks.open.mockRejectedValueOnce(new Error('dialog failed'));

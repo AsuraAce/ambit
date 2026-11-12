@@ -3,7 +3,12 @@ import { devtools } from 'zustand/middleware';
 import { AppSettings, AppSettingsUpdate } from '../types';
 import { appRepository } from '../services/repository';
 import { commands } from '../bindings';
-import { ensureAssetPathAccessible, ensureConfiguredAssetPathsAccessible } from '../services/assetScope';
+import {
+    ensureAssetPathAccessible,
+    ensureConfiguredAssetPathsAccessible,
+    requestLibraryFolderGrant,
+    revokeLibraryGrant,
+} from '../services/assetScope';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { createDefaultAppSettings } from '../constants/defaultSettings';
@@ -141,21 +146,40 @@ export const useSettingsStore = create<SettingsState>()(
                     };
                 });
 
+                // Rust records each added folder (silently when Settings already
+                // asked, or when it lies inside a granted folder) and drops the
+                // grant of each removed one.
                 const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
+                const nextFolders = new Set(nextSettings.monitoredFolders.map((folder) => folder.path));
 
                 nextSettings.monitoredFolders.forEach((folder) => {
                     if (!isBrowserMockMode() && !oldFolders.has(folder.path)) {
-                        void ensureAssetPathAccessible(folder.path, { assumeDirectory: true }).catch((error) =>
+                        void requestLibraryFolderGrant(folder.path, 'monitoredFolder').catch((error) =>
                             console.error('[SettingsStore] Failed to register new folder scope:', error)
+                        );
+                    }
+                });
+                oldFolders.forEach((path) => {
+                    if (!isBrowserMockMode() && !nextFolders.has(path)) {
+                        void revokeLibraryGrant(path, 'monitoredFolder').catch((error) =>
+                            console.error('[SettingsStore] Failed to revoke removed folder scope:', error)
                         );
                     }
                 });
 
                 const oldResourceFolders = new Set(previousSettings.resourceFolders || []);
-                nextSettings.resourceFolders?.forEach((folder) => {
+                const nextResourceFolders = new Set(nextSettings.resourceFolders || []);
+                nextResourceFolders.forEach((folder) => {
                     if (!isBrowserMockMode() && !oldResourceFolders.has(folder)) {
-                        void ensureAssetPathAccessible(folder, { assumeDirectory: true }).catch((error) =>
+                        void requestLibraryFolderGrant(folder, 'resourceFolder').catch((error) =>
                             console.error('[SettingsStore] Failed to register resource folder scope:', error)
+                        );
+                    }
+                });
+                oldResourceFolders.forEach((folder) => {
+                    if (!isBrowserMockMode() && !nextResourceFolders.has(folder)) {
+                        void revokeLibraryGrant(folder, 'resourceFolder').catch((error) =>
+                            console.error('[SettingsStore] Failed to revoke removed resource folder scope:', error)
                         );
                     }
                 });

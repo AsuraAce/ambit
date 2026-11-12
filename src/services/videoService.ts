@@ -1,5 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, type VideoAssetRecord, type VideoImportOutcome } from '../bindings';
+import { pickLibraryFiles } from './assetScope';
 import { type ImageMetadata, type VideoAsset } from '../types';
 import { getFilename, normalizePath } from '../utils/pathUtils';
 import { unwrap } from '../utils/spectaUtils';
@@ -26,15 +27,8 @@ export interface VideoImportSummary {
 }
 
 export const pickVideoPaths = async (): Promise<string[]> => {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open({
-        multiple: true,
-        directory: false,
-        filters: [{ name: 'Videos', extensions: VIDEO_FILTER_EXTENSIONS }],
-    });
-    return (Array.isArray(selected) ? selected : selected ? [selected] : [])
-        .filter((path): path is string => typeof path === 'string')
-        .map(normalizePath);
+    const selected = await pickLibraryFiles('Videos', VIDEO_FILTER_EXTENSIONS);
+    return selected.map(normalizePath);
 };
 
 export const importVideoPaths = async (

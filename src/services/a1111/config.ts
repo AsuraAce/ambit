@@ -1,6 +1,6 @@
 import { commands, type A1111DiscoveryCandidate as BackendDiscoveryCandidate } from '../../bindings';
 import { normalizePath } from '../../utils/pathUtils';
-import { ensureFolderAccessible } from '../assetScope';
+import { ensureFolderAccessible, requestLibraryFolderGrant } from '../assetScope';
 import { unwrap } from '../../utils/spectaUtils';
 import { A1111FolderType, type DiscoveryCandidate, type DiscoveryResult, WebUIVariant } from './types';
 
@@ -64,8 +64,12 @@ export const discoverA1111Candidates = async (
     existingPaths: Set<string>,
     forcedVariant: WebUIVariant | 'Auto' = 'Auto'
 ): Promise<DiscoveryResult> => {
-    // Discovery refuses a root outside the scope. Registration accepts only an
-    // existing directory, so a mistyped root stays out of scope and is refused.
+    // Discovery refuses a root outside the scope. Rust asks the user to confirm a
+    // typed root; registration accepts only an existing directory, so a mistyped
+    // root stays out of scope and is refused.
+    if (!(await requestLibraryFolderGrant(rootPath, 'a1111Root').catch(() => true))) {
+        throw new Error('Ambit was not allowed to read this folder.');
+    }
     await ensureFolderAccessible(rootPath);
     const result = await unwrap(commands.discoverA1111Folders(rootPath));
     const normalizedExistingPaths = normalizeExistingPaths(existingPaths);

@@ -5,6 +5,7 @@ import { commands, type ResourcePurgeResult, type ThumbnailScanResult } from '..
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { useLibraryStore } from '../../../stores/libraryStore';
+import { pickLibraryFolder, requestLibraryFolderGrant } from '../../../services/assetScope';
 import { scanResourceThumbnails } from '../../../services/importService';
 import { refreshFacetCacheForResourcesStrict, rebuildFacetCacheIncremental } from '../../../services/db/imageRepo';
 import { isBrowserMockMode } from '../../../services/runtime';
@@ -223,15 +224,17 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
         if (removingResourcePathRef.current) return;
 
         try {
-            const { open } = await import('@tauri-apps/plugin-dialog');
-            const selected = await open({ directory: true, multiple: false });
-            if (selected && typeof selected === 'string') {
+            const selected = await pickLibraryFolder('resourceFolder');
+            if (selected) {
                 setNewResourcePath(normalizePath(selected));
             }
         } catch {
             resourceInputRef.current?.click();
         }
     }, []);
+
+    // Folders waiting for Rust's grant, so a second Add of the same folder cannot add it twice.
+    const pendingGrantPathsRef = React.useRef(new Set<string>());
 
     const handleAddResourceFolder = React.useCallback(
         async (e: React.FormEvent) => {
@@ -245,6 +248,19 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
                 addToast('Resource folder is already added', 'info');
                 setNewResourcePath('');
                 return;
+            }
+
+            if (pendingGrantPathsRef.current.has(pathToAdd)) return;
+            pendingGrantPathsRef.current.add(pathToAdd);
+
+            // Rust asks the user to confirm a typed folder; a browsed one is already recorded.
+            try {
+                if (!(await requestLibraryFolderGrant(pathToAdd, 'resourceFolder'))) return;
+            } catch (error) {
+                addToast(`Could not add resource folder: ${error instanceof Error ? error.message : String(error)}`, 'error');
+                return;
+            } finally {
+                pendingGrantPathsRef.current.delete(pathToAdd);
             }
 
             const nextResourceFolders = [...(settings.resourceFolders || []), pathToAdd];

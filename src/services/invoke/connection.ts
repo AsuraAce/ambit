@@ -4,10 +4,11 @@ import { measureStartupPhase } from '../../utils/startupDiagnostics';
 import { getInvokePathIdentity, isSameInvokePath } from './pathIdentity';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { ensureFolderAccessible } from '../assetScope';
+import { ensureFolderAccessible, requestLibraryFolderGrant } from '../assetScope';
 import { openInvokeSourceDatabase, type InvokeSourceDatabase } from './sourceDatabase';
 
 const INVOKE_DATABASE_NOT_FOUND = 'Could not find an existing InvokeAI database at this path.';
+const INVOKE_FOLDER_NOT_ALLOWED = 'Ambit was not allowed to read this folder.';
 
 interface BoardRow {
     board_id: string;
@@ -113,8 +114,14 @@ export const inspectInvokeConnection = async (rootPath: string): Promise<InvokeO
     if (!path) throw new Error('Choose an InvokeAI folder first.');
     const { dbPath, imagesRoot } = resolveInvokePaths(path);
     // A typed candidate may not be in the filesystem scope yet; the snapshot and the
-    // source reader both require it. A folder that cannot be registered does not exist.
-    if (!(await ensureFolderAccessible(imagesRoot))) {
+    // source reader both require it. Rust asks the user to confirm a typed root; a
+    // browsed or already granted one passes silently. A folder that cannot be
+    // granted or registered does not exist.
+    const granted = await requestLibraryFolderGrant(imagesRoot, 'invokeAiRoot').catch(() => null);
+    if (granted === false) {
+        throw new Error(INVOKE_FOLDER_NOT_ALLOWED);
+    }
+    if (granted === null || !(await ensureFolderAccessible(imagesRoot))) {
         throw new Error(INVOKE_DATABASE_NOT_FOUND);
     }
     const snapshot = await unwrap(commands.getInvokeDbSnapshot(path));

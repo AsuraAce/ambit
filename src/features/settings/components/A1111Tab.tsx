@@ -251,9 +251,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     content="Browse for Stable Diffusion Folder"
                                     onClick={async () => {
                                         try {
-                                            const { open } = await import('@tauri-apps/plugin-dialog');
-                                            const selected = await open({ directory: true, multiple: false, title: 'Select SD Folder' });
-                                            if (selected && typeof selected === 'string') {
+                                            const { pickLibraryFolder } = await import('../../../services/assetScope');
+                                            const selected = await pickLibraryFolder('a1111Root', 'Select SD Folder');
+                                            if (selected) {
                                                 const { normalizePath } = await import('../../../utils/pathUtils');
                                                 setSettings((prev) => ({ ...prev, a1111Path: normalizePath(selected) }));
                                             }

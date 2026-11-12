@@ -25,7 +25,7 @@ import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScopeSelector';
 import { isSameInvokePath } from '../../../services/invoke/pathIdentity';
-import { ensureFolderAccessible } from '../../../services/assetScope';
+import { ensureFolderAccessible, pickLibraryFolder } from '../../../services/assetScope';
 import { normalizeInvokeRoot } from '../../../utils/pathUtils';
 import { isSameInvokeConnectionSource, isSameInvokeOwnerSelection } from '../../../services/invoke/connectionDraft';
 import {
@@ -242,14 +242,9 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         if (rootControlsLocked) return;
 
         try {
-            const { open } = await import('@tauri-apps/plugin-dialog');
-            const selected = await open({
-                directory: true,
-                multiple: false,
-                title: 'Select InvokeAI Root Folder',
-            });
+            const selected = await pickLibraryFolder('invokeAiRoot', 'Select InvokeAI Root Folder');
 
-            if (selected && typeof selected === 'string') {
+            if (selected) {
                 setIsTesting(true);
                 update({
                     invokeAiPath: selected,

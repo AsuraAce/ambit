@@ -6,7 +6,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { commands } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
-import { ensureFolderAccessible } from '../../../services/assetScope';
+import { ensureFolderAccessible, pickLibraryFolder, requestLibraryFolderGrant } from '../../../services/assetScope';
 import { unwrap } from '../../../utils/spectaUtils';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { formatStableImportProgress } from '../../../utils/importProgress';
@@ -47,6 +47,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingScansRef = useRef<{ id: string; path: string; variant?: string }[]>([]);
+    // Folders waiting for Rust's grant, so a second Add of the same folder cannot add it twice.
+    const pendingGrantPathsRef = useRef(new Set<string>());
     const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const updateFolderLastScanned = useSettingsStore((s) => s.updateFolderLastScanned);
@@ -327,18 +329,7 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
         [settings.monitoredFolders, onScanFolder, onInvokeSync, addToast, updateFolderLastScanned, fetchCounts]
     );
 
-    const handleAddFolder = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newFolderPath.trim()) return;
-
-        const normalizedNew = normalizePath(newFolderPath);
-        const existing = settings.monitoredFolders.find((f) => normalizePath(f.path) === normalizedNew);
-        if (existing) {
-            addToast(`Folder is already monitored`, 'info');
-            setNewFolderPath('');
-            return;
-        }
-
+    const addMonitoredFolder = (normalizedNew: string) => {
         const variant = detectGeneratorVariant(normalizedNew);
         const queuedAt = Date.now();
         const newFolder: MonitoredFolder = {
@@ -434,6 +425,31 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
         );
     };
 
+    const handleAddFolder = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newFolderPath.trim()) return;
+
+        const normalizedNew = normalizePath(newFolderPath);
+        const existing = settings.monitoredFolders.find((f) => normalizePath(f.path) === normalizedNew);
+        if (existing) {
+            addToast(`Folder is already monitored`, 'info');
+            setNewFolderPath('');
+            return;
+        }
+        if (pendingGrantPathsRef.current.has(normalizedNew)) return;
+        pendingGrantPathsRef.current.add(normalizedNew);
+
+        // Rust asks the user to confirm a typed folder; a browsed one is already recorded.
+        void requestLibraryFolderGrant(normalizedNew, 'monitoredFolder')
+            .then(
+                (granted) => {
+                    if (granted) addMonitoredFolder(normalizedNew);
+                },
+                (error: unknown) => addToast(`Could not add folder: ${error instanceof Error ? error.message : String(error)}`, 'error')
+            )
+            .finally(() => pendingGrantPathsRef.current.delete(normalizedNew));
+    };
+
     const removeFolder = (id: string) => {
         setSettings((prev) => ({
             ...prev,
@@ -443,9 +459,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
 
     const handleBrowse = async () => {
         try {
-            const { open } = await import('@tauri-apps/plugin-dialog');
-            const selected = await open({ directory: true, multiple: false });
-            if (selected && typeof selected === 'string') {
+            const selected = await pickLibraryFolder('monitoredFolder');
+            if (selected) {
                 setNewFolderPath(normalizePath(selected));
             }
         } catch {

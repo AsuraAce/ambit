@@ -5,6 +5,7 @@ import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../types
 const mocks = vi.hoisted(() => ({
     discoverA1111Folders: vi.fn(),
     ensureFolderAccessible: vi.fn(async () => true),
+    requestLibraryFolderGrant: vi.fn(async () => true),
 }));
 
 vi.mock('../../../bindings', () => ({
@@ -15,6 +16,7 @@ vi.mock('../../../bindings', () => ({
 
 vi.mock('../../assetScope', () => ({
     ensureFolderAccessible: mocks.ensureFolderAccessible,
+    requestLibraryFolderGrant: mocks.requestLibraryFolderGrant,
 }));
 
 describe('discoverA1111Candidates', () => {
@@ -60,6 +62,17 @@ describe('discoverA1111Candidates', () => {
         expect(mocks.ensureFolderAccessible.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.discoverA1111Folders.mock.invocationCallOrder[0]
         );
+    });
+
+    // #392: Rust asks the user before Ambit reads a typed root.
+    it('discovers nothing when the user declines access to a typed root', async () => {
+        mocks.requestLibraryFolderGrant.mockResolvedValueOnce(false);
+
+        await expect(discoverA1111Candidates('D:/SD', new Set())).rejects.toThrow('not allowed');
+
+        expect(mocks.requestLibraryFolderGrant).toHaveBeenCalledWith('D:/SD', 'a1111Root');
+        expect(mocks.ensureFolderAccessible).not.toHaveBeenCalled();
+        expect(mocks.discoverA1111Folders).not.toHaveBeenCalled();
     });
 
     it('maps backend candidates and marks already linked folders', async () => {

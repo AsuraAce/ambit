@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvokeSourceDatabase as Database } from '../sourceDatabase';
 import { startupDiagnostics } from '../../../utils/startupDiagnostics';
 import { commands } from '../../../bindings';
-import { ensureFolderAccessible } from '../../assetScope';
+import { ensureFolderAccessible, requestLibraryFolderGrant } from '../../assetScope';
 import { inspectInvokeConnection } from '../connection';
 import {
     diagnoseInvokeAI,
@@ -33,6 +33,7 @@ vi.mock('../sourceDatabase', () => ({
 
 vi.mock('../../assetScope', () => ({
     ensureFolderAccessible: vi.fn(async () => true),
+    requestLibraryFolderGrant: vi.fn(async () => true),
 }));
 
 const createDb = (select: (sql: string) => Promise<unknown[]>) => ({
@@ -68,6 +69,20 @@ describe('InvokeAI connection helpers', () => {
         // which refuses a database outside it, and before the source reader opens it.
         expect(ensureFolderAccessible).toHaveBeenCalledWith('D:/Invoke');
         expect(vi.mocked(ensureFolderAccessible).mock.invocationCallOrder.at(-1)).toBeLessThan(snapshot.mock.invocationCallOrder.at(-1)!);
+    });
+
+    // #392: Rust asks the user before Ambit reads a typed root.
+    it('rejects a typed root the user declines without registering it or asking for a snapshot', async () => {
+        vi.mocked(requestLibraryFolderGrant).mockResolvedValueOnce(false);
+        vi.mocked(ensureFolderAccessible).mockClear();
+        const snapshot = vi.spyOn(commands, 'getInvokeDbSnapshot');
+        snapshot.mockClear();
+
+        await expect(inspectInvokeConnection('D:/Typed')).rejects.toThrow('not allowed');
+
+        expect(requestLibraryFolderGrant).toHaveBeenCalledWith('D:/Typed', 'invokeAiRoot');
+        expect(ensureFolderAccessible).not.toHaveBeenCalled();
+        expect(snapshot).not.toHaveBeenCalled();
     });
 
     it('rejects a candidate folder that cannot be registered without asking for a snapshot', async () => {

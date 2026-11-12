@@ -28,12 +28,17 @@
             ],
             "assetProtocol": {
                 "enable": true,
-                "scope": [
-                    "**",
-                    "C:\\**",
-                    "D:\\**",
-                    "$HOME\\**"
-                ]
+                "scope": {
+                    "allow": [
+                        "**",
+                        "C:\\**",
+                        "D:\\**",
+                        "$HOME\\**"
+                    ],
+                    "deny": [
+                        "$APPLOCALDATA/library-grants.json*"
+                    ]
+                }
             }
         }
     },
