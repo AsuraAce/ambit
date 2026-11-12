@@ -2,6 +2,9 @@ const PRODUCTION_IDENTIFIER: &str = "io.github.asuraace.ambit";
 const LEGACY_PRODUCTION_IDENTIFIER: &str = "com.ambit.app";
 const MAIN_DATABASE_FILES: [&str; 3] = ["images.db", "images.db-wal", "images.db-shm"];
 const PURGE_DATABASE_FILES: [&str; 3] = ["images.db-wal", "images.db-shm", "images.db"];
+/// The library grant registry and its backup (`library_grants.rs`). A factory reset
+/// forgets the user's folders, so it must also forget the grants Rust restores.
+const PURGE_GRANT_FILES: [&str; 2] = ["library-grants.json", "library-grants.json.bak"];
 const PURGE_MARKER_FILE: &str = ".purge_on_restart";
 pub(crate) const PURGE_JOURNAL_FILE: &str = "library.purge.json";
 pub(crate) const PURGE_COMPLETION_FILE: &str = "library.purge.completed";
@@ -701,7 +704,7 @@ fn push_unique_path(paths: &mut Vec<std::path::PathBuf>, path: std::path::PathBu
 fn purge_database_files(profile_dir: &std::path::Path) -> DeferredPurgeOutcome {
     let mut outcome = DeferredPurgeOutcome::default();
 
-    for name in PURGE_DATABASE_FILES {
+    for name in PURGE_DATABASE_FILES.into_iter().chain(PURGE_GRANT_FILES) {
         let path = profile_dir.join(name);
         match remove_existing_file_with_retry(&path) {
             Ok(true) => {
@@ -1524,6 +1527,27 @@ mod identifier_migration_tests {
         );
         assert!(!local_profile.join(PURGE_MARKER_FILE).exists());
         assert!(!roaming_profile.join(PURGE_MARKER_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_purge_forgets_the_library_grant_registry() {
+        let root = unique_temp_root("deferred-purge-grants");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&local_profile);
+        write_file(&local_profile.join(PURGE_GRANT_FILES[0]), "{}");
+        write_file(&local_profile.join(PURGE_GRANT_FILES[1]), "{}");
+
+        let outcome = execute_deferred_purge_for_roots(&[local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(outcome.failures, 0);
+        assert_eq!(
+            PURGE_GRANT_FILES[0],
+            crate::library_grants::REGISTRY_FILE_NAME
+        );
+        assert!(!local_profile.join("library-grants.json").exists());
+        assert!(!local_profile.join("library-grants.json.bak").exists());
         cleanup(&root);
     }
 

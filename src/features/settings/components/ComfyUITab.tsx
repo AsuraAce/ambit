@@ -4,6 +4,7 @@ import { Workflow, Folder, Info, CheckCircle2, XCircle, Plus, FolderOpen } from 
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { pickLibraryFolder, requestLibraryFolderGrant } from '../../../services/assetScope';
 
 interface TabProps {
     settings: AppSettings;
@@ -14,7 +15,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const { addToast } = useToast();
 
-    const handleLinkFolder = () => {
+    const handleLinkFolder = async () => {
         const comfyUiPath = settings.comfyUiPath!;
         // Check if already linked
         const normalizedPath = comfyUiPath.replace(/\\/g, '/');
@@ -29,6 +30,9 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
         setTestResult(null);
 
         try {
+            // Rust asks the user to confirm a typed folder; a browsed one is already recorded.
+            if (!(await requestLibraryFolderGrant(comfyUiPath, 'monitoredFolder'))) return;
+
             // Validate path exists using Tauri fs or just assume valid if selected via dialog
             // We'll add it directly as a monitored folder
 
@@ -83,13 +87,8 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     content="Browse for ComfyUI Output Folder"
                                     onClick={async () => {
                                         try {
-                                            const { open } = await import('@tauri-apps/plugin-dialog');
-                                            const selected = await open({
-                                                directory: true,
-                                                multiple: false,
-                                                title: 'Select ComfyUI Output Folder',
-                                            });
-                                            if (selected && typeof selected === 'string') {
+                                            const selected = await pickLibraryFolder('monitoredFolder', 'Select ComfyUI Output Folder');
+                                            if (selected) {
                                                 const { normalizePath } = await import('../../../utils/pathUtils');
                                                 setSettings((prev) => ({ ...prev, comfyUiPath: normalizePath(selected) }));
                                             }
@@ -111,7 +110,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     <div className="pt-6 border-t border-black/5 dark:border-white/5 flex flex-col gap-6">
                         <div className="flex items-center justify-between">
                             <button
-                                onClick={handleLinkFolder}
+                                onClick={() => void handleLinkFolder()}
                                 disabled={!settings.comfyUiPath}
                                 className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${
                                     !settings.comfyUiPath

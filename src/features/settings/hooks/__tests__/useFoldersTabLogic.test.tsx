@@ -692,6 +692,24 @@ describe('useFoldersTabLogic', () => {
         expect(addToastMock).toHaveBeenCalledWith('Could not add folder: Failed to resolve library path', 'error');
     });
 
+    it('adds a folder once when Add is pressed again while Rust is still asking', async () => {
+        let grant: (value: { status: 'ok'; data: boolean }) => void = () => undefined;
+        vi.mocked(commands.requestLibraryFolderGrant).mockReturnValueOnce(
+            new Promise((resolve) => {
+                grant = resolve;
+            })
+        );
+        const { result, setSettings } = renderFoldersHook();
+        act(() => result.current.setNewFolderPath('D:\\Typed'));
+        act(() => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        act(() => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+
+        await act(async () => grant({ status: 'ok', data: true }));
+
+        expect(commands.requestLibraryFolderGrant).toHaveBeenCalledTimes(1);
+        expect(setSettings).toHaveBeenCalledTimes(1);
+    });
+
     it('browses for a folder and falls back to the hidden input on dialog failure', async () => {
         dialogOpenMock.mockResolvedValueOnce('C:\\Picked');
         const success = renderFoldersHook();

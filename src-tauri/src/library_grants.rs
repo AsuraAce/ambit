@@ -21,7 +21,8 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 /// The registry file in AppLocalData. The fs capability denies
 /// `library-grants.json*` to the webview, which also covers the backup and the
-/// temporary file below.
+/// temporary file below. Tauri matches scope globs case-insensitively, so other
+/// spellings of the name are denied too.
 pub const REGISTRY_FILE_NAME: &str = "library-grants.json";
 const BACKUP_SUFFIX: &str = ".bak";
 const TEMP_SUFFIX: &str = ".tmp";
@@ -50,7 +51,7 @@ struct FolderGrant {
 pub struct GrantRegistry {
     version: u32,
     /// The Ambit version that seeded the registry from the previous version's
-    /// settings. Its presence is what stops seeding from running again.
+    /// settings. Seeding runs only while neither the registry nor its backup exists.
     seeded_by: Option<String>,
     folders: Vec<FolderGrant>,
     files: Vec<String>,
@@ -81,17 +82,19 @@ impl GrantRegistry {
         self.folders.len() != before
     }
 
-    fn add_file(&mut self, path: &str) -> bool {
-        let key = path_key(Path::new(path));
-        if self
+    fn add_files(&mut self, paths: &[String]) -> bool {
+        let mut keys: HashSet<String> = self
             .files
             .iter()
-            .any(|file| path_key(Path::new(file)) == key)
-        {
-            return false;
+            .map(|file| path_key(Path::new(file)))
+            .collect();
+        let before = self.files.len();
+        for path in paths {
+            if keys.insert(path_key(Path::new(path))) {
+                self.files.push(path.clone());
+            }
         }
-        self.files.push(path.to_string());
-        true
+        self.files.len() != before
     }
 
     /// Whether `canonical` is a granted folder or lies inside one. Folders that no
@@ -185,6 +188,11 @@ impl GrantStore {
 
     fn path(&self, suffix: &str) -> PathBuf {
         self.dir.join(format!("{REGISTRY_FILE_NAME}{suffix}"))
+    }
+
+    /// Whether the registry or its backup exists, readable or not.
+    fn exists(&self) -> bool {
+        self.path("").exists() || self.path(BACKUP_SUFFIX).exists()
     }
 
     /// The registry, from its backup when the main file is missing or unreadable,
@@ -338,6 +346,7 @@ fn settings_folders(app_local_data: &Path) -> Vec<(String, LibraryGrantKind)> {
 fn library_media_paths(db_path: &Path) -> Vec<String> {
     let read = || -> rusqlite::Result<Vec<String>> {
         let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         let mut statement = conn.prepare("SELECT path FROM images")?;
         let paths = statement
             .query_map([], |row| row.get::<_, String>(0))?
@@ -381,6 +390,13 @@ fn with_registry<T>(
     if guard.is_none() {
         let registry = match store.load() {
             Some(registry) => registry,
+            // Seeding reads settings and the database, which the webview can write,
+            // so it must not replace a registry that exists but cannot be read.
+            None if store.exists() => {
+                return Err(
+                    "The library grant registry cannot be read; not rebuilding it".to_string(),
+                )
+            }
             None => {
                 let db_path = crate::db::resolve_db_path(app)?;
                 let previous = PreviousGrants {
@@ -429,13 +445,15 @@ pub fn restore_grants(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
     Ok(())
 }
 
+/// Grants `path` and records its canonical spelling, so the entry always names the
+/// folder the user approved, whatever the working directory is at a later start.
 fn record_folder(
     app: &tauri::AppHandle<Wry>,
     path: &str,
     kind: LibraryGrantKind,
 ) -> Result<(), String> {
-    grant_library_directory(app, path)?;
-    with_registry(app, |registry| ((), registry.add_folder(path, kind)))
+    let recorded = display_path(&grant_library_directory(app, path)?);
+    with_registry(app, |registry| ((), registry.add_folder(&recorded, kind)))
 }
 
 async fn blocking<T: Send + 'static>(
@@ -452,11 +470,12 @@ async fn blocking<T: Send + 'static>(
 #[specta::specta]
 pub async fn pick_library_folder(
     app: tauri::AppHandle<Wry>,
+    window: tauri::Window<Wry>,
     kind: LibraryGrantKind,
     title: Option<String>,
 ) -> Result<Option<String>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    let mut dialog = app.dialog().file();
+    let mut dialog = app.dialog().file().set_parent(&window);
     if let Some(title) = title {
         dialog = dialog.set_title(title);
     }
@@ -485,6 +504,7 @@ pub async fn pick_library_folder(
 #[specta::specta]
 pub async fn pick_library_files(
     app: tauri::AppHandle<Wry>,
+    window: tauri::Window<Wry>,
     filter_name: String,
     extensions: Vec<String>,
 ) -> Result<Vec<String>, String> {
@@ -492,6 +512,7 @@ pub async fn pick_library_files(
     let extensions: Vec<&str> = extensions.iter().map(String::as_str).collect();
     app.dialog()
         .file()
+        .set_parent(&window)
         .add_filter(filter_name, &extensions)
         .pick_files(move |picked| {
             let _ = sender.send(picked);
@@ -514,65 +535,98 @@ pub async fn pick_library_files(
                 Err(error) => log::warn!("[LibraryGrants] Not granting {path}: {error}"),
             }
         }
-        with_registry(&app, |registry| {
-            let mut changed = false;
-            for path in &granted {
-                changed |= registry.add_file(path);
-            }
-            ((), changed)
-        })
+        with_registry(&app, |registry| ((), registry.add_files(&granted)))
     })
     .await?;
     Ok(paths)
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum FolderRequest {
-    Granted,
-    NeedsConfirmation(PathBuf),
+    /// Inside AppLocalData, which Ambit can always read; nothing to record.
+    AlwaysReadable,
+    /// Inside a folder the user already granted; recorded without asking.
+    Covered,
+    /// Anything else; recorded only after the user allows it.
+    NeedsConfirmation,
+}
+
+fn classify_folder_request(
+    registry: &GrantRegistry,
+    canonical: &Path,
+    app_local_data: &Path,
+) -> FolderRequest {
+    if !is_recordable_folder(canonical, app_local_data) {
+        FolderRequest::AlwaysReadable
+    } else if registry.covers(canonical) {
+        FolderRequest::Covered
+    } else {
+        FolderRequest::NeedsConfirmation
+    }
+}
+
+/// Resolves `path` and classifies it; a covered folder is recorded on the way.
+/// Returns the canonical folder as the user should read it.
+fn resolve_folder_request(
+    app: &tauri::AppHandle<Wry>,
+    path: &str,
+    kind: LibraryGrantKind,
+) -> Result<(FolderRequest, String), String> {
+    let canonical = crate::fs_commands::validate_library_scope_directory(path)?;
+    let app_local_data = app_local_data_dir(app)?;
+    let request = with_registry(app, |registry| {
+        (
+            classify_folder_request(registry, &canonical, &app_local_data),
+            false,
+        )
+    })?;
+    let shown = display_path(&canonical);
+    if request == FolderRequest::Covered {
+        record_folder(app, &shown, kind)?;
+    }
+    Ok((request, shown))
 }
 
 /// Records a folder the webview names, such as one typed in Settings. A folder
 /// already granted, or inside a granted folder or AppLocalData, is recorded
 /// without asking; any other folder needs the user's native confirmation, which
-/// shows its resolved path. Returns whether the folder is now granted.
+/// shows its resolved path. The registry records that resolved path, never the
+/// spelling the webview sent. Returns whether the folder is now granted.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn request_library_folder_grant(
     app: tauri::AppHandle<Wry>,
+    window: tauri::Window<Wry>,
     path: String,
     kind: LibraryGrantKind,
 ) -> Result<bool, String> {
     let check_app = app.clone();
-    let check_path = path.clone();
-    let request = blocking(move || {
-        let canonical = crate::fs_commands::validate_library_scope_directory(&check_path)?;
-        let app_local_data = app_local_data_dir(&check_app)?;
-        if !is_recordable_folder(&canonical, &app_local_data) {
-            return Ok(FolderRequest::Granted);
-        }
-        if with_registry(&check_app, |registry| (registry.covers(&canonical), false))? {
-            record_folder(&check_app, &check_path, kind)?;
-            return Ok(FolderRequest::Granted);
-        }
-        Ok(FolderRequest::NeedsConfirmation(canonical))
-    })
-    .await?;
-    let canonical = match request {
-        FolderRequest::Granted => return Ok(true),
-        FolderRequest::NeedsConfirmation(canonical) => canonical,
-    };
+    let (request, shown) =
+        blocking(move || resolve_folder_request(&check_app, &path, kind)).await?;
+    if request != FolderRequest::NeedsConfirmation {
+        return Ok(true);
+    }
 
     // One confirmation at a time, so a burst of requests cannot stack dialogs.
+    // A request that waited may have been granted meanwhile, so classify again.
     let state = app.state::<LibraryGrantState>();
     let _confirmation = state.confirmation.lock().await;
+    let check_app = app.clone();
+    let (request, shown) =
+        blocking(move || resolve_folder_request(&check_app, &shown, kind)).await?;
+    if request != FolderRequest::NeedsConfirmation {
+        return Ok(true);
+    }
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()
         .message(format!(
-            "Allow Ambit to read this folder and everything inside it?\n\n{}",
-            display_path(&canonical)
+            "Allow Ambit to read this folder and everything inside it?
+
+{shown}"
         ))
         .title("Allow folder access")
         .kind(MessageDialogKind::Warning)
+        .parent(&window)
         .buttons(MessageDialogButtons::OkCancelCustom(
             "Allow".to_string(),
             "Cancel".to_string(),
@@ -585,7 +639,7 @@ pub async fn request_library_folder_grant(
         return Ok(false);
     }
     let record_app = app.clone();
-    blocking(move || record_folder(&record_app, &path, kind)).await?;
+    blocking(move || record_folder(&record_app, &shown, kind)).await?;
     Ok(true)
 }
 
@@ -728,7 +782,9 @@ mod tests {
             ..GrantRegistry::default()
         };
         registry.add_folder("D:/Images", LibraryGrantKind::MonitoredFolder);
-        registry.add_file("E:/single.png");
+        assert!(registry.add_files(&["E:/single.png".to_string(), "E:/single.png".to_string()]));
+        assert!(!registry.add_files(&["E:/single.png".to_string()]));
+        assert_eq!(registry.files, vec!["E:/single.png"]);
         store.save(&registry).unwrap();
         assert_eq!(store.load(), Some(registry.clone()));
         assert!(!dir
@@ -743,7 +799,67 @@ mod tests {
         );
         fs::remove_file(dir.join(REGISTRY_FILE_NAME)).unwrap();
         assert_eq!(store.load(), Some(registry), "a missing file falls back");
+
+        // An unreadable registry still exists, so it is not seeded over.
+        fs::write(
+            dir.join(format!("{REGISTRY_FILE_NAME}{BACKUP_SUFFIX}")),
+            "{ torn",
+        )
+        .unwrap();
+        assert_eq!(store.load(), None);
+        assert!(store.exists());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    // #392: a typed folder is recorded silently only inside a folder the user
+    // already granted; anything else outside AppLocalData needs a confirmation.
+    #[test]
+    fn a_typed_folder_needs_confirmation_unless_a_grant_or_app_data_covers_it() {
+        let root = temp_dir("classify");
+        let app_local_data = root.join("AppLocalData");
+        let granted = root.join("granted");
+        let beside = root.join("granted-beside");
+        for dir in [
+            &app_local_data.join("cache"),
+            &granted.join("inside"),
+            &beside,
+        ] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        let mut registry = GrantRegistry::default();
+        registry.add_folder(
+            &granted.to_string_lossy(),
+            LibraryGrantKind::MonitoredFolder,
+        );
+        let classify = |path: &Path| {
+            classify_folder_request(&registry, &fs::canonicalize(path).unwrap(), &app_local_data)
+        };
+
+        assert_eq!(
+            classify(&app_local_data.join("cache")),
+            FolderRequest::AlwaysReadable
+        );
+        assert_eq!(classify(&granted.join("inside")), FolderRequest::Covered);
+        assert_eq!(classify(&beside), FolderRequest::NeedsConfirmation);
+        assert_eq!(classify(&root), FolderRequest::NeedsConfirmation);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #392: the registry keeps the folder the user approved, not the spelling the
+    // webview sent; a relative spelling would name another folder at a later start.
+    #[test]
+    fn a_folder_is_recorded_by_its_canonical_path() {
+        let resolved = crate::fs_commands::validate_library_scope_directory(".").unwrap();
+        let recorded = display_path(&resolved);
+        assert!(Path::new(&recorded).is_absolute(), "{recorded} is absolute");
+        assert!(
+            !recorded.starts_with(r"\?\"),
+            "{recorded} has no verbatim prefix"
+        );
+        assert_eq!(
+            path_key(Path::new(&recorded)),
+            path_key(&fs::canonicalize(".").unwrap())
+        );
     }
 
     #[test]
@@ -871,6 +987,16 @@ mod tests {
         )
         .unwrap();
 
+        // Windows names are case-insensitive, so a spelling in another case must be
+        // denied before the file exists too, or the webview could create it first.
+        for name in [
+            "LIBRARY-GRANTS.JSON.TMP",
+            "Library-Grants.Json",
+            "library-GRANTS.json.bak",
+        ] {
+            let file = app_local_data.join(name);
+            assert!(scope.is_forbidden(&file), "{} is denied", file.display());
+        }
         for suffix in ["", BACKUP_SUFFIX, TEMP_SUFFIX] {
             let file = app_local_data.join(format!("{REGISTRY_FILE_NAME}{suffix}"));
             fs::write(&file, "{}").unwrap();

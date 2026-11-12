@@ -856,7 +856,8 @@ async pickLibraryFiles(filterName: string, extensions: string[]) : Promise<Resul
  * Records a folder the webview names, such as one typed in Settings. A folder
  * already granted, or inside a granted folder or AppLocalData, is recorded
  * without asking; any other folder needs the user's native confirmation, which
- * shows its resolved path. Returns whether the folder is now granted.
+ * shows its resolved path. The registry records that resolved path, never the
+ * spelling the webview sent. Returns whether the folder is now granted.
  */
 async requestLibraryFolderGrant(path: string, kind: LibraryGrantKind) : Promise<Result<boolean, string>> {
     try {

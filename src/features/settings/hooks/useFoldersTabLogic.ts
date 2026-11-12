@@ -47,6 +47,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingScansRef = useRef<{ id: string; path: string; variant?: string }[]>([]);
+    // Folders waiting for Rust's grant, so a second Add of the same folder cannot add it twice.
+    const pendingGrantPathsRef = useRef(new Set<string>());
     const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const updateFolderLastScanned = useSettingsStore((s) => s.updateFolderLastScanned);
@@ -434,14 +436,18 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
             setNewFolderPath('');
             return;
         }
+        if (pendingGrantPathsRef.current.has(normalizedNew)) return;
+        pendingGrantPathsRef.current.add(normalizedNew);
 
         // Rust asks the user to confirm a typed folder; a browsed one is already recorded.
-        void requestLibraryFolderGrant(normalizedNew, 'monitoredFolder').then(
-            (granted) => {
-                if (granted) addMonitoredFolder(normalizedNew);
-            },
-            (error: unknown) => addToast(`Could not add folder: ${error instanceof Error ? error.message : String(error)}`, 'error')
-        );
+        void requestLibraryFolderGrant(normalizedNew, 'monitoredFolder')
+            .then(
+                (granted) => {
+                    if (granted) addMonitoredFolder(normalizedNew);
+                },
+                (error: unknown) => addToast(`Could not add folder: ${error instanceof Error ? error.message : String(error)}`, 'error')
+            )
+            .finally(() => pendingGrantPathsRef.current.delete(normalizedNew));
     };
 
     const removeFolder = (id: string) => {
