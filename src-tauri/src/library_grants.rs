@@ -201,9 +201,12 @@ impl GrantStore {
         self.path("").exists() || self.path(BACKUP_SUFFIX).exists()
     }
 
-    /// Renames the registry and its backup to `*.unreadable-<seconds>`, which the
-    /// capability deny still covers, so they stay for diagnosis.
-    fn move_aside(&self) {
+    /// Copies the registry and its backup to `*.unreadable-<seconds>`, which the
+    /// capability deny still covers, so they stay for diagnosis. It copies rather
+    /// than renames: the originals must stay until a readable registry replaces
+    /// them, or a failed save would leave no registry and the next start would
+    /// seed one from webview-written data.
+    fn copy_aside(&self) {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_secs())
@@ -214,9 +217,9 @@ impl GrantStore {
                 continue;
             }
             let aside = self.path(&format!("{suffix}.unreadable-{stamp}"));
-            if let Err(error) = fs::rename(&path, &aside) {
+            if let Err(error) = fs::copy(&path, &aside) {
                 log::error!(
-                    "[LibraryGrants] Could not move {} aside: {error}",
+                    "[LibraryGrants] Could not copy {} aside: {error}",
                     path.display()
                 );
             }
@@ -436,7 +439,7 @@ pub(crate) fn startup_registry(
 /// - A missing registry is seeded by `seed`, which only the start passes. Seeding
 ///   reads settings and the database, which the webview can write, so nothing a
 ///   command does later may trigger it.
-/// - A registry that exists but cannot be read is moved aside for diagnosis and
+/// - A registry that exists but cannot be read is copied aside for diagnosis and
 ///   replaced by an empty one. It is never reseeded.
 fn open_registry(
     store: &GrantStore,
@@ -448,9 +451,9 @@ fn open_registry(
     }
     let registry = if store.exists() {
         log::error!(
-            "[LibraryGrants] The grant registry cannot be read; moving it aside and starting with no grants"
+            "[LibraryGrants] The grant registry cannot be read; keeping a copy and starting with no grants"
         );
-        store.move_aside();
+        store.copy_aside();
         empty_registry(version)
     } else if let Some(seed) = seed {
         let registry = seed();
@@ -923,6 +926,40 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().contains(".unreadable-"))
             .count();
         assert_eq!(aside, 2, "both unreadable copies are kept for diagnosis");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // #392: replacing an unreadable registry can fail part-way. Until the empty
+    // registry is saved, the unreadable files must stay, so the next start still
+    // refuses to seed instead of rebuilding grants from webview-written data.
+    #[test]
+    fn a_failed_replacement_of_an_unreadable_registry_still_blocks_seeding() {
+        let dir = temp_dir("open-fail");
+        let store = GrantStore::new(&dir);
+        let seeded = || {
+            let mut registry = empty_registry("seed");
+            registry.add_folder("D:/Images", LibraryGrantKind::MonitoredFolder);
+            registry
+        };
+        fs::write(dir.join(REGISTRY_FILE_NAME), "{ torn").unwrap();
+        fs::write(
+            dir.join(format!("{REGISTRY_FILE_NAME}{BACKUP_SUFFIX}")),
+            "{ torn",
+        )
+        .unwrap();
+        // A folder where the temp file goes makes the save fail.
+        let temp = dir.join(format!("{REGISTRY_FILE_NAME}{TEMP_SUFFIX}"));
+        fs::create_dir(&temp).unwrap();
+        assert!(open_registry(&store, Some(&seeded), "test").is_err());
+
+        fs::remove_dir(&temp).unwrap();
+        assert_eq!(
+            open_registry(&store, Some(&seeded), "test")
+                .unwrap()
+                .folder_count(),
+            0,
+            "the next start does not seed"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
