@@ -692,6 +692,7 @@ const commandCases: CommandCase[] = [
         payload: { path: 'C:/library', kind: 'monitoredFolder' },
         returnsResult: true,
     },
+    { name: 'waitForLibraryGrants', invokeName: 'wait_for_library_grants', args: [], returnsResult: true },
     {
         name: 'getInvokeDbSnapshot',
         invokeName: 'get_invoke_db_snapshot',

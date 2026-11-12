@@ -1,7 +1,6 @@
 import { appLocalDataDir } from '@tauri-apps/api/path';
 import { commands, type LibraryGrantKind } from '../bindings';
-import { AppSettings } from '../types';
-import { getDirectoryPath, isPathWithinDirectory, normalizeInvokeRoot, normalizePath, urlToPath } from '../utils/pathUtils';
+import { getDirectoryPath, isPathWithinDirectory, normalizePath, urlToPath } from '../utils/pathUtils';
 import { isBrowserMockMode } from './runtime';
 
 const registeredDirectories = new Map<string, Promise<void>>();
@@ -84,8 +83,9 @@ export const ensureAssetPathAccessible = async (
 
 /**
  * Registers a folder before a command that checks the filesystem scope reads it.
- * Returns false when the folder cannot be registered, for example because it does
- * not exist; the failure is already logged. The Rust command stays the decision point.
+ * Rust grants it only when the user granted it, or a folder around it, in
+ * Settings or a picker. Returns false when the folder is not granted or does not
+ * exist; the failure is already logged.
  */
 export const ensureFolderAccessible = async (path: string | null | undefined): Promise<boolean> => {
     try {
@@ -135,21 +135,18 @@ export const revokeLibraryGrant = async (path: string, kind: LibraryGrantKind): 
     if (result.status === 'error') throw new Error(result.error);
 };
 
-export const ensureConfiguredAssetPathsAccessible = async (
-    settings: Pick<AppSettings, 'monitoredFolders' | 'invokeAiPath' | 'resourceFolders'>
-): Promise<void> => {
-    const tasks: Promise<void>[] = settings.monitoredFolders.map((folder) =>
-        ensureAssetPathAccessible(folder.path, { assumeDirectory: true })
-    );
-
-    settings.resourceFolders?.forEach((folder) => {
-        tasks.push(ensureAssetPathAccessible(folder, { assumeDirectory: true }));
-    });
-
-    const invokeRoot = normalizeInvokeRoot(settings.invokeAiPath);
-    if (invokeRoot) {
-        tasks.push(ensureAssetPathAccessible(invokeRoot, { assumeDirectory: true }));
+/**
+ * Waits until Rust has granted the folders and files the user granted before,
+ * which it does at every start. Library images load only after this, because the
+ * webview cannot grant settings folders itself. A failed wait is logged and does
+ * not block the app; folders that were not granted just stay unreadable.
+ */
+export const waitForLibraryGrants = async (): Promise<void> => {
+    if (isBrowserMockMode()) return;
+    try {
+        const result = await commands.waitForLibraryGrants();
+        if (result.status === 'error') throw new Error(result.error);
+    } catch (error) {
+        console.error('[AssetScope] Failed to wait for library grants', error);
     }
-
-    await Promise.allSettled(tasks);
 };

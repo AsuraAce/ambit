@@ -820,6 +820,11 @@ async deleteThumbnail(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Makes a folder the webview names readable, but only when the user already
+ * granted it or a folder around it, and records nothing (#392). Any other
+ * folder is refused.
+ */
 async registerLibraryPath(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("register_library_path", { path }) };
@@ -875,6 +880,19 @@ async requestLibraryFolderGrant(path: string, kind: LibraryGrantKind) : Promise<
 async revokeLibraryGrant(path: string, kind: LibraryGrantKind) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("revoke_library_grant", { path, kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resolves once the start has granted the recorded folders and files again,
+ * whether or not that succeeded. The webview awaits it before it shows the
+ * library, because it no longer registers settings folders itself.
+ */
+async waitForLibraryGrants() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("wait_for_library_grants") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

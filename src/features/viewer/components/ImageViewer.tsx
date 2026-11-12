@@ -10,7 +10,6 @@ import { usePalette } from '../../../hooks/usePalette';
 import { useImageAI } from '../../../hooks/useImageAI';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useCollectionStore } from '../../../stores/collectionStore';
-import { ensureAssetPathAccessible } from '../../../services/assetScope';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
@@ -285,13 +284,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     useEffect(() => {
         setRevealedImageId(initiallyRevealed ? image.id : null);
     }, [image.id, initiallyRevealed]);
-
-    useEffect(() => {
-        if (mediaExposureBlocked) return;
-        void ensureAssetPathAccessible(displayImage.url).catch((error) => {
-            console.warn('[ImageViewer] Failed to register image path for viewer', error);
-        });
-    }, [displayImage.url, mediaExposureBlocked]);
 
     const revealStatusHud = useCallback((duration = 1600) => {
         setShowStatusHud(true);

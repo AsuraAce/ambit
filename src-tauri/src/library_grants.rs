@@ -7,14 +7,18 @@
 //! typed folder in a native confirmation, or names a folder already inside a
 //! granted one. On start Rust grants every entry again. The first start without a
 //! registry seeds it once from what the previous version already granted.
+//!
+//! The webview cannot add a folder any other way: `register_library_path` grants
+//! only a folder inside a recorded grant, and records nothing.
 
-use crate::fs_commands::{grant_library_directory, grant_library_file};
+use crate::fs_commands::{grant_directory_scope, grant_library_directory, grant_library_file};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Manager, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -37,6 +41,12 @@ pub enum LibraryGrantKind {
     A1111Root,
     /// The folder of an image or video imported on its own, before this registry.
     ImportedFolder,
+}
+
+impl LibraryGrantKind {
+    fn is_single_valued(self) -> bool {
+        matches!(self, Self::InvokeAiRoot | Self::A1111Root)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +74,9 @@ impl GrantRegistry {
         self.folders.len()
     }
 
+    /// Records a folder for `kind`. Settings hold one InvokeAI root and one A1111
+    /// root, so a new folder for either replaces that kind's previous entry. Those
+    /// settings commit on every keystroke, which is why Settings never revokes them.
     fn add_folder(&mut self, path: &str, kind: LibraryGrantKind) -> bool {
         let key = path_key(Path::new(path));
         if self
@@ -72,6 +85,9 @@ impl GrantRegistry {
             .any(|grant| grant.kind == kind && path_key(Path::new(&grant.path)) == key)
         {
             return false;
+        }
+        if kind.is_single_valued() {
+            self.folders.retain(|grant| grant.kind != kind);
         }
         self.folders.push(FolderGrant {
             path: path.to_string(),
@@ -409,6 +425,44 @@ fn library_media_paths(db_path: &Path) -> Vec<String> {
 pub struct LibraryGrantState {
     registry: Mutex<Option<GrantRegistry>>,
     confirmation: tokio::sync::Mutex<()>,
+    /// Set once the start has granted the recorded folders and files again.
+    restored: AtomicBool,
+    restored_signal: tokio::sync::Notify,
+}
+
+impl LibraryGrantState {
+    fn open_gate(&self) {
+        self.restored.store(true, Ordering::SeqCst);
+        self.restored_signal.notify_waiters();
+    }
+
+    /// Resolves once [`restore_grants_at_start`] has finished.
+    async fn restored(&self) {
+        loop {
+            // Created before the check, so an `open_gate` in between still wakes it.
+            let signal = self.restored_signal.notified();
+            if self.restored.load(Ordering::SeqCst) {
+                return;
+            }
+            signal.await;
+        }
+    }
+}
+
+/// Runs `restore` and then opens the gate, also when it fails or panics, so the
+/// webview never waits forever. A failed restore leaves fewer folders readable;
+/// it does not block the app.
+fn open_gate_after(state: &LibraryGrantState, restore: impl FnOnce() -> Result<(), String>) {
+    struct OpenOnDrop<'a>(&'a LibraryGrantState);
+    impl Drop for OpenOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.open_gate();
+        }
+    }
+    let _open = OpenOnDrop(state);
+    if let Err(error) = restore() {
+        log::error!("[LibraryGrants] Failed to restore library grants: {error}");
+    }
 }
 
 fn app_local_data_dir(app: &tauri::AppHandle<Wry>) -> Result<PathBuf, String> {
@@ -522,6 +576,22 @@ pub fn restore_grants(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
             log::info!("[LibraryGrants] Not granting {file}: {error}");
         }
     }
+    Ok(())
+}
+
+/// The start's restore: [`restore_grants`], then open the gate that
+/// [`wait_for_library_grants`] and `register_library_path` wait on.
+pub fn restore_grants_at_start(app: &tauri::AppHandle<Wry>) {
+    open_gate_after(&app.state::<LibraryGrantState>(), || restore_grants(app));
+}
+
+/// Resolves once the start has granted the recorded folders and files again,
+/// whether or not that succeeded. The webview awaits it before it shows the
+/// library, because it no longer registers settings folders itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn wait_for_library_grants(app: tauri::AppHandle<Wry>) -> Result<(), String> {
+    app.state::<LibraryGrantState>().restored().await;
     Ok(())
 }
 
@@ -643,6 +713,47 @@ fn classify_folder_request(
     } else {
         FolderRequest::NeedsConfirmation
     }
+}
+
+/// What `register_library_path` may grant for a folder the webview names: the
+/// resolved folder when a recorded grant covers it, nothing when it lies inside
+/// AppLocalData, which is always readable, and an error for anything else.
+fn folder_to_grant(
+    registry: &GrantRegistry,
+    canonical: PathBuf,
+    app_local_data: &Path,
+) -> Result<Option<PathBuf>, String> {
+    match classify_folder_request(registry, &canonical, app_local_data) {
+        FolderRequest::AlwaysReadable => Ok(None),
+        FolderRequest::Covered => Ok(Some(canonical)),
+        FolderRequest::NeedsConfirmation => Err(format!(
+            "Ambit has no grant for {}; add it in Settings first",
+            display_path(&canonical)
+        )),
+    }
+}
+
+/// Grants a folder the webview names, such as a monitored folder before a scan,
+/// only when the user already granted it or a folder around it. It records
+/// nothing. It waits for the start's restore, so the answer reflects every
+/// recorded grant, including a folder on a drive that came back since.
+pub(crate) async fn grant_folder_inside_grants(
+    app: tauri::AppHandle<Wry>,
+    path: String,
+) -> Result<(), String> {
+    app.state::<LibraryGrantState>().restored().await;
+    blocking(move || {
+        let canonical = crate::fs_commands::validate_library_scope_directory(&path)?;
+        let app_local_data = app_local_data_dir(&app)?;
+        let granted = with_registry(&app, |registry| {
+            (folder_to_grant(registry, canonical, &app_local_data), false)
+        })??;
+        match granted {
+            Some(folder) => grant_directory_scope(&app, &folder),
+            None => Ok(()),
+        }
+    })
+    .await
 }
 
 /// Resolves `path` and classifies it; a covered folder is recorded on the way.
@@ -995,6 +1106,145 @@ mod tests {
         assert_eq!(classify(&beside), FolderRequest::NeedsConfirmation);
         assert_eq!(classify(&root), FolderRequest::NeedsConfirmation);
         let _ = fs::remove_dir_all(root);
+    }
+
+    // #392: the webview can ask `register_library_path` for any folder. Only a
+    // folder the user granted, or one inside it, may come back as a grant; any other
+    // folder must be refused, however the webview spells it.
+    #[test]
+    fn register_grants_only_folders_inside_a_recorded_grant() {
+        let root = temp_dir("register");
+        let app_local_data = root.join("AppLocalData");
+        let granted = root.join("granted");
+        let beside = root.join("granted-beside");
+        for dir in [
+            &app_local_data.join("cache"),
+            &granted.join("inside"),
+            &beside,
+        ] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        let mut registry = GrantRegistry::default();
+        registry.add_folder(
+            &granted.to_string_lossy(),
+            LibraryGrantKind::MonitoredFolder,
+        );
+        let request = |path: &Path| {
+            let canonical =
+                crate::fs_commands::validate_library_scope_directory(&path.to_string_lossy())?;
+            folder_to_grant(&registry, canonical, &app_local_data)
+        };
+        let canonical = |path: &Path| Some(fs::canonicalize(path).unwrap());
+
+        assert_eq!(request(&granted), Ok(canonical(&granted)));
+        assert_eq!(
+            request(&granted.join("inside")),
+            Ok(canonical(&granted.join("inside")))
+        );
+        assert_eq!(request(&app_local_data.join("cache")), Ok(None));
+        assert!(request(&beside).is_err(), "a sibling folder is refused");
+        assert!(request(&root).is_err(), "the parent folder is refused");
+        assert!(
+            request(
+                &granted
+                    .join("inside")
+                    .join("..")
+                    .join("..")
+                    .join("granted-beside")
+            )
+            .is_err(),
+            "a `..` escape is refused"
+        );
+
+        // A link inside the granted folder that points out of it is judged by
+        // where it leads. Creating one may need privileges on Windows.
+        let link = granted.join("link-out");
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(&beside, &link);
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&beside, &link);
+        if linked.is_ok() {
+            assert!(
+                request(&link).is_err(),
+                "a link out of the grant is refused"
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #392 2b: Settings hold one InvokeAI root and one A1111 root, and never revoke
+    // them. A new one must replace the old grant, or every root the user ever tried
+    // stays readable at each start.
+    #[test]
+    fn a_new_root_replaces_the_previous_root_of_its_kind() {
+        let mut registry = GrantRegistry::default();
+        assert!(registry.add_folder("D:/Invoke-old", LibraryGrantKind::InvokeAiRoot));
+        assert!(registry.add_folder("D:/A1111", LibraryGrantKind::A1111Root));
+        assert!(registry.add_folder("D:/Photos", LibraryGrantKind::MonitoredFolder));
+        assert!(registry.add_folder("D:/Invoke-new", LibraryGrantKind::InvokeAiRoot));
+
+        assert_eq!(
+            folder_paths(&registry, LibraryGrantKind::InvokeAiRoot),
+            ["D:/Invoke-new"]
+        );
+        assert_eq!(
+            folder_paths(&registry, LibraryGrantKind::A1111Root),
+            ["D:/A1111"]
+        );
+        assert!(
+            !registry.add_folder("D:/Invoke-new", LibraryGrantKind::InvokeAiRoot),
+            "the same root again changes nothing"
+        );
+
+        // Folder lists keep every entry.
+        assert!(registry.add_folder("D:/Renders", LibraryGrantKind::MonitoredFolder));
+        assert_eq!(
+            folder_paths(&registry, LibraryGrantKind::MonitoredFolder),
+            ["D:/Photos", "D:/Renders"]
+        );
+    }
+
+    // #392 2b: the webview no longer registers settings folders, so it must not
+    // load the library before the start has granted them again; and a restore that
+    // fails or panics must still let it in rather than hang the app.
+    #[test]
+    fn the_gate_opens_only_after_the_restore_however_it_ends() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        let wait = |state: &Arc<LibraryGrantState>, millis| {
+            let state = Arc::clone(state);
+            tauri::async_runtime::block_on(async move {
+                tokio::time::timeout(Duration::from_millis(millis), state.restored())
+                    .await
+                    .is_ok()
+            })
+        };
+
+        let state = Arc::new(LibraryGrantState::default());
+        assert!(!wait(&state, 50), "closed before the restore");
+        let waiter = {
+            let state = Arc::clone(&state);
+            tauri::async_runtime::spawn(async move { state.restored().await })
+        };
+        open_gate_after(&state, || Ok(()));
+        tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("a waiting caller is let in")
+                .unwrap();
+        });
+        assert!(wait(&state, 5_000), "later callers pass at once");
+
+        let failed = Arc::new(LibraryGrantState::default());
+        open_gate_after(&failed, || Err("unreadable".to_string()));
+        assert!(wait(&failed, 5_000), "a failed restore opens the gate");
+
+        let panicked = Arc::new(LibraryGrantState::default());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            open_gate_after(&panicked, || panic!("restore panicked"))
+        }));
+        assert!(result.is_err());
+        assert!(wait(&panicked, 5_000), "a panicking restore opens the gate");
     }
 
     // #392: the registry keeps the folder the user approved, not the spelling the

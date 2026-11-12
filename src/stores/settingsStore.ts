@@ -3,13 +3,7 @@ import { devtools } from 'zustand/middleware';
 import { AppSettings, AppSettingsUpdate } from '../types';
 import { appRepository } from '../services/repository';
 import { commands } from '../bindings';
-import {
-    ensureAssetPathAccessible,
-    ensureConfiguredAssetPathsAccessible,
-    requestLibraryFolderGrant,
-    revokeLibraryGrant,
-} from '../services/assetScope';
-import { normalizeInvokeRoot } from '../utils/pathUtils';
+import { requestLibraryFolderGrant, revokeLibraryGrant, waitForLibraryGrants } from '../services/assetScope';
 import { isBrowserMockMode } from '../services/runtime';
 import { createDefaultAppSettings } from '../constants/defaultSettings';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
@@ -183,14 +177,8 @@ export const useSettingsStore = create<SettingsState>()(
                         );
                     }
                 });
-
-                const previousInvokeRoot = normalizeInvokeRoot(previousSettings.invokeAiPath);
-                const nextInvokeRoot = normalizeInvokeRoot(nextSettings.invokeAiPath);
-                if (!isBrowserMockMode() && nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {
-                    void ensureAssetPathAccessible(nextInvokeRoot, { assumeDirectory: true }).catch((error) =>
-                        console.error('[SettingsStore] Failed to register InvokeAI scope:', error)
-                    );
-                }
+                // The InvokeAI and A1111 roots are granted when the user picks or
+                // confirms them, not here: these settings commit on every keystroke.
             },
 
             rollbackSettings: (permit, update) => {
@@ -276,6 +264,11 @@ export const useSettingsStore = create<SettingsState>()(
                             }
                         }
 
+                        // The app shows the library once settings are loaded. Rust grants
+                        // the folders the user granted before at every start; wait for it,
+                        // or the first images would load before their folder is readable.
+                        await waitForLibraryGrants();
+
                         if (state.settings) {
                             // Merge with defaults to ensure new settings have defined values
                             // even if user's saved settings file is from an older version
@@ -315,10 +308,6 @@ export const useSettingsStore = create<SettingsState>()(
                             // NEW: Enable devMode by default in development environment if not already set
                             if (import.meta.env.DEV && mergedSettings.devMode === undefined) {
                                 mergedSettings.devMode = true;
-                            }
-
-                            if (!isBrowserMockMode()) {
-                                await ensureConfiguredAssetPathsAccessible(mergedSettings);
                             }
 
                             set({

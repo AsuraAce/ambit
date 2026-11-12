@@ -177,6 +177,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             library_grants::pick_library_files,
             library_grants::request_library_folder_grant,
             library_grants::revoke_library_grant,
+            library_grants::wait_for_library_grants,
             fs_commands::get_invoke_db_snapshot,
             invoke_source::select_invoke_source,
         ])
@@ -314,9 +315,7 @@ pub fn run() {
             // Grant the folders and files the user chose in earlier sessions.
             let handle_for_grants = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
-                if let Err(e) = library_grants::restore_grants(&handle_for_grants) {
-                    log::error!("[LibraryGrants] Failed to restore library grants: {}", e);
-                }
+                library_grants::restore_grants_at_start(&handle_for_grants);
             });
 
             // 1. Initialize DB settings (WAL mode, etc.)
