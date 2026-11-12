@@ -4,7 +4,7 @@ import { formatImageDisplayDate } from '../../../utils/imageDates';
 import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2, Play, Video } from 'lucide-react';
 import { AIImage, isVideoAsset, getEffectiveSourceKind } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
-import { formatModelName } from '../../../utils/formatUtils';
+import { formatModelName, readModelName } from '../../../utils/formatUtils';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { getInvokeImageAssetLabel } from '../../../utils/invokeImageSource';
 
@@ -232,14 +232,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                                     if (isVideo) return image.videoCodec;
                                     if (sourceKind === 'photograph') return image.photoMetadata?.cameraModel || 'Photo';
                                     if (sourceKind === 'other') return 'Other';
-                                    const modelValue = image.metadata.model as unknown;
-                                    const model =
-                                        typeof modelValue === 'string'
-                                            ? modelValue
-                                            : modelValue && typeof modelValue === 'object' && 'name' in modelValue
-                                              ? // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
-                                                String((modelValue as { name?: unknown }).name || '')
-                                              : '';
+                                    const model = readModelName(image.metadata.model);
                                     if (image.metadata.overrideModel) return formatModelName(image.metadata.overrideModel);
                                     if (model && model !== 'Unknown') return formatModelName(model);
                                     if (image.metadata.modelHash) return `Hash: ${image.metadata.modelHash.slice(0, 8)}`;

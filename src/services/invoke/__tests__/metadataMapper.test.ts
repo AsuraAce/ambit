@@ -285,6 +285,17 @@ describe('metadataMapper', () => {
         ).toBe('wrapper-hash');
     });
 
+    it('reads nested model_hash records as their hash and never as [object Object]', () => {
+        expect(mapRawInvokeMetadata({ model_hash: { name: 'sdxl', hash: 'blake3:def', base: 'sdxl' } }).modelHash).toBe('def');
+        expect(mapRawInvokeMetadata({ invokeai_metadata: { positive_prompt: 'prompt' }, model_hash: { hash: 'wrapped' } }).modelHash).toBe(
+            'wrapped'
+        );
+        expect(mapRawInvokeMetadata({ model_hash: { key: 'no-hash' }, image: { model: { hash: 'blake3:fallback' } } }).modelHash).toBe(
+            'fallback'
+        );
+        expect(mapRawInvokeMetadata({ model_hash: { hash: { value: 'deep' } } }).modelHash).toBeUndefined();
+    });
+
     it('ignores inherited enumerable properties during recursive resource scans', () => {
         const inherited = { nested: { embeddings: ['inherited'] } };
         const metadata = Object.create(inherited) as Record<string, unknown>;

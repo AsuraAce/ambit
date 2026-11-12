@@ -273,6 +273,16 @@ describe('ImageCard', () => {
 
         rerender(
             <ImageCard
+                image={image({ metadata: { ...image().metadata, model: { name: { key: 'abc' } } as unknown as string } })}
+                isSelected={false}
+                {...callbacks}
+            />
+        );
+        expect(screen.getByText('Model')).toBeTruthy();
+        expect(screen.queryByText(/object Object/)).toBeNull();
+
+        rerender(
+            <ImageCard
                 image={image({ metadata: { ...image().metadata, model: null as unknown as string } })}
                 isSelected={false}
                 {...callbacks}
