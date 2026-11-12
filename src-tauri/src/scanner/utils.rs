@@ -112,14 +112,21 @@ pub fn validate_thumbnail_dir(dir: Option<&str>, app_thumbnail_dir: &Path) -> Re
     let Some(dir) = dir else {
         return Ok(());
     };
-    let requested = Path::new(dir.trim());
+    // Callers write to `dir` as given, so check that exact spelling: a trimmed copy
+    // could pass while the untrimmed one names another folder.
+    if dir != dir.trim() {
+        return Err(format!(
+            "Thumbnail folder must not start or end with whitespace: {dir:?}"
+        ));
+    }
+    let requested = Path::new(dir);
     let same = match (
         fs::canonicalize(requested),
         fs::canonicalize(app_thumbnail_dir),
     ) {
         (Ok(requested), Ok(own)) => requested == own,
         _ => {
-            !dir.trim().is_empty()
+            !dir.is_empty()
                 && normalize_dir_spelling(requested) == normalize_dir_spelling(app_thumbnail_dir)
         }
     };
@@ -823,6 +830,9 @@ mod tests {
             validate_thumbnail_dir(Some(&spelled(&own.join("..").join("other"))), &own).is_err()
         );
         assert!(validate_thumbnail_dir(Some(""), &own).is_err());
+        // The commands write to the untrimmed spelling, so whitespace around it is refused.
+        assert!(validate_thumbnail_dir(Some(&format!(" {}", spelled(&own))), &own).is_err());
+        assert!(validate_thumbnail_dir(Some(&format!("{} ", spelled(&own))), &own).is_err());
 
         // Before Ambit's folder exists, only its exact spelling passes.
         let missing_own = temp_root.join("missing").join(".thumbnails");
