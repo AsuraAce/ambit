@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri_specta::Event as SpectaEvent;
 
+use crate::scanner::utils::{app_thumbnail_dir, validate_thumbnail_dir};
+
 const CURRENT_THUMBNAIL_VERSION: i64 = super::CURRENT_THUMBNAIL_VERSION as i64;
 const FAILURE_BACKOFF_MS: i64 = 60 * 60 * 1000;
 const DB_FLUSH_LIMIT: usize = 100;
@@ -474,6 +476,7 @@ pub async fn start_thumbnail_optimization_job(
     config: ThumbnailOptimizationConfig,
     owner_id: String,
 ) -> Result<ThumbnailOptimizationResult, String> {
+    validate_thumbnail_dir(Some(&config.thumbnail_dir), &app_thumbnail_dir(&app)?)?;
     let is_cancelled = state.is_cancelled.clone();
     let is_running = state.is_running.clone();
     let manual_operation = state.manual_operation.clone();
@@ -547,6 +550,7 @@ pub async fn repair_thumbnail_batch(
     state: tauri::State<'_, ThumbnailOptimizationState>,
     input: ThumbnailRepairBatchInput,
 ) -> Result<ThumbnailRepairBatchResult, String> {
+    validate_thumbnail_dir(Some(&input.thumbnail_dir), &app_thumbnail_dir(&app)?)?;
     if input.ids.len() > MAX_REPAIR_BATCH_SIZE {
         return Err(format!(
             "Thumbnail repair batch exceeds the {MAX_REPAIR_BATCH_SIZE}-image limit"
@@ -3262,6 +3266,71 @@ mod tests {
         assert_eq!(row.3, 0);
         assert_eq!(row.4, None);
         assert_eq!(row.5, None);
+    }
+
+    #[test]
+    fn optimizer_refuses_a_foreign_thumbnail_dir_before_writing_to_it() {
+        let temp_root = temp_thumbnail_dir("foreign-thumbnail-dir");
+        let _ = fs::remove_dir_all(&temp_root);
+        let own = temp_root.join(".thumbnails");
+        let foreign = temp_root.join("foreign");
+        fs::create_dir_all(&foreign).expect("foreign directory");
+        let source_path = temp_root.join("source.png");
+        image::ImageBuffer::from_pixel(8, 8, image::Rgba([0_u8, 0, 255, 255]))
+            .save(&source_path)
+            .expect("source image");
+        let conn = setup_queue_db();
+        insert_image(&conn, "foreign-dir", None, None, 0, 20);
+        conn.execute(
+            "UPDATE images SET path = ?1 WHERE id = 'foreign-dir'",
+            [source_path.to_string_lossy().as_ref()],
+        )
+        .expect("set source path");
+        let candidate =
+            load_thumbnail_candidates_for_ids(&conn, &["foreign-dir".to_string()], true, false, 0)
+                .expect("load forced candidate")
+                .pop()
+                .expect("forced candidate");
+        let webp_count = |dir: &Path| {
+            fs::read_dir(dir)
+                .map(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "webp"))
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+        // The order both optimizer commands run: the folder check, then the write.
+        let optimize = |dir: &Path| {
+            let dir = dir.to_string_lossy();
+            validate_thumbnail_dir(Some(&dir), &own)?;
+            Ok::<_, String>(optimize_thumbnail_candidate(
+                &candidate,
+                &dir,
+                true,
+                &AtomicBool::new(false),
+            ))
+        };
+
+        assert!(optimize(&foreign)
+            .expect_err("a foreign thumbnail folder is refused")
+            .starts_with("Thumbnail folder must be Ambit's own thumbnail folder"));
+        assert_eq!(
+            webp_count(&foreign),
+            0,
+            "nothing is written to the refused folder"
+        );
+
+        // The same optimization into Ambit's own folder writes a thumbnail, so the
+        // check above is what stopped the write.
+        fs::create_dir_all(&own).expect("own thumbnail directory");
+        assert!(matches!(
+            optimize(&own),
+            Ok(ThumbnailItemResult::Success { .. })
+        ));
+        assert_eq!(webp_count(&own), 1);
+        let _ = fs::remove_dir_all(temp_root);
     }
 
     #[test]
