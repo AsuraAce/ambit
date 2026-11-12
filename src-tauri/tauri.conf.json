@@ -29,9 +29,14 @@
       ],
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$APPLOCALDATA/**"
-        ]
+        "scope": {
+          "allow": [
+            "$APPLOCALDATA/**"
+          ],
+          "deny": [
+            "$APPLOCALDATA/library-grants.json*"
+          ]
+        }
       }
     }
   },

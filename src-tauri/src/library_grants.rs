@@ -50,14 +50,20 @@ struct FolderGrant {
 #[serde(rename_all = "camelCase")]
 pub struct GrantRegistry {
     version: u32,
-    /// The Ambit version that seeded the registry from the previous version's
-    /// settings. Seeding runs only while neither the registry nor its backup exists.
+    /// What created the registry: the Ambit version that seeded it from the
+    /// previous version's settings, or that started it empty. Seeding runs only at
+    /// start, and only while neither the registry nor its backup exists.
     seeded_by: Option<String>,
     folders: Vec<FolderGrant>,
     files: Vec<String>,
 }
 
 impl GrantRegistry {
+    #[cfg(test)]
+    pub(crate) fn folder_count(&self) -> usize {
+        self.folders.len()
+    }
+
     fn add_folder(&mut self, path: &str, kind: LibraryGrantKind) -> bool {
         let key = path_key(Path::new(path));
         if self
@@ -195,6 +201,28 @@ impl GrantStore {
         self.path("").exists() || self.path(BACKUP_SUFFIX).exists()
     }
 
+    /// Renames the registry and its backup to `*.unreadable-<seconds>`, which the
+    /// capability deny still covers, so they stay for diagnosis.
+    fn move_aside(&self) {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or_default();
+        for suffix in ["", BACKUP_SUFFIX] {
+            let path = self.path(suffix);
+            if !path.exists() {
+                continue;
+            }
+            let aside = self.path(&format!("{suffix}.unreadable-{stamp}"));
+            if let Err(error) = fs::rename(&path, &aside) {
+                log::error!(
+                    "[LibraryGrants] Could not move {} aside: {error}",
+                    path.display()
+                );
+            }
+        }
+    }
+
     /// The registry, from its backup when the main file is missing or unreadable,
     /// or `None` when neither can be read.
     pub fn load(&self) -> Option<GrantRegistry> {
@@ -235,6 +263,21 @@ impl GrantStore {
     }
 }
 
+/// A registry with no grants, which stops seeding: the start after a factory reset
+/// must not rebuild grants from the settings the reset is about to clear.
+pub(crate) fn empty_registry(created_by: &str) -> GrantRegistry {
+    GrantRegistry {
+        version: REGISTRY_VERSION,
+        seeded_by: Some(created_by.to_string()),
+        ..GrantRegistry::default()
+    }
+}
+
+/// Replaces the registry in `dir` with an empty one, for a factory reset.
+pub(crate) fn reset_registry(dir: &Path) -> Result<(), String> {
+    GrantStore::new(dir).save(&empty_registry("factory reset"))
+}
+
 /// What the previous version granted on every start: the settings folders, and
 /// the folder of each library file outside them.
 pub struct PreviousGrants {
@@ -250,11 +293,7 @@ pub fn seed_registry(
     app_local_data: &Path,
     seeded_by: &str,
 ) -> GrantRegistry {
-    let mut registry = GrantRegistry {
-        version: REGISTRY_VERSION,
-        seeded_by: Some(seeded_by.to_string()),
-        ..GrantRegistry::default()
-    };
+    let mut registry = empty_registry(seeded_by);
     for (path, kind) in previous.folders {
         let path = path.trim();
         if is_recordable_folder(Path::new(path), app_local_data) {
@@ -356,8 +395,9 @@ fn library_media_paths(db_path: &Path) -> Vec<String> {
     if !db_path.exists() {
         return Vec::new();
     }
+    // Not retried later: by then the database holds rows the new build's webview wrote.
     read().unwrap_or_else(|error| {
-        log::warn!("[LibraryGrants] Could not read library paths to seed grants: {error}");
+        log::error!("[LibraryGrants] Could not read library paths to seed grants: {error}");
         Vec::new()
     })
 }
@@ -374,49 +414,74 @@ fn app_local_data_dir(app: &tauri::AppHandle<Wry>) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to resolve app local data directory: {e}"))
 }
 
-/// Runs `f` on the registry, loading it on first use and seeding it when no
-/// registry exists yet, then saves it when `f` reports a change.
+/// The registry Ambit starts with. Only this seeds a missing registry, from the
+/// previous version's settings and library; see [`open_registry`].
+pub(crate) fn startup_registry(
+    app_local_data: &Path,
+    db_path: &Path,
+    version: &str,
+) -> Result<GrantRegistry, String> {
+    let seed = || {
+        let previous = PreviousGrants {
+            folders: settings_folders(app_local_data),
+            media_paths: library_media_paths(db_path),
+        };
+        seed_registry(previous, app_local_data, version)
+    };
+    open_registry(&GrantStore::new(app_local_data), Some(&seed), version)
+}
+
+/// Loads the registry.
+///
+/// - A missing registry is seeded by `seed`, which only the start passes. Seeding
+///   reads settings and the database, which the webview can write, so nothing a
+///   command does later may trigger it.
+/// - A registry that exists but cannot be read is moved aside for diagnosis and
+///   replaced by an empty one. It is never reseeded.
+fn open_registry(
+    store: &GrantStore,
+    seed: Option<&dyn Fn() -> GrantRegistry>,
+    version: &str,
+) -> Result<GrantRegistry, String> {
+    if let Some(registry) = store.load() {
+        return Ok(registry);
+    }
+    let registry = if store.exists() {
+        log::error!(
+            "[LibraryGrants] The grant registry cannot be read; moving it aside and starting with no grants"
+        );
+        store.move_aside();
+        empty_registry(version)
+    } else if let Some(seed) = seed {
+        let registry = seed();
+        log::info!(
+            "[LibraryGrants] Seeded {} folder grants from the previous version",
+            registry.folders.len()
+        );
+        registry
+    } else {
+        return Err("Library grants are not restored yet".to_string());
+    };
+    store.save(&registry)?;
+    Ok(registry)
+}
+
+/// Runs `f` on the registry, loading it on first use, then saves it when `f`
+/// reports a change. It never seeds: before [`restore_grants`] has run, a missing
+/// registry is an error.
 fn with_registry<T>(
     app: &tauri::AppHandle<Wry>,
     f: impl FnOnce(&mut GrantRegistry) -> (T, bool),
 ) -> Result<T, String> {
-    let app_local_data = app_local_data_dir(app)?;
-    let store = GrantStore::new(&app_local_data);
+    let store = GrantStore::new(app_local_data_dir(app)?);
     let state = app.state::<LibraryGrantState>();
     let mut guard = state
         .registry
         .lock()
         .map_err(|_| "The grant registry lock is poisoned".to_string())?;
     if guard.is_none() {
-        let registry = match store.load() {
-            Some(registry) => registry,
-            // Seeding reads settings and the database, which the webview can write,
-            // so it must not replace a registry that exists but cannot be read.
-            None if store.exists() => {
-                return Err(
-                    "The library grant registry cannot be read; not rebuilding it".to_string(),
-                )
-            }
-            None => {
-                let db_path = crate::db::resolve_db_path(app)?;
-                let previous = PreviousGrants {
-                    folders: settings_folders(&app_local_data),
-                    media_paths: library_media_paths(&db_path),
-                };
-                let registry = seed_registry(
-                    previous,
-                    &app_local_data,
-                    &app.package_info().version.to_string(),
-                );
-                store.save(&registry)?;
-                log::info!(
-                    "[LibraryGrants] Seeded {} folder grants from the previous version",
-                    registry.folders.len()
-                );
-                registry
-            }
-        };
-        *guard = Some(registry);
+        let version = app.package_info().version.to_string();
+        *guard = Some(open_registry(&store, None, &version)?);
     }
     let registry = guard.as_mut().expect("registry loaded above");
     let (value, changed) = f(registry);
@@ -429,9 +494,21 @@ fn with_registry<T>(
 /// Grants every recorded folder and file again. Runs once at start, off the main
 /// thread, because a folder on an offline network drive can take long to resolve.
 pub fn restore_grants(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
-    let (folders, files) = with_registry(app, |registry| {
-        ((registry.folders.clone(), registry.files.clone()), false)
-    })?;
+    let app_local_data = app_local_data_dir(app)?;
+    let db_path = crate::db::resolve_db_path(app)?;
+    let (folders, files) = {
+        let state = app.state::<LibraryGrantState>();
+        let mut guard = state
+            .registry
+            .lock()
+            .map_err(|_| "The grant registry lock is poisoned".to_string())?;
+        if guard.is_none() {
+            let version = app.package_info().version.to_string();
+            *guard = Some(startup_registry(&app_local_data, &db_path, &version)?);
+        }
+        let registry = guard.as_ref().expect("registry loaded above");
+        (registry.folders.clone(), registry.files.clone())
+    };
     for grant in folders {
         if let Err(error) = grant_library_directory(app, &grant.path) {
             log::info!("[LibraryGrants] Not granting {}: {error}", grant.path);
@@ -811,6 +888,44 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    // #392: only the start seeds a missing registry, and an unreadable one is kept
+    // aside and replaced by an empty one, never rebuilt from webview-written data.
+    #[test]
+    fn only_the_start_seeds_and_an_unreadable_registry_starts_empty() {
+        let dir = temp_dir("open");
+        let store = GrantStore::new(&dir);
+        let seeded = || {
+            let mut registry = empty_registry("seed");
+            registry.add_folder("D:/Images", LibraryGrantKind::MonitoredFolder);
+            registry
+        };
+        assert!(open_registry(&store, None, "test").is_err());
+        assert!(!store.exists(), "a command does not create the registry");
+        assert_eq!(
+            open_registry(&store, Some(&seeded), "test")
+                .unwrap()
+                .folder_count(),
+            1
+        );
+
+        fs::write(dir.join(REGISTRY_FILE_NAME), "{ torn").unwrap();
+        fs::write(
+            dir.join(format!("{REGISTRY_FILE_NAME}{BACKUP_SUFFIX}")),
+            "{ torn",
+        )
+        .unwrap();
+        let registry = open_registry(&store, Some(&seeded), "test").unwrap();
+        assert_eq!(registry.folder_count(), 0, "not reseeded");
+        assert_eq!(store.load(), Some(registry), "the empty registry is saved");
+        let aside = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".unreadable-"))
+            .count();
+        assert_eq!(aside, 2, "both unreadable copies are kept for diagnosis");
+        let _ = fs::remove_dir_all(dir);
+    }
+
     // #392: a typed folder is recorded silently only inside a folder the user
     // already granted; anything else outside AppLocalData needs a confirmation.
     #[test]
@@ -853,7 +968,7 @@ mod tests {
         let recorded = display_path(&resolved);
         assert!(Path::new(&recorded).is_absolute(), "{recorded} is absolute");
         assert!(
-            !recorded.starts_with(r"\?\"),
+            !recorded.starts_with(r"\\?\"),
             "{recorded} has no verbatim prefix"
         );
         assert_eq!(
@@ -953,26 +1068,12 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// The webview must not be able to write, replace or remove the registry. A
-    /// deny in the global `fs:scope` applies to every fs-plugin command (write,
-    /// remove, rename, copy, truncate), and tauri-plugin-fs checks denies before
-    /// allows, including allows added at runtime.
-    #[test]
-    fn the_fs_capability_denies_the_registry_files_to_the_webview() {
-        let capability: serde_json::Value =
-            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
-        let denies: Vec<String> = capability["permissions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|permission| permission["identifier"] == "fs:scope")
-            .flat_map(|permission| permission["deny"].as_array().cloned().unwrap_or_default())
-            .filter_map(|entry| entry["path"].as_str().map(str::to_string))
-            .collect();
-        assert!(!denies.is_empty(), "fs:scope denies the registry");
-
+    /// Checks that `denies`, spelled as in a Tauri config, forbid every registry
+    /// file in any letter case while leaving other AppLocalData files allowed.
+    fn assert_denies_the_registry(denies: &[String], label: &str) {
+        assert!(!denies.is_empty(), "{label} denies the registry");
         let app = tauri::test::mock_app();
-        let app_local_data = temp_dir("capability");
+        let app_local_data = temp_dir(&format!("deny-{label}"));
         let local = app_local_data.to_string_lossy().replace('\\', "/");
         let scope = tauri::scope::fs::Scope::new(
             &app,
@@ -995,15 +1096,23 @@ mod tests {
             "library-GRANTS.json.bak",
         ] {
             let file = app_local_data.join(name);
-            assert!(scope.is_forbidden(&file), "{} is denied", file.display());
+            assert!(
+                scope.is_forbidden(&file),
+                "{label}: {} is denied",
+                file.display()
+            );
         }
-        for suffix in ["", BACKUP_SUFFIX, TEMP_SUFFIX] {
+        for suffix in ["", BACKUP_SUFFIX, TEMP_SUFFIX, ".unreadable-1"] {
             let file = app_local_data.join(format!("{REGISTRY_FILE_NAME}{suffix}"));
             fs::write(&file, "{}").unwrap();
-            assert!(scope.is_forbidden(&file), "{} is denied", file.display());
+            assert!(
+                scope.is_forbidden(&file),
+                "{label}: {} is denied",
+                file.display()
+            );
             assert!(
                 !scope.is_allowed(&file),
-                "{} is not allowed",
+                "{label}: {} is not allowed",
                 file.display()
             );
         }
@@ -1011,8 +1120,48 @@ mod tests {
         fs::write(&settings, "{}").unwrap();
         assert!(
             scope.is_allowed(&settings),
-            "other AppLocalData files stay allowed"
+            "{label}: other AppLocalData files stay allowed"
         );
         let _ = fs::remove_dir_all(app_local_data);
+    }
+
+    /// The webview must not be able to write, replace or remove the registry. A
+    /// deny in the global `fs:scope` applies to every fs-plugin command (write,
+    /// remove, rename, copy, truncate), and tauri-plugin-fs checks denies before
+    /// allows, including allows added at runtime.
+    #[test]
+    fn the_fs_capability_denies_the_registry_files_to_the_webview() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let denies: Vec<String> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|permission| permission["identifier"] == "fs:scope")
+            .flat_map(|permission| permission["deny"].as_array().cloned().unwrap_or_default())
+            .filter_map(|entry| entry["path"].as_str().map(str::to_string))
+            .collect();
+        assert_denies_the_registry(&denies, "fs-capability");
+    }
+
+    /// The asset protocol must not serve the registry either. Its scope also
+    /// checks denies first, including against folders granted at runtime.
+    #[test]
+    fn every_asset_protocol_scope_denies_the_registry_files() {
+        for (label, config) in [
+            ("release", include_str!("../tauri.conf.json")),
+            ("dev", include_str!("../tauri.dev.json")),
+            ("qa", include_str!("../tauri.qa.json")),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(config).unwrap();
+            let denies: Vec<String> = config["app"]["security"]["assetProtocol"]["scope"]["deny"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|deny| deny.as_str().map(str::to_string))
+                .collect();
+            assert_denies_the_registry(&denies, label);
+        }
     }
 }

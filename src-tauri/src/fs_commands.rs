@@ -36,10 +36,28 @@ pub struct DeleteRemovedImagesResult {
     pub not_found_ids: Vec<String>,
 }
 
+fn app_local_data_dir(app: &tauri::AppHandle<Wry>) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Failed to resolve app local data directory: {}", e))
+}
+
+/// Refuses a library-file deletion inside AppLocalData. No library file lives
+/// there, only Ambit's own state, such as the grant registry, which a forged
+/// database row must not be able to delete (#392).
+fn refuse_app_data_file(canonical_file: &Path, app_local_data: &Path) -> Result<(), String> {
+    let own = fs::canonicalize(app_local_data).unwrap_or_else(|_| app_local_data.to_path_buf());
+    if canonical_file.starts_with(&own) {
+        return Err("Refusing to move Ambit's own data to trash".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn move_to_trash(app: tauri::AppHandle<Wry>, path: String) -> Result<(), String> {
     let canonical_file = resolve_existing_regular_file(&path)?;
+    refuse_app_data_file(&canonical_file, &app_local_data_dir(&app)?)?;
     let conn = open_configured_app_db(&app)?;
 
     if !path_is_known_media_file(&conn, &path, &canonical_file)? {
@@ -57,13 +75,10 @@ pub async fn delete_removed_images_from_disk(
 ) -> Result<DeleteRemovedImagesResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut conn = open_configured_app_db(&app)?;
-        let thumbnail_dir = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|e| format!("Failed to resolve app local data directory: {}", e))?
-            .join(".thumbnails");
+        let app_local_data = app_local_data_dir(&app)?;
+        let thumbnail_dir = app_local_data.join(".thumbnails");
 
-        delete_removed_images_with(&mut conn, &thumbnail_dir, &ids, |path| {
+        delete_removed_images_with(&mut conn, &thumbnail_dir, &app_local_data, &ids, |path| {
             trash::delete(path).map_err(|error| format!("Failed to move to trash: {}", error))
         })
     })
@@ -345,6 +360,7 @@ fn normalize_path_string(path: &str) -> String {
 fn delete_removed_images_with<F>(
     conn: &mut Connection,
     thumbnail_dir: &Path,
+    app_local_data: &Path,
     ids: &[String],
     mut trash_file: F,
 ) -> Result<DeleteRemovedImagesResult, String>
@@ -426,6 +442,11 @@ where
                         continue;
                     }
                 };
+                if let Err(error) = refuse_app_data_file(&canonical_source, app_local_data) {
+                    log::error!("[Removed] {}: {}", error, source_path);
+                    result.failed_ids.push(id);
+                    continue;
+                }
                 if let Err(error) = trash_file(&canonical_source) {
                     log::error!(
                         "[Removed] Failed to move source to trash {}: {}",
@@ -533,7 +554,8 @@ where
 mod tests {
     use super::{
         delete_removed_images_with, invoke_db_snapshot_in_scope, path_is_known_media_file,
-        resolve_eligible_thumbnail_file, resolve_invoke_db_path, validate_library_scope_directory,
+        refuse_app_data_file, resolve_eligible_thumbnail_file, resolve_invoke_db_path,
+        validate_library_scope_directory,
     };
     use rusqlite::Connection;
     use std::fs;
@@ -789,6 +811,7 @@ mod tests {
         let result = delete_removed_images_with(
             &mut conn,
             &thumbnail_dir,
+            Path::new("/no-app-local-data"),
             &["C:\\normalized\\source.png".to_string()],
             |path| fs::remove_file(path).map_err(|error| error.to_string()),
         )
@@ -836,6 +859,7 @@ mod tests {
         let result = delete_removed_images_with(
             &mut conn,
             &root.join(".thumbnails"),
+            Path::new("/no-app-local-data"),
             &["missing".to_string()],
             |_| panic!("missing files must not be sent to trash"),
         )
@@ -844,6 +868,40 @@ mod tests {
         assert_eq!(result.cleared_ids, ["missing"]);
         assert_eq!(result.already_missing_ids, ["missing"]);
         assert_eq!(removed_image_count(&conn), 0);
+    }
+
+    // #392: the webview can insert database rows, so a row naming the grant registry
+    // must not let it delete the registry and have it reseeded from settings.
+    #[test]
+    fn removed_delete_and_trash_refuse_files_inside_app_local_data() {
+        let root = temp_dir("removed_delete_app_data");
+        let app_local_data = root.join("AppLocalData");
+        fs::create_dir_all(&app_local_data).unwrap();
+        let registry = app_local_data.join(crate::library_grants::REGISTRY_FILE_NAME);
+        fs::write(&registry, "{}").unwrap();
+        let mut conn = removed_images_connection();
+        insert_removed_image(&conn, "registry", &registry, None, false);
+
+        let result = delete_removed_images_with(
+            &mut conn,
+            &root.join(".thumbnails"),
+            &app_local_data,
+            &["registry".to_string()],
+            |_| panic!("a file inside AppLocalData must not be sent to trash"),
+        )
+        .unwrap();
+
+        assert_eq!(result.failed_ids, ["registry"]);
+        assert!(registry.exists());
+        let canonical = fs::canonicalize(&registry).unwrap();
+        assert!(refuse_app_data_file(&canonical, &app_local_data).is_err());
+        let library_file = root.join("image.png");
+        fs::write(&library_file, b"image").unwrap();
+        assert!(
+            refuse_app_data_file(&fs::canonicalize(&library_file).unwrap(), &app_local_data)
+                .is_ok()
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -864,6 +922,7 @@ mod tests {
         let result = delete_removed_images_with(
             &mut conn,
             &root.join(".thumbnails"),
+            Path::new("/no-app-local-data"),
             &["source".to_string()],
             |_| Err("trash unavailable".to_string()),
         )
@@ -913,6 +972,7 @@ mod tests {
         let first = delete_removed_images_with(
             &mut conn,
             &root.join(".thumbnails"),
+            Path::new("/no-app-local-data"),
             &["source".to_string()],
             |path| fs::remove_file(path).map_err(|error| error.to_string()),
         )
@@ -944,6 +1004,7 @@ mod tests {
         let retry = delete_removed_images_with(
             &mut conn,
             &root.join(".thumbnails"),
+            Path::new("/no-app-local-data"),
             &["source".to_string()],
             |_| panic!("the retry source is already missing"),
         )
@@ -981,6 +1042,7 @@ mod tests {
         let result = delete_removed_images_with(
             &mut conn,
             &root.join(".thumbnails"),
+            Path::new("/no-app-local-data"),
             &["hidden".to_string(), "unknown".to_string()],
             |_| panic!("invisible rows must never reach filesystem deletion"),
         )
