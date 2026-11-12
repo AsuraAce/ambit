@@ -251,11 +251,16 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     content="Browse for Stable Diffusion Folder"
                                     onClick={async () => {
                                         try {
-                                            const { pickLibraryFolder } = await import('../../../services/assetScope');
+                                            const { pickLibraryFolder, revokeLibraryGrant } = await import('../../../services/assetScope');
                                             const selected = await pickLibraryFolder('a1111Root', 'Select SD Folder');
                                             if (selected) {
                                                 const { normalizePath } = await import('../../../utils/pathUtils');
-                                                setSettings((prev) => ({ ...prev, a1111Path: normalizePath(selected) }));
+                                                const previousRoot = normalizePath(settings.a1111Path ?? '');
+                                                const nextRoot = normalizePath(selected);
+                                                setSettings((prev) => ({ ...prev, a1111Path: nextRoot }));
+                                                // The new root is now the setting, so drop the old root's grant (#392).
+                                                // Rust keeps it when both name the same folder.
+                                                if (previousRoot) await revokeLibraryGrant(previousRoot, 'a1111Root', nextRoot);
                                             }
                                         } catch (e) {
                                             console.error(e);

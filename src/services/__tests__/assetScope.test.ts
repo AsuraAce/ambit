@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings } from '../../types';
 
 const mocks = vi.hoisted(() => ({
     browserMockMode: false,
     appLocalDataDir: vi.fn(),
     registerLibraryPath: vi.fn(),
+    waitForLibraryGrants: vi.fn(),
 }));
 
 vi.mock('../runtime', () => ({
@@ -16,7 +16,7 @@ vi.mock('@tauri-apps/api/path', () => ({
 }));
 
 vi.mock('../../bindings', () => ({
-    commands: { registerLibraryPath: mocks.registerLibraryPath },
+    commands: { registerLibraryPath: mocks.registerLibraryPath, waitForLibraryGrants: mocks.waitForLibraryGrants },
 }));
 
 const loadService = async () => {
@@ -30,6 +30,7 @@ describe('assetScope', () => {
         mocks.browserMockMode = false;
         mocks.appLocalDataDir.mockResolvedValue('C:/Users/Test/AppData/Local/Ambit');
         mocks.registerLibraryPath.mockResolvedValue({ status: 'ok', data: null });
+        mocks.waitForLibraryGrants.mockResolvedValue({ status: 'ok', data: null });
     });
 
     // #384: Live Watch and resource scans skipped missing folders before the scope
@@ -153,30 +154,30 @@ describe('assetScope', () => {
         }
     );
 
-    it('registers every configured monitored, resource, and normalized Invoke root', async () => {
-        const { ensureConfiguredAssetPathsAccessible } = await loadService();
-        const settings = {
-            monitoredFolders: [
-                { id: 'one', path: 'D:/images', isActive: true, imageCount: 0 },
-                { id: 'two', path: 'E:/images', isActive: false, imageCount: 0 },
-            ],
-            resourceFolders: ['F:/models'],
-            invokeAiPath: 'G:/InvokeAI/databases',
-        } satisfies Pick<AppSettings, 'monitoredFolders' | 'resourceFolders' | 'invokeAiPath'>;
+    // #392: waiting for Rust's grants must never register a settings folder from
+    // the webview, and a failed wait must not keep the app from starting.
+    it('waits for the restored grants without registering anything, and survives a failed wait', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { waitForLibraryGrants } = await loadService();
 
-        await ensureConfiguredAssetPathsAccessible(settings);
+        await waitForLibraryGrants();
+        mocks.waitForLibraryGrants.mockResolvedValueOnce({ status: 'error', error: 'gone' });
+        await waitForLibraryGrants();
+        mocks.waitForLibraryGrants.mockRejectedValueOnce(new Error('invoke failed'));
+        await waitForLibraryGrants();
 
-        expect(mocks.registerLibraryPath).toHaveBeenCalledWith('D:/images');
-        expect(mocks.registerLibraryPath).toHaveBeenCalledWith('E:/images');
-        expect(mocks.registerLibraryPath).toHaveBeenCalledWith('F:/models');
-        expect(mocks.registerLibraryPath).toHaveBeenCalledWith('G:/InvokeAI');
+        expect(mocks.waitForLibraryGrants).toHaveBeenCalledTimes(3);
+        expect(mocks.registerLibraryPath).not.toHaveBeenCalled();
+        expect(error).toHaveBeenCalledTimes(2);
+        error.mockRestore();
     });
 
-    it('supports absent optional configured paths', async () => {
-        const { ensureConfiguredAssetPathsAccessible } = await loadService();
+    it('does not wait for grants in browser mock mode', async () => {
+        mocks.browserMockMode = true;
+        const { waitForLibraryGrants } = await loadService();
 
-        await ensureConfiguredAssetPathsAccessible({ monitoredFolders: [], invokeAiPath: undefined });
+        await waitForLibraryGrants();
 
-        expect(mocks.registerLibraryPath).not.toHaveBeenCalled();
+        expect(mocks.waitForLibraryGrants).not.toHaveBeenCalled();
     });
 });

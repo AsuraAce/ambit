@@ -820,6 +820,11 @@ async deleteThumbnail(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Makes a folder the webview names readable, but only when the user already
+ * granted it or a folder around it, and records nothing (#392). Any other
+ * folder is refused.
+ */
 async registerLibraryPath(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("register_library_path", { path }) };
@@ -869,12 +874,28 @@ async requestLibraryFolderGrant(path: string, kind: LibraryGrantKind) : Promise<
 },
 /**
  * Removes a folder grant of `kind`, for example when the user removes a
- * monitored folder. The folder stays readable until the next start, because a
- * scope cannot be narrowed at runtime.
+ * monitored folder, or applies a new InvokeAI or A1111 root (`replacement`).
+ * Nothing is removed when `replacement` is the same folder as `path`. The folder
+ * stays readable until the next start, because a scope cannot be narrowed at
+ * runtime.
  */
-async revokeLibraryGrant(path: string, kind: LibraryGrantKind) : Promise<Result<null, string>> {
+async revokeLibraryGrant(path: string, kind: LibraryGrantKind, replacement: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("revoke_library_grant", { path, kind }) };
+    return { status: "ok", data: await TAURI_INVOKE("revoke_library_grant", { path, kind, replacement }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resolves once the start has granted the recorded folders again, whether or not
+ * that succeeded; recorded files are granted just after. The webview awaits it
+ * before it shows the library, because it no longer registers settings folders
+ * itself.
+ */
+async waitForLibraryGrants() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("wait_for_library_grants") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

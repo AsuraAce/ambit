@@ -30,10 +30,9 @@ describe('SmartImage', () => {
 
         expect(container.querySelector('svg')).toBeTruthy();
         expect(screen.queryByAltText('Missing')).toBeNull();
-        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('');
     });
 
-    it('registers local image paths, converts them once, and reports successful loads', async () => {
+    it('converts local image paths once and reports successful loads', async () => {
         const onLoad = vi.fn();
 
         render(
@@ -55,8 +54,6 @@ describe('SmartImage', () => {
         await waitFor(() => {
             expect(onLoad).toHaveBeenCalledTimes(1);
         });
-        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/library/image.png');
-        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/library/source.png');
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/library/image.png');
     });
 
@@ -168,15 +165,12 @@ describe('SmartImage', () => {
         expect(screen.getByAltText('Reset image')).toBeTruthy();
     });
 
-    it('logs path registration failures without preventing rendering or fallback swap', async () => {
+    // #392: Rust grants the folders the user chose at start. Showing an image must
+    // never ask Rust to make its folder readable, or any image path the webview
+    // names would widen the scope again.
+    it('swaps to the fallback without asking for folder access', async () => {
         vi.useFakeTimers();
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-        mocks.ensureAssetPathAccessible.mockRejectedValue(new Error('scope denied'));
         render(<SmartImage src="C:/thumb.png" fallbackSrc="C:/source.png" alt="Scoped image" />);
-
-        await act(async () => Promise.resolve());
-        expect(warn).toHaveBeenCalledWith('[SmartImage] Failed to register current image path', expect.any(Error));
-        expect(warn).toHaveBeenCalledWith('[SmartImage] Failed to register fallback image path', expect.any(Error));
 
         for (const delay of [500, 1000, 2000]) {
             fireEvent.error(screen.getByAltText('Scoped image'));
@@ -185,9 +179,8 @@ describe('SmartImage', () => {
         fireEvent.error(screen.getByAltText('Scoped image'));
         await act(async () => Promise.resolve());
 
-        expect(warn).toHaveBeenCalledWith('[SmartImage] Failed to register fallback before swap', expect.any(Error));
         expect(screen.getByAltText('Scoped image').getAttribute('src')).toBe('asset://C:/source.png');
-        warn.mockRestore();
+        expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
     });
 
     it('forwards image errors and appends retries to URLs with existing queries', async () => {

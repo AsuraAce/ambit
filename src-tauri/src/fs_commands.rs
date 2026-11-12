@@ -103,10 +103,13 @@ pub fn delete_thumbnail(app: tauri::AppHandle<Wry>, path: String) -> Result<(), 
     Ok(())
 }
 
+/// Makes a folder the webview names readable, but only when the user already
+/// granted it or a folder around it, and records nothing (#392). Any other
+/// folder is refused.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub fn register_library_path(app: tauri::AppHandle<Wry>, path: String) -> Result<(), String> {
-    grant_library_directory(&app, &path).map(|_| ())
+pub async fn register_library_path(app: tauri::AppHandle<Wry>, path: String) -> Result<(), String> {
+    crate::library_grants::grant_folder_inside_grants(app, path).await
 }
 
 /// Adds an existing, non-root folder and everything inside it to the fs and
@@ -116,18 +119,23 @@ pub(crate) fn grant_library_directory(
     path: &str,
 ) -> Result<PathBuf, String> {
     let path_buf = validate_library_scope_directory(path)?;
-
-    // Add to FS scope
-    app.fs_scope()
-        .allow_directory(&path_buf, true)
-        .map_err(|e| format!("Failed to add to FS scope: {}", e))?;
-
-    // Add to Asset Protocol scope
-    app.asset_protocol_scope()
-        .allow_directory(&path_buf, true)
-        .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
-
+    grant_directory_scope(app, &path_buf)?;
     Ok(path_buf)
+}
+
+/// Adds a folder already resolved and checked by the caller, and everything
+/// inside it, to the fs and asset-protocol scopes.
+pub(crate) fn grant_directory_scope<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    folder: &Path,
+) -> Result<(), String> {
+    app.fs_scope()
+        .allow_directory(folder, true)
+        .map_err(|e| format!("Failed to add to FS scope: {}", e))?;
+    app.asset_protocol_scope()
+        .allow_directory(folder, true)
+        .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
+    Ok(())
 }
 
 /// Adds one existing regular file to the fs and asset-protocol scopes, as the

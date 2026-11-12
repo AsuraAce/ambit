@@ -9,8 +9,7 @@ import { createDefaultAppSettings } from '../../constants/defaultSettings';
 
 const mocks = vi.hoisted(() => ({
     browserMockMode: false,
-    ensureAssetPathAccessible: vi.fn(),
-    ensureConfiguredAssetPathsAccessible: vi.fn(),
+    waitForLibraryGrants: vi.fn(),
     requestLibraryFolderGrant: vi.fn(),
     revokeLibraryGrant: vi.fn(),
 }));
@@ -46,8 +45,7 @@ vi.mock('../../services/runtime', () => ({
 }));
 
 vi.mock('../../services/assetScope', () => ({
-    ensureAssetPathAccessible: mocks.ensureAssetPathAccessible,
-    ensureConfiguredAssetPathsAccessible: mocks.ensureConfiguredAssetPathsAccessible,
+    waitForLibraryGrants: mocks.waitForLibraryGrants,
     requestLibraryFolderGrant: mocks.requestLibraryFolderGrant,
     revokeLibraryGrant: mocks.revokeLibraryGrant,
 }));
@@ -59,8 +57,7 @@ describe('SettingsStore', () => {
         vi.useFakeTimers();
         vi.clearAllMocks();
         mocks.browserMockMode = false;
-        mocks.ensureAssetPathAccessible.mockResolvedValue(undefined);
-        mocks.ensureConfiguredAssetPathsAccessible.mockResolvedValue(undefined);
+        mocks.waitForLibraryGrants.mockResolvedValue(undefined);
         mocks.requestLibraryFolderGrant.mockResolvedValue(true);
         mocks.revokeLibraryGrant.mockResolvedValue(undefined);
         vi.mocked(commands.saveApiKey).mockResolvedValue({ status: 'ok', data: null });
@@ -398,7 +395,7 @@ describe('SettingsStore', () => {
         expect(appRepository.update).not.toHaveBeenCalled();
     });
 
-    it('registers new monitored, resource, and InvokeAI paths', async () => {
+    it('asks Rust to grant new monitored and resource folders but not a typed InvokeAI root', async () => {
         useSettingsStore.getState().setSettings({
             monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
             resourceFolders: ['C:/models'],
@@ -409,7 +406,9 @@ describe('SettingsStore', () => {
         // #392: library folders go through the Rust grant registry so they survive restarts.
         expect(mocks.requestLibraryFolderGrant).toHaveBeenCalledWith('C:/images', 'monitoredFolder');
         expect(mocks.requestLibraryFolderGrant).toHaveBeenCalledWith('C:/models', 'resourceFolder');
-        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/invokeai', { assumeDirectory: true });
+        // The InvokeAI root commits on every keystroke; Rust grants it only when the
+        // user picks or confirms it, never from a settings write (#392).
+        expect(mocks.requestLibraryFolderGrant).toHaveBeenCalledTimes(2);
     });
 
     it('revokes the grant of removed monitored and resource folders', async () => {
@@ -432,7 +431,6 @@ describe('SettingsStore', () => {
             settings: { ...state.settings, monitoredFolders: [folder], resourceFolders: ['C:/models'], invokeAiPath: 'C:/invokeai' },
         }));
         useSettingsStore.getState().setSettings({ theme: 'light' });
-        expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
         expect(mocks.requestLibraryFolderGrant).not.toHaveBeenCalled();
 
         mocks.browserMockMode = true;
@@ -444,13 +442,11 @@ describe('SettingsStore', () => {
             resourceFolders: ['C:/models', 'D:/models'],
             invokeAiPath: 'D:/invokeai',
         });
-        expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
         expect(mocks.requestLibraryFolderGrant).not.toHaveBeenCalled();
     });
 
     it('contains asynchronous scope registration failures', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mocks.ensureAssetPathAccessible.mockRejectedValue(new Error('scope failed'));
         mocks.requestLibraryFolderGrant.mockRejectedValue(new Error('scope failed'));
         useSettingsStore.getState().setSettings({
             monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
@@ -462,7 +458,6 @@ describe('SettingsStore', () => {
 
         expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to register new folder scope:', expect.any(Error));
         expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to register resource folder scope:', expect.any(Error));
-        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to register InvokeAI scope:', expect.any(Error));
         error.mockRestore();
     });
 
@@ -499,7 +494,7 @@ describe('SettingsStore', () => {
 
     it('shares concurrent initialization so a stale second load cannot overwrite a later settings flush', async () => {
         let resolveScope!: () => void;
-        mocks.ensureConfiguredAssetPathsAccessible.mockReturnValueOnce(
+        mocks.waitForLibraryGrants.mockReturnValueOnce(
             new Promise<void>((resolve) => {
                 resolveScope = resolve;
             })
@@ -562,17 +557,40 @@ describe('SettingsStore', () => {
 
         expect(useSettingsStore.getState().geminiApiKey).toBe('environment-key');
         expect(useSettingsStore.getState().settings.devMode).toBe(false);
-        expect(mocks.ensureConfiguredAssetPathsAccessible).toHaveBeenCalled();
     });
 
-    it('initializes in browser mode without keyring or asset-scope access', async () => {
+    // #392: the webview no longer registers settings folders itself. Rust grants
+    // them at start, so the library (shown once settings are loaded) must wait for
+    // that, with or without saved settings.
+    it.each([
+        ['saved settings', () => appState(useSettingsStore.getState().settings)],
+        ['no saved settings', () => ({ settings: null }) as unknown as AppState],
+    ])('stays loading until Rust has restored the library grants, with %s', async (_label, loaded) => {
+        let openGate!: () => void;
+        mocks.waitForLibraryGrants.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                openGate = resolve;
+            })
+        );
+        vi.mocked(appRepository.load).mockResolvedValue(loaded());
+
+        const initializing = useSettingsStore.getState().initialize();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mocks.waitForLibraryGrants).toHaveBeenCalledOnce();
+        expect(useSettingsStore.getState().isLoaded).toBe(false);
+
+        openGate();
+        await initializing;
+        expect(useSettingsStore.getState().isLoaded).toBe(true);
+    });
+
+    it('initializes in browser mode without keyring access', async () => {
         mocks.browserMockMode = true;
         vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
 
         await useSettingsStore.getState().initialize();
 
         expect(commands.loadApiKey).not.toHaveBeenCalled();
-        expect(mocks.ensureConfiguredAssetPathsAccessible).not.toHaveBeenCalled();
         expect(useSettingsStore.getState().isLoaded).toBe(true);
     });
 

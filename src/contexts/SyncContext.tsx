@@ -58,7 +58,7 @@ import {
     isSameInvokeOwnerSelection,
     type InvokeConnectionDraft,
 } from '../services/invoke/connectionDraft';
-import { ensureAssetPathAccessible } from '../services/assetScope';
+import { ensureAssetPathAccessible, revokeLibraryGrant } from '../services/assetScope';
 import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
 import { applyInvokeOwnerScope, refreshInvokeOwnerVisibility } from '../services/invoke/ownerScope';
 import { throwIfInvokeAborted } from '../services/invoke/abort';
@@ -1228,6 +1228,16 @@ export const SyncProvider: React.FC<{
                 });
                 viewCommitted = true;
                 updateInvokeOperation(token, { phase: 'syncing', viewCommitted: true });
+                if (previousRoot && !isSameInvokeConnectionSource(previousRoot, draft.invokeAiPath)) {
+                    // The new root is applied and saved. Only now drop the old root's grant:
+                    // a root picked or tested but never applied must leave it granted (#392).
+                    // Rust keeps it when the new root is the same folder under another name.
+                    void revokeLibraryGrant(
+                        resolveInvokePaths(previousRoot).imagesRoot,
+                        'invokeAiRoot',
+                        resolveInvokePaths(draft.invokeAiPath).imagesRoot
+                    ).catch((error) => console.error('[SyncContext] Failed to revoke the previous InvokeAI root grant:', error));
+                }
                 outcome = await runInvokeSyncRef.current({
                     mode: sameSource && !sameOwner ? 'startup' : 'manual',
                     ownerTransitionToken: token,

@@ -251,7 +251,8 @@ describe('ImageViewer full metadata loading', () => {
         expect(screen.getByRole('dialog', { name: `Image viewer: ${lightImage.filename}` })).toBe(dialog);
         expect((captures.toolbar?.image as AIImage).filename).toBe(lightImage.filename);
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
-        expect(assetAccessMock).toHaveBeenCalledWith(lightImage.url);
+        // #392: Rust grants library folders at start; viewing never asks it to widen the scope.
+        expect(assetAccessMock).not.toHaveBeenCalled();
     });
 
     it('uses a card reveal grant without showing a second image gate', async () => {
@@ -721,17 +722,12 @@ describe('ImageViewer full metadata loading', () => {
         expect(container.querySelector('[role="status"]')).toBeNull();
     });
 
-    it('handles metadata and asset loading failures and forwards AI errors to toast', async () => {
+    it('handles metadata loading failures and forwards AI errors to toast', async () => {
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         mockGetImageWithFullMetadata.mockRejectedValue(new Error('metadata failed'));
-        assetAccessMock.mockRejectedValue(new Error('scope failed'));
         renderViewer();
 
-        await waitFor(() => expect(assetAccessMock).toHaveBeenCalled());
         await waitFor(() => expect(captures.sidebar?.isLoading).toBe(false));
-        await waitFor(() =>
-            expect(warnSpy).toHaveBeenCalledWith('[ImageViewer] Failed to register image path for viewer', expect.any(Error))
-        );
         const config = captures.aiConfig as { onError: (message: string) => void };
         config.onError('AI failed');
         expect(toastMock).toHaveBeenCalledWith('AI failed', 'error');
