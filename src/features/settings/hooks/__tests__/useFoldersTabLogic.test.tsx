@@ -18,8 +18,6 @@ vi.mock('../../../../services/runtime', () => ({
     isTauriRuntime: () => false,
 }));
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: dialogOpenMock }));
-
 vi.mock('../../../../hooks/useToast', () => ({
     useToast: () => ({
         addToast: addToastMock,
@@ -36,6 +34,10 @@ vi.mock('../../../../services/thumbnailService', () => ({
 
 vi.mock('../../../../bindings', () => ({
     commands: {
+        pickLibraryFolder: vi.fn((kind: string, title: string | null) =>
+            Promise.resolve(dialogOpenMock(kind, title)).then((data: string | null) => ({ status: 'ok', data }))
+        ),
+        requestLibraryFolderGrant: vi.fn(),
         getImageCountForPathPrefix: vi.fn(),
         scanDirectorySince: vi.fn(),
         scanDirectoryWithStats: vi.fn(),
@@ -112,6 +114,7 @@ describe('useFoldersTabLogic', () => {
         addToastMock.mockReset();
         runtimeMocks.browserMockMode = false;
         dialogOpenMock.mockResolvedValue(null);
+        vi.mocked(commands.requestLibraryFolderGrant).mockResolvedValue({ status: 'ok', data: true });
         getThumbnailDirMock.mockResolvedValue('C:/thumbs');
         vi.mocked(commands.getImageCountForPathPrefix).mockResolvedValue({
             status: 'ok',
@@ -245,7 +248,7 @@ describe('useFoldersTabLogic', () => {
                 result.current.setNewFolderPath('D:\\AmbitFixtures\\Cancelled');
             });
 
-            act(() => {
+            await act(async () => {
                 result.current.handleAddFolder({
                     preventDefault: vi.fn(),
                 } as unknown as React.FormEvent);
@@ -287,7 +290,7 @@ describe('useFoldersTabLogic', () => {
             act(() => {
                 result.current.setNewFolderPath('D:\\AmbitFixtures\\Done');
             });
-            act(() => {
+            await act(async () => {
                 result.current.handleAddFolder({
                     preventDefault: vi.fn(),
                 } as unknown as React.FormEvent);
@@ -295,7 +298,7 @@ describe('useFoldersTabLogic', () => {
             act(() => {
                 result.current.setNewFolderPath('D:\\AmbitFixtures\\Cancel');
             });
-            act(() => {
+            await act(async () => {
                 result.current.handleAddFolder({
                     preventDefault: vi.fn(),
                 } as unknown as React.FormEvent);
@@ -347,7 +350,7 @@ describe('useFoldersTabLogic', () => {
                 result.current.setNewFolderPath('D:\\AmbitFixtures\\Partial');
             });
 
-            act(() => {
+            await act(async () => {
                 result.current.handleAddFolder({
                     preventDefault: vi.fn(),
                 } as unknown as React.FormEvent);
@@ -523,17 +526,17 @@ describe('useFoldersTabLogic', () => {
         ['C:/Forge/output', GeneratorTool.FORGE],
         ['C:/Anapnoe/output', GeneratorTool.ANAPNOE],
         ['C:/Other/output', GeneratorTool.UNKNOWN],
-    ] as const)('detects generator variants when adding %s', (path, variant) => {
+    ] as const)('detects generator variants when adding %s', async (path, variant) => {
         vi.useFakeTimers();
         const { result, setSettings } = renderFoldersHook();
         act(() => result.current.setNewFolderPath(path));
-        act(() => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
         const update = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         expect(update(baseSettings).monitoredFolders[0]).toMatchObject({ path, variant, initialScanPending: true });
         vi.useRealTimers();
     });
 
-    it('ignores blank and duplicate folders and removes monitored folders', () => {
+    it('ignores blank and duplicate folders and removes monitored folders', async () => {
         const existing = { id: 'one', path: 'C:/Watch', isActive: true, imageCount: 0 };
         const settings = { ...baseSettings, monitoredFolders: [existing] };
         const { result, setSettings } = renderFoldersHook(settings);
@@ -541,7 +544,7 @@ describe('useFoldersTabLogic', () => {
         expect(setSettings).not.toHaveBeenCalled();
 
         act(() => result.current.setNewFolderPath('C:\\Watch'));
-        act(() => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
         expect(addToastMock).toHaveBeenCalledWith('Folder is already monitored', 'info');
 
         act(() => result.current.removeFolder('one'));
@@ -674,11 +677,27 @@ describe('useFoldersTabLogic', () => {
         updateLastScanned.mockRestore();
     });
 
+    it('adds a typed folder only after Rust grants it', async () => {
+        vi.mocked(commands.requestLibraryFolderGrant).mockResolvedValueOnce({ status: 'ok', data: false });
+        const { result, setSettings } = renderFoldersHook();
+        act(() => result.current.setNewFolderPath('D:\\Typed'));
+        await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        expect(commands.requestLibraryFolderGrant).toHaveBeenCalledWith('D:/Typed', 'monitoredFolder');
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(result.current.newFolderPath).toBe('D:\\Typed');
+
+        vi.mocked(commands.requestLibraryFolderGrant).mockResolvedValueOnce({ status: 'error', error: 'Failed to resolve library path' });
+        await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(addToastMock).toHaveBeenCalledWith('Could not add folder: Failed to resolve library path', 'error');
+    });
+
     it('browses for a folder and falls back to the hidden input on dialog failure', async () => {
         dialogOpenMock.mockResolvedValueOnce('C:\\Picked');
         const success = renderFoldersHook();
         await act(async () => success.result.current.handleBrowse());
         expect(success.result.current.newFolderPath).toBe('C:/Picked');
+        expect(dialogOpenMock).toHaveBeenCalledWith('monitoredFolder', null);
         success.unmount();
 
         dialogOpenMock.mockRejectedValueOnce(new Error('dialog failed'));
@@ -796,7 +815,7 @@ describe('useFoldersTabLogic', () => {
         const successScan = vi.fn().mockResolvedValue(emptyImportResult({ completedSourcePaths: ['C:/Success'] }));
         const success = renderFoldersHook(baseSettings, successScan);
         act(() => success.result.current.setNewFolderPath('C:/Success'));
-        act(() => success.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        await act(async () => success.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
         await act(async () => vi.advanceTimersByTimeAsync(500));
         const added = (success.setSettings.mock.calls[0][0] as (value: AppSettings) => AppSettings)(baseSettings);
         const completed = (success.setSettings.mock.calls[1][0] as (value: AppSettings) => AppSettings)(added);
@@ -806,7 +825,7 @@ describe('useFoldersTabLogic', () => {
         const failedScan = vi.fn().mockRejectedValue(new Error('scan failed'));
         const failure = renderFoldersHook(baseSettings, failedScan);
         act(() => failure.result.current.setNewFolderPath('C:/Failure'));
-        act(() => failure.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        await act(async () => failure.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
         await act(async () => vi.advanceTimersByTimeAsync(500));
         expect(addToastMock).toHaveBeenCalledWith('Folder scan failed', 'error');
         const failureAdded = (failure.setSettings.mock.calls[0][0] as (value: AppSettings) => AppSettings)(baseSettings);
@@ -819,7 +838,7 @@ describe('useFoldersTabLogic', () => {
         vi.useFakeTimers();
         const noScan = renderFoldersHook();
         act(() => noScan.result.current.setNewFolderPath('C:/NoScan'));
-        act(() => noScan.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        await act(async () => noScan.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
         await act(async () => vi.advanceTimersByTimeAsync(500));
         expect(addToastMock).toHaveBeenCalledWith('Added folder: C:/NoScan', 'success');
         vi.useRealTimers();
@@ -899,7 +918,7 @@ describe('useFoldersTabLogic', () => {
             const scan = scanResult instanceof Error ? vi.fn().mockRejectedValue(scanResult) : vi.fn().mockResolvedValue(scanResult);
             const hook = renderFoldersHook(initial, scan);
             act(() => hook.result.current.setNewFolderPath('C:/Added'));
-            act(() => hook.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+            await act(async () => hook.result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
             await act(async () => vi.advanceTimersByTimeAsync(500));
             const added = (hook.setSettings.mock.calls[0][0] as (value: AppSettings) => AppSettings)(initial);
             const finalized = (hook.setSettings.mock.calls[1][0] as (value: AppSettings) => AppSettings)(added);

@@ -1,5 +1,5 @@
 import { appLocalDataDir } from '@tauri-apps/api/path';
-import { commands } from '../bindings';
+import { commands, type LibraryGrantKind } from '../bindings';
 import { AppSettings } from '../types';
 import { getDirectoryPath, isPathWithinDirectory, normalizeInvokeRoot, normalizePath, urlToPath } from '../utils/pathUtils';
 import { isBrowserMockMode } from './runtime';
@@ -100,6 +100,39 @@ export const ensureFolderAccessible = async (path: string | null | undefined): P
 export const filterAccessibleFolders = async (paths: string[]): Promise<string[]> => {
     const accessible = await Promise.all(paths.map(ensureFolderAccessible));
     return paths.filter((_, index) => accessible[index]);
+};
+
+/**
+ * Asks Rust to record a folder the user named, for example by typing it. Rust
+ * records a folder that is already granted, or inside one, without asking, and
+ * otherwise shows a native confirmation. Returns whether the folder is granted.
+ */
+export const requestLibraryFolderGrant = async (path: string, kind: LibraryGrantKind): Promise<boolean> => {
+    if (isBrowserMockMode()) return true;
+    const result = await commands.requestLibraryFolderGrant(path, kind);
+    if (result.status === 'error') throw new Error(result.error);
+    return result.data;
+};
+
+/** Opens a native folder picker from Rust, which records the picked folder. */
+export const pickLibraryFolder = async (kind: LibraryGrantKind, title?: string): Promise<string | null> => {
+    const result = await commands.pickLibraryFolder(kind, title ?? null);
+    if (result.status === 'error') throw new Error(result.error);
+    return result.data;
+};
+
+/** Opens a native file picker from Rust, which records each picked file. */
+export const pickLibraryFiles = async (filterName: string, extensions: string[]): Promise<string[]> => {
+    const result = await commands.pickLibraryFiles(filterName, extensions);
+    if (result.status === 'error') throw new Error(result.error);
+    return result.data;
+};
+
+/** Drops a folder grant when the user removes the folder from Settings. */
+export const revokeLibraryGrant = async (path: string, kind: LibraryGrantKind): Promise<void> => {
+    if (isBrowserMockMode()) return;
+    const result = await commands.revokeLibraryGrant(path, kind);
+    if (result.status === 'error') throw new Error(result.error);
 };
 
 export const ensureConfiguredAssetPathsAccessible = async (

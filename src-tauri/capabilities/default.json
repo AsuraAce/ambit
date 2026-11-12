@@ -17,6 +17,14 @@
     "core:window:allow-set-icon",
     "core:window:allow-start-dragging",
     "fs:default",
+    {
+      "identifier": "fs:scope",
+      "deny": [
+        {
+          "path": "$APPLOCALDATA/library-grants.json*"
+        }
+      ]
+    },
     "dialog:default",
     "process:default",
     "sql:default",

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
+import { pickLibraryFiles } from './services/assetScope';
 import { act, fireEvent, render, screen, waitFor } from './test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultAppSettings } from './constants/defaultSettings';
@@ -322,6 +322,10 @@ vi.mock('./hooks/useModalManager', async (importOriginal) => {
     };
 });
 vi.mock('./hooks/useAppVersion', () => ({ useAppVersion: () => '1.0.0' }));
+vi.mock('./services/assetScope', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('./services/assetScope')>()),
+    pickLibraryFiles: vi.fn(),
+}));
 vi.mock('./services/db/imageRepo', () => ({
     getImageWithFullMetadata: (id: string) => mocks.getImageWithFullMetadata(id),
 }));
@@ -647,7 +651,7 @@ describe('App orchestration', () => {
             }
         );
         mocks.getImageWithFullMetadata.mockResolvedValue(null);
-        vi.mocked(open).mockReset();
+        vi.mocked(pickLibraryFiles).mockReset();
     });
 
     afterEach(() => {
@@ -1571,7 +1575,7 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(false);
 
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-        vi.mocked(open).mockResolvedValue(['C:/a.png', 'C:/b.webp']);
+        vi.mocked(pickLibraryFiles).mockResolvedValue(['C:/a.png', 'C:/b.webp']);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
         expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/a.png', 'C:/b.webp']);
     });
@@ -2471,10 +2475,10 @@ describe('App orchestration', () => {
         expect(mocks.modals.setSourceCollectionId).not.toHaveBeenCalledWith(expect.any(String));
 
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-        vi.mocked(open).mockResolvedValueOnce('C:/single.png');
+        vi.mocked(pickLibraryFiles).mockResolvedValueOnce(['C:/single.png']);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
         expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/single.png']);
-        vi.mocked(open).mockResolvedValueOnce(null);
+        vi.mocked(pickLibraryFiles).mockResolvedValueOnce([]);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
 
         act(() => layout.setSelectedImageIndex(0));
@@ -2577,7 +2581,7 @@ describe('App orchestration', () => {
     it('falls back to the browser file input when the native picker fails', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-        vi.mocked(open).mockRejectedValueOnce(new Error('picker unavailable'));
+        vi.mocked(pickLibraryFiles).mockRejectedValueOnce(new Error('picker unavailable'));
         render(<App />);
         const input = mocks.fileInputRef.current;
         if (!input) throw new Error('File input was not attached');

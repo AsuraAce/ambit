@@ -91,7 +91,16 @@ pub fn delete_thumbnail(app: tauri::AppHandle<Wry>, path: String) -> Result<(), 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn register_library_path(app: tauri::AppHandle<Wry>, path: String) -> Result<(), String> {
-    let path_buf = validate_library_scope_directory(&path)?;
+    grant_library_directory(&app, &path).map(|_| ())
+}
+
+/// Adds an existing, non-root folder and everything inside it to the fs and
+/// asset-protocol scopes, and returns the folder resolved.
+pub(crate) fn grant_library_directory(
+    app: &tauri::AppHandle<Wry>,
+    path: &str,
+) -> Result<PathBuf, String> {
+    let path_buf = validate_library_scope_directory(path)?;
 
     // Add to FS scope
     app.fs_scope()
@@ -103,10 +112,23 @@ pub fn register_library_path(app: tauri::AppHandle<Wry>, path: String) -> Result
         .allow_directory(&path_buf, true)
         .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
 
+    Ok(path_buf)
+}
+
+/// Adds one existing regular file to the fs and asset-protocol scopes, as the
+/// dialog plugin does for a picked file.
+pub(crate) fn grant_library_file(app: &tauri::AppHandle<Wry>, path: &str) -> Result<(), String> {
+    let file = resolve_existing_regular_file(path)?;
+    app.fs_scope()
+        .allow_file(&file)
+        .map_err(|e| format!("Failed to add to FS scope: {}", e))?;
+    app.asset_protocol_scope()
+        .allow_file(&file)
+        .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
     Ok(())
 }
 
-fn validate_library_scope_directory(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_library_scope_directory(path: &str) -> Result<PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("Path cannot be empty".to_string());

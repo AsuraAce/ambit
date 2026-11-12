@@ -828,6 +828,57 @@ async registerLibraryPath(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Opens a native folder picker and records the picked folder. Returns the
+ * folder as the dialog spells it, or `None` when the user cancels.
+ */
+async pickLibraryFolder(kind: LibraryGrantKind, title: string | null) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pick_library_folder", { kind, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens a native multi-file picker and records each picked file. Returns the
+ * files, or none when the user cancels.
+ */
+async pickLibraryFiles(filterName: string, extensions: string[]) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pick_library_files", { filterName, extensions }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Records a folder the webview names, such as one typed in Settings. A folder
+ * already granted, or inside a granted folder or AppLocalData, is recorded
+ * without asking; any other folder needs the user's native confirmation, which
+ * shows its resolved path. Returns whether the folder is now granted.
+ */
+async requestLibraryFolderGrant(path: string, kind: LibraryGrantKind) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("request_library_folder_grant", { path, kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Removes a folder grant of `kind`, for example when the user removes a
+ * monitored folder. The folder stays readable until the next start, because a
+ * scope cannot be narrowed at runtime.
+ */
+async revokeLibraryGrant(path: string, kind: LibraryGrantKind) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("revoke_library_grant", { path, kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_invoke_db_snapshot", { rootPath }) };
@@ -941,6 +992,11 @@ export type InvokeSourceValue = number | string
 export type LegacyCollectionMigrationInput = { importKey: string; collections: LegacyCollectionMigrationItem[] }
 export type LegacyCollectionMigrationItem = { id: string; name: string; color: string | null; isArchived: boolean; isPinned: boolean; createdAt: number; updatedAt: number | null; filterState: string | null; manualExclusions: string | null; customThumbnail: string | null; imageIds: string[] }
 export type LegacyCollectionMigrationResult = { alreadyApplied: boolean; collectionsUpserted: number; membershipsInserted: number }
+export type LibraryGrantKind = "monitoredFolder" | "resourceFolder" | "invokeAiRoot" | "a1111Root" | 
+/**
+ * The folder of an image or video imported on its own, before this registry.
+ */
+"importedFolder"
 export type MediaCandidateKind = "image" | "video"
 export type MetadataEvidenceSource = "user_override" | "trusted_sidecar" | "embedded" | "workflow_default" | "unknown"
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }

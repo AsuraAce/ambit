@@ -43,7 +43,7 @@ vi.mock('../../../../services/a1111/config', () => ({
     getUnlinkedPriorityCandidatePaths: mocks.getUnlinkedPriorityCandidatePaths,
 }));
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
+vi.mock('../../../../services/assetScope', () => ({ pickLibraryFolder: mocks.open }));
 vi.mock('../../../../utils/pathUtils', () => ({ normalizePath: mocks.normalizePath }));
 
 const createSettings = (): AppSettings => ({
@@ -489,6 +489,7 @@ describe('A1111Tab discovery warnings', () => {
             ([updater]) => (updater as (previous: AppSettings) => AppSettings)(createSettings()).a1111Path
         );
         expect(paths).toEqual(expect.arrayContaining(['E:/Archive', 'D:/Browsed/SD']));
+        expect(mocks.open).toHaveBeenCalledWith('a1111Root', 'Select SD Folder');
     });
 
     it('keeps discovery disabled without a root path', () => {

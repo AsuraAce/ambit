@@ -11,6 +11,7 @@ const scanResourceThumbnailsMock = vi.hoisted(() => vi.fn());
 const refreshFacetCacheForResourcesStrictMock = vi.hoisted(() => vi.fn());
 const rebuildFacetCacheIncrementalMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
+const requestGrantMock = vi.hoisted(() => vi.fn());
 const runtimeMock = vi.hoisted(() => ({ browserMode: false }));
 const libraryContextState = vi.hoisted(() => ({
     isResolvingModels: false,
@@ -42,8 +43,9 @@ vi.mock('../../../../services/db/imageRepo', () => ({
         rebuildFacetCacheIncrementalMock(...args),
 }));
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-    open: (...args: Parameters<typeof openMock>) => openMock(...args),
+vi.mock('../../../../services/assetScope', () => ({
+    pickLibraryFolder: (...args: Parameters<typeof openMock>) => openMock(...args),
+    requestLibraryFolderGrant: (...args: Parameters<typeof requestGrantMock>) => requestGrantMock(...args),
 }));
 
 vi.mock('../../../../services/runtime', () => ({
@@ -131,6 +133,7 @@ describe('useResourcesTabLogic', () => {
         vi.clearAllMocks();
         addToastMock.mockReset();
         scanResourceThumbnailsMock.mockResolvedValue(scanResult);
+        requestGrantMock.mockResolvedValue(true);
         refreshFacetCacheForResourcesStrictMock.mockResolvedValue(2);
         rebuildFacetCacheIncrementalMock.mockResolvedValue(2);
         vi.mocked(commands.resolveHashesOnline).mockResolvedValue({ status: 'ok', data: resolutionResult });
@@ -173,6 +176,23 @@ describe('useResourcesTabLogic', () => {
         });
 
         expect(result.current.newResourcePath).toBe('D:/AmbitFixtures/Models');
+        expect(openMock).toHaveBeenCalledWith('resourceFolder');
+    });
+
+    it('adds a typed resource folder only after Rust grants it', async () => {
+        const { result, setSettings } = renderResourcesHook();
+        act(() => result.current.setNewResourcePath('D:\\Typed\\Models'));
+
+        requestGrantMock.mockResolvedValueOnce(false);
+        await act(async () => result.current.handleAddResourceFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        expect(requestGrantMock).toHaveBeenCalledWith('D:/Typed/Models', 'resourceFolder');
+
+        requestGrantMock.mockRejectedValueOnce(new Error('Failed to resolve library path'));
+        await act(async () => result.current.handleAddResourceFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        expect(addToastMock).toHaveBeenCalledWith('Could not add resource folder: Failed to resolve library path', 'error');
+
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(scanResourceThumbnailsMock).not.toHaveBeenCalled();
     });
 
     it('scans resources, refreshes touched resource facets, and increments the facet cache version', async () => {

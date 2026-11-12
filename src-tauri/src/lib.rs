@@ -14,6 +14,7 @@ mod comfy_support_replay;
 mod db;
 mod fs_commands;
 mod invoke_source;
+mod library_grants;
 mod media;
 mod metadata;
 mod scanner;
@@ -172,6 +173,10 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             fs_commands::delete_removed_images_from_disk,
             fs_commands::delete_thumbnail,
             fs_commands::register_library_path,
+            library_grants::pick_library_folder,
+            library_grants::pick_library_files,
+            library_grants::request_library_folder_grant,
+            library_grants::revoke_library_grant,
             fs_commands::get_invoke_db_snapshot,
             invoke_source::select_invoke_source,
         ])
@@ -263,6 +268,7 @@ pub fn run() {
         .manage(FileHashBackfillState::default())
         .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
+        .manage(library_grants::LibraryGrantState::default())
         .manage(StartupState::with_journal(
             process_started,
             startup_journal.clone(),
@@ -304,6 +310,14 @@ pub fn run() {
             builder.mount_events(app);
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // Grant the folders and files the user chose in earlier sessions.
+            let handle_for_grants = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(e) = library_grants::restore_grants(&handle_for_grants) {
+                    log::error!("[LibraryGrants] Failed to restore library grants: {}", e);
+                }
+            });
 
             // 1. Initialize DB settings (WAL mode, etc.)
             let handle_for_db = app.handle().clone();

@@ -54,6 +54,7 @@ import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 import { pickVideoPaths } from './services/videoService';
+import { pickLibraryFiles } from './services/assetScope';
 import { getImageWithFullMetadata } from './services/db/imageRepo';
 import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
@@ -482,23 +483,7 @@ export default function App() {
 
         if (isTauriEnv) {
             try {
-                const { open } = await import('@tauri-apps/plugin-dialog');
-                const selected = await open({
-                    multiple: true,
-                    directory: false,
-                    filters: [
-                        {
-                            name: 'Images',
-                            extensions: ['png', 'jpg', 'jpeg', 'webp'],
-                        },
-                    ],
-                });
-
-                const paths = Array.isArray(selected)
-                    ? selected.filter((item): item is string => typeof item === 'string')
-                    : typeof selected === 'string'
-                      ? [selected]
-                      : [];
+                const paths = await pickLibraryFiles('Images', ['png', 'jpg', 'jpeg', 'webp']);
 
                 if (paths.length > 0) {
                     await fileOps.handleImportPaths(paths);

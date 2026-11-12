@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     browserMockMode: false,
     ensureAssetPathAccessible: vi.fn(),
     ensureConfiguredAssetPathsAccessible: vi.fn(),
+    requestLibraryFolderGrant: vi.fn(),
+    revokeLibraryGrant: vi.fn(),
 }));
 
 const appState = (settings: AppSettings): AppState => ({
@@ -46,6 +48,8 @@ vi.mock('../../services/runtime', () => ({
 vi.mock('../../services/assetScope', () => ({
     ensureAssetPathAccessible: mocks.ensureAssetPathAccessible,
     ensureConfiguredAssetPathsAccessible: mocks.ensureConfiguredAssetPathsAccessible,
+    requestLibraryFolderGrant: mocks.requestLibraryFolderGrant,
+    revokeLibraryGrant: mocks.revokeLibraryGrant,
 }));
 
 describe('SettingsStore', () => {
@@ -57,6 +61,8 @@ describe('SettingsStore', () => {
         mocks.browserMockMode = false;
         mocks.ensureAssetPathAccessible.mockResolvedValue(undefined);
         mocks.ensureConfiguredAssetPathsAccessible.mockResolvedValue(undefined);
+        mocks.requestLibraryFolderGrant.mockResolvedValue(true);
+        mocks.revokeLibraryGrant.mockResolvedValue(undefined);
         vi.mocked(commands.saveApiKey).mockResolvedValue({ status: 'ok', data: null });
         vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: null });
         vi.mocked(commands.deleteApiKey).mockResolvedValue({ status: 'ok', data: null });
@@ -400,9 +406,24 @@ describe('SettingsStore', () => {
         });
         await Promise.resolve();
 
-        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/images', { assumeDirectory: true });
-        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/models', { assumeDirectory: true });
+        // #392: library folders go through the Rust grant registry so they survive restarts.
+        expect(mocks.requestLibraryFolderGrant).toHaveBeenCalledWith('C:/images', 'monitoredFolder');
+        expect(mocks.requestLibraryFolderGrant).toHaveBeenCalledWith('C:/models', 'resourceFolder');
         expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/invokeai', { assumeDirectory: true });
+    });
+
+    it('revokes the grant of removed monitored and resource folders', async () => {
+        const folder = { id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 };
+        useSettingsStore.setState((state) => ({
+            settings: { ...state.settings, monitoredFolders: [folder], resourceFolders: ['C:/models'] },
+        }));
+
+        useSettingsStore.getState().setSettings({ monitoredFolders: [], resourceFolders: [] });
+        await Promise.resolve();
+
+        expect(mocks.revokeLibraryGrant).toHaveBeenCalledWith('C:/images', 'monitoredFolder');
+        expect(mocks.revokeLibraryGrant).toHaveBeenCalledWith('C:/models', 'resourceFolder');
+        expect(mocks.requestLibraryFolderGrant).not.toHaveBeenCalled();
     });
 
     it('skips existing and browser-mock asset paths', async () => {
@@ -412,6 +433,7 @@ describe('SettingsStore', () => {
         }));
         useSettingsStore.getState().setSettings({ theme: 'light' });
         expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
+        expect(mocks.requestLibraryFolderGrant).not.toHaveBeenCalled();
 
         mocks.browserMockMode = true;
         useSettingsStore.getState().setSettings({
@@ -423,11 +445,13 @@ describe('SettingsStore', () => {
             invokeAiPath: 'D:/invokeai',
         });
         expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
+        expect(mocks.requestLibraryFolderGrant).not.toHaveBeenCalled();
     });
 
     it('contains asynchronous scope registration failures', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         mocks.ensureAssetPathAccessible.mockRejectedValue(new Error('scope failed'));
+        mocks.requestLibraryFolderGrant.mockRejectedValue(new Error('scope failed'));
         useSettingsStore.getState().setSettings({
             monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
             resourceFolders: ['C:/models'],
