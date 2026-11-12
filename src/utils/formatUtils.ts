@@ -41,6 +41,17 @@ export const formatCountCompact = (count: number): string => {
 };
 
 /**
+ * Reads a model name from a metadata value typed as a string that may hold a nested model record,
+ * such as InvokeAI's `{ name, key, hash, base, type }`. Returns the record's `name` only when it is
+ * a string, so users never see or group by "[object Object]".
+ */
+export const readModelName = (model: unknown): string => {
+    if (typeof model === 'string') return model;
+    if (model && typeof model === 'object' && 'name' in model && typeof model.name === 'string') return model.name;
+    return '';
+};
+
+/**
  * Formats a model path or name to show only the clean basename.
  * Removes paths and common extensions.
  * e.g. "sdxl/my_model.safetensors" -> "my_model"

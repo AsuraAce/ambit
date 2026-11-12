@@ -111,13 +111,14 @@ describe('useStacking', () => {
             { ...mockImages[1], metadata: { ...mockImages[1].metadata, model: { name: 'Object Model' } } },
             { ...mockImages[1], id: '3', metadata: { ...mockImages[1].metadata, model: null } },
             { ...mockImages[1], id: '4', metadata: { ...mockImages[1].metadata, model: { name: undefined } } },
+            { ...mockImages[1], id: '5', metadata: { ...mockImages[1].metadata, model: { name: { key: 'nested' } } } },
         ];
         renderHook(() => useStacking(images));
         act(() => vi.advanceTimersByTime(500));
 
         const calls = vi.mocked(Worker.prototype.postMessage).mock.calls;
         const payload = calls[calls.length - 1][0] as { images: Array<{ metadata: { model: string } }> };
-        expect(payload.images.map((image) => image.metadata.model)).toEqual(['String Model', 'Object Model', '', '']);
+        expect(payload.images.map((image) => image.metadata.model)).toEqual(['String Model', 'Object Model', '', '', '']);
     });
 
     it('clears a previously suggested stack when the library becomes empty', () => {

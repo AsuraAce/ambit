@@ -2,6 +2,7 @@ import * as React from 'react';
 import { ContextMenu } from './ContextMenu';
 import { useToast } from '../../hooks/useToast';
 import { getEffectiveMaskedKeywords, isImageMasked } from '../../utils/maskingUtils';
+import { readModelName } from '../../utils/formatUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { AIImage, ContextMenuState, FilterState, getDetectedSourceKind, getEffectiveSourceKind, isVideoAsset } from '../../types';
@@ -268,14 +269,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 };
 
                 // Checkpoint
-                const modelValue = m.model as unknown;
-                const modelName =
-                    typeof modelValue === 'string'
-                        ? modelValue
-                        : modelValue && typeof modelValue === 'object' && 'name' in modelValue
-                          ? // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
-                            String((modelValue as { name?: unknown }).name || '')
-                          : '';
+                const modelName = readModelName(m.model);
                 if (m.modelHash || modelName) {
                     const name = modelName || 'Checkpoint';
                     const hash = m.modelHash || `name:${name}`;
