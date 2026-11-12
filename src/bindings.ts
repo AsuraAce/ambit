@@ -836,8 +836,10 @@ async registerLibraryPath(path: string) : Promise<Result<null, string>> {
 /**
  * Reads a library original for the webview, for ZIP export and prompt recovery.
  * The webview cannot read library folders through the fs plugin (#415), so this
- * reads a regular file only when the user granted it or a folder around it:
- * what the asset protocol already shows.
+ * reads a regular file only when the user granted it or a folder around it, and
+ * never one in AppLocalData, where no library file lives: what the asset protocol
+ * already shows. A granted folder may contain AppLocalData (a user folder), and
+ * the grant registry and the database must not reach the webview through it.
  */
 async readLibraryFile(path: string) : Promise<Result<unknown, string>> {
     try {

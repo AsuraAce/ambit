@@ -14,7 +14,7 @@
 use crate::fs_commands::{grant_directory_scope, grant_library_directory, grant_library_file};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,12 @@ pub struct GrantRegistry {
     seeded_by: Option<String>,
     folders: Vec<FolderGrant>,
     files: Vec<String>,
+    /// Where each recorded folder resolved when the start granted it, by the key
+    /// of its recorded spelling. Not saved. Checks read it instead of resolving
+    /// every folder on every call, which a folder on an offline network drive
+    /// would stall, on the main thread for some commands (#415).
+    #[serde(skip)]
+    resolved: HashMap<String, String>,
 }
 
 impl GrantRegistry {
@@ -111,13 +117,32 @@ impl GrantRegistry {
         self.files.len() != before
     }
 
-    /// Whether `canonical` is a granted folder or lies inside one. Folders that no
-    /// longer exist cover nothing.
+    /// Notes where a recorded folder resolved; see [`Self::folder_keys`].
+    fn remember_resolved(&mut self, recorded: &str, canonical: &Path) {
+        self.resolved
+            .insert(path_key(Path::new(recorded)), path_key(canonical));
+    }
+
+    /// The key each recorded folder is checked by, without touching the disk:
+    /// where it resolved at the start, or its recorded spelling when it did not
+    /// resolve then. A folder offline at the start is then allowed again once its
+    /// drive is back, if it was recorded resolved, as every picked folder is.
+    fn folder_keys(&self) -> Vec<String> {
+        self.folders
+            .iter()
+            .map(|grant| {
+                let key = path_key(Path::new(&grant.path));
+                self.resolved.get(&key).cloned().unwrap_or(key)
+            })
+            .collect()
+    }
+
+    /// Whether `canonical` is a granted folder or lies inside one.
     fn covers(&self, canonical: &Path) -> bool {
         let key = path_key(canonical);
-        self.folders.iter().any(|grant| {
-            fs::canonicalize(&grant.path).is_ok_and(|root| key_is_within(&key, &path_key(&root)))
-        })
+        self.folder_keys()
+            .iter()
+            .any(|root| key_is_within(&key, root))
     }
 }
 
@@ -541,40 +566,47 @@ fn with_registry<T, R: Runtime>(
     Ok(value)
 }
 
-/// What the user granted, resolved once for one command call. Every backend check
+/// What the user granted, read once for one command call. Every backend check
 /// of a path the webview names goes through it (#384, #415). The fs plugin's scope
 /// no longer holds library folders, so it cannot answer; and it would also hold the
 /// export folders the webview picks itself.
 #[derive(Debug, Default)]
 pub struct LibraryAccess {
-    /// Keys of the recorded folders that exist now, resolved.
+    /// Keys of the recorded folders, as [`GrantRegistry::folder_keys`] gives them.
     folders: Vec<String>,
     /// Keys of the recorded files, as recorded.
     files: HashSet<String>,
 }
 
 impl LibraryAccess {
-    /// Resolves each folder once. A folder that is missing now (an unplugged drive)
-    /// allows nothing until it is back.
-    pub(crate) fn new<P: AsRef<Path>>(folders: &[P], files: &[String]) -> Self {
+    fn from_keys(folders: Vec<String>, files: &[String]) -> Self {
         Self {
-            folders: folders
-                .iter()
-                .filter_map(|folder| fs::canonicalize(folder).ok())
-                .map(|root| path_key(&root))
-                .collect(),
+            folders,
             files: files.iter().map(|file| path_key(Path::new(file))).collect(),
         }
     }
 
-    /// Reads the registry once. Before it can be read, nothing is allowed.
+    /// For tests: folders resolved as the start resolves them, keeping the
+    /// spelling of one that does not resolve.
+    #[cfg(test)]
+    pub(crate) fn new<P: AsRef<Path>>(folders: &[P], files: &[String]) -> Self {
+        let keys = folders
+            .iter()
+            .map(|folder| {
+                path_key(&fs::canonicalize(folder).unwrap_or_else(|_| folder.as_ref().into()))
+            })
+            .collect();
+        Self::from_keys(keys, files)
+    }
+
+    /// Reads the registry once and touches no disk for the recorded folders.
+    /// Before the registry can be read, nothing is allowed.
     pub fn snapshot<R: Runtime>(app: &tauri::AppHandle<R>) -> Self {
         let recorded = with_registry(app, |registry| {
-            let folders: Vec<String> = registry.folders.iter().map(|g| g.path.clone()).collect();
-            ((folders, registry.files.clone()), false)
+            ((registry.folder_keys(), registry.files.clone()), false)
         });
         match recorded {
-            Ok((folders, files)) => Self::new(&folders, &files),
+            Ok((folders, files)) => Self::from_keys(folders, &files),
             Err(error) => {
                 log::warn!("[LibraryGrants] Allowing no library paths: {error}");
                 Self::default()
@@ -626,11 +658,19 @@ fn restore_folder_grants(app: &tauri::AppHandle<Wry>) -> Result<Vec<String>, Str
         let registry = guard.as_ref().expect("registry loaded above");
         (registry.folders.clone(), registry.files.clone())
     };
+    let mut resolved = Vec::new();
     for grant in folders {
-        if let Err(error) = grant_library_directory(app, &grant.path) {
-            log::info!("[LibraryGrants] Not granting {}: {error}", grant.path);
+        match grant_library_directory(app, &grant.path) {
+            Ok(canonical) => resolved.push((grant.path, canonical)),
+            Err(error) => log::info!("[LibraryGrants] Not granting {}: {error}", grant.path),
         }
     }
+    with_registry(app, |registry| {
+        for (recorded, canonical) in &resolved {
+            registry.remember_resolved(recorded, canonical);
+        }
+        ((), false)
+    })?;
     Ok(files)
 }
 
@@ -1041,7 +1081,8 @@ mod tests {
 
     #[test]
     fn a_granted_folder_covers_its_subfolders_and_nothing_beside_it() {
-        let root = temp_dir("covers");
+        // Resolved, as `record_folder` records and the start resolves every folder.
+        let root = fs::canonicalize(temp_dir("covers")).unwrap();
         let granted = root.join("granted");
         let inside = granted.join("inside");
         let beside = root.join("granted-beside");
@@ -1376,7 +1417,9 @@ mod tests {
         fs::write(loose.join("beside.png"), b"png").unwrap();
         let escape = granted.join("escape");
         link_dir(&outside, &escape);
-        let unplugged = root.join("unplugged");
+        // Recorded resolved, as every picked folder is, so its key still matches
+        // once its drive is back.
+        let unplugged = fs::canonicalize(&root).unwrap().join("unplugged");
         let access = LibraryAccess::new(
             &[&granted, &unplugged],
             &[picked.to_string_lossy().into_owned()],
@@ -1406,8 +1449,8 @@ mod tests {
         );
         assert!(!access.allows(&granted.join("..").join("outside").join("a.png")));
         assert!(
-            !access.allows(&unplugged.join("a.png")),
-            "a folder missing at the snapshot allows nothing"
+            access.allows(&unplugged.join("a.png")),
+            "a folder offline at the start keeps its recorded key"
         );
         assert!(!LibraryAccess::default().allows(&granted));
 
@@ -1433,6 +1476,52 @@ mod tests {
         assert!(handle.asset_protocol_scope().is_allowed(&file));
         assert!(!handle.fs_scope().is_allowed(&file));
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #427 review: a snapshot is taken on every command call, some on the main
+    // thread, so it must not resolve the recorded folders on disk: a folder on an
+    // offline network drive would stall each call. It uses where the start
+    // resolved them, and a folder that did not resolve keeps its recorded key.
+    #[test]
+    fn a_snapshot_uses_the_folders_the_start_resolved_without_the_disk() {
+        let root = fs::canonicalize(temp_dir("snapshot-keys")).unwrap();
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let alias = root.join("alias");
+        link_dir(&first, &alias);
+        let offline = root.join("offline");
+        let mut registry = GrantRegistry::default();
+        for folder in [&alias, &offline] {
+            registry.add_folder(&folder.to_string_lossy(), LibraryGrantKind::MonitoredFolder);
+        }
+        // What the start's restore notes for the folder it could resolve.
+        registry.remember_resolved(&alias.to_string_lossy(), &fs::canonicalize(&alias).unwrap());
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().identifier = "com.ambit.grant-test".to_string();
+        let app = tauri::test::mock_builder().build(context).unwrap();
+        let state = LibraryGrantState::default();
+        *state.registry.lock().unwrap() = Some(registry);
+        app.handle().manage(state);
+
+        // Point the alias elsewhere after the start. A snapshot that resolved it
+        // again would follow it to `second`.
+        fs::remove_dir(&alias)
+            .or_else(|_| fs::remove_file(&alias))
+            .unwrap();
+        link_dir(&second, &alias);
+
+        let access = LibraryAccess::snapshot(app.handle());
+        assert!(access.allows(&first.join("a.png")));
+        assert!(!access.allows(&second.join("a.png")));
+        assert!(
+            access.allows(&offline.join("a.png")),
+            "kept by its recorded key, so allowed again when the drive is back"
+        );
+
+        let _ = fs::remove_dir(&alias).or_else(|_| fs::remove_file(&alias));
         let _ = fs::remove_dir_all(root);
     }
 

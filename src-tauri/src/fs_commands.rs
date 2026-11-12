@@ -45,11 +45,15 @@ fn app_local_data_dir(app: &tauri::AppHandle<Wry>) -> Result<PathBuf, String> {
 /// there, only Ambit's own state, such as the grant registry, which a forged
 /// database row must not be able to delete (#392).
 fn refuse_app_data_file(canonical_file: &Path, app_local_data: &Path) -> Result<(), String> {
-    let own = fs::canonicalize(app_local_data).unwrap_or_else(|_| app_local_data.to_path_buf());
-    if canonical_file.starts_with(&own) {
+    if is_app_data_file(canonical_file, app_local_data) {
         return Err("Refusing to move Ambit's own data to trash".to_string());
     }
     Ok(())
+}
+
+fn is_app_data_file(canonical_file: &Path, app_local_data: &Path) -> bool {
+    let own = fs::canonicalize(app_local_data).unwrap_or_else(|_| app_local_data.to_path_buf());
+    canonical_file.starts_with(&own)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -197,8 +201,10 @@ impl specta::Type for LibraryFileBytes {
 
 /// Reads a library original for the webview, for ZIP export and prompt recovery.
 /// The webview cannot read library folders through the fs plugin (#415), so this
-/// reads a regular file only when the user granted it or a folder around it:
-/// what the asset protocol already shows.
+/// reads a regular file only when the user granted it or a folder around it, and
+/// never one in AppLocalData, where no library file lives: what the asset protocol
+/// already shows. A granted folder may contain AppLocalData (a user folder), and
+/// the grant registry and the database must not reach the webview through it.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn read_library_file(
@@ -206,8 +212,12 @@ pub async fn read_library_file(
     path: String,
 ) -> Result<LibraryFileBytes, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        read_library_file_in_scope(&path, crate::library_grants::LibraryAccess::checker(&app))
-            .map(LibraryFileBytes)
+        read_library_file_in_scope(
+            &path,
+            &app_local_data_dir(&app)?,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
+        .map(LibraryFileBytes)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -215,9 +225,13 @@ pub async fn read_library_file(
 
 fn read_library_file_in_scope(
     path: &str,
+    app_local_data: &Path,
     is_allowed: impl Fn(&Path) -> bool,
 ) -> Result<Vec<u8>, String> {
     let file = resolve_existing_regular_file(path)?;
+    if is_app_data_file(&file, app_local_data) {
+        return Err("Ambit's own data is not a library file".to_string());
+    }
     if !is_allowed(&file) {
         return Err("The file is outside the folders and files granted to Ambit".to_string());
     }
@@ -1219,27 +1233,27 @@ mod tests {
         let root = temp_dir("read_library_file");
         let granted = root.join("granted");
         let outside = root.join("outside");
-        fs::create_dir_all(&granted).unwrap();
+        // A granted folder that holds AppLocalData, as a granted user folder does.
+        let app_local_data = granted.join("AppData").join("com.ambit");
+        fs::create_dir_all(&app_local_data).unwrap();
         fs::create_dir_all(&outside).unwrap();
         fs::write(granted.join("image.png"), b"inside").unwrap();
         fs::write(outside.join("secret.png"), b"outside").unwrap();
+        fs::write(app_local_data.join("library-grants.json"), b"{}").unwrap();
         let granted_key = fs::canonicalize(&granted).unwrap();
         let is_allowed = |path: &Path| path.starts_with(&granted_key);
         let spelled = |path: PathBuf| path.to_string_lossy().into_owned();
+        let read =
+            |path: PathBuf| read_library_file_in_scope(&spelled(path), &app_local_data, is_allowed);
 
-        assert_eq!(
-            read_library_file_in_scope(&spelled(granted.join("image.png")), is_allowed),
-            Ok(b"inside".to_vec())
-        );
+        assert_eq!(read(granted.join("image.png")), Ok(b"inside".to_vec()));
+        assert!(read(outside.join("secret.png")).is_err());
+        assert!(read(granted.join("..").join("outside").join("secret.png")).is_err());
+        assert!(read(granted.clone()).is_err());
         assert!(
-            read_library_file_in_scope(&spelled(outside.join("secret.png")), is_allowed).is_err()
+            read(app_local_data.join("library-grants.json")).is_err(),
+            "Ambit's own data, even inside a granted folder"
         );
-        assert!(read_library_file_in_scope(
-            &spelled(granted.join("..").join("outside").join("secret.png")),
-            is_allowed
-        )
-        .is_err());
-        assert!(read_library_file_in_scope(&spelled(granted.clone()), is_allowed).is_err());
 
         let _ = fs::remove_dir_all(root);
     }
