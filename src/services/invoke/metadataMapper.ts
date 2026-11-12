@@ -457,13 +457,11 @@ export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     }
 
     // Hash extraction (v2.x uses model_hash at root, v3.5+ uses model.hash)
-    const wrapperHash = readModelHash(rootRecord.model_hash) || readModelHash(metaRecord.model_hash);
-    if (wrapperHash) mapped.modelHash = wrapperHash;
-    else if (asRecord(actualRoot.model).hash) {
-        // Strip prefixes like "blake3:" if present
-        const hashStr = String(asRecord(actualRoot.model).hash);
-        mapped.modelHash = hashStr.split(':').pop() || hashStr;
-    }
+    const modelHash =
+        readModelHash(rootRecord.model_hash) ||
+        readModelHash(metaRecord.model_hash) ||
+        (isRecord(actualRoot.model) ? readModelHash(actualRoot.model) : '');
+    if (modelHash) mapped.modelHash = modelHash;
 
     // Additional fields for parity with Rust ImageMetadata
     mapped.clipSkip = readNumber(actualRoot, 'clip_skip', 'clipSkip') ?? mapped.clipSkip;

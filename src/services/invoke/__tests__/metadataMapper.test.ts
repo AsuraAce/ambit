@@ -294,6 +294,9 @@ describe('metadataMapper', () => {
             'fallback'
         );
         expect(mapRawInvokeMetadata({ model_hash: { hash: { value: 'deep' } } }).modelHash).toBeUndefined();
+        expect(
+            mapRawInvokeMetadata({ image: { model: { name: 'sdxl', hash: { algo: 'blake3', value: 'x' } } } }).modelHash
+        ).toBeUndefined();
     });
 
     it('ignores inherited enumerable properties during recursive resource scans', () => {
