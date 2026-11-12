@@ -140,16 +140,16 @@ pub(crate) fn grant_directory_scope<R: tauri::Runtime>(
 }
 
 /// Adds one existing regular file to the asset-protocol scope, and not the fs
-/// plugin's scope; see [`grant_directory_scope`].
+/// plugin's scope; see [`grant_directory_scope`]. Returns the file as resolved.
 pub(crate) fn grant_library_file<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     path: &str,
-) -> Result<(), String> {
+) -> Result<PathBuf, String> {
     let file = resolve_existing_regular_file(path)?;
     app.asset_protocol_scope()
         .allow_file(&file)
         .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
-    Ok(())
+    Ok(file)
 }
 
 pub(crate) fn validate_library_scope_directory(path: &str) -> Result<PathBuf, String> {

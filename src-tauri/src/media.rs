@@ -1501,7 +1501,14 @@ mod tests {
         for file in [&in_folder, &picked, &beside] {
             fs::write(file, b"video").unwrap();
         }
-        let access = LibraryAccess::new(&[&watched], &[picked.to_string_lossy().into_owned()]);
+        // Recorded as `pick_library_files` records a file: resolved.
+        let access = LibraryAccess::new(
+            &[&watched],
+            &[fs::canonicalize(&picked)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()],
+        );
         let spelled = |path: &std::path::Path| path.to_string_lossy().into_owned();
 
         assert!(granted_video_file(&spelled(&in_folder), &access).is_ok());

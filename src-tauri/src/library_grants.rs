@@ -746,17 +746,26 @@ pub async fn pick_library_files(
         .collect::<Vec<_>>();
     let recorded = paths.clone();
     blocking(move || {
-        let mut granted = Vec::new();
-        for path in &recorded {
-            match grant_library_file(&app, path) {
-                Ok(()) => granted.push(path.clone()),
-                Err(error) => log::warn!("[LibraryGrants] Not granting {path}: {error}"),
-            }
-        }
+        let granted = grant_picked_files(&app, &recorded);
         with_registry(&app, |registry| ((), registry.add_files(&granted)))
     })
     .await?;
     Ok(paths)
+}
+
+/// Grants each picked file and returns what to record: the file as resolved.
+/// Import and playback check a file's canonical path, so the record must match
+/// it however the dialog spelled the file (a junction, a mapped drive, an 8.3
+/// name).
+fn grant_picked_files<R: Runtime>(app: &tauri::AppHandle<R>, paths: &[String]) -> Vec<String> {
+    let mut granted = Vec::new();
+    for path in paths {
+        match grant_library_file(app, path) {
+            Ok(file) => granted.push(display_path(&file)),
+            Err(error) => log::warn!("[LibraryGrants] Not granting {path}: {error}"),
+        }
+    }
+    granted
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1424,6 +1433,40 @@ mod tests {
         assert!(handle.asset_protocol_scope().is_allowed(&file));
         assert!(!handle.fs_scope().is_allowed(&file));
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: video import and playback check a picked file by its canonical path.
+    // A file picked through a junction, a mapped drive or an 8.3 name must still
+    // match its record, so the record is the resolved file.
+    #[test]
+    fn a_file_picked_through_another_spelling_is_recorded_as_resolved() {
+        let root = temp_dir("picked-spelling");
+        let real = root.join("real");
+        fs::create_dir_all(&real).unwrap();
+        let file = real.join("clip.mp4");
+        fs::write(&file, b"video").unwrap();
+        fs::write(real.join("other.mp4"), b"video").unwrap();
+        let alias = root.join("alias");
+        link_dir(&real, &alias);
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+
+        let recorded = grant_picked_files(
+            app.handle(),
+            &[
+                alias.join("clip.mp4").to_string_lossy().into_owned(),
+                root.join("missing.mp4").to_string_lossy().into_owned(),
+            ],
+        );
+        assert_eq!(recorded.len(), 1, "a file it cannot grant is not recorded");
+        let access = LibraryAccess::new(&[] as &[&Path], &recorded);
+        assert!(access.allows(&fs::canonicalize(&file).unwrap()));
+        assert!(access.allows(&alias.join("clip.mp4")));
+        assert!(!access.allows(&real.join("other.mp4")));
+
+        let _ = fs::remove_dir(&alias);
         let _ = fs::remove_dir_all(root);
     }
 
