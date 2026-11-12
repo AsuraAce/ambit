@@ -128,10 +128,14 @@ export const pickLibraryFiles = async (filterName: string, extensions: string[])
     return result.data;
 };
 
-/** Drops a folder grant when the user removes the folder from Settings. */
-export const revokeLibraryGrant = async (path: string, kind: LibraryGrantKind): Promise<void> => {
+/**
+ * Drops a folder grant when the user removes the folder from Settings, or applies
+ * a new root (`replacement`). Rust keeps the grant when `replacement` is the same
+ * folder, however either is spelled.
+ */
+export const revokeLibraryGrant = async (path: string, kind: LibraryGrantKind, replacement?: string): Promise<void> => {
     if (isBrowserMockMode()) return;
-    const result = await commands.revokeLibraryGrant(path, kind);
+    const result = await commands.revokeLibraryGrant(path, kind, replacement ?? null);
     if (result.status === 'error') throw new Error(result.error);
 };
 

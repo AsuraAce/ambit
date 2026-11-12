@@ -259,9 +259,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                                 const nextRoot = normalizePath(selected);
                                                 setSettings((prev) => ({ ...prev, a1111Path: nextRoot }));
                                                 // The new root is now the setting, so drop the old root's grant (#392).
-                                                if (previousRoot && previousRoot.toLowerCase() !== nextRoot.toLowerCase()) {
-                                                    await revokeLibraryGrant(previousRoot, 'a1111Root');
-                                                }
+                                                // Rust keeps it when both name the same folder.
+                                                if (previousRoot) await revokeLibraryGrant(previousRoot, 'a1111Root', nextRoot);
                                             }
                                         } catch (e) {
                                             console.error(e);

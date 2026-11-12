@@ -417,7 +417,8 @@ fn library_media_paths(db_path: &Path) -> Vec<String> {
 pub struct LibraryGrantState {
     registry: Mutex<Option<GrantRegistry>>,
     confirmation: tokio::sync::Mutex<()>,
-    /// Set once the start has granted the recorded folders and files again.
+    /// Set once the start has granted the recorded folders again. Recorded files
+    /// are granted after it is set.
     restored: AtomicBool,
     restored_signal: tokio::sync::Notify,
 }
@@ -586,9 +587,10 @@ pub fn restore_grants_at_start(app: &tauri::AppHandle<Wry>) {
     }
 }
 
-/// Resolves once the start has granted the recorded folders and files again,
-/// whether or not that succeeded. The webview awaits it before it shows the
-/// library, because it no longer registers settings folders itself.
+/// Resolves once the start has granted the recorded folders again, whether or not
+/// that succeeded; recorded files are granted just after. The webview awaits it
+/// before it shows the library, because it no longer registers settings folders
+/// itself.
 #[tauri::command]
 #[specta::specta]
 pub async fn wait_for_library_grants(app: tauri::AppHandle<Wry>) -> Result<(), String> {
@@ -835,21 +837,42 @@ pub async fn request_library_folder_grant(
     Ok(true)
 }
 
+/// The registry keys a revoke of `path` removes: its spelling and, when it
+/// exists, its resolved folder. `None` when `replacement`, the folder that takes
+/// its place, is the same folder however either is spelled: revoking then would
+/// drop the grant the user just gave.
+fn revocation_keys(path: &str, replacement: Option<&str>) -> Option<Vec<String>> {
+    let keys_of = |path: &str| {
+        let mut keys = vec![path_key(Path::new(path.trim()))];
+        if let Ok(canonical) = fs::canonicalize(path.trim()) {
+            keys.push(path_key(&canonical));
+        }
+        keys
+    };
+    let keys = keys_of(path);
+    match replacement {
+        Some(replacement) if keys_of(replacement).iter().any(|key| keys.contains(key)) => None,
+        _ => Some(keys),
+    }
+}
+
 /// Removes a folder grant of `kind`, for example when the user removes a
-/// monitored folder. The folder stays readable until the next start, because a
-/// scope cannot be narrowed at runtime.
+/// monitored folder, or applies a new InvokeAI or A1111 root (`replacement`).
+/// Nothing is removed when `replacement` is the same folder as `path`. The folder
+/// stays readable until the next start, because a scope cannot be narrowed at
+/// runtime.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn revoke_library_grant(
     app: tauri::AppHandle<Wry>,
     path: String,
     kind: LibraryGrantKind,
+    replacement: Option<String>,
 ) -> Result<(), String> {
     blocking(move || {
-        let mut keys = vec![path_key(Path::new(path.trim()))];
-        if let Ok(canonical) = fs::canonicalize(path.trim()) {
-            keys.push(path_key(&canonical));
-        }
+        let Some(keys) = revocation_keys(&path, replacement.as_deref()) else {
+            return Ok(());
+        };
         with_registry(&app, |registry| ((), registry.remove_folder(&keys, kind)))
     })
     .await
@@ -1248,6 +1271,46 @@ mod tests {
             assert_eq!(readable(&granted.join("inside")), (true, true));
             assert_eq!(readable(&beside), (false, false));
         });
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #423 review: applying a new root revokes the previous one. When both name the
+    // same folder (a trailing slash, another case, a junction to it), the revoke
+    // would remove the grant the pick just recorded, and the root would not be
+    // granted again at the next start.
+    #[test]
+    fn a_revoke_keeps_the_folder_that_replaces_it_however_it_is_spelled() {
+        let root = temp_dir("revoke-same");
+        let sd = root.join("SD");
+        let other = root.join("Other");
+        fs::create_dir_all(&sd).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        let alias = root.join("SD-link");
+        link_dir(&sd, &alias);
+        let spelled = |path: &Path| path.to_string_lossy().into_owned();
+        let sd_path = spelled(&sd);
+
+        let trailing = format!("{sd_path}{}", std::path::MAIN_SEPARATOR);
+        assert_eq!(revocation_keys(&trailing, Some(&sd_path)), None);
+        assert_eq!(revocation_keys(&spelled(&alias), Some(&sd_path)), None);
+        assert_eq!(revocation_keys(&sd_path, Some(&spelled(&alias))), None);
+        #[cfg(windows)]
+        assert_eq!(
+            revocation_keys(&sd_path.to_uppercase(), Some(&sd_path)),
+            None
+        );
+
+        // Another folder, or no replacement, revokes as before.
+        let keys = revocation_keys(&sd_path, Some(&spelled(&other))).unwrap();
+        let mut registry = GrantRegistry::default();
+        registry.add_folder(
+            &display_path(&fs::canonicalize(&sd).unwrap()),
+            LibraryGrantKind::A1111Root,
+        );
+        assert!(registry.remove_folder(&keys, LibraryGrantKind::A1111Root));
+        assert!(revocation_keys(&sd_path, None).is_some());
+
+        let _ = fs::remove_dir(&alias);
         let _ = fs::remove_dir_all(root);
     }
 

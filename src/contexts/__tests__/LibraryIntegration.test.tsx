@@ -6634,7 +6634,7 @@ describe('Library Integration (Provider Stack)', () => {
             );
             expect(useSettingsStore.getState().settings.invokeAiPath).toBe('D:/InvokeNext');
             expect(mocks.revokeLibraryGrant).toHaveBeenCalledTimes(1);
-            expect(mocks.revokeLibraryGrant).toHaveBeenCalledWith('D:/Invoke', 'invokeAiRoot');
+            expect(mocks.revokeLibraryGrant).toHaveBeenCalledWith('D:/Invoke', 'invokeAiRoot', 'D:/InvokeNext');
         });
 
         it('restores a current target cursor and skips image catch-up for an unchanged cached owner', async () => {

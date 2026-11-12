@@ -688,8 +688,8 @@ const commandCases: CommandCase[] = [
     {
         name: 'revokeLibraryGrant',
         invokeName: 'revoke_library_grant',
-        args: ['C:/library', 'monitoredFolder'],
-        payload: { path: 'C:/library', kind: 'monitoredFolder' },
+        args: ['C:/library', 'monitoredFolder', null],
+        payload: { path: 'C:/library', kind: 'monitoredFolder', replacement: null },
         returnsResult: true,
     },
     { name: 'waitForLibraryGrants', invokeName: 'wait_for_library_grants', args: [], returnsResult: true },
