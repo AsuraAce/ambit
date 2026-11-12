@@ -1217,7 +1217,7 @@ mod tests {
     // already granted; anything else outside AppLocalData needs a confirmation.
     #[test]
     fn a_typed_folder_needs_confirmation_unless_a_grant_or_app_data_covers_it() {
-        let root = temp_dir("classify");
+        let root = fs::canonicalize(temp_dir("classify")).unwrap();
         let app_local_data = root.join("AppLocalData");
         let granted = root.join("granted");
         let beside = root.join("granted-beside");
@@ -1252,7 +1252,7 @@ mod tests {
     // folder must be refused, however the webview spells it.
     #[test]
     fn register_grants_only_folders_inside_a_recorded_grant() {
-        let root = temp_dir("register");
+        let root = fs::canonicalize(temp_dir("register")).unwrap();
         let app_local_data = root.join("AppLocalData");
         let granted = root.join("granted");
         let beside = root.join("granted-beside");
