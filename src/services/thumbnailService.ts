@@ -7,7 +7,8 @@ import { getDb } from './db/connection';
 import { getUnoptimizedImagesCount, getUnoptimizedImageEntries } from './db/maintenanceRepo';
 import type { UnoptimizedImageCursor } from './db/maintenanceRepo';
 import { updateThumbnailPathsBatch } from './db/imageRepo';
-import { normalizePath } from '../utils/pathUtils';
+import { isPathWithinDirectory, normalizePath } from '../utils/pathUtils';
+import { libraryPathsExist } from './assetScope';
 import { commands, type ThumbnailRepairBatchResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -386,39 +387,60 @@ export const pruneBrokenThumbnails = async (): Promise<number> => {
     let brokenCount = 0;
     const brokenIds: string[] = [];
 
-    // Check availability
-    // Optimization: We could use Rust for bulk verify if this is too slow,
-    // but for <100k items checking file existence is reasonably fast in parallel chunks or even sequentially.
-    // Let's do parallel chunks of 50.
+    // Check availability in parallel chunks of 50. Thumbnails Ambit made live in
+    // AppLocalData, which the webview may check itself. InvokeAI's own thumbnails
+    // live under the InvokeAI root, which only Rust may check (#415).
     const CHUNK_SIZE = 50;
+    const appLocalData = normalizePath(await appLocalDataDir());
 
     for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
         const chunk = rows.slice(i, i + CHUNK_SIZE);
-        await Promise.all(
+        const checkPaths = await Promise.all(
             chunk.map(async (row) => {
                 // If it's a web URL, skip check
-                if (row.thumbnail_path.startsWith('http')) return;
+                if (row.thumbnail_path.startsWith('http')) return null;
 
                 // If it's a full absolute path, check it.
                 // If it's a filename only (legacy), join with thumbDir
                 // Newer entries store full absolute path.
-                let checkPath = normalizePath(row.thumbnail_path);
+                const checkPath = normalizePath(row.thumbnail_path);
 
                 // Heuristic for old relative paths (unlikely in new versions but safe to keep)
                 if (!checkPath.includes('/') && !checkPath.includes('\\')) {
-                    checkPath = await join(thumbDir, checkPath);
+                    return join(thumbDir, checkPath);
                 }
+                return checkPath;
+            })
+        );
 
-                try {
-                    const doesExist = await exists(checkPath);
-                    if (!doesExist) {
-                        brokenIds.push(row.id);
-                        brokenCount++;
+        const libraryPaths = checkPaths.filter((path): path is string => path !== null && !isPathWithinDirectory(path, appLocalData));
+        const libraryPresence = new Map<string, boolean | null>();
+        try {
+            const present = await libraryPathsExist(libraryPaths);
+            libraryPaths.forEach((path, index) => libraryPresence.set(path, present[index] ?? null));
+        } catch (e) {
+            console.warn('[Thumb] Failed to check library thumbnails', e);
+        }
+
+        await Promise.all(
+            chunk.map(async (row, index) => {
+                const checkPath = checkPaths[index];
+                if (checkPath === null) return;
+
+                // A path Ambit may not check (`null`) counts as present, as a failed check does.
+                let doesExist: boolean | null = null;
+                if (!isPathWithinDirectory(checkPath, appLocalData)) {
+                    doesExist = libraryPresence.get(checkPath) ?? null;
+                } else {
+                    try {
+                        doesExist = await exists(checkPath);
+                    } catch (e) {
+                        console.warn(`[Thumb] Failed to check existence of ${checkPath}`, e);
                     }
-                } catch (e) {
-                    // If checking fails, assume available or transient error?
-                    // Safest to assume NOT available if 'exists' throws for file system errors
-                    console.warn(`[Thumb] Failed to check existence of ${checkPath}`, e);
+                }
+                if (doesExist === false) {
+                    brokenIds.push(row.id);
+                    brokenCount++;
                 }
             })
         );

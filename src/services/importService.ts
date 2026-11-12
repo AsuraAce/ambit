@@ -2,11 +2,10 @@
 import { parseImageFile, scanImagesBulk } from './metadataParser';
 import { getExistingMetadata, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { exists } from '@tauri-apps/plugin-fs';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
-import { ensureFolderAccessible, filterAccessibleFolders } from './assetScope';
+import { ensureFolderAccessible, filterAccessibleFolders, libraryPathsExist } from './assetScope';
 import { useLibraryStore } from '../stores/libraryStore';
 import { getDb } from './db/connection';
 import {
@@ -1103,14 +1102,15 @@ export const processTargetedFiles = async (
     if (paths.length === 0) return result;
     const normalizedPaths = paths.map(normalizePath);
     if (options.waitForStableFiles) {
-        const existingSidecars: string[] = [];
-        for (const path of normalizedPaths.filter(isVideoSidecarPath)) {
-            try {
-                if (await exists(path)) existingSidecars.push(path);
-            } catch (error) {
-                console.warn('[Import] Could not determine sidecar availability; waiting conservatively.', error);
-                existingSidecars.push(path);
-            }
+        const sidecars = normalizedPaths.filter(isVideoSidecarPath);
+        let existingSidecars: string[];
+        try {
+            const present = await libraryPathsExist(sidecars);
+            // Unknown (`null`) waits too, as a failed check does.
+            existingSidecars = sidecars.filter((_, index) => present[index] !== false);
+        } catch (error) {
+            console.warn('[Import] Could not determine sidecar availability; waiting conservatively.', error);
+            existingSidecars = sidecars;
         }
         if (existingSidecars.length > 0) {
             const stable = await waitForStableFileSizes(existingSidecars, options.onProgress, options.abortSignal);

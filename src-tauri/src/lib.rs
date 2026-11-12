@@ -173,6 +173,8 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             fs_commands::delete_removed_images_from_disk,
             fs_commands::delete_thumbnail,
             fs_commands::register_library_path,
+            fs_commands::read_library_file,
+            fs_commands::library_paths_exist,
             library_grants::pick_library_folder,
             library_grants::pick_library_files,
             library_grants::request_library_folder_grant,

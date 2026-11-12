@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     appLocalDataDir: vi.fn(),
     registerLibraryPath: vi.fn(),
     waitForLibraryGrants: vi.fn(),
+    readLibraryFile: vi.fn(),
 }));
 
 vi.mock('../runtime', () => ({
@@ -16,7 +17,11 @@ vi.mock('@tauri-apps/api/path', () => ({
 }));
 
 vi.mock('../../bindings', () => ({
-    commands: { registerLibraryPath: mocks.registerLibraryPath, waitForLibraryGrants: mocks.waitForLibraryGrants },
+    commands: {
+        registerLibraryPath: mocks.registerLibraryPath,
+        waitForLibraryGrants: mocks.waitForLibraryGrants,
+        readLibraryFile: mocks.readLibraryFile,
+    },
 }));
 
 const loadService = async () => {
@@ -170,6 +175,20 @@ describe('assetScope', () => {
         expect(mocks.registerLibraryPath).not.toHaveBeenCalled();
         expect(error).toHaveBeenCalledTimes(2);
         error.mockRestore();
+    });
+
+    // #415: Rust sends a library file as raw bytes. Tauri delivers them as an
+    // ArrayBuffer, or as numbers over its fallback IPC; anything else is no file.
+    it('reads library files as bytes from either IPC form and refuses anything else', async () => {
+        const { readLibraryFile } = await loadService();
+        mocks.readLibraryFile.mockResolvedValueOnce({ status: 'ok', data: new Uint8Array([1, 2]).buffer });
+        await expect(readLibraryFile('C:/library/a.png')).resolves.toEqual(new Uint8Array([1, 2]));
+        mocks.readLibraryFile.mockResolvedValueOnce({ status: 'ok', data: [3, 4] });
+        await expect(readLibraryFile('C:/library/a.png')).resolves.toEqual(new Uint8Array([3, 4]));
+        mocks.readLibraryFile.mockResolvedValueOnce({ status: 'ok', data: 'not bytes' });
+        await expect(readLibraryFile('C:/library/a.png')).rejects.toThrow('No file contents');
+        mocks.readLibraryFile.mockResolvedValueOnce({ status: 'error', error: 'outside the grants' });
+        await expect(readLibraryFile('C:/elsewhere/a.png')).rejects.toThrow('outside the grants');
     });
 
     it('does not wait for grants in browser mock mode', async () => {

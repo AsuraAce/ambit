@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFile } from '@tauri-apps/plugin-fs';
+import { readLibraryFile } from '../assetScope';
 import { imageToAnalysisBase64, repairAssetUrl } from '../imageService';
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-    readFile: vi.fn(),
+// #415: the analysis source comes from Rust, which reads only granted files.
+vi.mock('../assetScope', () => ({
+    readLibraryFile: vi.fn(),
 }));
 
-const mockReadFile = vi.mocked(readFile);
+const mockReadFile = vi.mocked(readLibraryFile);
 const originalCreateImageBitmap = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap');
 
 describe('imageToAnalysisBase64', () => {

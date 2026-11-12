@@ -1,4 +1,5 @@
 use crate::db::commands::run_blocking;
+use crate::library_grants::LibraryAccess;
 use base64::Engine;
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
@@ -263,7 +264,7 @@ pub async fn import_video_asset(
         return Err("Operation ID cannot be empty".to_string());
     }
 
-    let canonical = validate_scoped_video_file(&app, &path)?;
+    let canonical = validate_scoped_video_file(&LibraryAccess::snapshot(&app), &path)?;
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut cancellations = state
@@ -334,6 +335,7 @@ pub async fn refresh_video_metadata(
         errors: 0,
         was_cancelled: false,
     };
+    let access = LibraryAccess::snapshot(&app);
     for (path, parser_version, original_evidence_json) in paths {
         if reparse_state.is_cancelled.load(Ordering::SeqCst) {
             result.was_cancelled = true;
@@ -341,7 +343,7 @@ pub async fn refresh_video_metadata(
         }
         result.processed += 1;
         if force_reparse {
-            let canonical = match validate_scoped_video_file(&app, &path) {
+            let canonical = match validate_scoped_video_file(&access, &path) {
                 Ok(path) => path,
                 Err(_) => {
                     result.errors += 1;
@@ -393,7 +395,7 @@ pub async fn refresh_video_metadata(
                 continue;
             }
         }
-        let canonical = match validate_scoped_video_file(&app, &path) {
+        let canonical = match validate_scoped_video_file(&access, &path) {
             Ok(path) => path,
             Err(_) => {
                 result.errors += 1;
@@ -618,10 +620,8 @@ pub async fn prepare_video_playback(
             .ok_or_else(|| "Video asset is not present in the library or Removed".to_string())
     })
     .await?;
-    let canonical = resolve_existing_regular_file(&path, "video")?;
-    app.fs_scope()
-        .allow_file(&canonical)
-        .map_err(|error| format!("Failed to scope video file: {error}"))?;
+    let canonical = granted_video_file(&path, &LibraryAccess::snapshot(&app))?;
+    // The asset-protocol scope only, never the fs plugin's (#415).
     app.asset_protocol_scope()
         .allow_file(&canonical)
         .map_err(|error| format!("Failed to scope video asset URL: {error}"))?;
@@ -701,7 +701,17 @@ fn cancelled_outcome() -> VideoImportOutcome {
     }
 }
 
-fn validate_scoped_video_file(app: &tauri::AppHandle<Wry>, path: &str) -> Result<PathBuf, String> {
+/// The video a library row names, when the user granted it or a folder around it.
+/// The library database is webview-writable, so a row alone grants nothing (#415).
+fn granted_video_file(path: &str, access: &LibraryAccess) -> Result<PathBuf, String> {
+    let canonical = resolve_existing_regular_file(path, "video")?;
+    if !access.allows(&canonical) {
+        return Err("Video file is outside the folders and files granted to Ambit".to_string());
+    }
+    Ok(canonical)
+}
+
+fn validate_scoped_video_file(access: &LibraryAccess, path: &str) -> Result<PathBuf, String> {
     let canonical = resolve_existing_regular_file(path, "video")?;
     let extension = canonical
         .extension()
@@ -711,9 +721,8 @@ fn validate_scoped_video_file(app: &tauri::AppHandle<Wry>, path: &str) -> Result
     if !VIDEO_EXTENSIONS.contains(&extension.as_str()) {
         return Err(format!("Unsupported video extension: {extension}"));
     }
-    if !app.fs_scope().is_allowed(&canonical) || !app.asset_protocol_scope().is_allowed(&canonical)
-    {
-        return Err("Video file is outside the picker-approved filesystem scope".to_string());
+    if !access.allows(&canonical) {
+        return Err("Video file is outside the folders and files granted to Ambit".to_string());
     }
     Ok(canonical)
 }
@@ -1461,16 +1470,76 @@ fn copy_without_overwrite(source: &Path, destination: &Path) -> Result<(PathBuf,
 #[cfg(test)]
 mod tests {
     use super::{
-        collision_safe_output_path, copy_without_overwrite, has_hidden_removed_video_collision,
-        load_video_playback_path, normalize_rotation, parse_mediainfo_json,
-        preserve_video_user_overrides, update_video_metadata_record, upsert_video_asset,
-        VideoAssetRecord,
+        collision_safe_output_path, copy_without_overwrite, granted_video_file,
+        has_hidden_removed_video_collision, load_video_playback_path, normalize_rotation,
+        parse_mediainfo_json, preserve_video_user_overrides, update_video_metadata_record,
+        upsert_video_asset, VideoAssetRecord,
     };
     use crate::metadata::video::{
         MetadataEvidenceSource, VideoGenerationMetadata, VideoGenerationMode,
     };
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    // #415: `prepare_video_playback` grants the file a library row names. The
+    // webview can write library rows, so a row naming a file outside every grant
+    // must be refused, while a video in a granted folder or picked on its own plays.
+    #[test]
+    fn playback_grants_only_videos_the_user_granted() {
+        use crate::library_grants::LibraryAccess;
+
+        let root =
+            std::env::temp_dir().join(format!("ambit-playback-grants-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let watched = root.join("watched");
+        let elsewhere = root.join("elsewhere");
+        fs::create_dir_all(&watched).unwrap();
+        fs::create_dir_all(&elsewhere).unwrap();
+        let in_folder = watched.join("clip.mp4");
+        let picked = elsewhere.join("picked.mp4");
+        let beside = elsewhere.join("secret.mp4");
+        for file in [&in_folder, &picked, &beside] {
+            fs::write(file, b"video").unwrap();
+        }
+        // Recorded as `pick_library_files` records a file: resolved.
+        let access = LibraryAccess::new(
+            &[&watched],
+            &[fs::canonicalize(&picked)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()],
+        );
+        let spelled = |path: &std::path::Path| path.to_string_lossy().into_owned();
+
+        assert!(granted_video_file(&spelled(&in_folder), &access).is_ok());
+        assert!(granted_video_file(&spelled(&picked), &access).is_ok());
+        assert!(granted_video_file(&spelled(&beside), &access).is_err());
+        assert!(granted_video_file(
+            &spelled(&watched.join("..").join("elsewhere").join("secret.mp4")),
+            &access
+        )
+        .is_err());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: the command must keep using that check, and grant display only.
+    #[test]
+    fn playback_checks_the_grants_and_never_grants_the_fs_scope() {
+        let source = include_str!("media.rs");
+        let start = source.find("pub async fn prepare_video_playback(").unwrap();
+        let body = &source[start
+            ..start
+                + source[start..]
+                    .find(
+                        "
+}
+",
+                    )
+                    .unwrap()];
+        assert!(body.contains("granted_video_file(&path, &LibraryAccess::snapshot(&app))?"));
+        assert!(!body.contains("fs_scope()"));
+    }
 
     #[test]
     fn parses_sane_mediainfo_video_tracks() {

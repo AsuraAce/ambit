@@ -668,7 +668,7 @@ pub async fn scan_model_thumbnails(
 ) -> Result<ThumbnailScanResult, String> {
     crate::scanner::utils::validate_scoped_roots(
         &paths,
-        |path| crate::scanner::utils::fs_scope_allows(&app, path),
+        crate::library_grants::LibraryAccess::checker(&app),
         "Resource folder",
     )?;
     state.is_cancelled.store(false, Ordering::SeqCst);

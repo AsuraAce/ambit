@@ -6,7 +6,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use tauri::{Manager, Wry};
-use tauri_plugin_fs::FsExt;
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -46,11 +45,15 @@ fn app_local_data_dir(app: &tauri::AppHandle<Wry>) -> Result<PathBuf, String> {
 /// there, only Ambit's own state, such as the grant registry, which a forged
 /// database row must not be able to delete (#392).
 fn refuse_app_data_file(canonical_file: &Path, app_local_data: &Path) -> Result<(), String> {
-    let own = fs::canonicalize(app_local_data).unwrap_or_else(|_| app_local_data.to_path_buf());
-    if canonical_file.starts_with(&own) {
+    if is_app_data_file(canonical_file, app_local_data) {
         return Err("Refusing to move Ambit's own data to trash".to_string());
     }
     Ok(())
+}
+
+fn is_app_data_file(canonical_file: &Path, app_local_data: &Path) -> bool {
+    let own = fs::canonicalize(app_local_data).unwrap_or_else(|_| app_local_data.to_path_buf());
+    canonical_file.starts_with(&own)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -112,8 +115,8 @@ pub async fn register_library_path(app: tauri::AppHandle<Wry>, path: String) -> 
     crate::library_grants::grant_folder_inside_grants(app, path).await
 }
 
-/// Adds an existing, non-root folder and everything inside it to the fs and
-/// asset-protocol scopes, and returns the folder resolved.
+/// Adds an existing, non-root folder and everything inside it to the
+/// asset-protocol scope, and returns the folder resolved.
 pub(crate) fn grant_library_directory(
     app: &tauri::AppHandle<Wry>,
     path: &str,
@@ -124,31 +127,33 @@ pub(crate) fn grant_library_directory(
 }
 
 /// Adds a folder already resolved and checked by the caller, and everything
-/// inside it, to the fs and asset-protocol scopes.
+/// inside it, to the asset-protocol scope, so the webview can display it.
+///
+/// Never the fs plugin's scope (#415): the plugin admits a webview call when either
+/// that scope or the capability allows the path, so a library folder there would
+/// be writable and removable by the webview. Backend commands check the grant
+/// registry instead ([`crate::library_grants::LibraryAccess`]).
 pub(crate) fn grant_directory_scope<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     folder: &Path,
 ) -> Result<(), String> {
-    app.fs_scope()
-        .allow_directory(folder, true)
-        .map_err(|e| format!("Failed to add to FS scope: {}", e))?;
     app.asset_protocol_scope()
         .allow_directory(folder, true)
         .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
     Ok(())
 }
 
-/// Adds one existing regular file to the fs and asset-protocol scopes, as the
-/// dialog plugin does for a picked file.
-pub(crate) fn grant_library_file(app: &tauri::AppHandle<Wry>, path: &str) -> Result<(), String> {
+/// Adds one existing regular file to the asset-protocol scope, and not the fs
+/// plugin's scope; see [`grant_directory_scope`]. Returns the file as resolved.
+pub(crate) fn grant_library_file<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &str,
+) -> Result<PathBuf, String> {
     let file = resolve_existing_regular_file(path)?;
-    app.fs_scope()
-        .allow_file(&file)
-        .map_err(|e| format!("Failed to add to FS scope: {}", e))?;
     app.asset_protocol_scope()
         .allow_file(&file)
         .map_err(|e| format!("Failed to add to Asset Protocol scope: {}", e))?;
-    Ok(())
+    Ok(file)
 }
 
 pub(crate) fn validate_library_scope_directory(path: &str) -> Result<PathBuf, String> {
@@ -175,6 +180,95 @@ pub(crate) fn validate_library_scope_directory(path: &str) -> Result<PathBuf, St
 
 fn is_filesystem_root(path: &Path) -> bool {
     path.parent().is_none()
+}
+
+/// A library file's bytes, sent to the webview as an `ArrayBuffer` rather than as
+/// a JSON array of numbers. The bindings type it `unknown`; the frontend wrapper
+/// reads it as an `ArrayBuffer`.
+pub struct LibraryFileBytes(Vec<u8>);
+
+impl tauri::ipc::IpcResponse for LibraryFileBytes {
+    fn body(self) -> tauri::Result<tauri::ipc::InvokeResponseBody> {
+        Ok(tauri::ipc::InvokeResponseBody::Raw(self.0))
+    }
+}
+
+impl specta::Type for LibraryFileBytes {
+    fn inline(_: &mut specta::TypeCollection, _: specta::Generics) -> specta::DataType {
+        specta::DataType::Unknown
+    }
+}
+
+/// Reads a library original for the webview, for ZIP export and prompt recovery.
+/// The webview cannot read library folders through the fs plugin (#415), so this
+/// reads a regular file only when the user granted it or a folder around it, and
+/// never one in AppLocalData, where no library file lives: what the asset protocol
+/// already shows. A granted folder may contain AppLocalData (a user folder), and
+/// the grant registry and the database must not reach the webview through it.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn read_library_file(
+    app: tauri::AppHandle<Wry>,
+    path: String,
+) -> Result<LibraryFileBytes, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_library_file_in_scope(
+            &path,
+            &app_local_data_dir(&app)?,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
+        .map(LibraryFileBytes)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn read_library_file_in_scope(
+    path: &str,
+    app_local_data: &Path,
+    is_allowed: impl Fn(&Path) -> bool,
+) -> Result<Vec<u8>, String> {
+    let file = resolve_existing_regular_file(path)?;
+    if is_app_data_file(&file, app_local_data) {
+        return Err("Ambit's own data is not a library file".to_string());
+    }
+    if !is_allowed(&file) {
+        return Err("The file is outside the folders and files granted to Ambit".to_string());
+    }
+    fs::read(&file).map_err(|e| format!("Failed to read file: {e}"))
+}
+
+/// Whether each path exists, for the webview's checks on library files (video
+/// sidecars, InvokeAI's own thumbnails). A path outside the grants, or empty,
+/// reports `None`: unknown, so a caller does not treat it as missing and, for
+/// example, reset the thumbnail of every image in a folder it may not read.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn library_paths_exist(
+    app: tauri::AppHandle<Wry>,
+    paths: Vec<String>,
+) -> Result<Vec<Option<bool>>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(library_paths_exist_in_scope(
+            &paths,
+            crate::library_grants::LibraryAccess::checker(&app),
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn library_paths_exist_in_scope(
+    paths: &[String],
+    is_allowed: impl Fn(&Path) -> bool,
+) -> Vec<Option<bool>> {
+    paths
+        .iter()
+        .map(|path| {
+            let path = Path::new(path.trim());
+            (!path.as_os_str().is_empty() && is_allowed(path)).then(|| path.exists())
+        })
+        .collect()
 }
 
 fn resolve_existing_regular_file(path: &str) -> Result<PathBuf, String> {
@@ -275,9 +369,10 @@ pub fn get_invoke_db_snapshot(
     app: tauri::AppHandle<Wry>,
     root_path: String,
 ) -> Result<InvokeDbSnapshot, String> {
-    invoke_db_snapshot_in_scope(&root_path, |path| {
-        crate::scanner::utils::fs_scope_allows(&app, path)
-    })
+    invoke_db_snapshot_in_scope(
+        &root_path,
+        crate::library_grants::LibraryAccess::checker(&app),
+    )
 }
 
 /// Reports InvokeAI's database files only when the resolved `invokeai.db` is
@@ -561,9 +656,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_removed_images_with, invoke_db_snapshot_in_scope, path_is_known_media_file,
-        refuse_app_data_file, resolve_eligible_thumbnail_file, resolve_invoke_db_path,
-        validate_library_scope_directory,
+        delete_removed_images_with, invoke_db_snapshot_in_scope, library_paths_exist_in_scope,
+        path_is_known_media_file, read_library_file_in_scope, refuse_app_data_file,
+        resolve_eligible_thumbnail_file, resolve_invoke_db_path, validate_library_scope_directory,
     };
     use rusqlite::Connection;
     use std::fs;
@@ -1129,6 +1224,70 @@ mod tests {
 
     fn normalize(path: PathBuf) -> String {
         path.to_string_lossy().replace('\\', "/")
+    }
+
+    // #415: the webview reads library originals (ZIP export, prompt recovery)
+    // through this instead of the fs plugin. It must read only what was granted.
+    #[test]
+    fn read_library_file_reads_only_granted_regular_files() {
+        let root = temp_dir("read_library_file");
+        let granted = root.join("granted");
+        let outside = root.join("outside");
+        // A granted folder that holds AppLocalData, as a granted user folder does.
+        let app_local_data = granted.join("AppData").join("com.ambit");
+        fs::create_dir_all(&app_local_data).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(granted.join("image.png"), b"inside").unwrap();
+        fs::write(outside.join("secret.png"), b"outside").unwrap();
+        fs::write(app_local_data.join("library-grants.json"), b"{}").unwrap();
+        let granted_key = fs::canonicalize(&granted).unwrap();
+        let is_allowed = |path: &Path| path.starts_with(&granted_key);
+        let spelled = |path: PathBuf| path.to_string_lossy().into_owned();
+        let read =
+            |path: PathBuf| read_library_file_in_scope(&spelled(path), &app_local_data, is_allowed);
+
+        assert_eq!(read(granted.join("image.png")), Ok(b"inside".to_vec()));
+        assert!(read(outside.join("secret.png")).is_err());
+        assert!(read(granted.join("..").join("outside").join("secret.png")).is_err());
+        assert!(read(granted.clone()).is_err());
+        assert!(
+            read(app_local_data.join("library-grants.json")).is_err(),
+            "Ambit's own data, even inside a granted folder"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: the webview's existence checks on library files (video sidecars,
+    // InvokeAI's own thumbnails). Outside the grants the answer is unknown, never
+    // "missing", so nothing is reset for a file Ambit may not read.
+    #[test]
+    fn library_paths_exist_reports_nothing_outside_the_grants() {
+        let root = temp_dir("library_paths_exist");
+        let granted = root.join("granted");
+        let outside = root.join("outside");
+        fs::create_dir_all(&granted).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(granted.join("clip.json"), b"{}").unwrap();
+        fs::write(outside.join("clip.json"), b"{}").unwrap();
+        let is_allowed = |path: &Path| path.starts_with(&granted);
+        let paths = [
+            granted.join("clip.json"),
+            granted.join("missing.json"),
+            outside.join("clip.json"),
+        ]
+        .map(|path| path.to_string_lossy().into_owned());
+
+        assert_eq!(
+            library_paths_exist_in_scope(&paths, is_allowed),
+            vec![Some(true), Some(false), None]
+        );
+        assert_eq!(
+            library_paths_exist_in_scope(&[" ".to_string()], |_| true),
+            vec![None]
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     fn temp_dir(name: &str) -> PathBuf {

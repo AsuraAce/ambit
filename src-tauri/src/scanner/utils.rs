@@ -139,10 +139,10 @@ pub fn validate_thumbnail_dir(dir: Option<&str>, app_thumbnail_dir: &Path) -> Re
     }
 }
 
-/// The spelling of `path` to check against the fs scope.
+/// The spelling of `path` to check against the granted folders.
 ///
-/// The scope canonicalizes only paths that exist, and `register_library_path` stores
-/// canonical folders. A missing file under a mapped drive or a junction
+/// Only paths that exist can be canonicalized, and grants are compared resolved. A
+/// missing file under a mapped drive or a junction
 /// (`Z:\Invoke` is `\\?\UNC\server\share\Invoke`) would then match no pattern, and be
 /// refused instead of reported missing. A missing path is therefore spelled from its
 /// nearest existing ancestor, canonicalized. A missing path containing `.` or `..` is
@@ -180,14 +180,6 @@ pub fn scope_check_path(
         }
     }
     Some(path.to_path_buf())
-}
-
-/// Whether the fs scope allows `path`, with a missing path spelled as
-/// [`scope_check_path`] spells it. Every #384 check goes through this.
-pub fn fs_scope_allows<R: tauri::Runtime>(app: &tauri::AppHandle<R>, path: &Path) -> bool {
-    use tauri_plugin_fs::FsExt;
-    scope_check_path(path, |candidate| fs::canonicalize(candidate))
-        .is_some_and(|candidate| app.fs_scope().is_allowed(candidate))
 }
 
 fn normalize_dir_spelling(path: &Path) -> String {
@@ -648,15 +640,14 @@ fn normalize_path_string(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_invokeai_folder_in_scope, fs_scope_allows, get_file_sizes_in_scope,
-        list_invokeai_images_in_scope, probe_file_metadata_bulk_impl, read_image_metadata_in_scope,
-        resolve_existing_regular_file, resolve_existing_show_target,
-        resolve_known_media_file_target, resolve_show_in_folder_target,
-        scan_directory_recursive_in_scope, scan_directory_since_in_scope,
-        scan_directory_with_stats_in_scope, scan_image_in_scope, scan_image_workflow_in_scope,
-        scope_check_path, validate_bulk_scan_request, validate_library_file_paths,
-        validate_metadata_probe_paths, validate_scoped_roots, validate_thumbnail_dir,
-        verify_image_paths_in_scope,
+        audit_invokeai_folder_in_scope, get_file_sizes_in_scope, list_invokeai_images_in_scope,
+        probe_file_metadata_bulk_impl, read_image_metadata_in_scope, resolve_existing_regular_file,
+        resolve_existing_show_target, resolve_known_media_file_target,
+        resolve_show_in_folder_target, scan_directory_recursive_in_scope,
+        scan_directory_since_in_scope, scan_directory_with_stats_in_scope, scan_image_in_scope,
+        scan_image_workflow_in_scope, scope_check_path, validate_bulk_scan_request,
+        validate_library_file_paths, validate_metadata_probe_paths, validate_scoped_roots,
+        validate_thumbnail_dir, verify_image_paths_in_scope,
     };
     use crate::scanner::models::FileMetadataProbe;
     use rusqlite::Connection;
@@ -1030,7 +1021,7 @@ mod tests {
     // the missing path literally against the root's canonical form.
     #[test]
     fn a_missing_file_under_a_linked_root_is_reported_missing_not_refused() {
-        use tauri_plugin_fs::FsExt;
+        use crate::library_grants::LibraryAccess;
 
         let temp_root = temp_dir("linked_root");
         let real = temp_root.join("real");
@@ -1052,34 +1043,19 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        let app = tauri::test::mock_builder()
-            .plugin(tauri_plugin_fs::init())
-            .build(tauri::test::mock_context(tauri::test::noop_assets()))
-            .unwrap();
-        let handle = app.handle().clone();
-        // As `register_library_path` registers a folder: canonical and recursive.
-        handle
-            .fs_scope()
-            .allow_directory(fs::canonicalize(&link).unwrap(), true)
-            .unwrap();
+        // The folder granted through the junction, as the user picked it.
+        let access = LibraryAccess::new(&[&link], &[]);
 
         let missing = link.join("missing.png");
-        assert!(
-            !handle.fs_scope().is_allowed(&missing),
-            "the raw scope check no longer refuses this case; fs_scope_allows may be unneeded"
-        );
-        assert!(fs_scope_allows(&handle, &missing));
-        assert!(!fs_scope_allows(&handle, &outside.join("missing.png")));
-        assert!(!fs_scope_allows(
-            &handle,
-            &link.join("..").join("outside").join("missing.png")
-        ));
+        assert!(access.allows(&missing));
+        assert!(!access.allows(&outside.join("missing.png")));
+        assert!(!access.allows(&link.join("..").join("outside").join("missing.png")));
 
         let missing = missing.to_string_lossy().to_string();
         assert_eq!(
             verify_image_paths_in_scope(
                 vec![missing.clone()],
-                |path| fs_scope_allows(&handle, path),
+                |path| access.allows(path),
                 |_| Ok(false)
             ),
             Ok(vec![missing])

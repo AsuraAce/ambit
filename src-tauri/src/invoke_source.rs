@@ -16,7 +16,6 @@ use rusqlite::{Batch, Connection, OpenFlags};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use tauri_plugin_fs::FsExt;
 
 const INVOKE_DB_FILE_NAME: &str = "invokeai.db";
 
@@ -45,7 +44,10 @@ pub async fn select_invoke_source(
     params: Vec<Option<InvokeSourceValue>>,
 ) -> Result<InvokeSourceRows, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let db_path = resolve_scoped_invoke_db(&root_path, |path| app.fs_scope().is_allowed(path))?;
+        let db_path = resolve_scoped_invoke_db(
+            &root_path,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )?;
         select_read_only(&db_path, &sql, &params)
     })
     .await

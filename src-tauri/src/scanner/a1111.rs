@@ -58,9 +58,10 @@ pub async fn discover_a1111_folders(
     root_path: String,
 ) -> Result<A1111DiscoveryResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        discover_a1111_folders_in_scope(&root_path, |path| {
-            super::utils::fs_scope_allows(&app, path)
-        })
+        discover_a1111_folders_in_scope(
+            &root_path,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
     })
     .await
     .map_err(|e| e.to_string())?

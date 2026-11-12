@@ -14,7 +14,7 @@
 use crate::fs_commands::{grant_directory_scope, grant_library_directory, grant_library_file};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,12 @@ pub struct GrantRegistry {
     seeded_by: Option<String>,
     folders: Vec<FolderGrant>,
     files: Vec<String>,
+    /// Where each recorded folder resolved when the start granted it, by the key
+    /// of its recorded spelling. Not saved. Checks read it instead of resolving
+    /// every folder on every call, which a folder on an offline network drive
+    /// would stall, on the main thread for some commands (#415).
+    #[serde(skip)]
+    resolved: HashMap<String, String>,
 }
 
 impl GrantRegistry {
@@ -111,13 +117,32 @@ impl GrantRegistry {
         self.files.len() != before
     }
 
-    /// Whether `canonical` is a granted folder or lies inside one. Folders that no
-    /// longer exist cover nothing.
+    /// Notes where a recorded folder resolved; see [`Self::folder_keys`].
+    fn remember_resolved(&mut self, recorded: &str, canonical: &Path) {
+        self.resolved
+            .insert(path_key(Path::new(recorded)), path_key(canonical));
+    }
+
+    /// The key each recorded folder is checked by, without touching the disk:
+    /// where it resolved at the start, or its recorded spelling when it did not
+    /// resolve then. A folder offline at the start is then allowed again once its
+    /// drive is back, if it was recorded resolved, as every picked folder is.
+    fn folder_keys(&self) -> Vec<String> {
+        self.folders
+            .iter()
+            .map(|grant| {
+                let key = path_key(Path::new(&grant.path));
+                self.resolved.get(&key).cloned().unwrap_or(key)
+            })
+            .collect()
+    }
+
+    /// Whether `canonical` is a granted folder or lies inside one.
     fn covers(&self, canonical: &Path) -> bool {
         let key = path_key(canonical);
-        self.folders.iter().any(|grant| {
-            fs::canonicalize(&grant.path).is_ok_and(|root| key_is_within(&key, &path_key(&root)))
-        })
+        self.folder_keys()
+            .iter()
+            .any(|root| key_is_within(&key, root))
     }
 }
 
@@ -541,6 +566,78 @@ fn with_registry<T, R: Runtime>(
     Ok(value)
 }
 
+/// What the user granted, read once for one command call. Every backend check
+/// of a path the webview names goes through it (#384, #415). The fs plugin's scope
+/// no longer holds library folders, so it cannot answer; and it would also hold the
+/// export folders the webview picks itself.
+#[derive(Debug, Default)]
+pub struct LibraryAccess {
+    /// Keys of the recorded folders, as [`GrantRegistry::folder_keys`] gives them.
+    folders: Vec<String>,
+    /// Keys of the recorded files, as recorded.
+    files: HashSet<String>,
+}
+
+impl LibraryAccess {
+    fn from_keys(folders: Vec<String>, files: &[String]) -> Self {
+        Self {
+            folders,
+            files: files.iter().map(|file| path_key(Path::new(file))).collect(),
+        }
+    }
+
+    /// For tests: folders resolved as the start resolves them, keeping the
+    /// spelling of one that does not resolve.
+    #[cfg(test)]
+    pub(crate) fn new<P: AsRef<Path>>(folders: &[P], files: &[String]) -> Self {
+        let keys = folders
+            .iter()
+            .map(|folder| {
+                path_key(&fs::canonicalize(folder).unwrap_or_else(|_| folder.as_ref().into()))
+            })
+            .collect();
+        Self::from_keys(keys, files)
+    }
+
+    /// Reads the registry once and touches no disk for the recorded folders.
+    /// Before the registry can be read, nothing is allowed.
+    pub fn snapshot<R: Runtime>(app: &tauri::AppHandle<R>) -> Self {
+        let recorded = with_registry(app, |registry| {
+            ((registry.folder_keys(), registry.files.clone()), false)
+        });
+        match recorded {
+            Ok((folders, files)) => Self::from_keys(folders, &files),
+            Err(error) => {
+                log::warn!("[LibraryGrants] Allowing no library paths: {error}");
+                Self::default()
+            }
+        }
+    }
+
+    /// The check the `*_in_scope` helpers take, from one snapshot.
+    pub fn checker<R: Runtime>(app: &tauri::AppHandle<R>) -> impl Fn(&Path) -> bool {
+        let access = Self::snapshot(app);
+        move |path: &Path| access.allows(path)
+    }
+
+    /// Whether `path` is a recorded file or lies in a recorded folder. A missing
+    /// path is judged from its nearest existing folder, as
+    /// [`scope_check_path`](crate::scanner::utils::scope_check_path) spells it, so a
+    /// missing file under a junction is reported missing rather than refused.
+    pub fn allows(&self, path: &Path) -> bool {
+        let Some(candidate) =
+            crate::scanner::utils::scope_check_path(path, |p| fs::canonicalize(p))
+        else {
+            return false;
+        };
+        let resolved = fs::canonicalize(&candidate).unwrap_or(candidate);
+        let key = path_key(&resolved);
+        self.folders.iter().any(|root| key_is_within(&key, root))
+            || self.files.contains(&key)
+            || self.files.contains(&path_key(path))
+    }
+}
+
 /// Grants every recorded folder again and returns the recorded files, which
 /// [`restore_grants_at_start`] grants after opening the gate. Runs once at start,
 /// off the main thread, because a folder on an offline network drive can take long
@@ -561,11 +658,19 @@ fn restore_folder_grants(app: &tauri::AppHandle<Wry>) -> Result<Vec<String>, Str
         let registry = guard.as_ref().expect("registry loaded above");
         (registry.folders.clone(), registry.files.clone())
     };
+    let mut resolved = Vec::new();
     for grant in folders {
-        if let Err(error) = grant_library_directory(app, &grant.path) {
-            log::info!("[LibraryGrants] Not granting {}: {error}", grant.path);
+        match grant_library_directory(app, &grant.path) {
+            Ok(canonical) => resolved.push((grant.path, canonical)),
+            Err(error) => log::info!("[LibraryGrants] Not granting {}: {error}", grant.path),
         }
     }
+    with_registry(app, |registry| {
+        for (recorded, canonical) in &resolved {
+            registry.remember_resolved(recorded, canonical);
+        }
+        ((), false)
+    })?;
     Ok(files)
 }
 
@@ -681,17 +786,26 @@ pub async fn pick_library_files(
         .collect::<Vec<_>>();
     let recorded = paths.clone();
     blocking(move || {
-        let mut granted = Vec::new();
-        for path in &recorded {
-            match grant_library_file(&app, path) {
-                Ok(()) => granted.push(path.clone()),
-                Err(error) => log::warn!("[LibraryGrants] Not granting {path}: {error}"),
-            }
-        }
+        let granted = grant_picked_files(&app, &recorded);
         with_registry(&app, |registry| ((), registry.add_files(&granted)))
     })
     .await?;
     Ok(paths)
+}
+
+/// Grants each picked file and returns what to record: the file as resolved.
+/// Import and playback check a file's canonical path, so the record must match
+/// it however the dialog spelled the file (a junction, a mapped drive, an 8.3
+/// name).
+fn grant_picked_files<R: Runtime>(app: &tauri::AppHandle<R>, paths: &[String]) -> Vec<String> {
+    let mut granted = Vec::new();
+    for path in paths {
+        match grant_library_file(app, path) {
+            Ok(file) => granted.push(display_path(&file)),
+            Err(error) => log::warn!("[LibraryGrants] Not granting {path}: {error}"),
+        }
+    }
+    granted
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -967,7 +1081,8 @@ mod tests {
 
     #[test]
     fn a_granted_folder_covers_its_subfolders_and_nothing_beside_it() {
-        let root = temp_dir("covers");
+        // Resolved, as `record_folder` records and the start resolves every folder.
+        let root = fs::canonicalize(temp_dir("covers")).unwrap();
         let granted = root.join("granted");
         let inside = granted.join("inside");
         let beside = root.join("granted-beside");
@@ -1102,7 +1217,7 @@ mod tests {
     // already granted; anything else outside AppLocalData needs a confirmation.
     #[test]
     fn a_typed_folder_needs_confirmation_unless_a_grant_or_app_data_covers_it() {
-        let root = temp_dir("classify");
+        let root = fs::canonicalize(temp_dir("classify")).unwrap();
         let app_local_data = root.join("AppLocalData");
         let granted = root.join("granted");
         let beside = root.join("granted-beside");
@@ -1137,7 +1252,7 @@ mod tests {
     // folder must be refused, however the webview spells it.
     #[test]
     fn register_grants_only_folders_inside_a_recorded_grant() {
-        let root = temp_dir("register");
+        let root = fs::canonicalize(temp_dir("register")).unwrap();
         let app_local_data = root.join("AppLocalData");
         let granted = root.join("granted");
         let beside = root.join("granted-beside");
@@ -1212,6 +1327,8 @@ mod tests {
 
     // #392: `register_library_path` itself, not only its decision. It waits for the
     // start's restore, and a refused folder must leave both scopes unchanged.
+    // #415: a granted folder reaches the asset scope only. In the fs plugin's scope
+    // it would be writable and removable by the webview.
     #[test]
     fn register_waits_for_the_restore_and_grants_nothing_it_refuses() {
         use std::time::Duration;
@@ -1273,9 +1390,248 @@ mod tests {
             );
 
             assert_eq!(register(&granted.join("inside")).await, Ok(()));
-            assert_eq!(readable(&granted.join("inside")), (true, true));
+            assert_eq!(
+                readable(&granted.join("inside")),
+                (false, true),
+                "granted for display, never for the fs plugin"
+            );
             assert_eq!(readable(&beside), (false, false));
         });
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: every backend check of a path the webview names reads the grants
+    // through this, now that library folders are not in the fs plugin's scope.
+    #[test]
+    fn library_access_allows_only_granted_folders_and_files() {
+        let root = temp_dir("access");
+        let granted = root.join("granted");
+        let sibling = root.join("granted-other");
+        let loose = root.join("loose");
+        let outside = root.join("outside");
+        for folder in [&granted.join("sub"), &sibling, &loose, &outside] {
+            fs::create_dir_all(folder).unwrap();
+        }
+        let picked = loose.join("picked.png");
+        fs::write(&picked, b"png").unwrap();
+        fs::write(loose.join("beside.png"), b"png").unwrap();
+        let escape = granted.join("escape");
+        link_dir(&outside, &escape);
+        // Recorded resolved, as every picked folder is, so its key still matches
+        // once its drive is back.
+        let unplugged = fs::canonicalize(&root).unwrap().join("unplugged");
+        let access = LibraryAccess::new(
+            &[&granted, &unplugged],
+            &[picked.to_string_lossy().into_owned()],
+        );
+
+        assert!(access.allows(&granted));
+        assert!(access.allows(&granted.join("sub")));
+        assert!(
+            access.allows(&granted.join("sub").join("missing.png")),
+            "a missing file in a granted folder is reported missing, not refused"
+        );
+        assert!(access.allows(&picked), "a file picked on its own");
+
+        assert!(
+            !access.allows(&loose.join("beside.png")),
+            "beside a picked file"
+        );
+        assert!(!access.allows(&loose));
+        assert!(
+            !access.allows(&sibling.join("a.png")),
+            "same prefix, other folder"
+        );
+        assert!(!access.allows(&root));
+        assert!(
+            !access.allows(&escape.join("a.png")),
+            "a junction out of the grant"
+        );
+        assert!(!access.allows(&granted.join("..").join("outside").join("a.png")));
+        assert!(
+            access.allows(&unplugged.join("a.png")),
+            "a folder offline at the start keeps its recorded key"
+        );
+        assert!(!LibraryAccess::default().allows(&granted));
+
+        let _ = fs::remove_dir(&escape);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: a file picked on its own reaches the asset scope only, like a folder.
+    #[test]
+    fn a_granted_file_reaches_only_the_asset_scope() {
+        use tauri_plugin_fs::FsExt;
+
+        let root = temp_dir("file-scope");
+        let file = root.join("picked.png");
+        fs::write(&file, b"png").unwrap();
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_fs::init())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let handle = app.handle().clone();
+
+        grant_library_file(&handle, &file.to_string_lossy()).unwrap();
+        assert!(handle.asset_protocol_scope().is_allowed(&file));
+        assert!(!handle.fs_scope().is_allowed(&file));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #427 review: a snapshot is taken on every command call, some on the main
+    // thread, so it must not resolve the recorded folders on disk: a folder on an
+    // offline network drive would stall each call. It uses where the start
+    // resolved them, and a folder that did not resolve keeps its recorded key.
+    #[test]
+    fn a_snapshot_uses_the_folders_the_start_resolved_without_the_disk() {
+        let root = fs::canonicalize(temp_dir("snapshot-keys")).unwrap();
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let alias = root.join("alias");
+        link_dir(&first, &alias);
+        let offline = root.join("offline");
+        let mut registry = GrantRegistry::default();
+        for folder in [&alias, &offline] {
+            registry.add_folder(&folder.to_string_lossy(), LibraryGrantKind::MonitoredFolder);
+        }
+        // What the start's restore notes for the folder it could resolve.
+        registry.remember_resolved(&alias.to_string_lossy(), &fs::canonicalize(&alias).unwrap());
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().identifier = "com.ambit.grant-test".to_string();
+        let app = tauri::test::mock_builder().build(context).unwrap();
+        let state = LibraryGrantState::default();
+        *state.registry.lock().unwrap() = Some(registry);
+        app.handle().manage(state);
+
+        // Point the alias elsewhere after the start. A snapshot that resolved it
+        // again would follow it to `second`.
+        fs::remove_dir(&alias)
+            .or_else(|_| fs::remove_file(&alias))
+            .unwrap();
+        link_dir(&second, &alias);
+
+        let access = LibraryAccess::snapshot(app.handle());
+        assert!(access.allows(&first.join("a.png")));
+        assert!(!access.allows(&second.join("a.png")));
+        assert!(
+            access.allows(&offline.join("a.png")),
+            "kept by its recorded key, so allowed again when the drive is back"
+        );
+
+        let _ = fs::remove_dir(&alias).or_else(|_| fs::remove_file(&alias));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: video import and playback check a picked file by its canonical path.
+    // A file picked through a junction, a mapped drive or an 8.3 name must still
+    // match its record, so the record is the resolved file.
+    #[test]
+    fn a_file_picked_through_another_spelling_is_recorded_as_resolved() {
+        let root = temp_dir("picked-spelling");
+        let real = root.join("real");
+        fs::create_dir_all(&real).unwrap();
+        let file = real.join("clip.mp4");
+        fs::write(&file, b"video").unwrap();
+        fs::write(real.join("other.mp4"), b"video").unwrap();
+        let alias = root.join("alias");
+        link_dir(&real, &alias);
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+
+        let recorded = grant_picked_files(
+            app.handle(),
+            &[
+                alias.join("clip.mp4").to_string_lossy().into_owned(),
+                root.join("missing.mp4").to_string_lossy().into_owned(),
+            ],
+        );
+        assert_eq!(recorded.len(), 1, "a file it cannot grant is not recorded");
+        let access = LibraryAccess::new(&[] as &[&Path], &recorded);
+        assert!(access.allows(&fs::canonicalize(&file).unwrap()));
+        assert!(access.allows(&alias.join("clip.mp4")));
+        assert!(!access.allows(&real.join("other.mp4")));
+
+        let _ = fs::remove_dir(&alias);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: the hole itself. tauri-plugin-fs admits a webview call when either its
+    // runtime scope or the capability allows the path, and Ambit's capability allows
+    // writes and removes in AppLocalData. A library folder in that runtime scope
+    // was therefore writable and removable by the webview. Runs the real
+    // capabilities, as tauri-build compiled them, against a granted folder.
+    #[test]
+    fn the_webview_cannot_change_a_granted_library_folder_through_the_fs_plugin() {
+        use tauri::ipc::{CallbackFn, InvokeBody};
+        use tauri::webview::InvokeRequest;
+
+        let root = temp_dir("webview-fs");
+        let library = root.join("library");
+        fs::create_dir_all(&library).unwrap();
+        let image = library.join("image.png");
+        fs::write(&image, b"png").unwrap();
+
+        let mut context = tauri::generate_context!(test = true);
+        // Its own AppLocalData, not the real app's.
+        context.config_mut().identifier = "com.ambit.webview-fs-test".to_string();
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_fs::init())
+            .build(context)
+            .unwrap();
+        let handle = app.handle().clone();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        grant_directory_scope(&handle, &fs::canonicalize(&library).unwrap()).unwrap();
+
+        let url = if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        let call = |command: &str, path: &Path| {
+            tauri::test::get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: format!("plugin:fs|{command}"),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: url.parse().unwrap(),
+                    body: InvokeBody::Json(serde_json::json!({ "path": path })),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+        };
+        let refused = |result: Result<(), String>| {
+            result.is_err_and(|error| error.contains("forbidden path"))
+        };
+
+        assert!(refused(call("remove", &image)), "remove a library file");
+        assert!(
+            refused(call("mkdir", &library.join("made"))),
+            "create a folder"
+        );
+        assert!(refused(call("exists", &image)), "probe a library file");
+        assert!(image.exists());
+        assert!(!library.join("made").exists());
+
+        // The same calls still pass the scope in AppLocalData, so the refusals come
+        // from the scope and not from a capability that allows nothing. The file is
+        // missing, so the remove fails on disk and nothing is written.
+        let own = app_local_data_dir(&handle)
+            .unwrap()
+            .join("webview-fs-test-missing.png");
+        assert_eq!(call("exists", &own), Ok(()));
+        let removed = call("remove", &own);
+        assert!(removed.is_err() && !refused(removed), "reaches the disk");
+
         let _ = fs::remove_dir_all(root);
     }
 

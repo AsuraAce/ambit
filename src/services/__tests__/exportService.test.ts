@@ -1,14 +1,18 @@
 import JSZip from 'jszip';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from '@tauri-apps/api/path';
-import { readFile, writeFile } from '@tauri-apps/plugin-fs';
+import { writeFile } from '@tauri-apps/plugin-fs';
 import { GeneratorTool, type AIImage, type VideoAsset } from '../../types';
 import { exportImagesToZip } from '../exportService';
+import { readLibraryFile } from '../assetScope';
 
-vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: vi.fn(), writeFile: vi.fn() }));
+// #415: originals come from Rust, which reads only granted files; the webview has
+// no fs-plugin access to library folders.
+vi.mock('@tauri-apps/plugin-fs', () => ({ writeFile: vi.fn() }));
+vi.mock('../assetScope', () => ({ readLibraryFile: vi.fn() }));
 vi.mock('@tauri-apps/api/path', () => ({ join: vi.fn() }));
 
-const mockedReadFile = vi.mocked(readFile);
+const mockedReadFile = vi.mocked(readLibraryFile);
 const mockedWriteFile = vi.mocked(writeFile);
 const mockedJoin = vi.mocked(join);
 
@@ -105,7 +109,7 @@ describe('exportImagesToZip', () => {
     });
 
     it('bounds concurrent source reads for large mixed selections', async () => {
-        type FileBytes = Awaited<ReturnType<typeof readFile>>;
+        type FileBytes = Awaited<ReturnType<typeof readLibraryFile>>;
         const resolvers: Array<(value: FileBytes) => void> = [];
         const reads = Array.from({ length: 6 }, () => new Promise<FileBytes>((resolve) => resolvers.push(resolve)));
         let readIndex = 0;
