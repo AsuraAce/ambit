@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.14.1](https://github.com/AsuraAce/ambit/compare/v0.14.0...v0.14.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **deps:** clear npm and Rust dependency advisories ([#328](https://github.com/AsuraAce/ambit/issues/328)) ([06a2e23](https://github.com/AsuraAce/ambit/commit/06a2e2333ddda22db7a3cdbd65434ab070b1bb53))
+* **deps:** clear RustSEC advisories for openssl and libsqlite3-sys ([#366](https://github.com/AsuraAce/ambit/issues/366)) ([e3326bf](https://github.com/AsuraAce/ambit/commit/e3326bf07d87c7107ed28ee0bf900afde02c3e28))
+* **invoke:** integrate explicit InvokeAI setup onto v0.14.0 ([#331](https://github.com/AsuraAce/ambit/issues/331)) ([d5420a8](https://github.com/AsuraAce/ambit/commit/d5420a822f05755e360988470bf6f4350c985ac2))
+* **invoke:** open the InvokeAI source database read-only ([#386](https://github.com/AsuraAce/ambit/issues/386)) ([395377b](https://github.com/AsuraAce/ambit/commit/395377b10ea270bf0a959c7cd4d5c631e5610e6f))
+* **security:** allow Tauri IPC in production CSP ([#369](https://github.com/AsuraAce/ambit/issues/369)) ([1a9564c](https://github.com/AsuraAce/ambit/commit/1a9564ccfb059e49e46264838c0a6fc245a048c8))
+* **security:** check filesystem scope in list_invokeai_images ([#385](https://github.com/AsuraAce/ambit/issues/385)) ([7704246](https://github.com/AsuraAce/ambit/commit/770424663f57a132c699f52555ac8307d3a611dd)), closes [#382](https://github.com/AsuraAce/ambit/issues/382)
+* **security:** check filesystem scope in path-taking commands ([#402](https://github.com/AsuraAce/ambit/issues/402)) ([7da18f8](https://github.com/AsuraAce/ambit/commit/7da18f8ae7fa80322e506e4e61bf4c0b03bdea77))
+* **security:** grant library folders only inside recorded grants ([#423](https://github.com/AsuraAce/ambit/issues/423)) ([2e195b5](https://github.com/AsuraAce/ambit/commit/2e195b5afb6dab7a6cf559f2015454978c70497e))
+* **security:** grant library paths through a Rust-owned registry ([#419](https://github.com/AsuraAce/ambit/issues/419)) ([db309ef](https://github.com/AsuraAce/ambit/commit/db309ef002a71bc60ba550a2aabb4babc435eff4))
+* **security:** keep library folders out of the webview's fs-plugin scope ([#427](https://github.com/AsuraAce/ambit/issues/427)) ([73621fb](https://github.com/AsuraAce/ambit/commit/73621fbb8a5214794ffc5d5bf8bc5076a31b9709))
+* **security:** restrict the SQL plugin to Ambit's library database ([#396](https://github.com/AsuraAce/ambit/issues/396)) ([8543b26](https://github.com/AsuraAce/ambit/commit/8543b2627da80c95ce67d3e3ea2ee27a04613929))
+* **security:** restrict the thumbnail optimizer to Ambit's thumbnail folder ([#414](https://github.com/AsuraAce/ambit/issues/414)) ([de7c7ba](https://github.com/AsuraAce/ambit/commit/de7c7baaf7998b0d15dd0ef75dff4b14d527ce9e))
+* show model names and hashes from nested metadata records ([#420](https://github.com/AsuraAce/ambit/issues/420)) ([d33b710](https://github.com/AsuraAce/ambit/commit/d33b710748a825b6a7c556a7c6482ff9c418d8aa))
+
 ## [0.14.0](https://github.com/AsuraAce/ambit/compare/v0.13.3...v0.14.0) (2026-10-08)
 
 
