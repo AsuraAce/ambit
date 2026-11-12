@@ -834,6 +834,34 @@ async registerLibraryPath(path: string) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Reads a library original for the webview, for ZIP export and prompt recovery.
+ * The webview cannot read library folders through the fs plugin (#415), so this
+ * reads a regular file only when the user granted it or a folder around it:
+ * what the asset protocol already shows.
+ */
+async readLibraryFile(path: string) : Promise<Result<unknown, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_library_file", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether each path exists, for the webview's checks on library files (video
+ * sidecars, InvokeAI's own thumbnails). A path outside the grants, or empty,
+ * reports `None`: unknown, so a caller does not treat it as missing and, for
+ * example, reset the thumbnail of every image in a folder it may not read.
+ */
+async libraryPathsExist(paths: string[]) : Promise<Result<(boolean | null)[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("library_paths_exist", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Opens a native folder picker and records the picked folder. Returns the
  * folder as the dialog spells it, or `None` when the user cancels.
  */

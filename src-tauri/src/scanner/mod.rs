@@ -8,7 +8,6 @@ use crate::metadata;
 use models::{FileMetadataProbe, FolderStats, ScanResult};
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
-use tauri_plugin_fs::FsExt;
 
 // Custom Rayon pool with larger stack size (8MB) to prevent overflows in deep recursions
 // or deep JSON/PNG structures.
@@ -59,7 +58,7 @@ pub async fn scan_image(
         extract_workflow,
         default_tool,
         &app_thumbnail_dir,
-        |candidate| utils::fs_scope_allows(&app, candidate),
+        crate::library_grants::LibraryAccess::checker(&app),
         |candidate| known_media.contains(candidate),
     )
 }
@@ -82,7 +81,7 @@ pub async fn scan_images_bulk(
             &paths,
             thumbnail_dir.as_deref(),
             &app_thumbnail_dir,
-            |candidate| utils::fs_scope_allows(&app, candidate),
+            crate::library_grants::LibraryAccess::checker(&app),
             |candidate| known_media.contains(candidate),
         )?;
         drop(known_media);
@@ -157,7 +156,7 @@ pub async fn scan_image_workflow(
     let mut known_media = utils::KnownMediaLookup::new(&app);
     utils::scan_image_workflow_in_scope(
         path,
-        |candidate| utils::fs_scope_allows(&app, candidate),
+        crate::library_grants::LibraryAccess::checker(&app),
         |candidate| known_media.contains(candidate),
     )
 }
@@ -173,7 +172,7 @@ pub async fn read_image_metadata(
     utils::read_image_metadata_in_scope(
         path,
         default_tool,
-        |candidate| utils::fs_scope_allows(&app, candidate),
+        crate::library_grants::LibraryAccess::checker(&app),
         |candidate| known_media.contains(candidate),
     )
 }
@@ -188,7 +187,7 @@ pub async fn get_file_sizes_bulk(
         let mut known_media = utils::KnownMediaLookup::new(&app);
         utils::get_file_sizes_in_scope(
             paths,
-            |candidate| utils::fs_scope_allows(&app, candidate),
+            crate::library_grants::LibraryAccess::checker(&app),
             |candidate| known_media.contains(candidate),
         )
     })
@@ -202,7 +201,10 @@ pub async fn probe_file_metadata_bulk(
     app: tauri::AppHandle,
     paths: Vec<String>,
 ) -> Result<Vec<FileMetadataProbe>, String> {
-    utils::validate_metadata_probe_paths(&paths, |path| app.fs_scope().is_allowed(path))?;
+    utils::validate_metadata_probe_paths(
+        &paths,
+        crate::library_grants::LibraryAccess::checker(&app),
+    )?;
     tauri::async_runtime::spawn_blocking(move || Ok(utils::probe_file_metadata_bulk_impl(paths)))
         .await
         .map_err(|e| e.to_string())?
@@ -218,7 +220,7 @@ pub async fn verify_image_paths(
         let mut known_media = utils::KnownMediaLookup::new(&app);
         utils::verify_image_paths_in_scope(
             paths,
-            |candidate| utils::fs_scope_allows(&app, candidate),
+            crate::library_grants::LibraryAccess::checker(&app),
             |candidate| known_media.contains(candidate),
         )
     })
@@ -233,9 +235,10 @@ pub async fn audit_invokeai_folder(
     path: String,
 ) -> Result<FolderStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        utils::audit_invokeai_folder_in_scope(&path, |candidate| {
-            utils::fs_scope_allows(&app, candidate)
-        })
+        utils::audit_invokeai_folder_in_scope(
+            &path,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -248,9 +251,10 @@ pub async fn list_invokeai_images(
     path: String,
 ) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        utils::list_invokeai_images_in_scope(&path, |candidate| {
-            app.fs_scope().is_allowed(candidate)
-        })
+        utils::list_invokeai_images_in_scope(
+            &path,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -263,9 +267,10 @@ pub async fn scan_directory_recursive(
     path: String,
 ) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        utils::scan_directory_recursive_in_scope(&path, |candidate| {
-            utils::fs_scope_allows(&app, candidate)
-        })
+        utils::scan_directory_recursive_in_scope(
+            &path,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -294,9 +299,10 @@ pub async fn scan_directory_with_stats(
     path: String,
 ) -> Result<Vec<models::FileEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        utils::scan_directory_with_stats_in_scope(&path, |candidate| {
-            utils::fs_scope_allows(&app, candidate)
-        })
+        utils::scan_directory_with_stats_in_scope(
+            &path,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -310,9 +316,11 @@ pub async fn scan_directory_since(
     since: u64,
 ) -> Result<Vec<models::FileEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        utils::scan_directory_since_in_scope(&path, since, |candidate| {
-            utils::fs_scope_allows(&app, candidate)
-        })
+        utils::scan_directory_since_in_scope(
+            &path,
+            since,
+            crate::library_grants::LibraryAccess::checker(&app),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -330,6 +338,7 @@ mod scope_source_tests {
     const CIVITAI: &str = include_str!("../metadata/civitai.rs");
     const THUMBS_SCAN: &str = include_str!("../metadata/thumbs_scan.rs");
     const WATCHER: &str = include_str!("../watcher.rs");
+    const INVOKE_SOURCE: &str = include_str!("../invoke_source.rs");
 
     /// The text of `fn name(` up to the next `#[tauri::command`.
     fn command_body<'a>(source: &'a str, name: &str) -> &'a str {
@@ -447,12 +456,18 @@ mod scope_source_tests {
             "Restarting watcher with new paths",
         );
 
-        // The raw scope check refuses a missing file under a junction or mapped
-        // drive; `fs_scope_allows` reports it missing instead.
+        // #415: the fs plugin's scope no longer holds library folders, and it holds
+        // the export folders the webview picks itself, so every check reads the
+        // grant registry instead.
         let inline = [
             (SCANNER, "scan_images_bulk"),
+            (SCANNER, "probe_file_metadata_bulk"),
+            (SCANNER, "list_invokeai_images"),
             (THUMBS_SCAN, "scan_model_thumbnails"),
             (WATCHER, "start_native_folder_watcher"),
+            (INVOKE_SOURCE, "select_invoke_source"),
+            (FS_COMMANDS, "read_library_file"),
+            (FS_COMMANDS, "library_paths_exist"),
         ];
         for (source, name) in routed
             .iter()
@@ -461,8 +476,8 @@ mod scope_source_tests {
         {
             let body = command_body(source, name);
             assert!(
-                body.contains("fs_scope_allows(&app,") && !body.contains("fs_scope().is_allowed("),
-                "{name} must check the scope through fs_scope_allows"
+                body.contains("LibraryAccess::checker(&app)") && !body.contains("fs_scope()"),
+                "{name} must check the grant registry through LibraryAccess"
             );
         }
     }

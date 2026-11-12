@@ -665,6 +665,20 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     {
+        name: 'readLibraryFile',
+        invokeName: 'read_library_file',
+        args: ['C:/library/a.png'],
+        payload: { path: 'C:/library/a.png' },
+        returnsResult: true,
+    },
+    {
+        name: 'libraryPathsExist',
+        invokeName: 'library_paths_exist',
+        args: [['C:/library/a.json']],
+        payload: { paths: ['C:/library/a.json'] },
+        returnsResult: true,
+    },
+    {
         name: 'pickLibraryFolder',
         invokeName: 'pick_library_folder',
         args: ['monitoredFolder', 'Select Folder'],

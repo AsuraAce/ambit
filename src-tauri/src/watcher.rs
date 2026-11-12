@@ -244,7 +244,7 @@ pub fn start_native_folder_watcher(
     // Refuse before the running watcher is replaced, so a refused call leaves it as it was.
     crate::scanner::utils::validate_scoped_roots(
         &paths,
-        |path| crate::scanner::utils::fs_scope_allows(&app, path),
+        crate::library_grants::LibraryAccess::checker(&app),
         "Watched folder",
     )?;
 

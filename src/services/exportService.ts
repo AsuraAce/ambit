@@ -1,7 +1,8 @@
 import JSZip from 'jszip';
 import { AIImage, isVideoAsset } from '../types';
-import { writeFile, readFile } from '@tauri-apps/plugin-fs';
+import { writeFile } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
+import { readLibraryFile } from './assetScope';
 
 export const exportImagesToZip = async (
     images: AIImage[],
@@ -45,8 +46,8 @@ export const exportImagesToZip = async (
     // Process library items. Raw reads are binary-safe for images and videos.
     const processItem = async (img: AIImage) => {
         try {
-            // Read raw file content using Tauri's FS plugin
-            const data = await readFile(img.id);
+            // Rust reads the original; the webview has no fs access to library folders.
+            const data = await readLibraryFile(img.id);
 
             // Add the original media file to the root of the ZIP.
             zip.file(img.filename, data);

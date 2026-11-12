@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
     getExistingMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
     dbSelect: vi.fn(),
-    fileExists: vi.fn(),
+    libraryPathsExist: vi.fn(),
     incrementFacetCacheVersion: vi.fn(),
     importVideoPaths: vi.fn(),
     cancelVideoImport: vi.fn(),
@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../assetScope', () => ({
     ensureFolderAccessible: mocks.ensureFolderAccessible,
     filterAccessibleFolders: mocks.filterAccessibleFolders,
+    // #415: sidecars sit in library folders, which only Rust may check.
+    libraryPathsExist: mocks.libraryPathsExist,
 }));
 
 const abortSignalOnRead = (abortOnRead: number): AbortSignal => {
@@ -44,10 +46,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('@tauri-apps/api/event', () => ({
     listen: mocks.listen,
-}));
-
-vi.mock('@tauri-apps/plugin-fs', () => ({
-    exists: mocks.fileExists,
 }));
 
 vi.mock('../../bindings', () => ({
@@ -97,7 +95,7 @@ describe('processTargetedFiles', () => {
         mocks.insertImagesBatch.mockResolvedValue(undefined);
         mocks.rebuildFacetCache.mockResolvedValue(0);
         mocks.dbSelect.mockResolvedValue([]);
-        mocks.fileExists.mockResolvedValue(false);
+        mocks.libraryPathsExist.mockImplementation(async (paths: string[]) => paths.map(() => false));
         mocks.getFileSizesBulk.mockResolvedValue([100]);
         mocks.scanModelThumbnails.mockResolvedValue({
             status: 'ok',
@@ -212,7 +210,7 @@ describe('processTargetedFiles', () => {
 
     it('waits for an existing workflow sidecar to stabilize before resolving its video', async () => {
         vi.useFakeTimers();
-        mocks.fileExists.mockResolvedValueOnce(true);
+        mocks.libraryPathsExist.mockResolvedValueOnce([true]);
         mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/clip.mp4' }]);
         mocks.getFileSizesBulk
             .mockResolvedValueOnce({ status: 'ok', data: [100] })
@@ -257,7 +255,7 @@ describe('processTargetedFiles', () => {
 
     it('resolves a removed workflow sidecar without waiting for the absent file', async () => {
         vi.useFakeTimers();
-        mocks.fileExists.mockResolvedValueOnce(false);
+        mocks.libraryPathsExist.mockResolvedValueOnce([false]);
         mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/clip.mp4' }]);
         mocks.getFileSizesBulk
             .mockResolvedValueOnce({ status: 'ok', data: [200] })

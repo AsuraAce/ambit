@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     join: vi.fn(),
     convertFileSrc: vi.fn((path: string) => `asset://${path}`),
     exists: vi.fn(),
+    libraryPathsExist: vi.fn(),
     readDir: vi.fn(),
     remove: vi.fn(),
     scanImageNative: vi.fn(),
@@ -52,6 +53,11 @@ vi.mock('../db/maintenanceRepo', () => ({
 
 vi.mock('../db/imageRepo', () => ({
     updateThumbnailPathsBatch: mocks.updateThumbnailPathsBatch,
+}));
+
+// #415: thumbnails outside AppLocalData (InvokeAI's own) are checked in Rust.
+vi.mock('../assetScope', () => ({
+    libraryPathsExist: mocks.libraryPathsExist,
 }));
 
 vi.mock('../../bindings', () => ({
@@ -355,13 +361,14 @@ describe('thumbnailService', () => {
             execute,
         });
         mocks.exists.mockImplementation(async (path: string) => path !== 'C:/AppData/Ambit/.thumbnails/legacy.webp');
+        mocks.libraryPathsExist.mockResolvedValue([true]);
 
         const { pruneBrokenThumbnails } = await import('../thumbnailService');
 
         await expect(pruneBrokenThumbnails()).resolves.toBe(1);
         expect(select).toHaveBeenCalledWith(expect.stringContaining('invoke_scope_hidden = 0'));
         expect(mocks.exists).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/legacy.webp');
-        expect(mocks.exists).toHaveBeenCalledWith('C:/thumbs/absolute.webp');
+        expect(mocks.libraryPathsExist).toHaveBeenCalledWith(['C:/thumbs/absolute.webp']);
         expect(execute).toHaveBeenCalledWith(
             'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (?) AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)',
             ['relative']
@@ -516,12 +523,38 @@ describe('thumbnailService', () => {
         await expect(service.syncExistingThumbnailsToDB()).resolves.toBe(0);
     });
 
+    // #415: InvokeAI's thumbnails live under the InvokeAI root, which the webview
+    // may not check through the fs plugin. A missing one must still count as broken;
+    // one Ambit may not check (no grant) must not, or a folder it cannot read would
+    // lose every thumbnail.
+    it('checks thumbnails outside AppLocalData in Rust and resets only missing ones', async () => {
+        const execute = vi.fn().mockResolvedValue(undefined);
+        mocks.getDb.mockResolvedValue({
+            select: vi.fn().mockResolvedValue([
+                { id: 'present', thumbnail_path: 'D:/Invoke/outputs/images/thumbnails/present.webp' },
+                { id: 'missing', thumbnail_path: 'D:/Invoke/outputs/images/thumbnails/missing.webp' },
+                { id: 'ungranted', thumbnail_path: 'E:/Elsewhere/thumbnails/ungranted.webp' },
+            ]),
+            execute,
+        });
+        mocks.libraryPathsExist.mockResolvedValue([true, false, null]);
+        const { pruneBrokenThumbnails } = await import('../thumbnailService');
+
+        await expect(pruneBrokenThumbnails()).resolves.toBe(1);
+        expect(mocks.exists).not.toHaveBeenCalled();
+        expect(execute).toHaveBeenCalledWith(expect.stringContaining('UPDATE images SET thumbnail_path = NULL'), ['missing']);
+    });
+
     it('contains file-existence errors and reports a clean prune pass', async () => {
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([{ id: 'error', thumbnail_path: 'C:/thumbs/error.webp' }]),
+            select: vi.fn().mockResolvedValue([
+                { id: 'error', thumbnail_path: 'C:/thumbs/error.webp' },
+                { id: 'local', thumbnail_path: 'C:/AppData/Ambit/.thumbnails/local.webp' },
+            ]),
             execute: vi.fn(),
         });
         mocks.exists.mockRejectedValue(new Error('filesystem unavailable'));
+        mocks.libraryPathsExist.mockRejectedValue(new Error('filesystem unavailable'));
         const { pruneBrokenThumbnails } = await import('../thumbnailService');
 
         await expect(pruneBrokenThumbnails()).resolves.toBe(0);

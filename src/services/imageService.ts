@@ -1,4 +1,4 @@
-import { readFile } from '@tauri-apps/plugin-fs';
+import { readLibraryFile } from './assetScope';
 
 const ANALYSIS_MAX_EDGE = 2048;
 const ANALYSIS_MIME_TYPE = 'image/webp';
@@ -42,7 +42,7 @@ const loadSourceBlob = async (url: string): Promise<Blob> => {
         }
         blob = await response.blob();
     } else {
-        const data = await readFile(url);
+        const data = await readLibraryFile(url);
         blob = new Blob([data], { type: getImageMimeType(url) });
     }
 

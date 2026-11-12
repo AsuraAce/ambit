@@ -140,6 +140,32 @@ export const revokeLibraryGrant = async (path: string, kind: LibraryGrantKind, r
 };
 
 /**
+ * Reads a library original, for ZIP export and prompt recovery. The webview cannot
+ * read library folders through the fs plugin (#415), so Rust reads it, and only a
+ * file the user granted or one inside a granted folder.
+ */
+export const readLibraryFile = async (path: string): Promise<Uint8Array<ArrayBuffer>> => {
+    const result = await commands.readLibraryFile(path);
+    if (result.status === 'error') throw new Error(result.error);
+    const data: unknown = result.data;
+    // Tauri sends raw bytes as an ArrayBuffer, or as numbers over its fallback IPC.
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (Array.isArray(data) && data.every((byte) => typeof byte === 'number')) return Uint8Array.from(data);
+    throw new Error(`No file contents for ${path}`);
+};
+
+/**
+ * Whether each library file exists, checked in Rust (#415). `null` where Ambit has
+ * no grant for the path: unknown, not missing.
+ */
+export const libraryPathsExist = async (paths: string[]): Promise<(boolean | null)[]> => {
+    if (paths.length === 0) return [];
+    const result = await commands.libraryPathsExist(paths);
+    if (result.status === 'error') throw new Error(result.error);
+    return result.data;
+};
+
+/**
  * Waits until Rust has granted the folders and files the user granted before,
  * which it does at every start. Library images load only after this, because the
  * webview cannot grant settings folders itself. A failed wait is logged and does

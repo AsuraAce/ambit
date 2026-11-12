@@ -541,6 +541,71 @@ fn with_registry<T, R: Runtime>(
     Ok(value)
 }
 
+/// What the user granted, resolved once for one command call. Every backend check
+/// of a path the webview names goes through it (#384, #415). The fs plugin's scope
+/// no longer holds library folders, so it cannot answer; and it would also hold the
+/// export folders the webview picks itself.
+#[derive(Debug, Default)]
+pub struct LibraryAccess {
+    /// Keys of the recorded folders that exist now, resolved.
+    folders: Vec<String>,
+    /// Keys of the recorded files, as recorded.
+    files: HashSet<String>,
+}
+
+impl LibraryAccess {
+    /// Resolves each folder once. A folder that is missing now (an unplugged drive)
+    /// allows nothing until it is back.
+    pub(crate) fn new<P: AsRef<Path>>(folders: &[P], files: &[String]) -> Self {
+        Self {
+            folders: folders
+                .iter()
+                .filter_map(|folder| fs::canonicalize(folder).ok())
+                .map(|root| path_key(&root))
+                .collect(),
+            files: files.iter().map(|file| path_key(Path::new(file))).collect(),
+        }
+    }
+
+    /// Reads the registry once. Before it can be read, nothing is allowed.
+    pub fn snapshot<R: Runtime>(app: &tauri::AppHandle<R>) -> Self {
+        let recorded = with_registry(app, |registry| {
+            let folders: Vec<String> = registry.folders.iter().map(|g| g.path.clone()).collect();
+            ((folders, registry.files.clone()), false)
+        });
+        match recorded {
+            Ok((folders, files)) => Self::new(&folders, &files),
+            Err(error) => {
+                log::warn!("[LibraryGrants] Allowing no library paths: {error}");
+                Self::default()
+            }
+        }
+    }
+
+    /// The check the `*_in_scope` helpers take, from one snapshot.
+    pub fn checker<R: Runtime>(app: &tauri::AppHandle<R>) -> impl Fn(&Path) -> bool {
+        let access = Self::snapshot(app);
+        move |path: &Path| access.allows(path)
+    }
+
+    /// Whether `path` is a recorded file or lies in a recorded folder. A missing
+    /// path is judged from its nearest existing folder, as
+    /// [`scope_check_path`](crate::scanner::utils::scope_check_path) spells it, so a
+    /// missing file under a junction is reported missing rather than refused.
+    pub fn allows(&self, path: &Path) -> bool {
+        let Some(candidate) =
+            crate::scanner::utils::scope_check_path(path, |p| fs::canonicalize(p))
+        else {
+            return false;
+        };
+        let resolved = fs::canonicalize(&candidate).unwrap_or(candidate);
+        let key = path_key(&resolved);
+        self.folders.iter().any(|root| key_is_within(&key, root))
+            || self.files.contains(&key)
+            || self.files.contains(&path_key(path))
+    }
+}
+
 /// Grants every recorded folder again and returns the recorded files, which
 /// [`restore_grants_at_start`] grants after opening the gate. Runs once at start,
 /// off the main thread, because a folder on an offline network drive can take long
@@ -1212,6 +1277,8 @@ mod tests {
 
     // #392: `register_library_path` itself, not only its decision. It waits for the
     // start's restore, and a refused folder must leave both scopes unchanged.
+    // #415: a granted folder reaches the asset scope only. In the fs plugin's scope
+    // it would be writable and removable by the webview.
     #[test]
     fn register_waits_for_the_restore_and_grants_nothing_it_refuses() {
         use std::time::Duration;
@@ -1273,9 +1340,166 @@ mod tests {
             );
 
             assert_eq!(register(&granted.join("inside")).await, Ok(()));
-            assert_eq!(readable(&granted.join("inside")), (true, true));
+            assert_eq!(
+                readable(&granted.join("inside")),
+                (false, true),
+                "granted for display, never for the fs plugin"
+            );
             assert_eq!(readable(&beside), (false, false));
         });
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: every backend check of a path the webview names reads the grants
+    // through this, now that library folders are not in the fs plugin's scope.
+    #[test]
+    fn library_access_allows_only_granted_folders_and_files() {
+        let root = temp_dir("access");
+        let granted = root.join("granted");
+        let sibling = root.join("granted-other");
+        let loose = root.join("loose");
+        let outside = root.join("outside");
+        for folder in [&granted.join("sub"), &sibling, &loose, &outside] {
+            fs::create_dir_all(folder).unwrap();
+        }
+        let picked = loose.join("picked.png");
+        fs::write(&picked, b"png").unwrap();
+        fs::write(loose.join("beside.png"), b"png").unwrap();
+        let escape = granted.join("escape");
+        link_dir(&outside, &escape);
+        let unplugged = root.join("unplugged");
+        let access = LibraryAccess::new(
+            &[&granted, &unplugged],
+            &[picked.to_string_lossy().into_owned()],
+        );
+
+        assert!(access.allows(&granted));
+        assert!(access.allows(&granted.join("sub")));
+        assert!(
+            access.allows(&granted.join("sub").join("missing.png")),
+            "a missing file in a granted folder is reported missing, not refused"
+        );
+        assert!(access.allows(&picked), "a file picked on its own");
+
+        assert!(
+            !access.allows(&loose.join("beside.png")),
+            "beside a picked file"
+        );
+        assert!(!access.allows(&loose));
+        assert!(
+            !access.allows(&sibling.join("a.png")),
+            "same prefix, other folder"
+        );
+        assert!(!access.allows(&root));
+        assert!(
+            !access.allows(&escape.join("a.png")),
+            "a junction out of the grant"
+        );
+        assert!(!access.allows(&granted.join("..").join("outside").join("a.png")));
+        assert!(
+            !access.allows(&unplugged.join("a.png")),
+            "a folder missing at the snapshot allows nothing"
+        );
+        assert!(!LibraryAccess::default().allows(&granted));
+
+        let _ = fs::remove_dir(&escape);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: a file picked on its own reaches the asset scope only, like a folder.
+    #[test]
+    fn a_granted_file_reaches_only_the_asset_scope() {
+        use tauri_plugin_fs::FsExt;
+
+        let root = temp_dir("file-scope");
+        let file = root.join("picked.png");
+        fs::write(&file, b"png").unwrap();
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_fs::init())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let handle = app.handle().clone();
+
+        grant_library_file(&handle, &file.to_string_lossy()).unwrap();
+        assert!(handle.asset_protocol_scope().is_allowed(&file));
+        assert!(!handle.fs_scope().is_allowed(&file));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // #415: the hole itself. tauri-plugin-fs admits a webview call when either its
+    // runtime scope or the capability allows the path, and Ambit's capability allows
+    // writes and removes in AppLocalData. A library folder in that runtime scope
+    // was therefore writable and removable by the webview. Runs the real
+    // capabilities, as tauri-build compiled them, against a granted folder.
+    #[test]
+    fn the_webview_cannot_change_a_granted_library_folder_through_the_fs_plugin() {
+        use tauri::ipc::{CallbackFn, InvokeBody};
+        use tauri::webview::InvokeRequest;
+
+        let root = temp_dir("webview-fs");
+        let library = root.join("library");
+        fs::create_dir_all(&library).unwrap();
+        let image = library.join("image.png");
+        fs::write(&image, b"png").unwrap();
+
+        let mut context = tauri::generate_context!(test = true);
+        // Its own AppLocalData, not the real app's.
+        context.config_mut().identifier = "com.ambit.webview-fs-test".to_string();
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_fs::init())
+            .build(context)
+            .unwrap();
+        let handle = app.handle().clone();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        grant_directory_scope(&handle, &fs::canonicalize(&library).unwrap()).unwrap();
+
+        let url = if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        let call = |command: &str, path: &Path| {
+            tauri::test::get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: format!("plugin:fs|{command}"),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: url.parse().unwrap(),
+                    body: InvokeBody::Json(serde_json::json!({ "path": path })),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+        };
+        let refused = |result: Result<(), String>| {
+            result.is_err_and(|error| error.contains("forbidden path"))
+        };
+
+        assert!(refused(call("remove", &image)), "remove a library file");
+        assert!(
+            refused(call("mkdir", &library.join("made"))),
+            "create a folder"
+        );
+        assert!(refused(call("exists", &image)), "probe a library file");
+        assert!(image.exists());
+        assert!(!library.join("made").exists());
+
+        // The same calls still pass the scope in AppLocalData, so the refusals come
+        // from the scope and not from a capability that allows nothing. The file is
+        // missing, so the remove fails on disk and nothing is written.
+        let own = app_local_data_dir(&handle)
+            .unwrap()
+            .join("webview-fs-test-missing.png");
+        assert_eq!(call("exists", &own), Ok(()));
+        let removed = call("remove", &own);
+        assert!(removed.is_err() && !refused(removed), "reaches the disk");
+
         let _ = fs::remove_dir_all(root);
     }
 
