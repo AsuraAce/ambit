@@ -18,7 +18,7 @@
 //! else, and it goes away when that connection closes.
 
 use rusqlite::Connection;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Virtual-machine steps between checks: frequent enough to stop within
 /// milliseconds, rare enough to cost nothing measurable.
@@ -41,7 +41,10 @@ pub fn current_page() -> u64 {
 
 /// A new top-level page load started: the previous page's jobs stop.
 pub fn begin_page() {
-    PAGE.fetch_add(1, Ordering::SeqCst);
+    let page = PAGE.fetch_add(1, Ordering::SeqCst) + 1;
+    if page > 1 {
+        log::info!("[DB] Page load {page}: stopping the previous page's background work");
+    }
     stop_earlier_work();
 }
 
@@ -54,9 +57,16 @@ pub fn stop_earlier_work() {
 /// Makes every statement on `conn` fail once the epoch is no longer `epoch`.
 /// Only use this on a connection that the job opened for itself.
 pub fn stop_when_epoch_changes(conn: &Connection, epoch: u64) {
+    let reported = AtomicBool::new(false);
     conn.progress_handler(
         PROGRESS_CHECK_STEPS,
-        Some(move || STOP_EPOCH.load(Ordering::SeqCst) != epoch),
+        Some(move || {
+            let stop = STOP_EPOCH.load(Ordering::SeqCst) != epoch;
+            if stop && !reported.swap(true, Ordering::Relaxed) {
+                log::info!("[DB] Stopped background work from an earlier page or before exit");
+            }
+            stop
+        }),
     );
 }
 
