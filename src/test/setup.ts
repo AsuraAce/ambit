@@ -19,6 +19,9 @@ vi.mock('@tauri-apps/api/event', () => ({
 // Mock Tauri SQL Plugin
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
+        get: vi.fn((path: string) => ({
+            select: vi.fn().mockRejectedValue(`database ${path} not loaded`),
+        })),
         load: vi.fn().mockResolvedValue({
             execute: vi.fn().mockResolvedValue({}),
             select: vi.fn().mockResolvedValue([]),

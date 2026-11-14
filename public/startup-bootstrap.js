@@ -104,7 +104,7 @@
       postMountTimer = window.setTimeout(function () {
         postMountTimer = undefined;
         if (!startupActive || fatalShown || !staticLoader()) return;
-        updateStatus('Startup is taking longer than expected');
+        updateStatus('Ambit is taking longer than expected to load');
         record('renderer-stall', 'completed', null, 30000);
       }, 30000);
     },
@@ -137,7 +137,7 @@
   });
   stallTimer = window.setTimeout(function () {
     if (!startupActive || fatalShown || !staticLoader()) return;
-    updateStatus('Startup is taking longer than expected');
+    updateStatus('Ambit is taking longer than expected to load');
     record('renderer-stall', 'completed', null, 15000);
   }, 15000);
 }());

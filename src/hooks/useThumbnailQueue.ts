@@ -80,6 +80,7 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
     const isScanningMissingFiles = useLibraryStore((s) => s.isScanningMissingFiles);
     const isPopulatingThumbnails = useLibraryStore((s) => s.isPopulatingThumbnails);
     const isStartupCatchupPending = useLibraryStore((s) => s.isStartupCatchupPending);
+    const isOwnerCacheRepairing = useLibraryStore((s) => s.isOwnerCacheRepairing);
     const isMetadataRefreshPending = useLibraryStore((s) => s.isMetadataRefreshPending);
     const isRefreshingMetadata = useLibraryStore((s) => s.isRefreshingMetadata);
     const thumbnailMaintenanceOperation = useLibraryStore((s) => s.thumbnailMaintenanceOperation);
@@ -110,6 +111,7 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
         isScanningMissingFiles ||
         isPopulatingThumbnails ||
         isStartupCatchupPending ||
+        isOwnerCacheRepairing ||
         isMetadataRefreshPending ||
         isRefreshingMetadata ||
         thumbnailMaintenanceOperation !== null;
@@ -135,6 +137,7 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
             store.isScanningMissingFiles ||
             store.isPopulatingThumbnails ||
             store.isStartupCatchupPending ||
+            store.isOwnerCacheRepairing ||
             store.isMetadataRefreshPending ||
             store.isRefreshingMetadata ||
             store.thumbnailMaintenanceOperation !== null

@@ -15,6 +15,7 @@ const MAINTENANCE_MIN_VISIBLE_MS = 500;
 
 const STARTUP_PHASE_LABELS: Record<StartupDbPhase, string> = {
     'Preparing library database': 'Preparing library database',
+    'Opening library': 'Opening library',
     'Updating database schema': 'Preparing database',
     'Optimizing database': 'Optimizing database',
     'Loading library': 'Loading library',
@@ -22,6 +23,7 @@ const STARTUP_PHASE_LABELS: Record<StartupDbPhase, string> = {
 
 const STARTUP_PHASE_COPY: Record<StartupDbPhase, string> = {
     'Preparing library database': 'Checking the local library database before Ambit opens.',
+    'Opening library': 'Opening your library.',
     'Updating database schema': 'Preparing the local database. Startup may take longer than usual this time.',
     'Optimizing database': 'Optimizing the local database for large libraries.',
     'Loading library': 'Loading your library.',

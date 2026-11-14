@@ -147,7 +147,7 @@ describe('useLibraryStatsQuery valid facets', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         searchRepoMocks.browserMockMode = false;
-        useLibraryStore.setState({ facetCacheVersion: 0 });
+        useLibraryStore.setState({ facetCacheVersion: 0, isOwnerCacheRepairing: false });
         searchRepoMocks.getFacets.mockResolvedValue(emptyFacets);
         searchRepoMocks.getLibraryStatsSummary.mockResolvedValue(emptySummary);
         searchRepoMocks.getKeywordStats.mockResolvedValue(emptyKeywordStats);
@@ -587,6 +587,58 @@ describe('useLibraryStatsQuery valid facets', () => {
         });
 
         await waitFor(() => expect(result.current.data.stats.keywordStats).toEqual([{ text: 'sunset', value: 6 }]));
+    });
+
+    it('holds the summary and facet scans during an owner-cache repair and shows loading, never zeros', async () => {
+        // These long scans would hold pool connections the repair and the gallery need; the repair
+        // then times out and the next start repairs again.
+        useLibraryStore.setState({ isOwnerCacheRepairing: true });
+        const { result } = renderStatsHook(createDefaultFilters(), [], 'used', true, false);
+
+        await waitForMs(20);
+        expect(searchRepoMocks.getFacets).not.toHaveBeenCalled();
+        expect(searchRepoMocks.getLibraryStatsSummary).not.toHaveBeenCalled();
+        expect(result.current.isStatsSummaryLoading).toBe(true);
+        expect(result.current.isFacetsLoading).toBe(true);
+        expect(result.current.isFacetsFetching).toBe(true);
+        expect(result.current.isLoading).toBe(true);
+
+        // The repair ends, by commit or failure: both start.
+        act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledOnce());
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalledOnce());
+        await waitFor(() => expect(result.current.isStatsSummaryLoading).toBe(false));
+        await waitFor(() => expect(result.current.isFacetsFetching).toBe(false));
+    });
+
+    it('keeps the last summary and facet values while a repair holds their refresh', async () => {
+        const facetsWith = (count: number) => ({ ...emptyFacets, checkpoints: [{ name: 'Flux', count }] });
+        searchRepoMocks.getLibraryStatsSummary.mockResolvedValue({ ...emptySummary, totalImages: 42 });
+        searchRepoMocks.getFacets.mockResolvedValue(facetsWith(42));
+        const { result } = renderStatsHook(createDefaultFilters(), [], 'used', true, false);
+        await waitFor(() => expect(result.current.data.stats.totalImages).toBe(42));
+        await waitFor(() => expect(result.current.data.facets.checkpoints).toEqual([{ name: 'Flux', count: 42 }]));
+
+        act(() => {
+            useLibraryStore.setState({ isOwnerCacheRepairing: true });
+            useLibraryStore.getState().incrementFacetCacheVersion();
+        });
+        await waitForMs(20);
+        expect(searchRepoMocks.getFacets).toHaveBeenCalledOnce();
+        expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledOnce();
+        expect(result.current.data.stats.totalImages).toBe(42);
+        expect(result.current.data.facets.checkpoints).toEqual([{ name: 'Flux', count: 42 }]);
+        expect(result.current.isStatsSummaryLoading).toBe(false);
+        expect(result.current.isFacetsLoading).toBe(false);
+
+        searchRepoMocks.getLibraryStatsSummary.mockResolvedValue({ ...emptySummary, totalImages: 43 });
+        searchRepoMocks.getFacets.mockResolvedValue(facetsWith(43));
+        act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+        await waitFor(() => expect(result.current.data.stats.totalImages).toBe(43));
+        await waitFor(() => expect(result.current.data.facets.checkpoints).toEqual([{ name: 'Flux', count: 43 }]));
+        expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledTimes(2);
+        expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(2);
     });
 
     it('refetches stats and valid facets when the facet cache version changes', async () => {

@@ -1013,6 +1013,27 @@ describe('App orchestration', () => {
         expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(true);
     });
 
+    it('holds collection counts while the owner cache repairs, then reads them', async () => {
+        // The count scans would hold pool connections the background repair needs.
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        useLibraryStore.setState({ isOwnerCacheRepairing: true });
+
+        render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(document.getElementById('static-loading')).toBeNull();
+        expect(mocks.setOrdinaryCountsReady).not.toHaveBeenCalledWith(true);
+
+        await act(async () => {
+            useLibraryStore.setState({ isOwnerCacheRepairing: false });
+        });
+        expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(true);
+    });
+
     it('keeps a fatal bootstrap fallback and does not admit background startup work', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');

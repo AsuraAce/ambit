@@ -78,6 +78,31 @@ describe('StartupMaintenanceGate', () => {
         expect(staticLoader.style.pointerEvents).toBe('');
     });
 
+    // A slow open without a pending migration must not promise an unusual wait (#425).
+    it('shows opening copy without the migration warning when no migration runs', async () => {
+        addStaticLoader();
+        vi.mocked(getDb).mockImplementation(
+            ({ onPhase } = {}) =>
+                new Promise(() => {
+                    onPhase?.('Opening library');
+                })
+        );
+
+        render(
+            <StartupMaintenanceGate>
+                <div>Library ready</div>
+            </StartupMaintenanceGate>
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+
+        expect(screen.getByText('Opening library')).toBeTruthy();
+        expect(screen.getByText('Opening your library.')).toBeTruthy();
+        expect(screen.queryByText(/may take longer/i)).toBeNull();
+    });
+
     it('reveals database maintenance for slow startup and keeps tracking phase updates', async () => {
         const staticLoader = addStaticLoader();
         let resolveDb!: () => void;

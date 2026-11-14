@@ -365,12 +365,17 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const sourceKindCounts = scopeCounts?.imageKinds;
     const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
     const scopeResultCount = hasCurrentSafePage ? queryData?.pages[0]?.totalCount : undefined;
-    const scopeCountsLoading = hasCurrentSafePage && (scopeQuery.isFetching || availabilityQuery.isFetching);
+    // While an owner-cache repair holds the scope counts, missing counts read as loading and no
+    // earlier error or retry is offered; the held queries run again when the repair ends.
+    const isOwnerCacheRepairing = useLibraryStore((state) => state.isOwnerCacheRepairing);
+    const scopeCountsHeld = isOwnerCacheRepairing && (scopeQuery.data === undefined || availabilityQuery.data === undefined);
+    const scopeCountsLoading = hasCurrentSafePage && (scopeQuery.isFetching || availabilityQuery.isFetching || scopeCountsHeld);
     const scopeCountsError =
         hasCurrentSafePage &&
+        !isOwnerCacheRepairing &&
         ((scopeQuery.isError && !scopeQuery.isFetching) || (availabilityQuery.isError && !availabilityQuery.isFetching));
     const retryScopeCounts = useCallback(async () => {
-        if (!hasCurrentSafePage) return;
+        if (!hasCurrentSafePage || isOwnerCacheRepairing) return;
         await Promise.all([
             scopeQuery.isError && !scopeQuery.isFetching ? scopeQuery.refetch() : undefined,
             availabilityQuery.isError && !availabilityQuery.isFetching ? availabilityQuery.refetch() : undefined,
@@ -378,6 +383,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the query fields it reads; the query result objects change identity every render
     }, [
         hasCurrentSafePage,
+        isOwnerCacheRepairing,
         scopeQuery.isError,
         scopeQuery.isFetching,
         scopeQuery.refetch,

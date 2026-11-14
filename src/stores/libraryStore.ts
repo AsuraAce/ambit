@@ -211,6 +211,9 @@ interface LibraryState {
 
     // Background Auto-Healing State
     isStartupCatchupPending: boolean;
+    // True while an owner-cache repair runs after the library is shown. Thumbnail writes would
+    // invalidate the cache it is repairing, so thumbnail healing waits for it.
+    isOwnerCacheRepairing: boolean;
     isBackgroundHealingActive: boolean;
     backgroundHealingProgress: SyncProgress | null;
     backgroundHealingDetails: ThumbnailOptimizationDetails | null;
@@ -282,6 +285,7 @@ interface LibraryState {
 
     // Background Healing Actions
     setStartupCatchupPending: (val: boolean) => void;
+    setOwnerCacheRepairing: (val: boolean) => void;
     setBackgroundHealingActive: (val: boolean) => void;
     setBackgroundHealingProgress: (progress: SyncProgress | null) => void;
     setBackgroundHealingDetails: (details: ThumbnailOptimizationDetails | null) => void;
@@ -352,6 +356,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
     // Background Healing State
     isStartupCatchupPending: false,
+    isOwnerCacheRepairing: false,
     isBackgroundHealingActive: false,
     backgroundHealingProgress: null,
     backgroundHealingDetails: null,
@@ -588,6 +593,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
     // Background Healing Actions
     setStartupCatchupPending: (val) => set({ isStartupCatchupPending: val }),
+    setOwnerCacheRepairing: (val) => set({ isOwnerCacheRepairing: val }),
     setBackgroundHealingActive: (val) => set({ isBackgroundHealingActive: val }),
     setBackgroundHealingProgress: (progress) => set({ backgroundHealingProgress: progress }),
     setBackgroundHealingDetails: (details) => set({ backgroundHealingDetails: details }),

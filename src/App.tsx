@@ -379,8 +379,16 @@ export default function App() {
         onImportFiles: handleImportFiles,
     });
 
-    const { startInvokeSync, isInvokeSyncActive, isLiveSyncing, invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope } =
-        useSync();
+    const {
+        startInvokeSync,
+        isInvokeSyncActive,
+        isLiveSyncing,
+        invokeOwnerScopeState,
+        selectInvokeOwnerScope,
+        retryInvokeOwnerScope,
+        waitForOwnerCacheRepair,
+        repairOwnerCacheAfterImport,
+    } = useSync();
     const isInvokeCollectionCatchupPending =
         Boolean(settings.invokeAiPath?.trim()) &&
         settings.invokeSyncBoards !== false &&
@@ -459,10 +467,15 @@ export default function App() {
             });
         }
     }, [backgroundStartupReady]);
+    // Collection counts wait for an owner-cache repair: their long scans compete with it for the
+    // database pool, and collections show a pending count until then.
+    const isOwnerCacheRepairing = useLibraryStore((s) => s.isOwnerCacheRepairing);
     useEffect(() => {
-        setOrdinaryCountsReady(backgroundStartupReady && document.getElementById('static-loading')?.dataset.ambitFatal !== 'true');
+        setOrdinaryCountsReady(
+            backgroundStartupReady && !isOwnerCacheRepairing && document.getElementById('static-loading')?.dataset.ambitFatal !== 'true'
+        );
         return () => setOrdinaryCountsReady(false);
-    }, [backgroundStartupReady, setOrdinaryCountsReady]);
+    }, [backgroundStartupReady, isOwnerCacheRepairing, setOrdinaryCountsReady]);
     const handleInvokeOwnerSelection = useCallback(
         async (selection: InvokeOwnerSelection) => {
             await selectInvokeOwnerScope(selection);
@@ -516,6 +529,8 @@ export default function App() {
         refreshMetadata,
         invokeAiPath: settings.invokeAiPath,
         startInvokeSync,
+        waitForOwnerCacheRepair,
+        repairOwnerCacheAfterImport,
     });
 
     // --- Callbacks ---

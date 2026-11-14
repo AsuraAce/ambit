@@ -428,6 +428,70 @@ describe('useFolderMonitor', () => {
         expect(mockOnScan).not.toHaveBeenCalled();
     });
 
+    describe('startup catch-up and the owner cache (#430, #426)', () => {
+        const folder: MonitoredFolder = { id: 'watch-1', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 10 };
+        const renderCatchUp = (overrides: Partial<Parameters<typeof useFolderMonitor>[0]>) => {
+            mocks.scanDirectorySince.mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/watch/new.png', modified: 100, size: 10 }],
+            });
+            const props = {
+                isLoaded: true,
+                monitoredFolders: [folder],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn().mockResolvedValue(completedImportResult),
+                refreshMetadata: vi.fn().mockResolvedValue(undefined),
+                invokeAiPath: 'D:/Invoke',
+                startInvokeSync: vi.fn().mockResolvedValue({ status: 'completed' }),
+                ...overrides,
+            };
+            renderHook(() => useFolderMonitor(props));
+            return props;
+        };
+
+        it('imports nothing until the startup cache repair has settled', async () => {
+            let settleRepair!: () => void;
+            const waitForOwnerCacheRepair = vi.fn(() => new Promise<void>((resolve) => (settleRepair = resolve)));
+            const props = renderCatchUp({ waitForOwnerCacheRepair, repairOwnerCacheAfterImport: vi.fn().mockResolvedValue(true) });
+
+            await waitFor(() => expect(waitForOwnerCacheRepair).toHaveBeenCalledOnce());
+            // An import now would bump the cache generation and make the running repair start over.
+            expect(props.handleImportPaths).not.toHaveBeenCalled();
+            expect(props.startInvokeSync).not.toHaveBeenCalled();
+
+            await act(async () => settleRepair());
+            await waitFor(() => expect(props.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+            expect(props.handleImportPaths).toHaveBeenCalledOnce();
+        });
+
+        it('commits the owner cache after the import run has ended, so the next start restores it', async () => {
+            let runActiveDuringRepair: boolean | undefined;
+            const repairOwnerCacheAfterImport = vi.fn(async () => {
+                runActiveDuringRepair = useLibraryStore.getState().isImporting;
+                return true;
+            });
+            const props = renderCatchUp({ waitForOwnerCacheRepair: vi.fn().mockResolvedValue(undefined), repairOwnerCacheAfterImport });
+
+            await waitFor(() => expect(props.startInvokeSync).toHaveBeenCalled());
+            expect(repairOwnerCacheAfterImport).toHaveBeenCalledOnce();
+            // The dock's import entry is finished, so it cannot offer Cancel for the filter refresh.
+            expect(runActiveDuringRepair).toBe(false);
+            expect(mocks.refreshStartupFacetCache).not.toHaveBeenCalled();
+            expect(props.refreshMetadata).toHaveBeenCalled();
+        });
+
+        it('falls back to the plain filter refresh when the owner cache cannot be committed', async () => {
+            const props = renderCatchUp({
+                waitForOwnerCacheRepair: vi.fn().mockResolvedValue(undefined),
+                repairOwnerCacheAfterImport: vi.fn().mockResolvedValue(false),
+            });
+
+            await waitFor(() => expect(props.startInvokeSync).toHaveBeenCalled());
+            expect(mocks.refreshStartupFacetCache).toHaveBeenCalledWith(expect.objectContaining({ source: 'folder' }));
+        });
+    });
+
     it('passes one parent abort signal through aggregated startup imports and stops after cancellation', async () => {
         let firstAbortSignal: AbortSignal | undefined;
         const handleImportPaths = vi.fn().mockImplementation(async (_paths, _variant, options) => {

@@ -42,6 +42,8 @@ interface UseFolderMonitorProps {
     refreshMetadata: () => Promise<void>;
     invokeAiPath?: string;
     startInvokeSync?: (options?: { mode?: 'startup' }) => Promise<InvokeSyncOutcome | void>;
+    waitForOwnerCacheRepair?: () => Promise<void>;
+    repairOwnerCacheAfterImport?: () => Promise<boolean>;
 }
 
 const isCompleteImport = (result: ImportResult | void): boolean => !!result && !result.wasCancelled && result.failedPaths.length === 0;
@@ -64,6 +66,8 @@ export function useFolderMonitor({
     refreshMetadata,
     invokeAiPath,
     startInvokeSync,
+    waitForOwnerCacheRepair,
+    repairOwnerCacheAfterImport,
 }: UseFolderMonitorProps) {
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
@@ -165,6 +169,10 @@ export function useFolderMonitor({
                         durationMs: Date.now() - folderScanStartedAt,
                     });
 
+                    // Imports and InvokeAI catch-up would invalidate a running startup cache repair (#430).
+                    // Files newer than this scan stay newer than the folder cursor, so none are lost.
+                    await waitForOwnerCacheRepair?.();
+
                     // Phase 2: Execution - Run single unified batch for smart updates
                     if (!startupScanWasCancelled && totalFilesFound > 0) {
                         const importStartedAt = Date.now();
@@ -203,6 +211,7 @@ export function useFolderMonitor({
                         let touchedFacetTypes: FacetType[] = [];
                         let touchedFacetResources = createEmptyTouchedFacetResources();
                         let wasCancelled = false;
+                        let importFinished = false;
 
                         try {
                             for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
@@ -254,25 +263,29 @@ export function useFolderMonitor({
                                 }
                                 if (wasCancelled) break;
                             }
-
-                            if (!wasCancelled) {
-                                setProgressForRun(importRunId, {
-                                    current: totalFilesFound,
-                                    total: totalFilesFound,
-                                    message: 'Updating startup filters...',
-                                });
-                                await refreshStartupFacetCache({
-                                    source: 'folder',
-                                    totalProcessed: totalImported,
-                                    touchedFacetTypes,
-                                    touchedFacetResources,
-                                    onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion(),
-                                });
-                            }
+                            importFinished = true;
                         } catch (error) {
-                            console.error('[Startup Catch-up] Folder incremental facet refresh failed.', error);
+                            console.error('[Startup Catch-up] Folder import failed.', error);
                         } finally {
+                            // The import ends here, so the dock never offers Cancel for the filter refresh (#426).
                             finishRun(importRunId);
+                        }
+
+                        if (importFinished && !wasCancelled) {
+                            try {
+                                const ownerCacheCommitted = !!invokeAiPath && (await repairOwnerCacheAfterImport?.()) === true;
+                                if (!ownerCacheCommitted) {
+                                    await refreshStartupFacetCache({
+                                        source: 'folder',
+                                        totalProcessed: totalImported,
+                                        touchedFacetTypes,
+                                        touchedFacetResources,
+                                        onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion(),
+                                    });
+                                }
+                            } catch (error) {
+                                console.error('[Startup Catch-up] Folder incremental facet refresh failed.', error);
+                            }
                         }
 
                         // Force UI Refresh

@@ -85,6 +85,19 @@ async getMainDatabaseUrl() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * How many registered schema migrations the SQL plugin will apply when the
+ * frontend next loads the library database. Startup uses it only to choose
+ * honest copy; it never decides whether migrations run.
+ */
+async getPendingMigrationCount() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_pending_migration_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getDbDiagnostics() : Promise<Result<DbDiagnostics, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_db_diagnostics") };

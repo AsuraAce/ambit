@@ -55,6 +55,9 @@ const LIFECYCLE_OBSERVATIONS: &[&str] = &[
     "native-exit-requested",
     "native-window-destroyed",
     "native-exit",
+    // Native only. The gap from here to native-exit is window teardown and the
+    // SQL plugin closing its pools.
+    "shutdown-optimize-completed",
 ];
 const OBSERVATION_COUNT: usize = WEBVIEW_OBSERVATIONS.len() + LIFECYCLE_OBSERVATIONS.len();
 

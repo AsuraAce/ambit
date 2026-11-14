@@ -200,6 +200,7 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     { name: 'getMainDatabaseUrl', invokeName: 'get_main_database_url', args: [], returnsResult: true },
+    { name: 'getPendingMigrationCount', invokeName: 'get_pending_migration_count', args: [], returnsResult: true },
     { name: 'getDbDiagnostics', invokeName: 'get_db_diagnostics', args: [], returnsResult: true },
     { name: 'showAppLogFolder', invokeName: 'show_app_log_folder', args: [], returnsResult: true },
     {

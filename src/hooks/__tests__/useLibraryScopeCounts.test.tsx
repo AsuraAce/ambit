@@ -24,6 +24,7 @@ describe('useLibraryScopeCounts', () => {
         vi.clearAllMocks();
         mocks.useBrowser = false;
         mocks.count.mockResolvedValue(counts);
+        useLibraryStore.setState({ isOwnerCacheRepairing: false });
     });
     const setup = (enabled = false) => {
         const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -52,6 +53,31 @@ describe('useLibraryScopeCounts', () => {
         expect(mocks.count.mock.calls[0][0]).toContain('prompt');
         expect(mocks.count.mock.calls[0][0]).not.toContain('media_type');
         expect(mocks.count.mock.calls[0][1]).not.toContain('photograph');
+    });
+
+    it('waits for an owner-cache repair, keeps no error from a scan cancelled at its start, then counts', async () => {
+        // On a large library this scan holds a pool connection for minutes; during a repair it would
+        // starve the repair and the gallery of connections.
+        let failStuck!: (error: Error) => void;
+        mocks.count.mockReturnValueOnce(
+            new Promise<LibraryScopeCounts>((_, reject) => {
+                failStuck = reject;
+            })
+        );
+        const hook = setup(true);
+        await waitFor(() => expect(mocks.count).toHaveBeenCalledOnce());
+
+        // The repair starts: SyncContext sets the flag and cancels the running scans.
+        act(() => useLibraryStore.setState({ isOwnerCacheRepairing: true }));
+        await act(async () => hook.client.cancelQueries({ queryKey: ['libraryStats'] }));
+        await act(async () => failStuck(new Error('pool timed out while waiting for an open connection')));
+        expect(hook.result.current.isError).toBe(false);
+        expect(hook.result.current.data).toBeUndefined();
+        expect(mocks.count).toHaveBeenCalledOnce();
+
+        act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+        await waitFor(() => expect(hook.result.current.data).toEqual(counts));
+        expect(mocks.count).toHaveBeenCalledTimes(2);
     });
 
     it('isolates late search responses and retries failures without image-cache work', async () => {
