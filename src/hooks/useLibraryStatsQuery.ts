@@ -248,8 +248,10 @@ export const useLibraryStatsQuery = ({
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: settingsLoaded,
+        enabled: settingsLoaded && !isOwnerCacheRepairing,
     });
+    // A held facet scan with nothing to show yet reads as loading, never as empty lists.
+    const isFacetsHeld = isOwnerCacheRepairing && facetsQuery.data === undefined;
 
     const statsSummaryQuery = useQuery({
         queryKey: [
@@ -434,10 +436,10 @@ export const useLibraryStatsQuery = ({
             stats: combinedStats,
             validNames: validNamesQuery.data ?? null,
         },
-        isLoading: facetsQuery.isLoading || isStatsSummaryLoading || validNamesQuery.isLoading || keywordQuery.isLoading,
+        isLoading: facetsQuery.isLoading || isFacetsHeld || isStatsSummaryLoading || validNamesQuery.isLoading || keywordQuery.isLoading,
         isFetching: facetsQuery.isFetching || statsSummaryQuery.isFetching || validNamesQuery.isFetching || keywordQuery.isFetching,
-        isFacetsLoading: facetsQuery.isLoading,
-        isFacetsFetching: facetsQuery.isFetching,
+        isFacetsLoading: facetsQuery.isLoading || isFacetsHeld,
+        isFacetsFetching: facetsQuery.isFetching || isFacetsHeld,
         isStatsSummaryLoading,
         isKeywordStatsLoading,
     };

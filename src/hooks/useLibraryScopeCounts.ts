@@ -21,6 +21,8 @@ interface ScopeCountsOptions {
 export function useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled }: ScopeCountsOptions) {
     const facetCacheVersion = useLibraryStore((state) => state.facetCacheVersion);
     const scopeCountsVersion = useLibraryStore((state) => state.scopeCountsVersion);
+    // These scans compete with an owner-cache repair for the database pool, so they wait for it.
+    const isOwnerCacheRepairing = useLibraryStore((state) => state.isOwnerCacheRepairing);
     const ownerScopeKey = useInvokeOwnerScopeStore((state) => getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState));
     const keywords = getEffectiveMaskedKeywords(settings);
     const activeCollection = allCollections.find((collection) => collection.id === filters.collectionId);
@@ -48,7 +50,7 @@ export function useLibraryScopeCounts({ filters, settings, privacyEnabled, allCo
             isBrowserMockMode()
                 ? getBrowserMockScopeCounts(filters, { privacyEnabled, settings })
                 : countLibraryScopes(scopeQuery.where, scopeQuery.params, scopeQuery.collectionId, scopeQuery.loraName),
-        enabled,
+        enabled: enabled && !isOwnerCacheRepairing,
         staleTime: 30_000,
         // No placeholder: a different query or privacy/owner scope has unknown counts.
     });

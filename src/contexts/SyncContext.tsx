@@ -325,18 +325,24 @@ export const SyncProvider: React.FC<{
     // thumbnail healing pauses while any repair after the library is shown runs. Counted because
     // repairs can overlap; always released in `finally`, and reset on unmount.
     const ownerCacheRepairCountRef = useRef(0);
-    const withThumbnailsPausedForRepair = useCallback(async <T,>(repair: () => Promise<T>): Promise<T> => {
-        ownerCacheRepairCountRef.current += 1;
-        useLibraryStore.getState().setOwnerCacheRepairing(true);
-        try {
-            return await repair();
-        } finally {
-            ownerCacheRepairCountRef.current = Math.max(0, ownerCacheRepairCountRef.current - 1);
-            if (ownerCacheRepairCountRef.current === 0) {
-                useLibraryStore.getState().setOwnerCacheRepairing(false);
+    const withThumbnailsPausedForRepair = useCallback(
+        async <T,>(repair: () => Promise<T>): Promise<T> => {
+            ownerCacheRepairCountRef.current += 1;
+            useLibraryStore.getState().setOwnerCacheRepairing(true);
+            // The sidebar's statistics and count scans are held until the repair ends. Cancelling any
+            // already in flight keeps their last values and stops a failure from being cached as an error.
+            void queryClient.cancelQueries({ queryKey: ['libraryStats'] });
+            try {
+                return await repair();
+            } finally {
+                ownerCacheRepairCountRef.current = Math.max(0, ownerCacheRepairCountRef.current - 1);
+                if (ownerCacheRepairCountRef.current === 0) {
+                    useLibraryStore.getState().setOwnerCacheRepairing(false);
+                }
             }
-        }
-    }, []);
+        },
+        [queryClient]
+    );
     useEffect(
         () => () => {
             backgroundOwnerCacheRepairRef.current?.controller.abort();

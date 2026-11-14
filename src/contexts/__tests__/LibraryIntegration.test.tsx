@@ -10,7 +10,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { QueryClient } from '@tanstack/react-query';
-import type { AppSettings, Collection, InvokeDbSnapshotState, InvokeOwnerDiscovery } from '../../types';
+import type { AppSettings, Collection, FilterState, InvokeDbSnapshotState, InvokeOwnerDiscovery } from '../../types';
 import type { InvokeSyncOptions } from '../../services/invoke/syncService';
 import {
     INVOKE_BOARD_OWNER_SCHEMA_VERSION,
@@ -2933,7 +2933,7 @@ describe('Library Integration (Provider Stack)', () => {
             // The view is ready while the repair is still waiting for its claim.
             await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
             await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
-            return { getSync: () => syncHook!, releaseClaim, unmount: view.unmount };
+            return { getLibrary: () => libraryHook!, getSync: () => syncHook!, releaseClaim, unmount: view.unmount };
         };
 
         const isRepairing = () => useLibraryStore.getState().isOwnerCacheRepairing;
@@ -2960,6 +2960,46 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
             warn.mockRestore();
         });
+
+        it.each(['commit', 'failure'] as const)(
+            'keeps gallery search live during the repair and holds the sidebar counts until its %s',
+            async (outcome) => {
+                // The sidebar's facet and scope scans take minutes on a large library and would starve
+                // the pool the repair and the gallery need. A search must still return current rows.
+                const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+                const cancel = vi.spyOn(QueryClient.prototype, 'cancelQueries');
+                const { getLibrary, releaseClaim } = await startUnchangedAllUsersView();
+                expect(isRepairing()).toBe(true);
+                // Scans already running are cancelled, so a failure there is never cached as an error.
+                expect(cancel).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+                mocks.searchImages.mockClear();
+                mocks.getFacets.mockClear();
+                mocks.countLibraryScopes.mockClear();
+
+                await act(async () => getLibrary().setFilters((prev: FilterState) => ({ ...prev, searchQuery: `portrait ${outcome}` })));
+
+                await waitFor(() => expect(getLibrary().filters.searchQuery).toBe(`portrait ${outcome}`));
+                await waitFor(() => expect(mocks.searchImages).toHaveBeenCalled());
+                expect(mocks.getFacets).not.toHaveBeenCalled();
+                expect(mocks.countLibraryScopes).not.toHaveBeenCalled();
+                // The held sidebar reads as loading: no zero counts, no error or retry.
+                expect(getLibrary().scopeCounts).toBeUndefined();
+                expect(getLibrary().scopeCountsLoading).toBe(true);
+                expect(getLibrary().scopeCountsError).toBe(false);
+                expect(getLibrary().isFacetsLoading).toBe(true);
+
+                await act(async () =>
+                    releaseClaim(outcome === 'commit' ? createInvokeScopeCacheClaim(dirtyPlan, 3) : new Error('disk is busy'))
+                );
+
+                await waitFor(() => expect(isRepairing()).toBe(false));
+                await waitFor(() => expect(mocks.getFacets).toHaveBeenCalled());
+                await waitFor(() => expect(mocks.countLibraryScopes).toHaveBeenCalled());
+                await waitFor(() => expect(getLibrary().scopeCountsLoading).toBe(false));
+                cancel.mockRestore();
+                warn.mockRestore();
+            }
+        );
 
         it('resumes thumbnail healing when the repair is aborted by unmounting', async () => {
             // A stuck flag would stop thumbnails for the rest of the session.

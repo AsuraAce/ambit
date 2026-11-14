@@ -21,6 +21,8 @@ interface ScopeAvailabilityOptions {
 export function useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled }: ScopeAvailabilityOptions) {
     const facetCacheVersion = useLibraryStore((state) => state.facetCacheVersion);
     const scopeCountsVersion = useLibraryStore((state) => state.scopeCountsVersion);
+    // These scans compete with an owner-cache repair for the database pool, so they wait for it.
+    const isOwnerCacheRepairing = useLibraryStore((state) => state.isOwnerCacheRepairing);
     const ownerScopeKey = useInvokeOwnerScopeStore((state) => getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState));
     const keywords = getEffectiveMaskedKeywords(settings);
     const libraryFilters: FilterState = {
@@ -53,7 +55,7 @@ export function useLibraryScopeAvailability({ filters, settings, privacyEnabled,
             const { where, params } = buildSqlWhereClause(libraryFilters, privacyEnabled, settings.maskingMode, keywords, []);
             return countLibraryScopes(where, params);
         },
-        enabled,
+        enabled: enabled && !isOwnerCacheRepairing,
         staleTime: 30_000,
         // No placeholder: neither loading nor a changed privacy/owner scope is zero availability.
     });
