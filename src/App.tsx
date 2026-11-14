@@ -379,8 +379,16 @@ export default function App() {
         onImportFiles: handleImportFiles,
     });
 
-    const { startInvokeSync, isInvokeSyncActive, isLiveSyncing, invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope } =
-        useSync();
+    const {
+        startInvokeSync,
+        isInvokeSyncActive,
+        isLiveSyncing,
+        invokeOwnerScopeState,
+        selectInvokeOwnerScope,
+        retryInvokeOwnerScope,
+        waitForOwnerCacheRepair,
+        repairOwnerCacheAfterImport,
+    } = useSync();
     const isInvokeCollectionCatchupPending =
         Boolean(settings.invokeAiPath?.trim()) &&
         settings.invokeSyncBoards !== false &&
@@ -516,6 +524,8 @@ export default function App() {
         refreshMetadata,
         invokeAiPath: settings.invokeAiPath,
         startInvokeSync,
+        waitForOwnerCacheRepair,
+        repairOwnerCacheAfterImport,
     });
 
     // --- Callbacks ---

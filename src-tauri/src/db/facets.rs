@@ -2587,6 +2587,52 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_facet_swap_leaves_previous_cache_whole() {
+        // Startup shows the previous facet cache while a full rebuild runs in the background
+        // (#430), so a rebuild that stops partway must never leave a partial cache behind.
+        let mut conn = create_valid_facet_conn();
+        let previous: Vec<(String, String, i64)> = {
+            let mut statement = conn
+                .prepare(
+                    "SELECT facet_type, resource_name, count FROM main.facet_cache
+                     ORDER BY facet_type, resource_name",
+                )
+                .unwrap();
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+
+        create_facet_staging_table(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO temp.facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'StagedFirst', 3), ('tools', 'StagedPoison', 4);
+             CREATE TEMP TRIGGER stop_facet_swap BEFORE INSERT ON main.facet_cache
+             WHEN NEW.resource_name = 'StagedPoison'
+             BEGIN SELECT RAISE(ABORT, 'interrupted'); END;",
+        )
+        .unwrap();
+
+        assert!(swap_staged_facet_cache(&mut conn).is_err());
+        let after: Vec<(String, String, i64)> = {
+            let mut statement = conn
+                .prepare(
+                    "SELECT facet_type, resource_name, count FROM main.facet_cache
+                     ORDER BY facet_type, resource_name",
+                )
+                .unwrap();
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(after, previous);
+    }
+
+    #[test]
     fn test_valid_facet_names_respect_manual_collection_join() {
         let conn = create_valid_facet_conn();
 
