@@ -5281,11 +5281,24 @@ mod tests {
     fn a_stale_claim_after_a_scope_switch_or_forced_refresh_repairs_from_the_restored_snapshot() {
         // Switching away and back: the gate and the claim must agree. A selective claim
         // repairs only the dirty items, so it must start from owner a's restored snapshot,
-        // never from the live rows owner b left behind.
+        // never from the live rows owner b left behind. One session for the gate and the
+        // claim, as in the app; the abandoned claim belongs to "page-1".
+        let session = "page-2";
         let conn = Connection::open_in_memory().expect("in-memory db");
         owner_a_with_unfinished_repair(&conn);
-        super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("b"))
-            .expect("switch to owner b");
+        super::refresh_invoke_owner_scope_for_session_inner(
+            &conn,
+            &owner_scope_input("b"),
+            session,
+        )
+        .expect("switch to owner b");
+        // Owner a's image changes while owner b is active. The dirty-item triggers record
+        // it for every scope, not only the active one, so a's selective repair includes it.
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('owner-a', 'WhileBActive')",
+            [],
+        )
+        .expect("change an owner-a resource while owner b is active");
         conn.execute("DELETE FROM facet_cache", []).unwrap();
         conn.execute(
             "INSERT INTO facet_cache (facet_type, resource_name, count)
@@ -5293,14 +5306,27 @@ mod tests {
             [],
         )
         .unwrap();
-        let back = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
-            .expect("switch back to owner a");
-        let claim = super::begin_active_scope_cache_build_for_session_inner(&conn, "page-2")
+        let back = super::refresh_invoke_owner_scope_for_session_inner(
+            &conn,
+            &owner_scope_input("a"),
+            session,
+        )
+        .expect("switch back to owner a");
+        let claim = super::begin_active_scope_cache_build_for_session_inner(&conn, session)
             .expect("claim after switching back");
         assert_eq!(back.cache_repair.action, claim.cache_repair.action);
         assert_eq!(
             claim.cache_repair.action,
             super::InvokeScopeCacheAction::Selective
+        );
+        assert!(
+            claim
+                .cache_repair
+                .resources
+                .loras
+                .contains(&"WhileBActive".to_string()),
+            "a change made while owner b was active is repaired: {:?}",
+            claim.cache_repair.resources.loras
         );
         let owner_b_rows: i64 = conn
             .query_row(
@@ -5322,15 +5348,16 @@ mod tests {
         // A forced refresh of the unchanged scope takes the same path.
         let conn = Connection::open_in_memory().expect("in-memory db");
         owner_a_with_unfinished_repair(&conn);
-        let forced = super::refresh_invoke_owner_scope_inner(
+        let forced = super::refresh_invoke_owner_scope_for_session_inner(
             &conn,
             &super::InvokeOwnerScopeInput {
                 force_refresh: true,
                 ..owner_scope_input("a")
             },
+            session,
         )
         .expect("forced refresh");
-        let claim = super::begin_active_scope_cache_build_for_session_inner(&conn, "page-2")
+        let claim = super::begin_active_scope_cache_build_for_session_inner(&conn, session)
             .expect("claim after a forced refresh");
         assert_eq!(forced.cache_repair.action, claim.cache_repair.action);
         assert_eq!(
