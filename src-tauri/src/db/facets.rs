@@ -105,12 +105,15 @@ fn with_active_scope_model_invalidation_suppressed<T>(
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
+    let epoch = super::background_work::current_epoch();
     tauri::async_runtime::spawn_blocking(move || {
         let _coordinator = lock_facet_builds()?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
+        // A reload or exit stops this rebuild; its open transaction rolls back.
+        super::background_work::stop_when_epoch_changes(&conn, epoch);
 
         println!("[FacetCache] Starting rebuild...");
         let _ = app.emit(
@@ -1420,12 +1423,15 @@ pub async fn refresh_facet_cache_for_resources(
     app: tauri::AppHandle,
     touches: FacetResourceTouches,
 ) -> Result<usize, String> {
+    let epoch = super::background_work::current_epoch();
     tauri::async_runtime::spawn_blocking(move || {
         let _coordinator = lock_facet_builds()?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
+        // A reload or exit stops this rebuild; its open transaction rolls back.
+        super::background_work::stop_when_epoch_changes(&conn, epoch);
 
         let refreshed =
             refresh_live_facet_resources_with_progress(&mut conn, &touches, |payload| {
@@ -1505,12 +1511,15 @@ pub async fn rebuild_facet_cache_incremental_batch(
     app: tauri::AppHandle,
     facet_types: Vec<String>,
 ) -> Result<usize, String> {
+    let epoch = super::background_work::current_epoch();
     tauri::async_runtime::spawn_blocking(move || {
         let _coordinator = lock_facet_builds()?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
+        // A reload or exit stops this rebuild; its open transaction rolls back.
+        super::background_work::stop_when_epoch_changes(&conn, epoch);
 
         let normalized_types = rebuild_incremental_facet_types(&mut conn, &facet_types)?;
 

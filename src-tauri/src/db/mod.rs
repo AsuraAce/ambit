@@ -2,6 +2,7 @@ use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
+pub mod background_work;
 pub mod backup;
 pub mod commands;
 pub mod error;
@@ -77,16 +78,26 @@ pub fn optimize_on_shutdown(app: &tauri::AppHandle) -> Result<(), String> {
     log::info!("[DB] Running shutdown optimization (PRAGMA optimize)...");
 
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    optimize_before_exit(&conn);
+    Ok(())
+}
 
+/// Runs on the main thread while the app exits. If another connection still holds
+/// the write lock, skip optimizing rather than keep the window hanging.
+fn optimize_before_exit(conn: &Connection) {
+    if let Err(e) = conn.busy_timeout(SHUTDOWN_OPTIMIZE_BUSY_TIMEOUT) {
+        log::error!("[DB] Shutdown optimization skipped: {}", e);
+        return;
+    }
     // 0x10002 is the recommended flag for shutdown (limit work to reasonable time)
     // and analyze tables that need it.
     match conn.execute("PRAGMA optimize(0x10002)", []) {
         Ok(_) => log::info!("[DB] Shutdown optimization complete"),
-        Err(e) => log::error!("[DB] Shutdown optimization failed: {}", e),
+        Err(e) => log::warn!("[DB] Shutdown optimization skipped: {}", e),
     }
-
-    Ok(())
 }
+
+const SHUTDOWN_OPTIMIZE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(serde::Deserialize, Clone, specta::Type)]
 pub struct ImageRecord {
@@ -344,6 +355,61 @@ mod tests {
             "ambit-db-path-{test_name}-{}-{timestamp}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn shutdown_optimize_skips_instead_of_waiting_for_a_writer() {
+        let root = unique_temp_root("shutdown-optimize");
+        fs::create_dir_all(&root).expect("create temp root");
+        let path = root.join("images.db");
+        let writer = Connection::open(&path).expect("open writer");
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 CREATE TABLE images (id INTEGER PRIMARY KEY, path TEXT);
+                 CREATE INDEX idx_images_path ON images(path);
+                 WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 2000)
+                 INSERT INTO images (path) SELECT 'p' || x FROM n;
+                 BEGIN IMMEDIATE;
+                 INSERT INTO images (path) VALUES ('held');",
+            )
+            .expect("hold the write lock");
+
+        // A background repair still holds the write lock while the app exits.
+        let exiting = Connection::open(&path).expect("open exit connection");
+        let started = std::time::Instant::now();
+        optimize_before_exit(&exiting);
+        let waited = started.elapsed();
+        assert!(
+            waited < std::time::Duration::from_secs(3),
+            "exit waited {waited:?}"
+        );
+        let stats: i64 = exiting
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'sqlite_stat1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read schema");
+        assert_eq!(stats, 0, "optimize must not have written while locked");
+
+        // Once the lock is free the same call does write statistics, so the skip
+        // above was the lock and not a no-op optimize.
+        writer
+            .execute_batch("COMMIT")
+            .expect("release the write lock");
+        optimize_before_exit(&exiting);
+        let stats: i64 = exiting
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'sqlite_stat1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read schema");
+        assert_eq!(stats, 1);
+        drop(exiting);
+        drop(writer);
+        let _ = fs::remove_dir_all(&root);
     }
 
     fn write_file(path: &Path, contents: &str) {

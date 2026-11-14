@@ -1341,10 +1341,16 @@ fn read_scope_cache_status(
     Ok(state.unwrap_or_default())
 }
 
+/// `stale_claims_for` is this page's claim session when the active scope is unchanged.
+/// A `building` claim left by another session (a reload, a crash or a quit mid-repair)
+/// then plans like `dirty`: commit is the only thing that clears dirty items, so they
+/// still list everything changed since the last built snapshot. A scope change passes
+/// `None` and keeps the full rebuild.
 fn read_scope_cache_repair_plan(
     conn: &Connection,
     scope_key: &str,
     status: &FacetScopeCacheStatus,
+    stale_claims_for: Option<&str>,
 ) -> Result<InvokeScopeCacheRepairPlan, String> {
     if status.state == FacetScopeCacheState::Ready
         && status.built_generation == Some(status.generation)
@@ -1354,7 +1360,24 @@ fn read_scope_cache_repair_plan(
             ..Default::default()
         });
     }
-    if status.state != FacetScopeCacheState::Dirty || status.built_generation.is_none() {
+    let plans_like_dirty = match (status.state, stale_claims_for) {
+        (FacetScopeCacheState::Dirty, _) => true,
+        // Without a snapshot there is nothing to repair selectively.
+        (FacetScopeCacheState::Building, Some(session_id)) if status.facet_count > 0 => {
+            let claim_session: Option<String> = conn
+                .query_row(
+                    "SELECT build_session_id FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                    [scope_key],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .flatten();
+            claim_session.as_deref() != Some(session_id)
+        }
+        _ => false,
+    };
+    if !plans_like_dirty || status.built_generation.is_none() {
         return Ok(InvokeScopeCacheRepairPlan::default());
     }
 
@@ -1606,21 +1629,24 @@ fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn invoke_scope_cache_build_session_id() -> &'static str {
-    static SESSION_ID: OnceLock<String> = OnceLock::new();
-    SESSION_ID.get_or_init(|| {
+fn invoke_scope_cache_build_session_id() -> String {
+    static PROCESS_ID: OnceLock<String> = OnceLock::new();
+    let process = PROCESS_ID.get_or_init(|| {
         let started_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
         format!("{}-{started_at}", std::process::id())
-    })
+    });
+    // Each page load is its own session: after F5 the old page can no longer
+    // commit or abort, so the new page must be able to take its claim over (#432).
+    format!("{process}-{}", crate::db::background_work::current_page())
 }
 
 fn begin_active_scope_cache_build_inner(
     conn: &Connection,
 ) -> Result<InvokeScopeCacheBuildClaim, String> {
-    begin_active_scope_cache_build_for_session_inner(conn, invoke_scope_cache_build_session_id())
+    begin_active_scope_cache_build_for_session_inner(conn, &invoke_scope_cache_build_session_id())
 }
 
 fn begin_active_scope_cache_build_for_session_inner(
@@ -1635,7 +1661,8 @@ fn begin_active_scope_cache_build_for_session_inner(
         )
         .map_err(|error| error.to_string())?;
     let initial_status = read_scope_cache_status(conn, &scope_key)?;
-    let cache_repair = read_scope_cache_repair_plan(conn, &scope_key, &initial_status)?;
+    let cache_repair =
+        read_scope_cache_repair_plan(conn, &scope_key, &initial_status, Some(session_id))?;
     let cache_status = if cache_repair.action == InvokeScopeCacheAction::Restored {
         initial_status
     } else {
@@ -1674,7 +1701,11 @@ fn commit_active_scope_cache_inner(
     conn: &Connection,
     ticket: &InvokeScopeCacheBuildTicket,
 ) -> Result<FacetScopeCacheStatus, String> {
-    commit_active_scope_cache_for_session_inner(conn, ticket, invoke_scope_cache_build_session_id())
+    commit_active_scope_cache_for_session_inner(
+        conn,
+        ticket,
+        &invoke_scope_cache_build_session_id(),
+    )
 }
 
 fn commit_active_scope_cache_for_session_inner(
@@ -1740,7 +1771,7 @@ fn abort_active_scope_cache_build_inner(
     abort_active_scope_cache_build_for_session_inner(
         conn,
         ticket,
-        invoke_scope_cache_build_session_id(),
+        &invoke_scope_cache_build_session_id(),
     )
 }
 
@@ -1858,7 +1889,12 @@ fn refresh_invoke_owner_scope_inner(
     .map_err(|error| error.to_string())?;
     if !input.force_refresh && previous.as_ref() == Some(&next) {
         let status = read_scope_cache_status(&tx, &scope_key)?;
-        let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &status)?;
+        let cache_repair = read_scope_cache_repair_plan(
+            &tx,
+            &scope_key,
+            &status,
+            Some(&invoke_scope_cache_build_session_id()),
+        )?;
         if cache_repair.action != InvokeScopeCacheAction::Full {
             measure_owner_preparation_stage("cache-restore", || {
                 restore_scope_cache(&tx, &scope_key)
@@ -1953,7 +1989,7 @@ fn refresh_invoke_owner_scope_inner(
     .map_err(|e| e.to_string())?;
 
     let cache_status = read_scope_cache_status(&tx, &scope_key)?;
-    let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &cache_status)?;
+    let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &cache_status, None)?;
     if cache_repair.action != InvokeScopeCacheAction::Full {
         measure_owner_preparation_stage("cache-restore", || restore_scope_cache(&tx, &scope_key))?;
     }
@@ -5095,6 +5131,193 @@ mod tests {
         assert_eq!(
             retry.cache_status.state,
             super::FacetScopeCacheState::Building
+        );
+    }
+
+    fn owner_scope_input(owner: &str) -> super::InvokeOwnerScopeInput {
+        super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some(owner.to_string()),
+            force_refresh: false,
+        }
+    }
+
+    /// Owner a has a built snapshot, then one LoRA changes and an earlier page
+    /// claims the repair and never finishes it, as after F5 or a quit mid-repair.
+    fn owner_a_with_unfinished_repair(conn: &Connection) -> super::InvokeScopeCacheBuildClaim {
+        apply_all_migrations(conn);
+        for (id, owner) in [("owner-a", "a"), ("owner-b", "b")] {
+            let mut image = create_image_record(id, 100, 10, "{}");
+            image.path = format!("C:/Invoke/outputs/images/{id}.png");
+            image.invoke_image_name = Some(format!("{id}.png"));
+            image.invoke_owner_id = Some(owner.to_string());
+            super::save_images_batch_inner(conn, &[image]).expect("insert owner row");
+        }
+        super::refresh_invoke_owner_scope_inner(conn, &owner_scope_input("a"))
+            .expect("activate owner a");
+        let first = super::begin_active_scope_cache_build_for_session_inner(conn, "page-1")
+            .expect("first build");
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Owner A', 11)",
+            [],
+        )
+        .unwrap();
+        super::commit_active_scope_cache_for_session_inner(conn, &first.ticket(), "page-1")
+            .expect("commit first build");
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('owner-a', 'NewDetailer')",
+            [],
+        )
+        .expect("change one owner-a resource");
+        let unfinished = super::begin_active_scope_cache_build_for_session_inner(conn, "page-1")
+            .expect("claim the repair");
+        assert_eq!(
+            unfinished.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        // The repair had started rewriting the live cache when its page went away.
+        conn.execute("UPDATE facet_cache SET count = 999", [])
+            .unwrap();
+        unfinished
+    }
+
+    fn live_owner_a_count(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT count FROM facet_cache WHERE resource_name = 'Owner A'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn reloaded_page_takes_over_an_unfinished_repair_and_repairs_only_what_changed() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let old_claim = owner_a_with_unfinished_repair(&conn);
+
+        // The reloaded page's gate: same scope, a claim from another page session.
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("reloaded page gate");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        assert_eq!(
+            gate.cache_repair.resources.loras,
+            vec!["NewDetailer".to_string()]
+        );
+        assert_eq!(
+            live_owner_a_count(&conn),
+            11,
+            "the gate restores the snapshot under the selective repair"
+        );
+
+        let new_claim = super::begin_active_scope_cache_build_for_session_inner(&conn, "page-2")
+            .expect("the reloaded page takes the claim over (#432)");
+        assert_eq!(new_claim.generation, old_claim.generation);
+        assert_eq!(
+            new_claim.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+
+        // The old page's work unwinds late: it must not release or finish the new claim.
+        super::abort_active_scope_cache_build_for_session_inner(
+            &conn,
+            &old_claim.ticket(),
+            "page-1",
+        )
+        .expect("late abort runs");
+        super::commit_active_scope_cache_for_session_inner(&conn, &old_claim.ticket(), "page-1")
+            .expect_err("a late commit from the old page must be refused");
+        let owner: String = conn
+            .query_row(
+                "SELECT build_session_id FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                [&new_claim.scope_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(owner, "page-2");
+
+        let committed = super::commit_active_scope_cache_for_session_inner(
+            &conn,
+            &new_claim.ticket(),
+            "page-2",
+        )
+        .expect("the new page commits its repair");
+        assert_eq!(committed.state, super::FacetScopeCacheState::Ready);
+        assert_eq!(committed.built_generation, Some(new_claim.generation));
+    }
+
+    #[test]
+    fn unfinished_repair_still_rebuilds_fully_when_selective_would_be_wrong() {
+        // A full-rebuild reason recorded before the claim keeps the full rebuild.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let claim = owner_a_with_unfinished_repair(&conn);
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_dirty_items (scope_key, domain, facet_type, resource_name)
+             VALUES (?1, 'full', '', '')",
+            [&claim.scope_key],
+        )
+        .unwrap();
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("gate with a full reason");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+
+        // No snapshot to restore: nothing was built for a selective repair to start from.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let claim = owner_a_with_unfinished_repair(&conn);
+        conn.execute(
+            "DELETE FROM invoke_scope_facet_cache WHERE scope_key = ?1",
+            [&claim.scope_key],
+        )
+        .unwrap();
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("gate without a snapshot");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+
+        // A scope change keeps today's full rebuild for the unfinished scope.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        owner_a_with_unfinished_repair(&conn);
+        super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("b"))
+            .expect("switch to owner b");
+        let back = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("switch back to owner a");
+        assert_eq!(
+            back.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+
+        // This page's own claim in progress is not stale: the gate must not restore over it.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let claim = owner_a_with_unfinished_repair(&conn);
+        conn.execute(
+            "UPDATE invoke_scope_cache_state SET build_session_id = ?2 WHERE scope_key = ?1",
+            params![
+                &claim.scope_key,
+                super::invoke_scope_cache_build_session_id()
+            ],
+        )
+        .unwrap();
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("gate during this page's own repair");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+        assert_eq!(
+            live_owner_a_count(&conn),
+            999,
+            "the repair in progress keeps its cache"
         );
     }
 
