@@ -318,6 +318,9 @@ export const SyncProvider: React.FC<{
     // A startup cache repair that runs after the library is shown (#430). Work that claims the
     // cache or writes images waits for it; an owner-scope change aborts it first.
     const backgroundOwnerCacheRepairRef = useRef<{ promise: Promise<void>; controller: AbortController } | null>(null);
+    // Set while an owner-cache repair has failed this session. Its dirty items are still in the
+    // claim plan, so a sync that refreshes only its own changes must not commit over them.
+    const ownerCacheRepairFailedRef = useRef(false);
     const waitForBackgroundOwnerCacheRepair = useCallback(async () => {
         while (backgroundOwnerCacheRepairRef.current) {
             await backgroundOwnerCacheRepairRef.current.promise;
@@ -512,10 +515,12 @@ export const SyncProvider: React.FC<{
                         elapsedMs: Math.round(performance.now() - refreshStartedAt),
                     });
                     finishCache();
+                    ownerCacheRepairFailedRef.current = false;
                     return cacheRepair;
                 } catch (error) {
                     finishCache('failed', error);
                     if (requiresCacheBuild) {
+                        ownerCacheRepairFailedRef.current = true;
                         await abortInvokeScopeCacheClaim(claim, 'owner-scope refresh');
                     }
                     const message = error instanceof Error ? error.message : String(error);
@@ -552,11 +557,17 @@ export const SyncProvider: React.FC<{
     const startBackgroundOwnerCacheRepair = useCallback(
         (repair?: (signal: AbortSignal) => Promise<unknown>) => {
             const controller = new AbortController();
+            // Run after a repair already in progress rather than competing with it for the claim;
+            // the newer one then sees whether that repair failed.
+            const previous = backgroundOwnerCacheRepairRef.current;
             const promise = (async () => {
                 try {
+                    await previous?.promise;
+                    throwIfInvokeAborted(controller.signal);
                     await (repair ? repair(controller.signal) : refreshAfterOwnerScopeChange(2, controller.signal, true));
                 } catch (error) {
                     // The cache stays dirty in the database, so the next start repairs it again.
+                    ownerCacheRepairFailedRef.current = true;
                     console.warn('[InvokeAI] Background library cache repair did not finish.', error);
                 } finally {
                     if (backgroundOwnerCacheRepairRef.current?.controller === controller) {
@@ -2214,7 +2225,11 @@ export const SyncProvider: React.FC<{
                             : Promise.resolve();
                         try {
                             await Promise.all([facetRefreshPromise, collectionRefreshPromise]);
-                            if (isCapturedScopeCurrent()) {
+                            if (ownerCacheRepairFailedRef.current) {
+                                // An earlier repair failed and its items are still in this claim's
+                                // plan; committing would save them as current. The next start repairs.
+                                await abortInvokeScopeCacheClaim(liveCacheClaim, 'live sync after a failed repair');
+                            } else if (isCapturedScopeCurrent()) {
                                 if (liveCacheClaim.cacheRepair.action !== 'restored') {
                                     await unwrap(
                                         commands.commitActiveInvokeScopeCache({
@@ -2264,6 +2279,11 @@ export const SyncProvider: React.FC<{
                         }
                         await invokeSyncTrace.measure(operationId, 'checkpoint', () => persistInvokeSnapshot(snapshotCursor));
                         startBackgroundOwnerCacheRepair(async (signal) => {
+                            if (ownerCacheRepairFailedRef.current) {
+                                // The claim plan still holds what the failed repair left dirty, so
+                                // refreshing only this catch-up's changes would commit stale counts.
+                                return refreshAfterOwnerScopeChange(2, signal, true);
+                            }
                             const claim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
                             try {
                                 throwIfInvokeAborted(signal);

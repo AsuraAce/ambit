@@ -2982,6 +2982,90 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
             expect(getSync().invokeOwnerScopeState.status).toBe('ready');
         });
+
+        it('repairs the whole plan, not only its own changes, when a catch-up imports after a failed repair', async () => {
+            // The failed repair's items stay in the claim plan. Committing after refreshing only the
+            // catch-up's resources would save stale counts as current, and no start would repair them.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { getSync, releaseClaim } = await startUnchangedAllUsersView();
+            await act(async () => releaseClaim(new Error('disk is busy')));
+            await waitFor(() =>
+                expect(warn).toHaveBeenCalledWith('[InvokeAI] Background library cache repair did not finish.', expect.any(Error))
+            );
+
+            const catchUpResources = { ...dirtyPlan.resources, loras: ['CatchUpLora'] };
+            const combinedPlan = { ...dirtyPlan, resources: { ...dirtyPlan.resources, loras: ['ImportedLora', 'CatchUpLora'] } };
+            mocks.syncImages.mockResolvedValueOnce({
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: 200,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: catchUpResources,
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(combinedPlan, 5));
+            mocks.refreshFacetCacheForResourcesStrict.mockClear();
+            mocks.commitActiveInvokeScopeCache.mockClear();
+
+            await act(async () => {
+                await getSync().startInvokeSync({ mode: 'startup' });
+            });
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 }));
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(combinedPlan.resources);
+            warn.mockRestore();
+        });
+
+        it('leaves the cache dirty when a live sync imports after a failed repair', async () => {
+            // Live sync refreshes only its own resources, so after a failed repair it must not
+            // commit the plan that still holds that repair's items; the next start repairs it.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { getSync, releaseClaim } = await startUnchangedAllUsersView();
+            await act(async () => releaseClaim(new Error('disk is busy')));
+            await waitFor(() =>
+                expect(warn).toHaveBeenCalledWith('[InvokeAI] Background library cache repair did not finish.', expect.any(Error))
+            );
+
+            const liveResources = { ...dirtyPlan.resources, loras: ['LiveLora'] };
+            mocks.syncImages.mockResolvedValueOnce({
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: 200,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: liveResources,
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(
+                createInvokeScopeCacheClaim({ ...dirtyPlan, resources: { ...dirtyPlan.resources, loras: ['ImportedLora', 'LiveLora'] } }, 6)
+            );
+            mocks.commitActiveInvokeScopeCache.mockClear();
+            mocks.abortActiveInvokeScopeCacheBuild.mockClear();
+
+            await act(async () => {
+                await getSync().startInvokeSync({ mode: 'live' });
+            });
+
+            await waitFor(() =>
+                expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 })
+            );
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('repairs again when an import lands during the repair and its commit is rejected', async () => {
+            // A manual import writes images while the repair runs, so the database rejects the
+            // repair's commit for the old generation. The scope must not end up marked current.
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            const afterImportPlan = { ...dirtyPlan, resources: { ...dirtyPlan.resources, loras: ['ImportedLora', 'ManualLora'] } };
+            mocks.commitActiveInvokeScopeCache.mockRejectedValueOnce(
+                new Error('Invoke owner cache changed while it was being prepared (state: Dirty, generation: 4).')
+            );
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(afterImportPlan, 4));
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 4 }));
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenLastCalledWith(afterImportPlan.resources);
+            expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+        });
     });
 
     it('runs the board-owner repair when canonical board synchronization is enabled later', async () => {
