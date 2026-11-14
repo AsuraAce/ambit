@@ -95,7 +95,8 @@ vi.mock('../../services/db/collectionRepo', () => ({
 }));
 vi.mock('../../stores/libraryStore', () => ({
     useLibraryStore: Object.assign(
-        (selector: (state: { keywordStatsEnabled: boolean }) => unknown) => selector({ keywordStatsEnabled: false }),
+        (selector: (state: { keywordStatsEnabled: boolean; isOwnerCacheRepairing: boolean }) => unknown) =>
+            selector({ keywordStatsEnabled: false, isOwnerCacheRepairing: false }),
         {
             getState: () => ({
                 incrementFacetCacheVersion: mocks.incrementFacetCacheVersion,
