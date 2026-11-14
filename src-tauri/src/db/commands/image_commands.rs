@@ -1524,12 +1524,7 @@ fn restore_scope_cache(conn: &Connection, scope_key: &str) -> Result<(), String>
     mask_restored_scope_thumbnails(conn)
 }
 
-/// A scope snapshot keeps the thumbnail sensitivity it was saved with, so a privacy mask
-/// widened since then would show through it until the cache repair finishes. Raise the
-/// restored flags to the current mask; lowering them is left to the repair.
-fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
-    conn.execute(
-        "UPDATE facet_cache
+const RESTORED_FACET_MASK_SQL: &str = "UPDATE facet_cache
          SET thumbnail_is_sensitive = 1
          WHERE COALESCE(thumbnail_is_sensitive, 0) = 0
            AND thumbnail_sensitivity_override IS NOT 0
@@ -1543,24 +1538,38 @@ fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
                    WHERE i.id = facet_cache.thumbnail_image_id
                      AND COALESCE(i.privacy_hidden, 0) != 0
                )
-           )",
-        [],
-    )
-    .map_err(|error| error.to_string())?;
-    conn.execute(
-        "UPDATE collections
+           )";
+
+const RESTORED_COLLECTION_MASK_SQL: &str = "UPDATE collections
          SET dynamic_thumbnail_is_sensitive = 1
          WHERE COALESCE(dynamic_thumbnail_is_sensitive, 0) = 0
            AND dynamic_thumbnail_path IS NOT NULL AND dynamic_thumbnail_path != ''
-           AND EXISTS (
-               SELECT 1 FROM images i
-               WHERE (i.thumbnail_path = collections.dynamic_thumbnail_path
-                      OR i.path = collections.dynamic_thumbnail_path)
-                 AND COALESCE(i.privacy_hidden, 0) != 0
-           )",
-        [],
-    )
-    .map_err(|error| error.to_string())?;
+           AND (
+               -- Two lookups rather than one OR so each uses its own index;
+               -- an OR across the columns scans all images per collection.
+               -- The literal thumbnail_path guards match the partial index
+               -- idx_images_thumbnail_path_lookup_v1.
+               EXISTS (
+                   SELECT 1 FROM images i
+                   WHERE i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+                     AND i.thumbnail_path = collections.dynamic_thumbnail_path
+                     AND COALESCE(i.privacy_hidden, 0) != 0
+               )
+               OR EXISTS (
+                   SELECT 1 FROM images i
+                   WHERE i.path = collections.dynamic_thumbnail_path
+                     AND COALESCE(i.privacy_hidden, 0) != 0
+               )
+           )";
+
+/// A scope snapshot keeps the thumbnail sensitivity it was saved with, so a privacy mask
+/// widened since then would show through it until the cache repair finishes. Raise the
+/// restored flags to the current mask; lowering them is left to the repair.
+fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
+    conn.execute(RESTORED_FACET_MASK_SQL, [])
+        .map_err(|error| error.to_string())?;
+    conn.execute(RESTORED_COLLECTION_MASK_SQL, [])
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -4598,7 +4607,8 @@ mod tests {
         super::save_images_batch_inner(&conn, &[hidden.clone(), shown.clone()])
             .expect("insert images");
         conn.execute(
-            "UPDATE images SET privacy_hidden = 1 WHERE id = 'hidden-image'",
+            "UPDATE images SET privacy_hidden = 1, thumbnail_path = 'thumbs/hidden.webp'
+             WHERE id = 'hidden-image'",
             [],
         )
         .expect("mask image after the snapshot");
@@ -4619,13 +4629,17 @@ mod tests {
                  ('scope', 'checkpoints', 'HiddenThumb', 1, 'hidden-image', 0, NULL),
                  ('scope', 'checkpoints', 'ShownThumb', 1, 'shown-image', 0, NULL),
                  ('scope', 'loras', 'SecretButAllowed', 1, 'hidden-image', 0, 0);
-             INSERT INTO collections (id, name) VALUES ('masked', 'Masked'), ('visible', 'Visible');",
+             INSERT INTO collections (id, name) VALUES
+                 ('masked', 'Masked'), ('masked-thumb', 'Masked thumb'), ('visible', 'Visible');",
         )
         .expect("seed snapshot saved before the mask changed");
         conn.execute(
             "INSERT INTO invoke_scope_collection_cache (
                  scope_key, collection_id, dynamic_thumbnail_path, dynamic_thumbnail_is_sensitive
-             ) VALUES ('scope', 'masked', ?1, 0), ('scope', 'visible', ?2, 0)",
+             ) VALUES
+                 ('scope', 'masked', ?1, 0),
+                 ('scope', 'masked-thumb', 'thumbs/hidden.webp', 0),
+                 ('scope', 'visible', ?2, 0)",
             params![hidden.path, shown.path],
         )
         .expect("seed collection snapshot");
@@ -4652,8 +4666,38 @@ mod tests {
             )
             .expect("restored collection")
         };
-        assert_eq!(collection("masked"), 1);
+        assert_eq!(collection("masked"), 1, "image path is now hidden");
+        assert_eq!(
+            collection("masked-thumb"),
+            1,
+            "thumbnail path is now hidden"
+        );
         assert_eq!(collection("visible"), 0);
+    }
+
+    #[test]
+    fn restored_scope_mask_looks_up_images_by_index() {
+        // The mask runs on every startup restore, so a full scan of images per collection or
+        // facet blocks a large library for minutes before it is shown (#430).
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        for sql in [
+            super::RESTORED_FACET_MASK_SQL,
+            super::RESTORED_COLLECTION_MASK_SQL,
+        ] {
+            let mut stmt = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("explain mask");
+            let plan: Vec<String> = stmt
+                .query_map([], |row| row.get::<_, String>(3))
+                .expect("plan rows")
+                .collect::<Result<_, _>>()
+                .expect("plan");
+            assert!(
+                !plan.iter().any(|step| step.starts_with("SCAN i")),
+                "mask must not scan images: {plan:?}"
+            );
+        }
     }
 
     #[cfg(windows)]
