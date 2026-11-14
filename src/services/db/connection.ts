@@ -77,6 +77,10 @@ const getOpeningPhase = async (): Promise<StartupDbPhase> => {
 // already opened for this URL. Loading again would wait for every query the previous page left
 // running, minutes on a large library (#431). A first start has no pool and always loads.
 const REUSE_RETRY_DELAY_MS = 250;
+// Each timed-out probe already waited the pool's 30 s acquire timeout, so this is about two minutes.
+const REUSE_MAX_TIMEOUTS = 4;
+// sqlx's `Error::PoolTimedOut`: the pool exists, but the previous page's queries hold every connection.
+const POOL_ACQUIRE_TIMEOUT = 'pool timed out while waiting for an open connection';
 const reuseLoadedDatabase = async (databaseUrl: string): Promise<Database | null> => {
     const loaded = Database.get(databaseUrl);
     for (let attempt = 1; ; attempt += 1) {
@@ -84,10 +88,14 @@ const reuseLoadedDatabase = async (databaseUrl: string): Promise<Database | null
             await loaded.select('SELECT 1');
             return loaded;
         } catch (error) {
-            // Only the plugin's "not loaded" error means this process has no pool. Any other failure,
-            // such as an acquire timeout while the previous page's queries hold every connection,
-            // means the pool exists, and a load would only queue behind those queries.
-            if (String(error).includes('not loaded')) return null;
+            // Only an acquire timeout is worth waiting out: a load would only queue behind those
+            // queries. "Not loaded" means this process has no pool yet. Any other failure, or a
+            // pool still busy after the cap, goes to the load, which migrates or reports the error.
+            if (!String(error).includes(POOL_ACQUIRE_TIMEOUT)) return null;
+            if (attempt >= REUSE_MAX_TIMEOUTS) {
+                console.warn('[Startup DB] The open database pool stayed busy; loading it again', error);
+                return null;
+            }
             if (attempt === 1) console.warn('[Startup DB] Waiting for the open database pool', error);
             await new Promise((resolve) => setTimeout(resolve, REUSE_RETRY_DELAY_MS));
         }

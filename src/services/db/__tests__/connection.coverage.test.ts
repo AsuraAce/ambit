@@ -155,6 +155,36 @@ describe('database connection', () => {
         warn.mockRestore();
     });
 
+    it('loads instead of retrying when the probe fails for any other reason', async () => {
+        // Retrying a lasting failure (here the SQL guard) would hold the start on the splash
+        // forever; the load either recovers or reaches the fatal screen.
+        const loaded = { ...createDatabaseMock(), select: vi.fn().mockRejectedValue('could not check this statement') };
+        databaseGetMock.mockReturnValue(loaded);
+        const { getDb } = await import('../connection');
+
+        await expect(getDb()).resolves.toBeTruthy();
+
+        expect(loaded.select).toHaveBeenCalledOnce();
+        expect(databaseLoadMock).toHaveBeenCalledOnce();
+    });
+
+    it('stops waiting on a pool that stays busy and loads it again', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const loaded = {
+            ...createDatabaseMock(),
+            select: vi.fn().mockRejectedValue('error returned from database: pool timed out while waiting for an open connection'),
+        };
+        databaseGetMock.mockReturnValue(loaded);
+        const { getDb } = await import('../connection');
+
+        await expect(getDb()).resolves.toBeTruthy();
+
+        expect(loaded.select).toHaveBeenCalledTimes(4);
+        expect(databaseLoadMock).toHaveBeenCalledOnce();
+        expect(warn).toHaveBeenCalledWith('[Startup DB] The open database pool stayed busy; loading it again', expect.anything());
+        warn.mockRestore();
+    });
+
     // "May take longer" is only promised when the plugin will really migrate.
     it('reports a schema update only when migrations are pending', async () => {
         getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 2 });
