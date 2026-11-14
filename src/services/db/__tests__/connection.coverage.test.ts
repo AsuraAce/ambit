@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const databaseLoadMock = vi.hoisted(() => vi.fn());
+const databaseGetMock = vi.hoisted(() => vi.fn());
 const getMainDatabaseUrlMock = vi.hoisted(() => vi.fn());
+const getPendingMigrationCountMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
         load: databaseLoadMock,
+        get: databaseGetMock,
     },
 }));
 
 vi.mock('../../../bindings', () => ({
     commands: {
         getMainDatabaseUrl: getMainDatabaseUrlMock,
+        getPendingMigrationCount: getPendingMigrationCountMock,
     },
 }));
 
@@ -28,6 +32,11 @@ describe('database connection', () => {
             data: 'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db',
         });
         databaseLoadMock.mockResolvedValue(createDatabaseMock());
+        // A first start: the plugin has no pool for this URL yet.
+        databaseGetMock.mockImplementation((path: string) => ({
+            select: vi.fn().mockRejectedValue(`database ${path} not loaded`),
+        }));
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 0 });
     });
 
     it('loads the backend-selected main database URL', async () => {
@@ -86,11 +95,99 @@ describe('database connection', () => {
 
         expect(first).toBe(database);
         expect(second).toBe(database);
-        expect(onPhase).toHaveBeenCalledWith('Updating database schema');
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(onPhase).not.toHaveBeenCalledWith('Updating database schema');
         expect(onPhase).toHaveBeenCalledWith('Optimizing database');
         expect(onPhase).toHaveBeenCalledWith('Loading library');
         expect(databaseLoadMock).toHaveBeenCalledTimes(1);
         expect(database.execute).toHaveBeenCalledTimes(12);
+    });
+
+    // A reload keeps the process's pool. Loading again would wait for every query the
+    // previous page left running (#431).
+    it('reuses the pool this process already loaded on a reload, without loading or checking migrations', async () => {
+        const loaded = { ...createDatabaseMock(), select: vi.fn().mockResolvedValue([{ 1: 1 }]) };
+        databaseGetMock.mockReturnValue(loaded);
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await expect(getDb({ onPhase })).resolves.toBe(loaded);
+
+        expect(databaseGetMock).toHaveBeenCalledWith('sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db');
+        expect(loaded.select).toHaveBeenCalledWith('SELECT 1');
+        expect(databaseLoadMock).not.toHaveBeenCalled();
+        expect(getPendingMigrationCountMock).not.toHaveBeenCalled();
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(onPhase).not.toHaveBeenCalledWith('Updating database schema');
+        expect(loaded.execute).toHaveBeenCalledWith('PRAGMA busy_timeout=60000');
+    });
+
+    it('loads, and so migrates, when the plugin has no pool for the database yet', async () => {
+        const onPhase = vi.fn();
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 1 });
+        const { getDb } = await import('../connection');
+
+        await getDb({ onPhase });
+
+        expect(databaseLoadMock).toHaveBeenCalledOnce();
+        expect(onPhase).toHaveBeenCalledWith('Updating database schema');
+    });
+
+    it('keeps waiting on the open pool after an acquire timeout instead of loading', async () => {
+        // A timeout proves the pool exists. A load would only queue for the plugin's write lock
+        // behind the previous page's queries (130.7 s in the #431 F5 run).
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const loaded = {
+            ...createDatabaseMock(),
+            select: vi
+                .fn()
+                .mockRejectedValueOnce('pool timed out while waiting for an open connection')
+                .mockResolvedValueOnce([{ 1: 1 }]),
+        };
+        databaseGetMock.mockReturnValue(loaded);
+        const { getDb } = await import('../connection');
+
+        await expect(getDb()).resolves.toBe(loaded);
+
+        expect(loaded.select).toHaveBeenCalledTimes(2);
+        expect(databaseLoadMock).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith('[Startup DB] Waiting for the open database pool', expect.anything());
+        warn.mockRestore();
+    });
+
+    // "May take longer" is only promised when the plugin will really migrate.
+    it('reports a schema update only when migrations are pending', async () => {
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 2 });
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await getDb({ onPhase });
+
+        expect(onPhase).toHaveBeenCalledWith('Updating database schema');
+        expect(onPhase).not.toHaveBeenCalledWith('Opening library');
+    });
+
+    // The check chooses copy only: a failure must never stop or hide a migration.
+    it('shows neutral copy and still loads the database when the migration check fails', async () => {
+        getPendingMigrationCountMock.mockRejectedValue(new Error('database unreadable'));
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await expect(getDb({ onPhase })).resolves.toBeTruthy();
+
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(databaseLoadMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a check error result like a failed check', async () => {
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'error', error: 'query failed' });
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await getDb({ onPhase });
+
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(databaseLoadMock).toHaveBeenCalledTimes(1);
     });
 
     it('retries database URL lookup after a transient backend failure', async () => {

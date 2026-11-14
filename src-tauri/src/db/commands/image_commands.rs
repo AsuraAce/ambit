@@ -1341,10 +1341,16 @@ fn read_scope_cache_status(
     Ok(state.unwrap_or_default())
 }
 
+/// `stale_claims_for` is this page's claim session when the active scope is unchanged.
+/// A `building` claim left by another session (a reload, a crash or a quit mid-repair)
+/// then plans like `dirty`: commit is the only thing that clears dirty items, so they
+/// still list everything changed since the last built snapshot. A scope change passes
+/// `None` and keeps the full rebuild.
 fn read_scope_cache_repair_plan(
     conn: &Connection,
     scope_key: &str,
     status: &FacetScopeCacheStatus,
+    stale_claims_for: Option<&str>,
 ) -> Result<InvokeScopeCacheRepairPlan, String> {
     if status.state == FacetScopeCacheState::Ready
         && status.built_generation == Some(status.generation)
@@ -1354,7 +1360,24 @@ fn read_scope_cache_repair_plan(
             ..Default::default()
         });
     }
-    if status.state != FacetScopeCacheState::Dirty || status.built_generation.is_none() {
+    let plans_like_dirty = match (status.state, stale_claims_for) {
+        (FacetScopeCacheState::Dirty, _) => true,
+        // Without a snapshot there is nothing to repair selectively.
+        (FacetScopeCacheState::Building, Some(session_id)) if status.facet_count > 0 => {
+            let claim_session: Option<String> = conn
+                .query_row(
+                    "SELECT build_session_id FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                    [scope_key],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .flatten();
+            claim_session.as_deref() != Some(session_id)
+        }
+        _ => false,
+    };
+    if !plans_like_dirty || status.built_generation.is_none() {
         return Ok(InvokeScopeCacheRepairPlan::default());
     }
 
@@ -1521,24 +1544,109 @@ fn restore_scope_cache(conn: &Connection, scope_key: &str) -> Result<(), String>
         [scope_key],
     )
     .map_err(|error| error.to_string())?;
+    mask_restored_scope_thumbnails(conn)
+}
+
+/// SQL that is true when `path_column` names a thumbnail of an image the privacy mask hides.
+/// Two lookups rather than one OR so each uses its own index; an OR across the columns
+/// scans all images for every row. The literal guards match the partial index
+/// idx_images_thumbnail_path_lookup_v1.
+fn hidden_image_at(path_column: &str) -> String {
+    format!(
+        "(EXISTS (
+             SELECT 1 FROM images i
+             WHERE i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+               AND i.thumbnail_path = {path_column}
+               AND COALESCE(i.privacy_hidden, 0) != 0
+         )
+         OR EXISTS (
+             SELECT 1 FROM images i
+             WHERE i.path = {path_column}
+               AND COALESCE(i.privacy_hidden, 0) != 0
+         ))"
+    )
+}
+
+/// The statements that bring a restored scope snapshot up to the current privacy mask,
+/// in order: drop safe thumbnails that are now hidden themselves, then raise sensitivity.
+fn restored_scope_mask_statements() -> [String; 4] {
+    [
+        format!(
+            "UPDATE facet_cache
+             SET safe_thumbnail_path = NULL
+             WHERE safe_thumbnail_path IS NOT NULL AND safe_thumbnail_path != ''
+               AND {}",
+            hidden_image_at("facet_cache.safe_thumbnail_path")
+        ),
+        format!(
+            "UPDATE facet_cache
+             SET thumbnail_is_sensitive = 1
+             WHERE COALESCE(thumbnail_is_sensitive, 0) = 0
+               AND thumbnail_sensitivity_override IS NOT 0
+               AND (
+                   EXISTS (
+                       SELECT 1 FROM privacy_mask_keywords k
+                       WHERE LOWER(facet_cache.resource_name) LIKE '%' || k.keyword || '%'
+                   )
+                   OR EXISTS (
+                       SELECT 1 FROM images i
+                       WHERE i.id = facet_cache.thumbnail_image_id
+                         AND COALESCE(i.privacy_hidden, 0) != 0
+                   )
+                   OR (
+                       facet_cache.thumbnail_path IS NOT NULL
+                       AND facet_cache.thumbnail_path != ''
+                       AND {}
+                   )
+               )",
+            hidden_image_at("facet_cache.thumbnail_path")
+        ),
+        format!(
+            "UPDATE collections
+             SET dynamic_safe_thumbnail_path = NULL
+             WHERE dynamic_safe_thumbnail_path IS NOT NULL AND dynamic_safe_thumbnail_path != ''
+               AND {}",
+            hidden_image_at("collections.dynamic_safe_thumbnail_path")
+        ),
+        format!(
+            "UPDATE collections
+             SET dynamic_thumbnail_is_sensitive = 1
+             WHERE COALESCE(dynamic_thumbnail_is_sensitive, 0) = 0
+               AND dynamic_thumbnail_path IS NOT NULL AND dynamic_thumbnail_path != ''
+               AND {}",
+            hidden_image_at("collections.dynamic_thumbnail_path")
+        ),
+    ]
+}
+
+/// A scope snapshot keeps the thumbnails and sensitivity it was saved with, so a privacy
+/// mask widened since then would show through it until the cache repair finishes. Bring
+/// the restored rows up to the current mask; relaxing them is left to the repair.
+fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
+    for sql in restored_scope_mask_statements() {
+        conn.execute(&sql, []).map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
-fn invoke_scope_cache_build_session_id() -> &'static str {
-    static SESSION_ID: OnceLock<String> = OnceLock::new();
-    SESSION_ID.get_or_init(|| {
+fn invoke_scope_cache_build_session_id() -> String {
+    static PROCESS_ID: OnceLock<String> = OnceLock::new();
+    let process = PROCESS_ID.get_or_init(|| {
         let started_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
         format!("{}-{started_at}", std::process::id())
-    })
+    });
+    // Each page load is its own session: after F5 the old page can no longer
+    // commit or abort, so the new page must be able to take its claim over (#432).
+    format!("{process}-{}", crate::db::background_work::current_page())
 }
 
 fn begin_active_scope_cache_build_inner(
     conn: &Connection,
 ) -> Result<InvokeScopeCacheBuildClaim, String> {
-    begin_active_scope_cache_build_for_session_inner(conn, invoke_scope_cache_build_session_id())
+    begin_active_scope_cache_build_for_session_inner(conn, &invoke_scope_cache_build_session_id())
 }
 
 fn begin_active_scope_cache_build_for_session_inner(
@@ -1553,7 +1661,8 @@ fn begin_active_scope_cache_build_for_session_inner(
         )
         .map_err(|error| error.to_string())?;
     let initial_status = read_scope_cache_status(conn, &scope_key)?;
-    let cache_repair = read_scope_cache_repair_plan(conn, &scope_key, &initial_status)?;
+    let cache_repair =
+        read_scope_cache_repair_plan(conn, &scope_key, &initial_status, Some(session_id))?;
     let cache_status = if cache_repair.action == InvokeScopeCacheAction::Restored {
         initial_status
     } else {
@@ -1592,7 +1701,11 @@ fn commit_active_scope_cache_inner(
     conn: &Connection,
     ticket: &InvokeScopeCacheBuildTicket,
 ) -> Result<FacetScopeCacheStatus, String> {
-    commit_active_scope_cache_for_session_inner(conn, ticket, invoke_scope_cache_build_session_id())
+    commit_active_scope_cache_for_session_inner(
+        conn,
+        ticket,
+        &invoke_scope_cache_build_session_id(),
+    )
 }
 
 fn commit_active_scope_cache_for_session_inner(
@@ -1658,7 +1771,7 @@ fn abort_active_scope_cache_build_inner(
     abort_active_scope_cache_build_for_session_inner(
         conn,
         ticket,
-        invoke_scope_cache_build_session_id(),
+        &invoke_scope_cache_build_session_id(),
     )
 }
 
@@ -1776,7 +1889,12 @@ fn refresh_invoke_owner_scope_inner(
     .map_err(|error| error.to_string())?;
     if !input.force_refresh && previous.as_ref() == Some(&next) {
         let status = read_scope_cache_status(&tx, &scope_key)?;
-        let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &status)?;
+        let cache_repair = read_scope_cache_repair_plan(
+            &tx,
+            &scope_key,
+            &status,
+            Some(&invoke_scope_cache_build_session_id()),
+        )?;
         if cache_repair.action != InvokeScopeCacheAction::Full {
             measure_owner_preparation_stage("cache-restore", || {
                 restore_scope_cache(&tx, &scope_key)
@@ -1871,7 +1989,7 @@ fn refresh_invoke_owner_scope_inner(
     .map_err(|e| e.to_string())?;
 
     let cache_status = read_scope_cache_status(&tx, &scope_key)?;
-    let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &cache_status)?;
+    let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &cache_status, None)?;
     if cache_repair.action != InvokeScopeCacheAction::Full {
         measure_owner_preparation_stage("cache-restore", || restore_scope_cache(&tx, &scope_key))?;
     }
@@ -4547,6 +4665,162 @@ mod tests {
         );
     }
 
+    #[test]
+    fn restored_scope_snapshot_hides_thumbnails_masked_since_it_was_saved() {
+        // Startup can show a restored snapshot while its repair runs in the background, so the
+        // snapshot must never reveal a thumbnail that the current privacy mask hides.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let hidden = create_image_record("hidden-image", 100, 10, "{}");
+        let shown = create_image_record("shown-image", 101, 10, "{}");
+        let safe = create_image_record("safe-image", 102, 10, "{}");
+        super::save_images_batch_inner(&conn, &[hidden.clone(), shown.clone(), safe])
+            .expect("insert images");
+        conn.execute_batch(
+            "UPDATE images SET thumbnail_path = 'thumbs/shown.webp' WHERE id = 'shown-image';
+             UPDATE images SET privacy_hidden = 1, thumbnail_path = 'thumbs/hidden.webp'
+             WHERE id = 'hidden-image';
+             UPDATE images SET privacy_hidden = 1, thumbnail_path = 'thumbs/safe.webp'
+             WHERE id = 'safe-image';",
+        )
+        .expect("mask images after the snapshot, including one used as a safe thumbnail");
+        conn.execute(
+            "INSERT INTO privacy_mask_keywords (keyword) VALUES ('secret')",
+            [],
+        )
+        .expect("widen mask after the snapshot");
+        conn.execute_batch(
+            "INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, status, generation, built_generation, updated_at
+             ) VALUES ('scope', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'all', 'dirty', 2, 1, 0);
+             INSERT INTO invoke_scope_facet_cache (
+                 scope_key, facet_type, resource_name, count, thumbnail_path,
+                 safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive,
+                 thumbnail_sensitivity_override
+             ) VALUES
+                 ('scope', 'loras', 'MySecretStyle', 1, NULL, NULL, NULL, 0, NULL),
+                 ('scope', 'checkpoints', 'HiddenThumb', 1, NULL, NULL, 'hidden-image', 0, NULL),
+                 ('scope', 'checkpoints', 'ShownThumb', 1, NULL, NULL, 'shown-image', 0, NULL),
+                 ('scope', 'loras', 'SecretButAllowed', 1, NULL, NULL, 'hidden-image', 0, 0),
+                 ('scope', 'checkpoints', 'SafeNowHidden', 1, 'thumbs/hidden.webp',
+                  'thumbs/safe.webp', 'hidden-image', 1, NULL),
+                 ('scope', 'checkpoints', 'ShowsSafeNowHidden', 1, 'thumbs/safe.webp',
+                  'thumbs/safe.webp', NULL, 0, NULL),
+                 ('scope', 'checkpoints', 'SafeStillShown', 1, 'thumbs/hidden.webp',
+                  'thumbs/shown.webp', 'hidden-image', 1, NULL);
+             INSERT INTO collections (id, name) VALUES
+                 ('masked', 'Masked'), ('masked-thumb', 'Masked thumb'), ('visible', 'Visible'),
+                 ('safe-now-hidden', 'Safe now hidden'), ('safe-still-shown', 'Safe still shown');",
+        )
+        .expect("seed snapshot saved before the mask changed");
+        conn.execute(
+            "INSERT INTO invoke_scope_collection_cache (
+                 scope_key, collection_id, dynamic_thumbnail_path, dynamic_safe_thumbnail_path,
+                 dynamic_thumbnail_is_sensitive
+             ) VALUES
+                 ('scope', 'masked', ?1, NULL, 0),
+                 ('scope', 'masked-thumb', 'thumbs/hidden.webp', NULL, 0),
+                 ('scope', 'visible', ?2, NULL, 0),
+                 ('scope', 'safe-now-hidden', 'thumbs/hidden.webp', 'thumbs/safe.webp', 1),
+                 ('scope', 'safe-still-shown', 'thumbs/hidden.webp', 'thumbs/shown.webp', 1)",
+            params![hidden.path, shown.path],
+        )
+        .expect("seed collection snapshot");
+
+        super::restore_scope_cache(&conn, "scope").expect("restore snapshot");
+
+        let facet = |name: &str| -> i64 {
+            conn.query_row(
+                "SELECT thumbnail_is_sensitive FROM facet_cache WHERE resource_name = ?1",
+                [name],
+                |row| row.get(0),
+            )
+            .expect("restored facet")
+        };
+        assert_eq!(facet("MySecretStyle"), 1, "name matches a masked keyword");
+        assert_eq!(facet("HiddenThumb"), 1, "thumbnail image is now hidden");
+        assert_eq!(facet("ShownThumb"), 0, "unmasked thumbnails stay visible");
+        assert_eq!(facet("SecretButAllowed"), 0, "a user override still wins");
+        // A safe thumbnail is shown unblurred in place of a sensitive one, so a safe image
+        // hidden since the snapshot must stop being offered.
+        let facet_safe = |name: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT safe_thumbnail_path FROM facet_cache WHERE resource_name = ?1",
+                [name],
+                |row| row.get(0),
+            )
+            .expect("restored facet safe thumbnail")
+        };
+        assert_eq!(
+            facet_safe("SafeNowHidden"),
+            None,
+            "hidden safe thumbnail dropped"
+        );
+        assert_eq!(facet("SafeNowHidden"), 1);
+        assert_eq!(facet_safe("ShowsSafeNowHidden"), None);
+        assert_eq!(
+            facet("ShowsSafeNowHidden"),
+            1,
+            "a shown thumbnail hidden since the snapshot is masked even without an image id"
+        );
+        assert_eq!(
+            facet_safe("SafeStillShown").as_deref(),
+            Some("thumbs/shown.webp"),
+            "a safe thumbnail that is still visible is kept"
+        );
+        let collection = |id: &str| -> i64 {
+            conn.query_row(
+                "SELECT dynamic_thumbnail_is_sensitive FROM collections WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .expect("restored collection")
+        };
+        assert_eq!(collection("masked"), 1, "image path is now hidden");
+        assert_eq!(
+            collection("masked-thumb"),
+            1,
+            "thumbnail path is now hidden"
+        );
+        assert_eq!(collection("visible"), 0);
+        let collection_safe = |id: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT dynamic_safe_thumbnail_path FROM collections WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .expect("restored collection safe thumbnail")
+        };
+        assert_eq!(collection_safe("safe-now-hidden"), None);
+        assert_eq!(collection("safe-now-hidden"), 1);
+        assert_eq!(
+            collection_safe("safe-still-shown").as_deref(),
+            Some("thumbs/shown.webp")
+        );
+    }
+
+    #[test]
+    fn restored_scope_mask_looks_up_images_by_index() {
+        // The mask runs on every startup restore, so a full scan of images per collection or
+        // facet blocks a large library for minutes before it is shown (#430).
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        for sql in super::restored_scope_mask_statements() {
+            let mut stmt = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("explain mask");
+            let plan: Vec<String> = stmt
+                .query_map([], |row| row.get::<_, String>(3))
+                .expect("plan rows")
+                .collect::<Result<_, _>>()
+                .expect("plan");
+            assert!(
+                !plan.iter().any(|step| step.starts_with("SCAN i")),
+                "mask must not scan images: {plan:?}"
+            );
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn owner_scope_reuses_cache_when_windows_path_casing_changes() {
@@ -4857,6 +5131,193 @@ mod tests {
         assert_eq!(
             retry.cache_status.state,
             super::FacetScopeCacheState::Building
+        );
+    }
+
+    fn owner_scope_input(owner: &str) -> super::InvokeOwnerScopeInput {
+        super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some(owner.to_string()),
+            force_refresh: false,
+        }
+    }
+
+    /// Owner a has a built snapshot, then one LoRA changes and an earlier page
+    /// claims the repair and never finishes it, as after F5 or a quit mid-repair.
+    fn owner_a_with_unfinished_repair(conn: &Connection) -> super::InvokeScopeCacheBuildClaim {
+        apply_all_migrations(conn);
+        for (id, owner) in [("owner-a", "a"), ("owner-b", "b")] {
+            let mut image = create_image_record(id, 100, 10, "{}");
+            image.path = format!("C:/Invoke/outputs/images/{id}.png");
+            image.invoke_image_name = Some(format!("{id}.png"));
+            image.invoke_owner_id = Some(owner.to_string());
+            super::save_images_batch_inner(conn, &[image]).expect("insert owner row");
+        }
+        super::refresh_invoke_owner_scope_inner(conn, &owner_scope_input("a"))
+            .expect("activate owner a");
+        let first = super::begin_active_scope_cache_build_for_session_inner(conn, "page-1")
+            .expect("first build");
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Owner A', 11)",
+            [],
+        )
+        .unwrap();
+        super::commit_active_scope_cache_for_session_inner(conn, &first.ticket(), "page-1")
+            .expect("commit first build");
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('owner-a', 'NewDetailer')",
+            [],
+        )
+        .expect("change one owner-a resource");
+        let unfinished = super::begin_active_scope_cache_build_for_session_inner(conn, "page-1")
+            .expect("claim the repair");
+        assert_eq!(
+            unfinished.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        // The repair had started rewriting the live cache when its page went away.
+        conn.execute("UPDATE facet_cache SET count = 999", [])
+            .unwrap();
+        unfinished
+    }
+
+    fn live_owner_a_count(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT count FROM facet_cache WHERE resource_name = 'Owner A'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn reloaded_page_takes_over_an_unfinished_repair_and_repairs_only_what_changed() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let old_claim = owner_a_with_unfinished_repair(&conn);
+
+        // The reloaded page's gate: same scope, a claim from another page session.
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("reloaded page gate");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        assert_eq!(
+            gate.cache_repair.resources.loras,
+            vec!["NewDetailer".to_string()]
+        );
+        assert_eq!(
+            live_owner_a_count(&conn),
+            11,
+            "the gate restores the snapshot under the selective repair"
+        );
+
+        let new_claim = super::begin_active_scope_cache_build_for_session_inner(&conn, "page-2")
+            .expect("the reloaded page takes the claim over (#432)");
+        assert_eq!(new_claim.generation, old_claim.generation);
+        assert_eq!(
+            new_claim.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+
+        // The old page's work unwinds late: it must not release or finish the new claim.
+        super::abort_active_scope_cache_build_for_session_inner(
+            &conn,
+            &old_claim.ticket(),
+            "page-1",
+        )
+        .expect("late abort runs");
+        super::commit_active_scope_cache_for_session_inner(&conn, &old_claim.ticket(), "page-1")
+            .expect_err("a late commit from the old page must be refused");
+        let owner: String = conn
+            .query_row(
+                "SELECT build_session_id FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                [&new_claim.scope_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(owner, "page-2");
+
+        let committed = super::commit_active_scope_cache_for_session_inner(
+            &conn,
+            &new_claim.ticket(),
+            "page-2",
+        )
+        .expect("the new page commits its repair");
+        assert_eq!(committed.state, super::FacetScopeCacheState::Ready);
+        assert_eq!(committed.built_generation, Some(new_claim.generation));
+    }
+
+    #[test]
+    fn unfinished_repair_still_rebuilds_fully_when_selective_would_be_wrong() {
+        // A full-rebuild reason recorded before the claim keeps the full rebuild.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let claim = owner_a_with_unfinished_repair(&conn);
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_dirty_items (scope_key, domain, facet_type, resource_name)
+             VALUES (?1, 'full', '', '')",
+            [&claim.scope_key],
+        )
+        .unwrap();
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("gate with a full reason");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+
+        // No snapshot to restore: nothing was built for a selective repair to start from.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let claim = owner_a_with_unfinished_repair(&conn);
+        conn.execute(
+            "DELETE FROM invoke_scope_facet_cache WHERE scope_key = ?1",
+            [&claim.scope_key],
+        )
+        .unwrap();
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("gate without a snapshot");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+
+        // A scope change keeps today's full rebuild for the unfinished scope.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        owner_a_with_unfinished_repair(&conn);
+        super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("b"))
+            .expect("switch to owner b");
+        let back = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("switch back to owner a");
+        assert_eq!(
+            back.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+
+        // This page's own claim in progress is not stale: the gate must not restore over it.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        let claim = owner_a_with_unfinished_repair(&conn);
+        conn.execute(
+            "UPDATE invoke_scope_cache_state SET build_session_id = ?2 WHERE scope_key = ?1",
+            params![
+                &claim.scope_key,
+                super::invoke_scope_cache_build_session_id()
+            ],
+        )
+        .unwrap();
+        let gate = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("gate during this page's own repair");
+        assert_eq!(
+            gate.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+        assert_eq!(
+            live_owner_a_count(&conn),
+            999,
+            "the repair in progress keeps its cache"
         );
     }
 

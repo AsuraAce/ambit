@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const databaseLoadMock = vi.hoisted(() => vi.fn());
+const databaseGetMock = vi.hoisted(() => vi.fn());
 const getMainDatabaseUrlMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
         load: databaseLoadMock,
+        get: databaseGetMock,
     },
 }));
 
@@ -28,6 +30,10 @@ describe('database connection', () => {
             data: 'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db',
         });
         databaseLoadMock.mockResolvedValue(createDatabaseMock());
+        // A first start: the plugin has no pool for this URL yet.
+        databaseGetMock.mockImplementation((path: string) => ({
+            select: vi.fn().mockRejectedValue(`database ${path} not loaded`),
+        }));
     });
 
     afterEach(() => {

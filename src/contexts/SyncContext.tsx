@@ -235,6 +235,10 @@ interface SyncContextType {
     invokeOwnerScopeState: InvokeOwnerScopeState;
     selectInvokeOwnerScope: (selection: InvokeOwnerSelection) => Promise<boolean>;
     retryInvokeOwnerScope: () => Promise<boolean>;
+    /** Resolves once no background startup cache repair is running; never rejects. */
+    waitForOwnerCacheRepair: () => Promise<void>;
+    /** Repairs and commits the owner cache after an import; false when the scope is not ready or it failed. */
+    repairOwnerCacheAfterImport: () => Promise<boolean>;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
@@ -311,13 +315,49 @@ export const SyncProvider: React.FC<{
         viewCommitted: false,
     }));
     const activeInvokeSyncRunRef = useRef<ActiveInvokeSyncRun | null>(null);
+    // A startup cache repair that runs after the library is shown (#430). Work that claims the
+    // cache or writes images waits for it; an owner-scope change aborts it first.
+    const backgroundOwnerCacheRepairRef = useRef<{ promise: Promise<void>; controller: AbortController } | null>(null);
+    // Set while an owner-cache repair has failed this session. Its dirty items are still in the
+    // claim plan, so a sync that refreshes only its own changes must not commit over them.
+    const ownerCacheRepairFailedRef = useRef(false);
+    // Thumbnail writes dirty the cache a repair is building and get its commit rejected, so
+    // thumbnail healing pauses while any repair after the library is shown runs. Counted because
+    // repairs can overlap; always released in `finally`, and reset on unmount.
+    const ownerCacheRepairCountRef = useRef(0);
+    const withThumbnailsPausedForRepair = useCallback(async <T,>(repair: () => Promise<T>): Promise<T> => {
+        ownerCacheRepairCountRef.current += 1;
+        useLibraryStore.getState().setOwnerCacheRepairing(true);
+        try {
+            return await repair();
+        } finally {
+            ownerCacheRepairCountRef.current = Math.max(0, ownerCacheRepairCountRef.current - 1);
+            if (ownerCacheRepairCountRef.current === 0) {
+                useLibraryStore.getState().setOwnerCacheRepairing(false);
+            }
+        }
+    }, []);
+    useEffect(
+        () => () => {
+            backgroundOwnerCacheRepairRef.current?.controller.abort();
+            ownerCacheRepairCountRef.current = 0;
+            useLibraryStore.getState().setOwnerCacheRepairing(false);
+        },
+        []
+    );
+    const waitForBackgroundOwnerCacheRepair = useCallback(async () => {
+        while (backgroundOwnerCacheRepairRef.current) {
+            await backgroundOwnerCacheRepairRef.current.promise;
+        }
+    }, []);
     const startPendingInvokeLiveRerun = useCallback(() => {
         if (
             !pendingInvokeLiveSyncRef.current ||
             useInvokeOwnerScopeStore.getState().ownerScopeState.status === 'error' ||
             ownerScopePromiseRef.current ||
             ownerTransitionRef.current ||
-            activeInvokeSyncRunRef.current
+            activeInvokeSyncRunRef.current ||
+            backgroundOwnerCacheRepairRef.current
         ) {
             return;
         }
@@ -366,8 +406,48 @@ export const SyncProvider: React.FC<{
         []
     );
 
+    // Shows the owner scope's current cache: gallery and reference queries, collections and
+    // maintenance counts. The facet and collection caches are repaired separately.
+    const publishOwnerScopeView = useCallback(
+        async (generation: number, assertCurrentCollections: () => void, traceOperationId?: symbol) => {
+            incrementFacetCacheVersion();
+            const [, , , , , maintenanceCounts] = await Promise.all([
+                invokeSyncTrace.measure(traceOperationId, 'gallery', () => queryClient.invalidateQueries({ queryKey: ['images'] })),
+                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+                invokeSyncTrace.measure(traceOperationId, 'references', () => invalidateInvokeReferenceQueries(queryClient)),
+                invokeSyncTrace.measure(traceOperationId, 'collections', () =>
+                    measureStartupPhase('collections', async () => {
+                        if (!useCollectionStore.getState().isLoaded) {
+                            const published = await useCollectionStore.getState().initialize({
+                                generation,
+                                deferHydration: true,
+                            });
+                            if (!published) throw new Error('Collection initialization was superseded.');
+                        } else {
+                            await refreshCollections(false, {
+                                includeThumbnails: false,
+                                scheduleSmartRefresh: false,
+                                consistency: 'authoritative',
+                            });
+                        }
+                    })
+                ),
+                measureStartupPhase('maintenance-counts', getMaintenanceCounts),
+            ]);
+            assertCurrentCollections();
+            useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
+        },
+        [incrementFacetCacheVersion, queryClient, refreshCollections]
+    );
+
     const refreshAfterOwnerScopeChange = useCallback(
-        async (maxAttempts: 1 | 2 = 2, signal?: AbortSignal): Promise<InvokeScopeCacheRepairPlan> => {
+        async (maxAttempts: 1 | 2 = 2, signal?: AbortSignal, isBackgroundRepair = false): Promise<InvokeScopeCacheRepairPlan> => {
+            if (!isBackgroundRepair && backgroundOwnerCacheRepairRef.current) {
+                // A background repair holds the cache claim; stop it so this refresh can claim.
+                backgroundOwnerCacheRepairRef.current.controller.abort();
+                await waitForBackgroundOwnerCacheRepair();
+            }
             const traceOperationId = useInvokeOwnerScopeStore.getState().operation?.id;
             const generation = useCollectionStore.getState().getInitializationGeneration();
             const assertCurrentCollections = () => {
@@ -419,33 +499,7 @@ export const SyncProvider: React.FC<{
                         }
                     }
                     assertCurrentCollections();
-                    incrementFacetCacheVersion();
-                    const [, , , , , maintenanceCounts] = await Promise.all([
-                        invokeSyncTrace.measure(traceOperationId, 'gallery', () => queryClient.invalidateQueries({ queryKey: ['images'] })),
-                        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-                        queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
-                        invokeSyncTrace.measure(traceOperationId, 'references', () => invalidateInvokeReferenceQueries(queryClient)),
-                        invokeSyncTrace.measure(traceOperationId, 'collections', () =>
-                            measureStartupPhase('collections', async () => {
-                                if (!useCollectionStore.getState().isLoaded) {
-                                    const published = await useCollectionStore.getState().initialize({
-                                        generation,
-                                        deferHydration: true,
-                                    });
-                                    if (!published) throw new Error('Collection initialization was superseded.');
-                                } else {
-                                    await refreshCollections(false, {
-                                        includeThumbnails: false,
-                                        scheduleSmartRefresh: false,
-                                        consistency: 'authoritative',
-                                    });
-                                }
-                            })
-                        ),
-                        measureStartupPhase('maintenance-counts', getMaintenanceCounts),
-                    ]);
-                    assertCurrentCollections();
-                    useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
+                    await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId);
                     if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
                         await invokeSyncTrace.measure(traceOperationId, 'previews', () =>
                             measureStartupPhase('collections', () =>
@@ -485,10 +539,12 @@ export const SyncProvider: React.FC<{
                         elapsedMs: Math.round(performance.now() - refreshStartedAt),
                     });
                     finishCache();
+                    ownerCacheRepairFailedRef.current = false;
                     return cacheRepair;
                 } catch (error) {
                     finishCache('failed', error);
                     if (requiresCacheBuild) {
+                        ownerCacheRepairFailedRef.current = true;
                         await abortInvokeScopeCacheClaim(claim, 'owner-scope refresh');
                     }
                     const message = error instanceof Error ? error.message : String(error);
@@ -500,8 +556,87 @@ export const SyncProvider: React.FC<{
             }
             throw new Error('Invoke owner cache changed repeatedly while it was being prepared.');
         },
-        [incrementFacetCacheVersion, queryClient, refreshCollectionThumbnails, refreshCollections, refreshSmartCounts]
+        [publishOwnerScopeView, refreshCollectionThumbnails, refreshSmartCounts, waitForBackgroundOwnerCacheRepair]
     );
+
+    // Shows the library on its current caches and repairs them afterwards (#430). The caller
+    // decides this only when nobody's visibility changed, so only derived counts can lag.
+    const publishOwnerScopeWithBackgroundRepair = useCallback(
+        async (signal?: AbortSignal) => {
+            const traceOperationId = useInvokeOwnerScopeStore.getState().operation?.id;
+            const generation = useCollectionStore.getState().getInitializationGeneration();
+            const assertCurrentCollections = () => {
+                throwIfInvokeAborted(signal);
+                if (generation !== useCollectionStore.getState().getInitializationGeneration()) {
+                    throw new Error('Collection initialization was superseded.');
+                }
+            };
+            clearLibraryStatsCache();
+            await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId);
+            useCollectionStore.getState().finishInitializationHydration(generation, false);
+        },
+        [publishOwnerScopeView]
+    );
+
+    const startBackgroundOwnerCacheRepair = useCallback(
+        (repair?: (signal: AbortSignal) => Promise<unknown>) => {
+            const controller = new AbortController();
+            // Run after a repair already in progress rather than competing with it for the claim;
+            // the newer one then sees whether that repair failed.
+            const previous = backgroundOwnerCacheRepairRef.current;
+            const promise = withThumbnailsPausedForRepair(async () => {
+                try {
+                    await previous?.promise;
+                    throwIfInvokeAborted(controller.signal);
+                    await (repair ? repair(controller.signal) : refreshAfterOwnerScopeChange(2, controller.signal, true));
+                } catch (error) {
+                    // The cache stays dirty in the database, so the next start repairs it again.
+                    ownerCacheRepairFailedRef.current = true;
+                    console.warn('[InvokeAI] Background library cache repair did not finish.', error);
+                } finally {
+                    if (backgroundOwnerCacheRepairRef.current?.controller === controller) {
+                        backgroundOwnerCacheRepairRef.current = null;
+                    }
+                    startPendingInvokeLiveRerun();
+                }
+            });
+            backgroundOwnerCacheRepairRef.current = { promise, controller };
+        },
+        [refreshAfterOwnerScopeChange, startPendingInvokeLiveRerun, withThumbnailsPausedForRepair]
+    );
+
+    // For startup catch-ups: owner preparation and its background repair both claim the cache that
+    // an import would invalidate. Never call this from inside owner preparation.
+    const waitForOwnerCacheRepair = useCallback(async () => {
+        while (ownerScopePromiseRef.current || backgroundOwnerCacheRepairRef.current) {
+            try {
+                await ownerScopePromiseRef.current?.promise;
+            } catch {
+                // A failed preparation reports itself; the catch-up only needs it settled.
+            }
+            await waitForBackgroundOwnerCacheRepair();
+        }
+    }, [waitForBackgroundOwnerCacheRepair]);
+
+    // The startup folder catch-up writes images, which dirties the owner cache. Repairing and
+    // committing it here keeps the next start from repairing it again (#430).
+    const repairOwnerCacheAfterImport = useCallback(async (): Promise<boolean> => {
+        if (
+            useInvokeOwnerScopeStore.getState().ownerScopeState.status !== 'ready' ||
+            ownerScopePromiseRef.current ||
+            ownerTransitionRef.current ||
+            activeInvokeSyncRunRef.current
+        ) {
+            return false;
+        }
+        try {
+            await withThumbnailsPausedForRepair(() => refreshAfterOwnerScopeChange(2));
+            return true;
+        } catch (error) {
+            console.warn('[InvokeAI] Library cache repair after the startup import failed.', error);
+            return false;
+        }
+    }, [refreshAfterOwnerScopeChange, withThumbnailsPausedForRepair]);
 
     const persistOwnerSelection = useCallback(
         async (
@@ -694,8 +829,23 @@ export const SyncProvider: React.FC<{
                       }
                     : undefined;
             const needsCachePreparation = scope !== null;
+            // Nobody's visibility changed and All users has no owner boundary, so the last built
+            // filters and collections are safe to show while they catch up in the background.
+            const repairInBackground =
+                cacheRepair.action !== 'restored' &&
+                // Like the repair plan, an unreported cache status means nothing was built yet.
+                (result.cacheStatus?.builtGeneration ?? null) !== null &&
+                (scope?.mode === 'all' || scope?.mode === 'legacy') &&
+                !result.changed &&
+                !reconcileSourceFacts &&
+                !forceRefresh &&
+                !persistSelection &&
+                !deferReady;
             try {
-                if (
+                if (repairInBackground) {
+                    reportProgress(0, 0, 'Opening your library...');
+                    await invokeSyncTrace.measure(traceOperationId, 'scope-cache', () => publishOwnerScopeWithBackgroundRepair(signal));
+                } else if (
                     (scope !== null || useCollectionStore.getState().isLoaded) &&
                     (result.changed || result.boardCollectionsUpdated > 0 || forceRefresh || reconcileSourceFacts || needsCachePreparation)
                 ) {
@@ -761,9 +911,17 @@ export const SyncProvider: React.FC<{
                 cacheRepair,
             };
             ownerScopeAdmissionRef.current = admission;
+            if (repairInBackground) startBackgroundOwnerCacheRepair();
             return admission;
         },
-        [persistOwnerSelection, refreshAfterOwnerScopeChange, settingsRef, setInvokeOwnerScopeState]
+        [
+            persistOwnerSelection,
+            publishOwnerScopeWithBackgroundRepair,
+            refreshAfterOwnerScopeChange,
+            settingsRef,
+            setInvokeOwnerScopeState,
+            startBackgroundOwnerCacheRepair,
+        ]
     );
 
     const ensureInvokeOwnerScope = useCallback(
@@ -1517,6 +1675,14 @@ export const SyncProvider: React.FC<{
                 }
                 return { status: 'blocked', message: ownerAdmission.reason };
             }
+            if (backgroundOwnerCacheRepairRef.current) {
+                // Sync claims the same cache; live changes rerun when the repair settles.
+                if (options.mode === 'live') {
+                    queueLiveRerun();
+                    return { status: 'queued' };
+                }
+                await waitForBackgroundOwnerCacheRepair();
+            }
             const capturedScope = ownerAdmission.scope;
             const capturedRootPath = ownerAdmission.rootPath;
             const isCapturedScopeCurrent = (): boolean => {
@@ -2083,7 +2249,11 @@ export const SyncProvider: React.FC<{
                             : Promise.resolve();
                         try {
                             await Promise.all([facetRefreshPromise, collectionRefreshPromise]);
-                            if (isCapturedScopeCurrent()) {
+                            if (ownerCacheRepairFailedRef.current) {
+                                // An earlier repair failed and its items are still in this claim's
+                                // plan; committing would save them as current. The next start repairs.
+                                await abortInvokeScopeCacheClaim(liveCacheClaim, 'live sync after a failed repair');
+                            } else if (isCapturedScopeCurrent()) {
                                 if (liveCacheClaim.cacheRepair.action !== 'restored') {
                                     await unwrap(
                                         commands.commitActiveInvokeScopeCache({
@@ -2108,6 +2278,60 @@ export const SyncProvider: React.FC<{
                                 console.error('[Sync] Failed to preserve the active Invoke scope cache after live sync', error);
                             }
                         }
+                    } else if (options.mode === 'startup') {
+                        // Startup catch-up: the import's dock entry ends once the gallery and
+                        // collections are current. The filter counts are repaired quietly afterwards
+                        // (#426); a failed repair is logged and leaves the cache dirty for the next start.
+                        setFinalizationProgress('Updating gallery...');
+                        await invokeSyncTrace.measure(operationId, 'gallery', () =>
+                            queryClient.invalidateQueries({ queryKey: ['images'] })
+                        );
+                        throwIfInvokeAborted(ctrl.signal);
+                        if (shouldRefreshBoardCollections) {
+                            setFinalizationProgress('Updating collections and library details...');
+                            await invokeSyncTrace.measure(operationId, 'collections', () =>
+                                refreshCollections(false, {
+                                    consistency: 'authoritative',
+                                })
+                            );
+                            throwIfInvokeAborted(ctrl.signal);
+                        }
+                        if (hasBoardMapping || boardsChanged) {
+                            setFinalizationProgress('Updating collection previews...');
+                            await invokeSyncTrace.measure(operationId, 'previews', () => refreshCollectionThumbnails(true));
+                            throwIfInvokeAborted(ctrl.signal);
+                        }
+                        await invokeSyncTrace.measure(operationId, 'checkpoint', () => persistInvokeSnapshot(snapshotCursor));
+                        startBackgroundOwnerCacheRepair(async (signal) => {
+                            if (ownerCacheRepairFailedRef.current) {
+                                // The claim plan still holds what the failed repair left dirty, so
+                                // refreshing only this catch-up's changes would commit stale counts.
+                                return refreshAfterOwnerScopeChange(2, signal, true);
+                            }
+                            const claim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
+                            try {
+                                throwIfInvokeAborted(signal);
+                                await refreshStartupFacetCache({
+                                    source: 'invoke',
+                                    totalProcessed,
+                                    touchedFacetTypes,
+                                    touchedFacetResources,
+                                    orphanScanEnabled: shouldImportOrphans,
+                                    onRefreshApplied: incrementFacetCacheVersion,
+                                });
+                                throwIfInvokeAborted(signal);
+                                if (claim.cacheRepair.action !== 'restored') {
+                                    await unwrap(
+                                        commands.commitActiveInvokeScopeCache({ scopeKey: claim.scopeKey, generation: claim.generation })
+                                    );
+                                }
+                            } catch (error) {
+                                await abortInvokeScopeCacheClaim(claim, 'startup filter refresh');
+                                throw error;
+                            }
+                        });
+                        syncOutcome = { status: 'completed' };
+                        return syncOutcome;
                     } else {
                         // MANUAL HEAVY REBUILD
                         setFinalizationProgress('Updating gallery...');
@@ -2119,28 +2343,15 @@ export const SyncProvider: React.FC<{
 
                         throwIfInvokeAborted(ctrl.signal);
 
-                        setFinalizationProgress(options.mode === 'startup' ? 'Updating startup filters...' : 'Rebuilding filter cache...');
+                        setFinalizationProgress('Rebuilding filter cache...');
 
                         try {
                             syncCacheClaim = await invokeSyncTrace.measure(operationId, 'cache-claim', () =>
                                 unwrap(commands.beginActiveInvokeScopeCacheBuild())
                             );
                             throwIfInvokeAborted(ctrl.signal);
-                            if (options.mode === 'startup') {
-                                await invokeSyncTrace.measure(operationId, 'facet-cache', () =>
-                                    refreshStartupFacetCache({
-                                        source: 'invoke',
-                                        totalProcessed,
-                                        touchedFacetTypes,
-                                        touchedFacetResources,
-                                        orphanScanEnabled: shouldImportOrphans,
-                                        onRefreshApplied: incrementFacetCacheVersion,
-                                    })
-                                );
-                            } else {
-                                await invokeSyncTrace.measure(operationId, 'facet-cache', () => rebuildFacetCache());
-                                useLibraryStore.getState().incrementFacetCacheVersion();
-                            }
+                            await invokeSyncTrace.measure(operationId, 'facet-cache', () => rebuildFacetCache());
+                            useLibraryStore.getState().incrementFacetCacheVersion();
                             throwIfInvokeAborted(ctrl.signal);
                         } catch (e) {
                             if (syncCacheClaim) {
@@ -2154,17 +2365,7 @@ export const SyncProvider: React.FC<{
                         setFinalizationProgress('Updating collections and library details...');
 
                         // Trigger complete routines
-                        if (options.mode !== 'startup') {
-                            await invokeSyncTrace.measure(operationId, 'collections', async () => onSyncComplete?.('full'));
-                        } else {
-                            if (shouldRefreshBoardCollections) {
-                                await invokeSyncTrace.measure(operationId, 'collections', () =>
-                                    refreshCollections(false, {
-                                        consistency: 'authoritative',
-                                    })
-                                );
-                            }
-                        }
+                        await invokeSyncTrace.measure(operationId, 'collections', async () => onSyncComplete?.('full'));
 
                         throwIfInvokeAborted(ctrl.signal);
 
@@ -2382,11 +2583,13 @@ export const SyncProvider: React.FC<{
             setInvokeSyncActivityKind,
             setIsLiveSyncing,
             startLiveWatchSession,
+            startBackgroundOwnerCacheRepair,
             startPendingInvokeLiveRerun,
             updateLiveWatchSession,
             reportLiveImagesReceived,
             setSyncAbortController,
             settingsRef,
+            waitForBackgroundOwnerCacheRepair,
         ]
     );
 
@@ -2428,6 +2631,8 @@ export const SyncProvider: React.FC<{
                 let importedCount = 0;
 
                 while (pendingTargetedPathsRef.current.size > 0) {
+                    // Imports would invalidate a running cache repair; new paths keep queueing meanwhile.
+                    await waitForBackgroundOwnerCacheRepair();
                     const cyclePerfContext = pendingTargetedPerfRef.current;
                     const nextBatch = Array.from(pendingTargetedPathsRef.current);
                     pendingTargetedPathsRef.current.clear();
@@ -2579,7 +2784,15 @@ export const SyncProvider: React.FC<{
 
             return targetedLiveDrainPromiseRef.current;
         },
-        [queryClient, queueLiveFacetRefresh, reportLiveImagesReceived, startLiveWatchSession, updateLiveWatchSession, settingsRef]
+        [
+            queryClient,
+            queueLiveFacetRefresh,
+            reportLiveImagesReceived,
+            startLiveWatchSession,
+            updateLiveWatchSession,
+            settingsRef,
+            waitForBackgroundOwnerCacheRepair,
+        ]
     );
 
     const cancelSync = useCallback(() => {
@@ -2683,6 +2896,8 @@ export const SyncProvider: React.FC<{
                 invokeOwnerScopeState,
                 selectInvokeOwnerScope,
                 retryInvokeOwnerScope,
+                waitForOwnerCacheRepair,
+                repairOwnerCacheAfterImport,
             }}
         >
             {children}

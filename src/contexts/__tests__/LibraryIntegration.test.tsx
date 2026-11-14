@@ -1266,6 +1266,83 @@ describe('Library Integration (Provider Stack)', () => {
         });
     });
 
+    describe('quiet filter repair after a startup Invoke catch-up (#426)', () => {
+        const importedPlan = {
+            action: 'selective' as const,
+            resources: {
+                checkpoints: [],
+                loras: ['NewLora'],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: false,
+        };
+
+        const startCatchUpWithImports = async () => {
+            let hook: ReturnType<typeof useLibraryContext> | undefined;
+            renderStack((h) => (hook = h));
+            await waitFor(() => expect(hook?.isLoaded).toBe(true));
+            await act(async () => {
+                hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases', lastSyncedAt: 100, importOrphans: false });
+            });
+            await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+            mocks.syncImages.mockResolvedValueOnce({
+                ...createNoopInvokeSyncResult(),
+                imported: 2,
+                maxTimestamp: 200,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: importedPlan.resources,
+            });
+            let releaseClaim!: (claim: ReturnType<typeof createInvokeScopeCacheClaim> | Error) => void;
+            mocks.beginActiveInvokeScopeCacheBuild.mockImplementationOnce(
+                () =>
+                    new Promise((resolve, reject) => {
+                        releaseClaim = (claim) => (claim instanceof Error ? reject(claim) : resolve(claim));
+                    })
+            );
+            mocks.commitActiveInvokeScopeCache.mockClear();
+            const messages: unknown[] = [];
+            const unsubscribe = useLibraryStore.subscribe((state) => messages.push(state.syncProgress.message));
+            let outcome: unknown;
+            await act(async () => {
+                outcome = await hook!.startInvokeSync({ mode: 'startup' });
+            });
+            unsubscribe();
+            return { outcome, messages, releaseClaim };
+        };
+
+        it('ends the catch-up before the filter repair, then commits the repaired cache', async () => {
+            const { outcome, messages, releaseClaim } = await startCatchUpWithImports();
+
+            // The catch-up and its dock entry are done while the repair still waits for its claim.
+            expect(outcome).toEqual({ status: 'completed' });
+            expect(messages).not.toContain('Updating startup filters...');
+            expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalled();
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(importedPlan, 4)));
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 4 }));
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(importedPlan.resources);
+        });
+
+        it('logs a failed filter repair and leaves the cache uncommitted for the next start', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { outcome, releaseClaim } = await startCatchUpWithImports();
+            expect(outcome).toEqual({ status: 'completed' });
+
+            await act(async () => releaseClaim(new Error('disk is busy')));
+            await waitFor(() =>
+                expect(warn).toHaveBeenCalledWith('[InvokeAI] Background library cache repair did not finish.', expect.any(Error))
+            );
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+    });
+
     it('does not scan for orphans during startup Invoke catch-up by default', async () => {
         let hook: ReturnType<typeof useLibraryContext> | undefined;
         renderStack((h) => (hook = h));
@@ -2763,6 +2840,278 @@ describe('Library Integration (Provider Stack)', () => {
             consistency: 'authoritative',
         });
         expect(syncHook?.invokeOwnerScopeState.scope).toMatchObject({ mode: 'all' });
+    });
+
+    describe('background repair of an unchanged All users view (#430)', () => {
+        beforeEach(() => {
+            // An earlier test leaves a snapshot result that matches this view's saved snapshot,
+            // which would make a catch-up here find nothing to import.
+            mocks.getInvokeDbSnapshot.mockReset().mockImplementation(defaultInvokeSnapshotImplementation);
+        });
+
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        const dirtyPlan = {
+            action: 'selective' as const,
+            resources: {
+                checkpoints: [],
+                loras: ['ImportedLora'],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: false,
+        };
+
+        const startUnchangedAllUsersView = async () => {
+            let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+            let syncHook: SyncHook | undefined;
+            let releaseClaim!: (claim: ReturnType<typeof createInvokeScopeCacheClaim> | Error) => void;
+            mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+            mocks.applyInvokeOwnerScope.mockResolvedValueOnce({
+                changed: false,
+                sourceFactsUpdated: 0,
+                activeVisibilityUpdated: 0,
+                removedVisibilityUpdated: 0,
+                boardCollectionsUpdated: 0,
+                mode: 'all',
+                cacheRepair: dirtyPlan,
+                cacheStatus: { state: 'dirty', generation: 3, builtGeneration: 2, facetCount: 10, collectionCount: 2 },
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockImplementationOnce(
+                () =>
+                    new Promise((resolve, reject) => {
+                        releaseClaim = (claim) => (claim instanceof Error ? reject(claim) : resolve(claim));
+                    })
+            );
+            const view = renderSyncStack(
+                (h) => (libraryHook = h),
+                (h) => (syncHook = h)
+            );
+            await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+            const dbPath = discovery.dbPath.toLowerCase();
+            await act(async () =>
+                libraryHook?.setSettings({
+                    invokeAiPath: 'D:/Invoke',
+                    lastSyncedAt: 100,
+                    invokeSyncBoards: false,
+                    invokeOwnerSelection: { dbPath, mode: 'all' },
+                    invokeDbSnapshot: {
+                        dbPath,
+                        lastSyncedAt: 100,
+                        importIntermediates: false,
+                        importOrphans: false,
+                        syncBoardsToCollections: false,
+                        scopeMode: 'all',
+                        scopeOwnerId: null,
+                        pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                        importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                        files: [],
+                        sourceFingerprint: {
+                            schemaVersion: 1,
+                            imageCount: 0,
+                            imageUpdatedAt: null,
+                            boardCount: 0,
+                            boardUpdatedAt: null,
+                            membershipCount: 0,
+                            membershipMaxRowId: null,
+                        },
+                    },
+                })
+            );
+            // The view is ready while the repair is still waiting for its claim.
+            await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+            await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+            return { getSync: () => syncHook!, releaseClaim, unmount: view.unmount };
+        };
+
+        const isRepairing = () => useLibraryStore.getState().isOwnerCacheRepairing;
+
+        it('pauses thumbnail healing while the repair runs and resumes it after the commit', async () => {
+            // Thumbnail writes would dirty the cache being repaired and get its commit rejected.
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            expect(isRepairing()).toBe(true);
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 }));
+            await waitFor(() => expect(isRepairing()).toBe(false));
+        });
+
+        it('resumes thumbnail healing when the repair fails', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            expect(isRepairing()).toBe(true);
+
+            await act(async () => releaseClaim(new Error('disk is busy')));
+
+            await waitFor(() => expect(isRepairing()).toBe(false));
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('resumes thumbnail healing when the repair is aborted by unmounting', async () => {
+            // A stuck flag would stop thumbnails for the rest of the session.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { releaseClaim, unmount } = await startUnchangedAllUsersView();
+            expect(isRepairing()).toBe(true);
+
+            unmount();
+            expect(isRepairing()).toBe(false);
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            expect(isRepairing()).toBe(false);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('shows the view before the repair finishes, then commits the repaired cache', async () => {
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 }));
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(dirtyPlan.resources);
+        });
+
+        it('queues Live Watch work during the repair and loses none of it', async () => {
+            const { getSync, releaseClaim } = await startUnchangedAllUsersView();
+            mocks.processTargetedFiles.mockClear();
+            mocks.syncImages.mockClear();
+
+            let firstBatch: Promise<unknown> | undefined;
+            await act(async () => {
+                firstBatch = getSync().startTargetedLiveSync(['C:/watch/first.png']);
+                void getSync().startTargetedLiveSync(['C:/watch/second.png']);
+                await expect(getSync().startInvokeSync({ mode: 'live' })).resolves.toEqual({ status: 'queued' });
+            });
+            // Importing now would invalidate the repair, so nothing runs yet.
+            expect(mocks.processTargetedFiles).not.toHaveBeenCalled();
+
+            await act(async () => {
+                releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3));
+                await firstBatch;
+            });
+            expect(mocks.processTargetedFiles).toHaveBeenCalledWith(
+                expect.arrayContaining(['C:/watch/first.png', 'C:/watch/second.png']),
+                expect.anything()
+            );
+            expect(mocks.processTargetedFiles.mock.calls.flatMap(([paths]) => paths as string[])).toHaveLength(2);
+        });
+
+        it('still runs the queued work when the repair fails', async () => {
+            const { getSync, releaseClaim } = await startUnchangedAllUsersView();
+            mocks.processTargetedFiles.mockClear();
+
+            let batch: Promise<unknown> | undefined;
+            await act(async () => {
+                batch = getSync().startTargetedLiveSync(['C:/watch/after-failure.png']);
+            });
+            await act(async () => {
+                releaseClaim(new Error('disk is busy'));
+                await batch;
+            });
+
+            expect(mocks.processTargetedFiles).toHaveBeenCalledWith(['C:/watch/after-failure.png'], expect.anything());
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            expect(getSync().invokeOwnerScopeState.status).toBe('ready');
+        });
+
+        it('repairs the whole plan, not only its own changes, when a catch-up imports after a failed repair', async () => {
+            // The failed repair's items stay in the claim plan. Committing after refreshing only the
+            // catch-up's resources would save stale counts as current, and no start would repair them.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { getSync, releaseClaim } = await startUnchangedAllUsersView();
+            await act(async () => releaseClaim(new Error('disk is busy')));
+            await waitFor(() =>
+                expect(warn).toHaveBeenCalledWith('[InvokeAI] Background library cache repair did not finish.', expect.any(Error))
+            );
+
+            const catchUpResources = { ...dirtyPlan.resources, loras: ['CatchUpLora'] };
+            const combinedPlan = { ...dirtyPlan, resources: { ...dirtyPlan.resources, loras: ['ImportedLora', 'CatchUpLora'] } };
+            mocks.syncImages.mockResolvedValueOnce({
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: 200,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: catchUpResources,
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(combinedPlan, 5));
+            mocks.refreshFacetCacheForResourcesStrict.mockClear();
+            mocks.commitActiveInvokeScopeCache.mockClear();
+
+            await act(async () => {
+                await getSync().startInvokeSync({ mode: 'startup' });
+            });
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 }));
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(combinedPlan.resources);
+            warn.mockRestore();
+        });
+
+        it('leaves the cache dirty when a live sync imports after a failed repair', async () => {
+            // Live sync refreshes only its own resources, so after a failed repair it must not
+            // commit the plan that still holds that repair's items; the next start repairs it.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { getSync, releaseClaim } = await startUnchangedAllUsersView();
+            await act(async () => releaseClaim(new Error('disk is busy')));
+            await waitFor(() =>
+                expect(warn).toHaveBeenCalledWith('[InvokeAI] Background library cache repair did not finish.', expect.any(Error))
+            );
+
+            const liveResources = { ...dirtyPlan.resources, loras: ['LiveLora'] };
+            mocks.syncImages.mockResolvedValueOnce({
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: 200,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: liveResources,
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(
+                createInvokeScopeCacheClaim({ ...dirtyPlan, resources: { ...dirtyPlan.resources, loras: ['ImportedLora', 'LiveLora'] } }, 6)
+            );
+            mocks.commitActiveInvokeScopeCache.mockClear();
+            mocks.abortActiveInvokeScopeCacheBuild.mockClear();
+
+            await act(async () => {
+                await getSync().startInvokeSync({ mode: 'live' });
+            });
+
+            await waitFor(() =>
+                expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 })
+            );
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('repairs again when an import lands during the repair and its commit is rejected', async () => {
+            // A manual import writes images while the repair runs, so the database rejects the
+            // repair's commit for the old generation. The scope must not end up marked current.
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            const afterImportPlan = { ...dirtyPlan, resources: { ...dirtyPlan.resources, loras: ['ImportedLora', 'ManualLora'] } };
+            mocks.commitActiveInvokeScopeCache.mockRejectedValueOnce(
+                new Error('Invoke owner cache changed while it was being prepared (state: Dirty, generation: 4).')
+            );
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(afterImportPlan, 4));
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 4 }));
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenLastCalledWith(afterImportPlan.resources);
+            expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+        });
     });
 
     it('runs the board-owner repair when canonical board synchronization is enabled later', async () => {

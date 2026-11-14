@@ -130,7 +130,7 @@ describe('startup bootstrap', () => {
         installBootstrap();
         vi.advanceTimersByTime(15_000);
 
-        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe('Startup is taking longer than expected');
+        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe('Ambit is taking longer than expected to load');
         expect(document.getElementById('static-loading')?.dataset.ambitFatal).toBeUndefined();
     });
 
@@ -140,7 +140,7 @@ describe('startup bootstrap', () => {
         bootstrap.markReactMounted();
         vi.advanceTimersByTime(30_000);
 
-        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe('Startup is taking longer than expected');
+        expect(document.querySelector('.static-loading__subtitle')?.textContent).toBe('Ambit is taking longer than expected to load');
 
         document.getElementById('static-loading')?.remove();
         bootstrap.markReady();

@@ -70,6 +70,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::image_commands::move_image_path_identities,
             db::commands::image_commands::mark_image_path_identities_missing,
             db::commands::maintenance::get_main_database_url,
+            db::commands::maintenance::get_pending_migration_count,
             db::commands::maintenance::get_db_diagnostics,
             db::commands::maintenance::show_app_log_folder,
             db::commands::maintenance::resolve_exact_duplicate_groups,
@@ -282,6 +283,12 @@ pub fn run() {
                 PageLoadEvent::Started => "page-loading",
                 PageLoadEvent::Finished => "page-loaded",
             };
+            // A new document in the main window (first load, F5, or a reload the
+            // app asks for) means the previous page's background work has no
+            // reader. HMR and in-app navigation do not start a new document.
+            if payload.event() == PageLoadEvent::Started && webview.label() == "main" {
+                db::background_work::begin_page();
+            }
             webview
                 .state::<StartupState>()
                 .journal
@@ -384,9 +391,16 @@ pub fn run() {
                 app_handle.state::<StartupState>().journal.request_end();
             }
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                // Stop background rebuilds first. They only roll back, so nothing
+                // committed is lost, and their write locks no longer hold up exit.
+                db::background_work::stop_earlier_work();
                 if let Err(e) = db::optimize_on_shutdown(app_handle) {
                     log::error!("[DB] Failed to run shutdown optimization: {}", e);
                 }
+                app_handle
+                    .state::<StartupState>()
+                    .journal
+                    .webview_observation("shutdown-optimize-completed");
             }
         });
 }
