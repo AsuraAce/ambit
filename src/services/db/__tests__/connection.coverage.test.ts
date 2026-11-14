@@ -133,15 +133,25 @@ describe('database connection', () => {
         expect(onPhase).toHaveBeenCalledWith('Updating database schema');
     });
 
-    it('loads again when the open pool cannot answer', async () => {
+    it('keeps waiting on the open pool after an acquire timeout instead of loading', async () => {
+        // A timeout proves the pool exists. A load would only queue for the plugin's write lock
+        // behind the previous page's queries (130.7 s in the #431 F5 run).
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-        databaseGetMock.mockReturnValue({ select: vi.fn().mockRejectedValue('pool timed out while waiting for an open connection') });
+        const loaded = {
+            ...createDatabaseMock(),
+            select: vi
+                .fn()
+                .mockRejectedValueOnce('pool timed out while waiting for an open connection')
+                .mockResolvedValueOnce([{ 1: 1 }]),
+        };
+        databaseGetMock.mockReturnValue(loaded);
         const { getDb } = await import('../connection');
 
-        await getDb();
+        await expect(getDb()).resolves.toBe(loaded);
 
-        expect(databaseLoadMock).toHaveBeenCalledOnce();
-        expect(warn).toHaveBeenCalledWith('[Startup DB] Could not reuse the open database; loading it again', expect.anything());
+        expect(loaded.select).toHaveBeenCalledTimes(2);
+        expect(databaseLoadMock).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith('[Startup DB] Waiting for the open database pool', expect.anything());
         warn.mockRestore();
     });
 

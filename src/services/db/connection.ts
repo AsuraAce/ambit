@@ -76,16 +76,21 @@ const getOpeningPhase = async (): Promise<StartupDbPhase> => {
 // A reload keeps this process's plugin pool, which `Database.load` (and so the migrations)
 // already opened for this URL. Loading again would wait for every query the previous page left
 // running, minutes on a large library (#431). A first start has no pool and always loads.
+const REUSE_RETRY_DELAY_MS = 250;
 const reuseLoadedDatabase = async (databaseUrl: string): Promise<Database | null> => {
     const loaded = Database.get(databaseUrl);
-    try {
-        await loaded.select('SELECT 1');
-        return loaded;
-    } catch (error) {
-        if (!String(error).includes('not loaded')) {
-            console.warn('[Startup DB] Could not reuse the open database; loading it again', error);
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            await loaded.select('SELECT 1');
+            return loaded;
+        } catch (error) {
+            // Only the plugin's "not loaded" error means this process has no pool. Any other failure,
+            // such as an acquire timeout while the previous page's queries hold every connection,
+            // means the pool exists, and a load would only queue behind those queries.
+            if (String(error).includes('not loaded')) return null;
+            if (attempt === 1) console.warn('[Startup DB] Waiting for the open database pool', error);
+            await new Promise((resolve) => setTimeout(resolve, REUSE_RETRY_DELAY_MS));
         }
-        return null;
     }
 };
 
