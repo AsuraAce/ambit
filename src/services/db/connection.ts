@@ -9,7 +9,8 @@ let dbInitializationPromise: Promise<Database> | null = null;
 let dbUrlPromise: Promise<string> | null = null;
 const SLOW_STARTUP_PHASE_MS = 1000;
 
-export type StartupDbPhase = 'Preparing library database' | 'Updating database schema' | 'Optimizing database' | 'Loading library';
+export type StartupDbPhase =
+    'Preparing library database' | 'Opening library' | 'Updating database schema' | 'Optimizing database' | 'Loading library';
 
 interface GetDbOptions {
     onPhase?: (phase: StartupDbPhase) => void;
@@ -60,13 +61,25 @@ const getMainDatabaseUrl = () => {
     return dbUrlPromise;
 };
 
+// The copy only. A failed check reports the neutral phase and never decides
+// whether `Database.load` runs its migrations.
+const getOpeningPhase = async (): Promise<StartupDbPhase> => {
+    try {
+        const pending = await unwrap(commands.getPendingMigrationCount());
+        return pending > 0 ? 'Updating database schema' : 'Opening library';
+    } catch (error) {
+        console.warn('[Startup DB] Could not check pending migrations', error);
+        return 'Opening library';
+    }
+};
+
 export const getDb = async (options: GetDbOptions = {}) => {
     if (!dbInitialized) {
-        options.onPhase?.('Updating database schema');
         const loadStartedAt = performance.now();
         if (!dbInitializationPromise) {
             dbInitializationPromise = (async () => {
                 if (!db) {
+                    options.onPhase?.(await getOpeningPhase());
                     const databaseUrl = await getMainDatabaseUrl();
                     db = await measureStartupPhase('database-schema', () => Database.load(databaseUrl));
                     logStartupDbPhase('Database.load', loadStartedAt);

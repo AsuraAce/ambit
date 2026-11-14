@@ -1905,6 +1905,61 @@ pub fn get_main_database_url(app: AppHandle) -> Result<String, String> {
     resolve_main_database_url(&app)
 }
 
+/// How many registered schema migrations the SQL plugin will apply when the
+/// frontend next loads the library database. Startup uses it only to choose
+/// honest copy; it never decides whether migrations run.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn get_pending_migration_count(app: AppHandle) -> Result<u32, String> {
+    let db_path = resolve_db_path(&app)?;
+    let registered: Vec<i64> = crate::db::migrations::init_db()
+        .iter()
+        .filter(|migration| matches!(migration.kind, tauri_plugin_sql::MigrationKind::Up))
+        .map(|migration| migration.version)
+        .collect();
+    tauri::async_runtime::spawn_blocking(move || pending_migration_count(&db_path, &registered))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// Counts registered versions without a successful `_sqlx_migrations` row.
+/// A missing database or history table means every migration is pending.
+/// Reads through its own read-only connection.
+fn pending_migration_count(db_path: &Path, registered: &[i64]) -> Result<u32, String> {
+    let all_pending = u32::try_from(registered.len()).map_err(|error| error.to_string())?;
+    if !db_path.exists() {
+        return Ok(all_pending);
+    }
+    let conn = Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|error| error.to_string())?;
+    let has_history: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !has_history {
+        return Ok(all_pending);
+    }
+    let mut statement = conn
+        .prepare("SELECT version FROM _sqlx_migrations WHERE success = 1")
+        .map_err(|error| error.to_string())?;
+    let applied = statement
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<HashSet<i64>, _>>()
+        .map_err(|error| error.to_string())?;
+    let pending = registered
+        .iter()
+        .filter(|version| !applied.contains(version))
+        .count();
+    u32::try_from(pending).map_err(|error| error.to_string())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String> {
@@ -2231,6 +2286,79 @@ mod tests {
         for migration in init_db() {
             conn.execute_batch(migration.sql).expect("apply migrations");
         }
+    }
+
+    fn migration_history_db(name: &str, rows: &[(i64, i64)]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "ambit_pending_migrations_{name}_{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let conn = Connection::open(&path).expect("open history db");
+        conn.execute_batch(
+            "CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY, success BOOLEAN NOT NULL)",
+        )
+        .expect("history table");
+        for (version, success) in rows {
+            conn.execute(
+                "INSERT INTO _sqlx_migrations (version, success) VALUES (?1, ?2)",
+                params![version, success],
+            )
+            .expect("history row");
+        }
+        path
+    }
+
+    // The startup gate only promises "may take longer" when the plugin will
+    // really apply a migration, so every registered version must be compared.
+    #[test]
+    fn pending_migration_count_reports_only_unapplied_versions() {
+        let registered = [1, 2, 3];
+        let applied = migration_history_db("applied", &[(1, 1), (2, 1), (3, 1)]);
+        assert_eq!(super::pending_migration_count(&applied, &registered), Ok(0));
+
+        let missing = migration_history_db("missing", &[(1, 1), (3, 1)]);
+        assert_eq!(super::pending_migration_count(&missing, &registered), Ok(1));
+
+        // A failed row is re-run by the migrator, so it is still pending.
+        let failed = migration_history_db("failed", &[(1, 1), (2, 0), (3, 1)]);
+        assert_eq!(super::pending_migration_count(&failed, &registered), Ok(1));
+    }
+
+    #[test]
+    fn pending_migration_count_treats_new_or_unmigrated_databases_as_pending() {
+        let registered = [1, 2];
+        let absent = std::env::temp_dir().join(format!(
+            "ambit_pending_migrations_absent_{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&absent);
+        assert_eq!(super::pending_migration_count(&absent, &registered), Ok(2));
+        assert!(!absent.exists(), "the check must never create the database");
+
+        let no_history = std::env::temp_dir().join(format!(
+            "ambit_pending_migrations_no_history_{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&no_history);
+        Connection::open(&no_history)
+            .expect("open")
+            .execute_batch("CREATE TABLE images (id TEXT)")
+            .expect("table");
+        assert_eq!(
+            super::pending_migration_count(&no_history, &registered),
+            Ok(2)
+        );
+    }
+
+    #[test]
+    fn pending_migration_count_reports_unreadable_databases_as_errors() {
+        let path = std::env::temp_dir().join(format!(
+            "ambit_pending_migrations_corrupt_{}.db",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"not a sqlite database at all, just bytes").expect("write");
+        assert!(super::pending_migration_count(&path, &[1]).is_err());
     }
 
     #[allow(

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const databaseLoadMock = vi.hoisted(() => vi.fn());
 const getMainDatabaseUrlMock = vi.hoisted(() => vi.fn());
+const getPendingMigrationCountMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
@@ -12,6 +13,7 @@ vi.mock('@tauri-apps/plugin-sql', () => ({
 vi.mock('../../../bindings', () => ({
     commands: {
         getMainDatabaseUrl: getMainDatabaseUrlMock,
+        getPendingMigrationCount: getPendingMigrationCountMock,
     },
 }));
 
@@ -28,6 +30,7 @@ describe('database connection', () => {
             data: 'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db',
         });
         databaseLoadMock.mockResolvedValue(createDatabaseMock());
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 0 });
     });
 
     it('loads the backend-selected main database URL', async () => {
@@ -86,11 +89,47 @@ describe('database connection', () => {
 
         expect(first).toBe(database);
         expect(second).toBe(database);
-        expect(onPhase).toHaveBeenCalledWith('Updating database schema');
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(onPhase).not.toHaveBeenCalledWith('Updating database schema');
         expect(onPhase).toHaveBeenCalledWith('Optimizing database');
         expect(onPhase).toHaveBeenCalledWith('Loading library');
         expect(databaseLoadMock).toHaveBeenCalledTimes(1);
         expect(database.execute).toHaveBeenCalledTimes(12);
+    });
+
+    // "May take longer" is only promised when the plugin will really migrate.
+    it('reports a schema update only when migrations are pending', async () => {
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 2 });
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await getDb({ onPhase });
+
+        expect(onPhase).toHaveBeenCalledWith('Updating database schema');
+        expect(onPhase).not.toHaveBeenCalledWith('Opening library');
+    });
+
+    // The check chooses copy only: a failure must never stop or hide a migration.
+    it('shows neutral copy and still loads the database when the migration check fails', async () => {
+        getPendingMigrationCountMock.mockRejectedValue(new Error('database unreadable'));
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await expect(getDb({ onPhase })).resolves.toBeTruthy();
+
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(databaseLoadMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a check error result like a failed check', async () => {
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'error', error: 'query failed' });
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await getDb({ onPhase });
+
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(databaseLoadMock).toHaveBeenCalledTimes(1);
     });
 
     it('retries database URL lookup after a transient backend failure', async () => {

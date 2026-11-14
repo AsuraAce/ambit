@@ -70,6 +70,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::image_commands::move_image_path_identities,
             db::commands::image_commands::mark_image_path_identities_missing,
             db::commands::maintenance::get_main_database_url,
+            db::commands::maintenance::get_pending_migration_count,
             db::commands::maintenance::get_db_diagnostics,
             db::commands::maintenance::show_app_log_folder,
             db::commands::maintenance::resolve_exact_duplicate_groups,
