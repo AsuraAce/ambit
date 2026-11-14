@@ -2843,6 +2843,12 @@ describe('Library Integration (Provider Stack)', () => {
     });
 
     describe('background repair of an unchanged All users view (#430)', () => {
+        beforeEach(() => {
+            // An earlier test leaves a snapshot result that matches this view's saved snapshot,
+            // which would make a catch-up here find nothing to import.
+            mocks.getInvokeDbSnapshot.mockReset().mockImplementation(defaultInvokeSnapshotImplementation);
+        });
+
         const discovery: InvokeOwnerDiscovery = {
             schemaMode: 'multi_user',
             dbPath: 'D:/Invoke/databases/invokeai.db',
