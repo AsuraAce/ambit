@@ -150,6 +150,9 @@ export const useLibraryStatsQuery = ({
 
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch.
     const facetCacheVersion = useLibraryStore((s) => s.facetCacheVersion);
+    // The summary's long scans wait for an owner-cache repair, which they would starve of
+    // database connections; the charts keep their last values or show loading meanwhile.
+    const isOwnerCacheRepairing = useLibraryStore((s) => s.isOwnerCacheRepairing);
     const keywordStatsSemanticKey = useMemo(
         () =>
             JSON.stringify({
@@ -270,8 +273,9 @@ export const useLibraryStatsQuery = ({
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: settingsLoaded,
+        enabled: settingsLoaded && !isOwnerCacheRepairing,
     });
+    const isStatsSummaryLoading = statsSummaryQuery.isLoading || (isOwnerCacheRepairing && statsSummaryQuery.isPending);
     const [activeSummaryVersion, setActiveSummaryVersion] = useState(0);
     const [activeSummarySemanticKey, setActiveSummarySemanticKey] = useState<string | null>(null);
 
@@ -430,11 +434,11 @@ export const useLibraryStatsQuery = ({
             stats: combinedStats,
             validNames: validNamesQuery.data ?? null,
         },
-        isLoading: facetsQuery.isLoading || statsSummaryQuery.isLoading || validNamesQuery.isLoading || keywordQuery.isLoading,
+        isLoading: facetsQuery.isLoading || isStatsSummaryLoading || validNamesQuery.isLoading || keywordQuery.isLoading,
         isFetching: facetsQuery.isFetching || statsSummaryQuery.isFetching || validNamesQuery.isFetching || keywordQuery.isFetching,
         isFacetsLoading: facetsQuery.isLoading,
         isFacetsFetching: facetsQuery.isFetching,
-        isStatsSummaryLoading: statsSummaryQuery.isLoading,
+        isStatsSummaryLoading,
         isKeywordStatsLoading,
     };
 };

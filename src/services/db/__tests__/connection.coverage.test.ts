@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const databaseLoadMock = vi.hoisted(() => vi.fn());
+const databaseGetMock = vi.hoisted(() => vi.fn());
 const getMainDatabaseUrlMock = vi.hoisted(() => vi.fn());
 const getPendingMigrationCountMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
         load: databaseLoadMock,
+        get: databaseGetMock,
     },
 }));
 
@@ -30,6 +32,10 @@ describe('database connection', () => {
             data: 'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db',
         });
         databaseLoadMock.mockResolvedValue(createDatabaseMock());
+        // A first start: the plugin has no pool for this URL yet.
+        databaseGetMock.mockImplementation((path: string) => ({
+            select: vi.fn().mockRejectedValue(`database ${path} not loaded`),
+        }));
         getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 0 });
     });
 
@@ -95,6 +101,48 @@ describe('database connection', () => {
         expect(onPhase).toHaveBeenCalledWith('Loading library');
         expect(databaseLoadMock).toHaveBeenCalledTimes(1);
         expect(database.execute).toHaveBeenCalledTimes(12);
+    });
+
+    // A reload keeps the process's pool. Loading again would wait for every query the
+    // previous page left running (#431).
+    it('reuses the pool this process already loaded on a reload, without loading or checking migrations', async () => {
+        const loaded = { ...createDatabaseMock(), select: vi.fn().mockResolvedValue([{ 1: 1 }]) };
+        databaseGetMock.mockReturnValue(loaded);
+        const onPhase = vi.fn();
+        const { getDb } = await import('../connection');
+
+        await expect(getDb({ onPhase })).resolves.toBe(loaded);
+
+        expect(databaseGetMock).toHaveBeenCalledWith('sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db');
+        expect(loaded.select).toHaveBeenCalledWith('SELECT 1');
+        expect(databaseLoadMock).not.toHaveBeenCalled();
+        expect(getPendingMigrationCountMock).not.toHaveBeenCalled();
+        expect(onPhase).toHaveBeenCalledWith('Opening library');
+        expect(onPhase).not.toHaveBeenCalledWith('Updating database schema');
+        expect(loaded.execute).toHaveBeenCalledWith('PRAGMA busy_timeout=60000');
+    });
+
+    it('loads, and so migrates, when the plugin has no pool for the database yet', async () => {
+        const onPhase = vi.fn();
+        getPendingMigrationCountMock.mockResolvedValue({ status: 'ok', data: 1 });
+        const { getDb } = await import('../connection');
+
+        await getDb({ onPhase });
+
+        expect(databaseLoadMock).toHaveBeenCalledOnce();
+        expect(onPhase).toHaveBeenCalledWith('Updating database schema');
+    });
+
+    it('loads again when the open pool cannot answer', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        databaseGetMock.mockReturnValue({ select: vi.fn().mockRejectedValue('pool timed out while waiting for an open connection') });
+        const { getDb } = await import('../connection');
+
+        await getDb();
+
+        expect(databaseLoadMock).toHaveBeenCalledOnce();
+        expect(warn).toHaveBeenCalledWith('[Startup DB] Could not reuse the open database; loading it again', expect.anything());
+        warn.mockRestore();
     });
 
     // "May take longer" is only promised when the plugin will really migrate.

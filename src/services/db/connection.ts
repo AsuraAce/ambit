@@ -73,16 +73,39 @@ const getOpeningPhase = async (): Promise<StartupDbPhase> => {
     }
 };
 
+// A reload keeps this process's plugin pool, which `Database.load` (and so the migrations)
+// already opened for this URL. Loading again would wait for every query the previous page left
+// running, minutes on a large library (#431). A first start has no pool and always loads.
+const reuseLoadedDatabase = async (databaseUrl: string): Promise<Database | null> => {
+    const loaded = Database.get(databaseUrl);
+    try {
+        await loaded.select('SELECT 1');
+        return loaded;
+    } catch (error) {
+        if (!String(error).includes('not loaded')) {
+            console.warn('[Startup DB] Could not reuse the open database; loading it again', error);
+        }
+        return null;
+    }
+};
+
 export const getDb = async (options: GetDbOptions = {}) => {
     if (!dbInitialized) {
         const loadStartedAt = performance.now();
         if (!dbInitializationPromise) {
             dbInitializationPromise = (async () => {
                 if (!db) {
-                    options.onPhase?.(await getOpeningPhase());
                     const databaseUrl = await getMainDatabaseUrl();
-                    db = await measureStartupPhase('database-schema', () => Database.load(databaseUrl));
-                    logStartupDbPhase('Database.load', loadStartedAt);
+                    const reused = await reuseLoadedDatabase(databaseUrl);
+                    if (reused) {
+                        options.onPhase?.('Opening library');
+                        db = reused;
+                        logStartupDbPhase('Database reuse', loadStartedAt);
+                    } else {
+                        options.onPhase?.(await getOpeningPhase());
+                        db = await measureStartupPhase('database-schema', () => Database.load(databaseUrl));
+                        logStartupDbPhase('Database.load', loadStartedAt);
+                    }
                 }
 
                 const activeDb = db;
