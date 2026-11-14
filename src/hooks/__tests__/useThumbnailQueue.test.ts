@@ -127,6 +127,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             isScanningMissingFiles: false,
             isPopulatingThumbnails: false,
             isStartupCatchupPending: false,
+            isOwnerCacheRepairing: false,
             isMetadataRefreshPending: false,
             isRefreshingMetadata: false,
             thumbnailMaintenanceOperation: null,
@@ -684,6 +685,28 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(useLibraryStore.getState().backgroundHealingPaused).toBe(true);
 
         act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+        await act(async () => vi.advanceTimersByTimeAsync(5000));
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(useLibraryStore.getState().backgroundHealingPaused).toBe(false);
+        hook.unmount();
+    });
+
+    it('pauses for an owner-cache repair and resumes when it ends', async () => {
+        // Each thumbnail batch dirties the InvokeAI filter cache, which would get the repair's
+        // commit rejected and leave the next start to repair it again (#430).
+        vi.useFakeTimers();
+        const job = deferred<never>();
+        mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
+        await advanceStartup();
+
+        act(() => useLibraryStore.getState().setOwnerCacheRepairing(true));
+        await act(async () => Promise.resolve());
+        expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().backgroundHealingPaused).toBe(true);
+
+        act(() => useLibraryStore.getState().setOwnerCacheRepairing(false));
         await act(async () => vi.advanceTimersByTimeAsync(5000));
         await act(async () => vi.advanceTimersByTimeAsync(50));
         expect(useLibraryStore.getState().backgroundHealingPaused).toBe(false);

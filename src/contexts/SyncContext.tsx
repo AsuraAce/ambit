@@ -321,6 +321,30 @@ export const SyncProvider: React.FC<{
     // Set while an owner-cache repair has failed this session. Its dirty items are still in the
     // claim plan, so a sync that refreshes only its own changes must not commit over them.
     const ownerCacheRepairFailedRef = useRef(false);
+    // Thumbnail writes dirty the cache a repair is building and get its commit rejected, so
+    // thumbnail healing pauses while any repair after the library is shown runs. Counted because
+    // repairs can overlap; always released in `finally`, and reset on unmount.
+    const ownerCacheRepairCountRef = useRef(0);
+    const withThumbnailsPausedForRepair = useCallback(async <T,>(repair: () => Promise<T>): Promise<T> => {
+        ownerCacheRepairCountRef.current += 1;
+        useLibraryStore.getState().setOwnerCacheRepairing(true);
+        try {
+            return await repair();
+        } finally {
+            ownerCacheRepairCountRef.current = Math.max(0, ownerCacheRepairCountRef.current - 1);
+            if (ownerCacheRepairCountRef.current === 0) {
+                useLibraryStore.getState().setOwnerCacheRepairing(false);
+            }
+        }
+    }, []);
+    useEffect(
+        () => () => {
+            backgroundOwnerCacheRepairRef.current?.controller.abort();
+            ownerCacheRepairCountRef.current = 0;
+            useLibraryStore.getState().setOwnerCacheRepairing(false);
+        },
+        []
+    );
     const waitForBackgroundOwnerCacheRepair = useCallback(async () => {
         while (backgroundOwnerCacheRepairRef.current) {
             await backgroundOwnerCacheRepairRef.current.promise;
@@ -560,7 +584,7 @@ export const SyncProvider: React.FC<{
             // Run after a repair already in progress rather than competing with it for the claim;
             // the newer one then sees whether that repair failed.
             const previous = backgroundOwnerCacheRepairRef.current;
-            const promise = (async () => {
+            const promise = withThumbnailsPausedForRepair(async () => {
                 try {
                     await previous?.promise;
                     throwIfInvokeAborted(controller.signal);
@@ -575,10 +599,10 @@ export const SyncProvider: React.FC<{
                     }
                     startPendingInvokeLiveRerun();
                 }
-            })();
+            });
             backgroundOwnerCacheRepairRef.current = { promise, controller };
         },
-        [refreshAfterOwnerScopeChange, startPendingInvokeLiveRerun]
+        [refreshAfterOwnerScopeChange, startPendingInvokeLiveRerun, withThumbnailsPausedForRepair]
     );
 
     // For startup catch-ups: owner preparation and its background repair both claim the cache that
@@ -606,13 +630,13 @@ export const SyncProvider: React.FC<{
             return false;
         }
         try {
-            await refreshAfterOwnerScopeChange(2);
+            await withThumbnailsPausedForRepair(() => refreshAfterOwnerScopeChange(2));
             return true;
         } catch (error) {
             console.warn('[InvokeAI] Library cache repair after the startup import failed.', error);
             return false;
         }
-    }, [refreshAfterOwnerScopeChange]);
+    }, [refreshAfterOwnerScopeChange, withThumbnailsPausedForRepair]);
 
     const persistOwnerSelection = useCallback(
         async (

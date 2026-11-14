@@ -2895,7 +2895,7 @@ describe('Library Integration (Provider Stack)', () => {
                         releaseClaim = (claim) => (claim instanceof Error ? reject(claim) : resolve(claim));
                     })
             );
-            renderSyncStack(
+            const view = renderSyncStack(
                 (h) => (libraryHook = h),
                 (h) => (syncHook = h)
             );
@@ -2933,8 +2933,48 @@ describe('Library Integration (Provider Stack)', () => {
             // The view is ready while the repair is still waiting for its claim.
             await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
             await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
-            return { getSync: () => syncHook!, releaseClaim };
+            return { getSync: () => syncHook!, releaseClaim, unmount: view.unmount };
         };
+
+        const isRepairing = () => useLibraryStore.getState().isOwnerCacheRepairing;
+
+        it('pauses thumbnail healing while the repair runs and resumes it after the commit', async () => {
+            // Thumbnail writes would dirty the cache being repaired and get its commit rejected.
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            expect(isRepairing()).toBe(true);
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 }));
+            await waitFor(() => expect(isRepairing()).toBe(false));
+        });
+
+        it('resumes thumbnail healing when the repair fails', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { releaseClaim } = await startUnchangedAllUsersView();
+            expect(isRepairing()).toBe(true);
+
+            await act(async () => releaseClaim(new Error('disk is busy')));
+
+            await waitFor(() => expect(isRepairing()).toBe(false));
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('resumes thumbnail healing when the repair is aborted by unmounting', async () => {
+            // A stuck flag would stop thumbnails for the rest of the session.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { releaseClaim, unmount } = await startUnchangedAllUsersView();
+            expect(isRepairing()).toBe(true);
+
+            unmount();
+            expect(isRepairing()).toBe(false);
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            expect(isRepairing()).toBe(false);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
 
         it('shows the view before the repair finishes, then commits the repaired cache', async () => {
             const { releaseClaim } = await startUnchangedAllUsersView();
