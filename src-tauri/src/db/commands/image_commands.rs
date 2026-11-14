@@ -1521,6 +1521,46 @@ fn restore_scope_cache(conn: &Connection, scope_key: &str) -> Result<(), String>
         [scope_key],
     )
     .map_err(|error| error.to_string())?;
+    mask_restored_scope_thumbnails(conn)
+}
+
+/// A scope snapshot keeps the thumbnail sensitivity it was saved with, so a privacy mask
+/// widened since then would show through it until the cache repair finishes. Raise the
+/// restored flags to the current mask; lowering them is left to the repair.
+fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "UPDATE facet_cache
+         SET thumbnail_is_sensitive = 1
+         WHERE COALESCE(thumbnail_is_sensitive, 0) = 0
+           AND thumbnail_sensitivity_override IS NOT 0
+           AND (
+               EXISTS (
+                   SELECT 1 FROM privacy_mask_keywords k
+                   WHERE LOWER(facet_cache.resource_name) LIKE '%' || k.keyword || '%'
+               )
+               OR EXISTS (
+                   SELECT 1 FROM images i
+                   WHERE i.id = facet_cache.thumbnail_image_id
+                     AND COALESCE(i.privacy_hidden, 0) != 0
+               )
+           )",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
+        "UPDATE collections
+         SET dynamic_thumbnail_is_sensitive = 1
+         WHERE COALESCE(dynamic_thumbnail_is_sensitive, 0) = 0
+           AND dynamic_thumbnail_path IS NOT NULL AND dynamic_thumbnail_path != ''
+           AND EXISTS (
+               SELECT 1 FROM images i
+               WHERE (i.thumbnail_path = collections.dynamic_thumbnail_path
+                      OR i.path = collections.dynamic_thumbnail_path)
+                 AND COALESCE(i.privacy_hidden, 0) != 0
+           )",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -4545,6 +4585,75 @@ mod tests {
             shared_model_dirty_b.cache_repair.resources.loras,
             vec!["NewDetailer".to_string()]
         );
+    }
+
+    #[test]
+    fn restored_scope_snapshot_hides_thumbnails_masked_since_it_was_saved() {
+        // Startup can show a restored snapshot while its repair runs in the background, so the
+        // snapshot must never reveal a thumbnail that the current privacy mask hides.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let hidden = create_image_record("hidden-image", 100, 10, "{}");
+        let shown = create_image_record("shown-image", 101, 10, "{}");
+        super::save_images_batch_inner(&conn, &[hidden.clone(), shown.clone()])
+            .expect("insert images");
+        conn.execute(
+            "UPDATE images SET privacy_hidden = 1 WHERE id = 'hidden-image'",
+            [],
+        )
+        .expect("mask image after the snapshot");
+        conn.execute(
+            "INSERT INTO privacy_mask_keywords (keyword) VALUES ('secret')",
+            [],
+        )
+        .expect("widen mask after the snapshot");
+        conn.execute_batch(
+            "INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, status, generation, built_generation, updated_at
+             ) VALUES ('scope', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'all', 'dirty', 2, 1, 0);
+             INSERT INTO invoke_scope_facet_cache (
+                 scope_key, facet_type, resource_name, count, thumbnail_image_id,
+                 thumbnail_is_sensitive, thumbnail_sensitivity_override
+             ) VALUES
+                 ('scope', 'loras', 'MySecretStyle', 1, NULL, 0, NULL),
+                 ('scope', 'checkpoints', 'HiddenThumb', 1, 'hidden-image', 0, NULL),
+                 ('scope', 'checkpoints', 'ShownThumb', 1, 'shown-image', 0, NULL),
+                 ('scope', 'loras', 'SecretButAllowed', 1, 'hidden-image', 0, 0);
+             INSERT INTO collections (id, name) VALUES ('masked', 'Masked'), ('visible', 'Visible');",
+        )
+        .expect("seed snapshot saved before the mask changed");
+        conn.execute(
+            "INSERT INTO invoke_scope_collection_cache (
+                 scope_key, collection_id, dynamic_thumbnail_path, dynamic_thumbnail_is_sensitive
+             ) VALUES ('scope', 'masked', ?1, 0), ('scope', 'visible', ?2, 0)",
+            params![hidden.path, shown.path],
+        )
+        .expect("seed collection snapshot");
+
+        super::restore_scope_cache(&conn, "scope").expect("restore snapshot");
+
+        let facet = |name: &str| -> i64 {
+            conn.query_row(
+                "SELECT thumbnail_is_sensitive FROM facet_cache WHERE resource_name = ?1",
+                [name],
+                |row| row.get(0),
+            )
+            .expect("restored facet")
+        };
+        assert_eq!(facet("MySecretStyle"), 1, "name matches a masked keyword");
+        assert_eq!(facet("HiddenThumb"), 1, "thumbnail image is now hidden");
+        assert_eq!(facet("ShownThumb"), 0, "unmasked thumbnails stay visible");
+        assert_eq!(facet("SecretButAllowed"), 0, "a user override still wins");
+        let collection = |id: &str| -> i64 {
+            conn.query_row(
+                "SELECT dynamic_thumbnail_is_sensitive FROM collections WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .expect("restored collection")
+        };
+        assert_eq!(collection("masked"), 1);
+        assert_eq!(collection("visible"), 0);
     }
 
     #[cfg(windows)]
