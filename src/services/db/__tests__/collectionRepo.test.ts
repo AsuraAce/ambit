@@ -71,6 +71,17 @@ vi.mock('../connection', () => ({
     getDb: dbMocks.getDb,
 }));
 
+// Held reads run on select_readonly's own connection; in these tests they reach the same fake database.
+vi.mock('../readonlySelect', async () => {
+    const { getDb } = await import('../connection');
+    return {
+        selectReadonly: vi.fn(async (sql: string, params?: unknown[]) => {
+            const db = await getDb();
+            return params === undefined ? db.select(sql) : db.select(sql, params);
+        }),
+    };
+});
+
 const makeCollectionRow = (overrides: Record<string, unknown> = {}) => ({
     id: 'c1',
     name: 'Collection',
@@ -534,6 +545,29 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(countQuery).toContain('JOIN scoped_images i ON i.id = ci.image_id');
         expect(countQuery).toContain('WHERE i.invoke_scope_hidden = 0');
         expect(countQuery).toContain('GROUP BY ci.collection_id');
+    });
+
+    it('reads collection counts and thumbnails on the stoppable read-only connection and writes on the plugin', async () => {
+        // Exit and reload stop only reads on select_readonly's connection. The collection rows
+        // and the thumbnail cache writes stay on the plugin pool.
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM scoped_collections')) return [makeCollectionRow()];
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
+            if (query.includes('ranked_thumbnails'))
+                return [{ collection_id: 'c1', dynamic_thumb: 't.webp', dynamic_privacy: 0, safe_thumb: 't.webp' }];
+            return [];
+        });
+        const { selectReadonly } = await import('../readonlySelect');
+        vi.mocked(selectReadonly).mockClear();
+
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        await getAllCollectionsWithStats();
+
+        const readonlyQueries = vi.mocked(selectReadonly).mock.calls.map(([sql]) => sql);
+        expect(readonlyQueries.some((sql) => sql.includes('COUNT(*) as count'))).toBe(true);
+        expect(readonlyQueries.some((sql) => sql.includes('ranked_thumbnails'))).toBe(true);
+        expect(readonlyQueries.some((sql) => sql.includes('SELECT * FROM scoped_collections'))).toBe(false);
+        expect(dbMocks.execute).toHaveBeenCalled();
     });
 
     it('maps cached dynamic thumbnails without running thumbnail hydration queries when thumbnails are included', async () => {

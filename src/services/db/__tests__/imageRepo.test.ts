@@ -64,6 +64,17 @@ vi.mock('../connection', () => ({
     getDb: () => getDbMock(),
 }));
 
+// Held reads run on select_readonly's own connection; in these tests they reach the same fake database.
+vi.mock('../readonlySelect', async () => {
+    const { getDb } = await import('../connection');
+    return {
+        selectReadonly: vi.fn(async (sql: string, params?: unknown[]) => {
+            const db = await getDb();
+            return params === undefined ? db.select(sql) : db.select(sql, params);
+        }),
+    };
+});
+
 describe('imageRepo batch removal', () => {
     beforeEach(async () => {
         vi.clearAllMocks();

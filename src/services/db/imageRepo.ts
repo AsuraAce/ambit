@@ -12,6 +12,7 @@ import {
     type VideoMetadataField,
 } from '../../types';
 import { getDb, dbMutex } from './connection';
+import { selectReadonly } from './readonlySelect';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
@@ -1195,16 +1196,15 @@ export const checkHiddenContentAvailability = async (): Promise<{
         };
     }
 
-    const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
     const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
-        db.select<Array<Record<string, number>>>(
+        selectReadonly<Array<Record<string, number>>>(
             'SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'
         ),
-        db.select<Array<Record<string, number>>>(
+        selectReadonly<Array<Record<string, number>>>(
             'SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'
         ),
-        db.select<Array<Record<string, number>>>(
+        selectReadonly<Array<Record<string, number>>>(
             'SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'
         ),
     ]);

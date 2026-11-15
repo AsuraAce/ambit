@@ -8,6 +8,7 @@ pub mod commands;
 pub mod error;
 pub mod facets;
 pub mod migrations;
+pub mod readonly_select;
 pub mod reparse;
 
 #[cfg(any(test, all(windows, not(debug_assertions))))]

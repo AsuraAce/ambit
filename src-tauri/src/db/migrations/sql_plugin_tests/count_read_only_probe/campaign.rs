@@ -126,7 +126,8 @@ fn queries() -> ProbeResult<[String; 4]> {
     let base = string_constant(SEARCH, "BASE_VISIBLE_WHERE")?;
     let default = string_constant(SEARCH, "DEFAULT_VISIBLE_WHERE")?;
     if default.matches("${BASE_VISIBLE_WHERE}").count() != 1
-        || !count_source.contains("const fromClause = `FROM ${countSourceFor(finalWhere)} AS images`;")
+        || !count_source
+            .contains("const fromClause = `FROM ${countSourceFor(finalWhere)} AS images`;")
         || !count_source
             .contains("const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;")
         || !count_source

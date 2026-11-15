@@ -7,6 +7,17 @@ vi.mock('../connection', () => ({
     getDb: () => getDbMock(),
 }));
 
+// Held reads run on select_readonly's own connection; in these tests they reach the same fake database.
+vi.mock('../readonlySelect', async () => {
+    const { getDb } = await import('../connection');
+    return {
+        selectReadonly: vi.fn(async (sql: string, params?: unknown[]) => {
+            const db = await getDb();
+            return params === undefined ? db.select(sql) : db.select(sql, params);
+        }),
+    };
+});
+
 vi.mock('../../../bindings', () => ({
     commands: {
         getValidFacetNames: getValidFacetNamesMock,
@@ -138,6 +149,25 @@ describe('searchRepo basic queries', () => {
             'scoped_images',
             'scoped_images',
         ]);
+    });
+
+    it('runs the held count and stats reads on the stoppable read-only connection', async () => {
+        // Exit and reload stop only reads on select_readonly's connection; a count left on the
+        // plugin pool keeps the app open until it finishes (minutes on a large library).
+        const db = { select: vi.fn().mockResolvedValue([{ count: 1 }]) };
+        getDbMock.mockResolvedValue(db);
+        const { selectReadonly } = await import('../readonlySelect');
+        vi.mocked(selectReadonly).mockClear();
+        const { countGlobalImages, countImages, countLibraryScopes, getLibraryStatsSummary } = await import('../searchRepo');
+
+        await countImages('', []);
+        await countImages('WHERE is_deleted = 0', [], 'collection-1');
+        await countLibraryScopes('', []);
+        await countGlobalImages();
+        await getLibraryStatsSummary('WHERE is_deleted = 0', []);
+
+        expect(vi.mocked(selectReadonly).mock.calls.map(([sql]) => sql)).toEqual(db.select.mock.calls.map(([sql]) => sql));
+        expect(selectReadonly).toHaveBeenCalledTimes(7);
     });
 
     it('sends each selected-filter count directly with unchanged query arguments', async () => {
@@ -324,7 +354,8 @@ describe('searchRepo fallbacks and caching', () => {
             modelStats: [],
             keywordStats: [],
         });
-        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats', expect.any(Error));
+        // The held reads now open the database inside each stats reader, which logs and returns its own empty result.
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('[DB] Failed to get library stats'), expect.any(Error));
         errorSpy.mockRestore();
     });
 
