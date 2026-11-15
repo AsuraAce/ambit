@@ -192,8 +192,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 );
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
+                    // Thumbnails read before or during the rebuild may show an image that is now hidden.
+                    useCollectionStore.getState().invalidateRetainedThumbnails();
                     await clearAllCollectionThumbnailCaches();
                     await measureStartupPhase('facets', () => rebuildThumbnailFacetCache());
+                    useCollectionStore.getState().invalidateRetainedThumbnails();
                     if (cancelled) return;
                     console.info(
                         `[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`

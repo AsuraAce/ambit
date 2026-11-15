@@ -2836,6 +2836,7 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
         expect(refreshCollections).toHaveBeenCalledWith(false, {
             includeThumbnails: false,
+            retainThumbnails: false,
             scheduleSmartRefresh: false,
             consistency: 'authoritative',
         });
@@ -2947,6 +2948,21 @@ describe('Library Integration (Provider Stack)', () => {
 
             await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 }));
             await waitFor(() => expect(isRepairing()).toBe(false));
+        });
+
+        it('keeps the collection thumbnails showing while the repair refreshes collections', async () => {
+            // Nobody's visibility changed, so the last thumbnails stay until the repaired ones are read.
+            const refreshCollections = vi.fn().mockResolvedValue(undefined);
+            useCollectionStore.setState({ refreshCollections });
+            const { releaseClaim } = await startUnchangedAllUsersView();
+
+            await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
+
+            await waitFor(() => expect(isRepairing()).toBe(false));
+            expect(refreshCollections).toHaveBeenCalled();
+            for (const [, options] of refreshCollections.mock.calls as [boolean, { retainThumbnails?: boolean }][]) {
+                expect(options.retainThumbnails).toBe(true);
+            }
         });
 
         it('resumes thumbnail healing when the repair fails', async () => {
@@ -3220,6 +3236,7 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
         expect(refreshCollections).toHaveBeenCalledWith(false, {
             includeThumbnails: false,
+            retainThumbnails: false,
             scheduleSmartRefresh: false,
             consistency: 'authoritative',
         });
@@ -4670,6 +4687,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.clearCollectionOwnerScopeCaches).toHaveBeenCalledOnce();
         expect(refreshCollections).toHaveBeenLastCalledWith(false, {
             includeThumbnails: false,
+            retainThumbnails: false,
             scheduleSmartRefresh: false,
             consistency: 'authoritative',
         });

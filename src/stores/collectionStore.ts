@@ -38,6 +38,11 @@ let ordinaryCountHydration: Promise<void> | null = null;
 // within one generation: a new owner scope never shows the previous owner's counts.
 let publishedCollectionsGeneration: number | null = null;
 let pendingSmartRefresh: RefreshSmartCountsOptions | null = null;
+// Bumped when the privacy mask changes. A thumbnail read before then may show an image that is
+// now hidden, so `collections` carries thumbnails over a repair only while its thumbnails were
+// read under the current epoch.
+let thumbnailPrivacyEpoch = 0;
+let publishedThumbnailsEpoch = 0;
 
 const mergeSmartRefreshes = (held: RefreshSmartCountsOptions | null, next: RefreshSmartCountsOptions): RefreshSmartCountsOptions => {
     if (!held) return { ...next, delayMs: undefined, consistency: undefined };
@@ -60,6 +65,24 @@ const retainHeldCounts = (cols: Collection[], previous: Collection[]): Collectio
             return collection;
         }
         return { ...collection, count: last.count, countState: 'stale' };
+    });
+};
+
+// Keeps each collection's last thumbnail while a repair has cleared the cached one, so the
+// sidebar does not fall back to placeholders until the repaired thumbnails are read.
+const retainLastThumbnails = (cols: Collection[], previous: Collection[]): Collection[] => {
+    const previousById = new Map(previous.map((collection) => [collection.id, collection]));
+    return cols.map((collection) => {
+        const last = previousById.get(collection.id);
+        if (collection.thumbnail || collection.safeThumbnail || !last || (!last.thumbnail && !last.safeThumbnail)) return collection;
+        if (collection.customThumbnail !== last.customThumbnail) return collection;
+        return {
+            ...collection,
+            thumbnail: last.thumbnail,
+            safeThumbnail: last.safeThumbnail,
+            thumbnailIsSensitive: last.thumbnailIsSensitive,
+            thumbnailSourceKind: last.thumbnailSourceKind,
+        };
     });
 };
 
@@ -207,6 +230,12 @@ interface RefreshSmartCountsOptions {
 
 export interface CollectionRefreshOptions {
     includeThumbnails?: boolean;
+    /**
+     * Keeps each collection's last thumbnail until the next one is read. Only a repair whose
+     * owner scope and visibility did not change may pass it; a generation change or a privacy
+     * mask change since those thumbnails were read always drops them.
+     */
+    retainThumbnails?: boolean;
     scheduleSmartRefresh?: boolean;
     consistency?: 'best_effort' | 'authoritative';
 }
@@ -232,6 +261,7 @@ interface CollectionState {
     invalidateInitialization: () => number;
     getInitializationGeneration: () => number;
     setOrdinaryCountsReady: (ready: boolean) => void;
+    invalidateRetainedThumbnails: () => void;
     refreshPendingOrdinaryCounts: () => Promise<void>;
     retryOrdinaryCounts: () => void;
     initialize: (options?: CollectionInitializationOptions) => Promise<boolean>;
@@ -304,6 +334,10 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
+            invalidateRetainedThumbnails: () => {
+                thumbnailPrivacyEpoch += 1;
+            },
+
             refreshPendingOrdinaryCounts: async () => {
                 if (!get().ordinaryCountsReady || !pendingOrdinaryCounts) return;
                 if (ordinaryCountHydration) return ordinaryCountHydration;
@@ -365,6 +399,7 @@ export const useCollectionStore = create<CollectionState>()(
             refreshCollections: async (debounced = false, options = {}) => {
                 const isAuthoritative = options.consistency === 'authoritative';
                 const refreshGeneration = initializationGeneration;
+                const thumbnailEpoch = thumbnailPrivacyEpoch;
                 // Counts wait for the gallery to open and for any repair, which holds `ordinaryCountsReady`.
                 const deferCounts = (!get().hasOpenedGallery || !get().ordinaryCountsReady) && !isBrowserMockMode();
                 const requestedRunId = invalidateCollectionRefreshes();
@@ -411,13 +446,18 @@ export const useCollectionStore = create<CollectionState>()(
                                 return;
                             }
 
-                            set((state) => ({
-                                collections:
-                                    deferCounts && publishedCollectionsGeneration === refreshGeneration
-                                        ? retainHeldCounts(cols, state.collections)
-                                        : cols,
-                            }));
+                            const sameGeneration = publishedCollectionsGeneration === refreshGeneration;
+                            const retainThumbnails =
+                                !!options.retainThumbnails &&
+                                sameGeneration &&
+                                publishedThumbnailsEpoch === thumbnailPrivacyEpoch &&
+                                thumbnailEpoch === thumbnailPrivacyEpoch;
+                            set((state) => {
+                                const counted = deferCounts && sameGeneration ? retainHeldCounts(cols, state.collections) : cols;
+                                return { collections: retainThumbnails ? retainLastThumbnails(counted, state.collections) : counted };
+                            });
                             publishedCollectionsGeneration = refreshGeneration;
+                            if (!retainThumbnails) publishedThumbnailsEpoch = thumbnailEpoch;
                             if (deferCounts && cols.some((collection) => !collection.filters)) {
                                 pendingOrdinaryCounts = { generation: refreshGeneration, revision: currentRunId };
                                 void get().refreshPendingOrdinaryCounts();
@@ -465,6 +505,11 @@ export const useCollectionStore = create<CollectionState>()(
                 const refreshGeneration = initializationGeneration;
                 const run = async () => {
                     const runId = ++thumbnailRefreshRunId;
+                    const thumbnailEpoch = thumbnailPrivacyEpoch;
+                    const isSuperseded = () =>
+                        refreshGeneration !== initializationGeneration ||
+                        runId !== thumbnailRefreshRunId ||
+                        thumbnailEpoch !== thumbnailPrivacyEpoch;
                     let wasSuperseded = false;
                     try {
                         if (refreshGeneration !== initializationGeneration) {
@@ -478,16 +523,25 @@ export const useCollectionStore = create<CollectionState>()(
 
                         if (currentCollections.length === 0) return;
 
+                        // A forced refresh replaces thumbnails that are already showing, so it applies
+                        // the whole set at once instead of changing the sidebar batch by batch.
+                        const forcedSummaries: Awaited<ReturnType<typeof getCollectionThumbnailSummaries>> = {};
                         for (const collectionBatch of chunk(currentCollections, COLLECTION_THUMBNAIL_CHUNK_SIZE)) {
-                            if (refreshGeneration !== initializationGeneration || runId !== thumbnailRefreshRunId) {
+                            if (isSuperseded()) {
                                 wasSuperseded = true;
                                 break;
                             }
 
                             const summaries = await getCollectionThumbnailSummaries(collectionBatch);
-                            if (refreshGeneration !== initializationGeneration || runId !== thumbnailRefreshRunId) {
+                            if (isSuperseded()) {
                                 wasSuperseded = true;
                                 break;
+                            }
+
+                            if (force) {
+                                Object.assign(forcedSummaries, summaries);
+                                await delay(COLLECTION_THUMBNAIL_YIELD_MS);
+                                continue;
                             }
 
                             set((state) => ({
@@ -503,6 +557,15 @@ export const useCollectionStore = create<CollectionState>()(
                             }));
 
                             await delay(COLLECTION_THUMBNAIL_YIELD_MS);
+                        }
+                        if (force && !wasSuperseded) {
+                            set((state) => ({
+                                collections: state.collections.map((collection) => {
+                                    const summary = forcedSummaries[collection.id];
+                                    return summary ? { ...collection, ...summary } : collection;
+                                }),
+                                thumbnailHydrationPendingIds: {},
+                            }));
                         }
                         if (wasSuperseded) {
                             if (isAuthoritative) {
@@ -581,6 +644,7 @@ export const useCollectionStore = create<CollectionState>()(
                     if (eligibleSmartCols.length === 0) return;
 
                     runId = ++smartCountRunId;
+                    const thumbnailEpoch = thumbnailPrivacyEpoch;
                     const includesPromptSearch = !!options.includePromptSearch;
                     smartCols = eligibleSmartCols.filter((collection) => {
                         const activeRun = smartCountRunsByCollection.get(collection.id);
@@ -652,7 +716,7 @@ export const useCollectionStore = create<CollectionState>()(
                             set((state) => ({
                                 collections: state.collections.map((c) =>
                                     c.id === smartCol.id && c.filters
-                                        ? c.customThumbnail || !includeThumbnails
+                                        ? c.customThumbnail || !includeThumbnails || thumbnailEpoch !== thumbnailPrivacyEpoch
                                             ? {
                                                   ...c,
                                                   count: summary.count,

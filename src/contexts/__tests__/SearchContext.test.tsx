@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
     incrementScopeCountsVersion: vi.fn(),
     shouldPrefetchResultPages: vi.fn(),
     refreshSmartCounts: vi.fn(),
+    invalidateRetainedThumbnails: vi.fn(),
 }));
 
 vi.mock('../SettingsContext', () => ({ useSettings: () => mocks.settings.current }));
@@ -106,8 +107,11 @@ vi.mock('../../stores/libraryStore', () => ({
     ),
 }));
 vi.mock('../../stores/collectionStore', () => ({
-    useCollectionStore: (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
-        selector({ refreshSmartCounts: mocks.refreshSmartCounts }),
+    useCollectionStore: Object.assign(
+        (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
+            selector({ refreshSmartCounts: mocks.refreshSmartCounts }),
+        { getState: () => ({ invalidateRetainedThumbnails: mocks.invalidateRetainedThumbnails }) }
+    ),
 }));
 vi.mock('../../utils/imageQueryCache', () => ({
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
@@ -1115,6 +1119,8 @@ describe('SearchProvider', () => {
         await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
         expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledWith(['face']);
         expect(mocks.clearAllCollectionThumbnailCaches).toHaveBeenCalledOnce();
+        // Collection thumbnails read before or during the rebuild are never kept over a repair.
+        expect(mocks.invalidateRetainedThumbnails).toHaveBeenCalledTimes(2);
         expect(mocks.incrementFacetCacheVersion).toHaveBeenCalledOnce();
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['parameterRanges'] });
     });
