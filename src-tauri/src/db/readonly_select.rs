@@ -138,7 +138,7 @@ fn read_error(error: rusqlite::Error) -> String {
 mod tests {
     use super::{run, select, SqlRow, SqlValue, READ_STOPPED};
     use crate::db::background_work::current_epoch;
-    use crate::sql_guard::refused;
+    use crate::sql_guard::{refused, StatementGuard};
     use rusqlite::Connection;
     use std::path::{Path, PathBuf};
 
@@ -289,19 +289,39 @@ mod tests {
         );
     }
 
+    /// What the plugin guard itself answers for `sql`.
+    fn guard_refusal(library: &Library, sql: &str) -> String {
+        StatementGuard::open(library.path())
+            .unwrap()
+            .check_single(sql)
+            .expect_err(sql)
+            .into_message()
+    }
+
     #[test]
     fn refuses_everything_the_plugin_guard_refuses() {
+        // The error must be the guard's own refusal. ATTACH, TEMP writes and
+        // multiple statements would also fail later without the guard (on the
+        // ATTACH limit, query_only or rusqlite), which would hide a missing check.
         let library = Library::new("guard");
-        for &sql in refused::REACH_OTHER_FILES
+        // A folder that exists, so only the guard can stop this copy.
+        let copy = library.path().with_extension("copy.db");
+        let extra = [
+            format!("VACUUM INTO '{}'", copy.display()),
+            "SELECT 1; SELECT 2".to_string(),
+        ];
+        let listed = refused::REACH_OTHER_FILES
             .iter()
             .chain(refused::ATTACH_FORMS)
             .chain(refused::TEMP_OBJECTS)
-        {
+            .map(|sql| sql.to_string());
+        for sql in listed.chain(extra) {
             let params = vec![SqlValue::Text("C:/x/invokeai.db".into()); sql.matches('?').count()];
-            let error = read(&library, sql, &params).expect_err(sql);
-            assert_ne!(error, READ_STOPPED, "{sql:?}");
+            let error = read(&library, &sql, &params).expect_err(&sql);
+            assert_eq!(error, guard_refusal(&library, &sql), "{sql:?}");
         }
         assert_eq!(library.rows(), 2, "no refused statement may write");
+        assert!(!copy.exists());
         assert!(!Path::new("C:/x/copy.db").exists());
     }
 

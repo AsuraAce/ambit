@@ -5,7 +5,9 @@ import { getDb } from './connection';
 const toSqlValue = (value: unknown): SqlValue => {
     if (value === undefined || value === null) return null;
     if (typeof value === 'string' || typeof value === 'boolean') return value;
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    // The plugin sent values as JSON, where NaN and Infinity become NULL. The search parser
+    // relies on that: "steps:abc" binds Number('abc') and must match nothing, not fail.
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     throw new TypeError(`A read-only select cannot bind a ${typeof value} parameter.`);
 };
 

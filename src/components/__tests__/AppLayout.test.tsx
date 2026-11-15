@@ -10,6 +10,7 @@ const searchState = vi.hoisted(() => ({
         images: [{ id: '1', filename: 'test.png', timestamp: 123 }] as unknown as AIImage[],
         totalImages: 1,
         globalTotal: 1,
+        imageCountsFailed: false,
         isFiltering: false,
         clearAllFilters: vi.fn(),
         toggleFavorite: vi.fn(),
@@ -166,6 +167,7 @@ describe('AppLayout', () => {
             images: [{ id: '1', filename: 'test.png', timestamp: 123 }] as unknown as AIImage[],
             totalImages: 1,
             globalTotal: 1,
+            imageCountsFailed: false,
             isFiltering: false,
             clearAllFilters: vi.fn(),
             toggleFavorite: vi.fn(),
@@ -557,6 +559,17 @@ describe('AppLayout', () => {
 
         expect(screen.queryByRole('heading', { name: 'No Matches Found' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+    });
+
+    it('shows no matches for an empty page when its counts could not be read', () => {
+        // A failed count read must not leave the gallery blank; it stays unknown in the header only.
+        searchState.value.images = [];
+        (searchState.value as { totalImages: number | null; globalTotal: number | null }).totalImages = null;
+        (searchState.value as { totalImages: number | null; globalTotal: number | null }).globalTotal = null;
+        searchState.value.imageCountsFailed = true;
+        render(<AppLayout {...defaultProps} />);
+
+        expect(screen.getByRole('heading', { name: 'No Matches Found' })).toBeTruthy();
     });
 
     it('clears filters from the no-matches state', () => {

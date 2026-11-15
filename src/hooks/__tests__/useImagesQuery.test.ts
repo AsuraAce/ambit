@@ -9,7 +9,10 @@ type QueryPage = { images: AIImage[] };
 type CountsQueryConfig = {
     queryKey: readonly unknown[];
     queryFn: () => Promise<{ totalCount: number; globalCount: number }>;
-    placeholderData?: unknown;
+    placeholderData: (
+        previousData?: { totalCount: number; globalCount: number },
+        previousQuery?: { queryKey: readonly unknown[] }
+    ) => { totalCount: number; globalCount: number } | undefined;
     enabled: boolean;
 };
 type InfiniteQueryConfig = {
@@ -26,6 +29,7 @@ type InfiniteQueryConfig = {
 const mocks = vi.hoisted(() => ({
     config: undefined as unknown,
     countsConfig: undefined as unknown,
+    countsResult: { status: 'pending', data: undefined, isError: false } as { status: string; data: unknown; isError: boolean },
     browserMockMode: false,
     searchBrowserMockImages: vi.fn(),
     buildSqlWhereClause: vi.fn(),
@@ -43,7 +47,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
     },
     useQuery: (config: unknown) => {
         mocks.countsConfig = config;
-        return { status: 'pending', data: undefined };
+        return mocks.countsResult;
     },
 }));
 
@@ -145,6 +149,7 @@ describe('useImagesQuery', () => {
     });
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.countsResult = { status: 'pending', data: undefined, isError: false };
         mocks.browserMockMode = false;
         mocks.buildSqlWhereClause.mockReturnValue({
             where: 'WHERE hidden = ?',
@@ -329,10 +334,35 @@ describe('useImagesQuery', () => {
         expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(expect.any(Object), true, 'blur', ['secret'], []);
     });
 
-    it('never shows a count from another filter or privacy scope while the new count loads', () => {
-        renderImagesHook();
+    it('reports a failed count read only while no count is cached', () => {
+        // The gallery uses this to show "no matches" instead of a blank grid for an empty page.
+        mocks.countsResult = { status: 'error', data: undefined, isError: true };
+        expect(renderImagesHook().result.current.countsFailed).toBe(true);
 
-        expect(countsConfig().placeholderData).toBeUndefined();
+        mocks.countsResult = { status: 'error', data: { totalCount: 7, globalCount: 20 }, isError: true };
+        expect(renderImagesHook().result.current.countsFailed).toBe(false);
+    });
+
+    it('keeps the last count while a search or sort change loads, so the header does not flash', () => {
+        renderImagesHook();
+        const counts = { totalCount: 7, globalCount: 20 };
+        const key = countsConfig().queryKey;
+        const otherSearch = [key[0], createDefaultFilters({ searchQuery: 'previous' }), 'name_asc', ...key.slice(3)];
+
+        expect(countsConfig().placeholderData(counts, { queryKey: otherSearch })).toBe(counts);
+        expect(countsConfig().placeholderData(undefined, { queryKey: otherSearch })).toBeUndefined();
+    });
+
+    it('never shows a count from another privacy or owner scope while the new count loads', () => {
+        // That count would describe images this scope may not show, so it reads as "—" instead.
+        renderImagesHook();
+        const counts = { totalCount: 7, globalCount: 20 };
+        const key = countsConfig().queryKey;
+
+        expect(countsConfig().placeholderData(counts, { queryKey: [...key.slice(0, 3), false, ...key.slice(4)] })).toBeUndefined();
+        expect(countsConfig().placeholderData(counts, { queryKey: [...key.slice(0, 4), 'hide', ...key.slice(5)] })).toBeUndefined();
+        expect(countsConfig().placeholderData(counts, { queryKey: [...key.slice(0, 7), 'invoke:owner:other', 'counts'] })).toBeUndefined();
+        expect(countsConfig().placeholderData(counts)).toBeUndefined();
     });
 
     it('counts browser mock pages without the database', async () => {

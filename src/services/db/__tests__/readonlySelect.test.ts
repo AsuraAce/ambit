@@ -22,9 +22,15 @@ describe('selectReadonly', () => {
         expect(mocks.selectReadonly).toHaveBeenCalledWith('SELECT ?, ?, ?, ?, ?', ['a', 1.5, true, null, null]);
     });
 
+    it('binds a number that is not finite as NULL, as the plugin did', async () => {
+        // "steps:abc" binds Number('abc'); the count must read as no matches instead of failing.
+        await selectReadonly('SELECT ?, ?, ?', [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]);
+
+        expect(mocks.selectReadonly).toHaveBeenCalledWith('SELECT ?, ?, ?', [null, null, null]);
+    });
+
     it('refuses a value it cannot bind instead of sending it as something else', async () => {
-        // JSON turns NaN into null and drops objects' meaning, which would silently change a filter.
-        await expect(selectReadonly('SELECT ?', [Number.NaN])).rejects.toThrow(TypeError);
+        // An object would lose its meaning on the way, which would silently change a filter.
         await expect(selectReadonly('SELECT ?', [{ id: 1 }])).rejects.toThrow(TypeError);
         expect(mocks.selectReadonly).not.toHaveBeenCalled();
     });

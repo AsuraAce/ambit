@@ -55,6 +55,8 @@ interface SearchContextType {
     totalImages: number | null;
     /** Total non-deleted images in library; null while it loads. */
     globalTotal: number | null;
+    /** The count read failed, so `totalImages` and `globalTotal` stay null until the next refresh. */
+    imageCountsFailed: boolean;
     sourceKindCounts?: SourceKindCounts;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
@@ -291,6 +293,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         status: imagesQueryStatus,
         queryKey: imagesQueryKey,
         counts: imageCounts,
+        countsFailed: imageCountsFailed,
     } = useImagesQuery({
         filters,
         sortOption,
@@ -820,6 +823,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 stats: activeStats,
                 totalImages: totalImagesCount,
                 globalTotal: globalTotalCount,
+                imageCountsFailed: !privacyExposureBlocked && imageCountsFailed,
                 sourceKindCounts,
                 scopeCounts,
                 scopeAvailability,

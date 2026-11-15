@@ -212,11 +212,21 @@ export const useImagesQuery = ({
             ]);
             return { totalCount, globalCount };
         },
-        // No placeholder: a count from another filter or privacy scope would describe the wrong
-        // images, so it reads as loading ("—") until this scope's count arrives.
+        // Like the page, a search or sort change keeps the last count until the new one arrives.
+        // A privacy or owner-scope change reads as loading ("—"): the old count would describe
+        // images this scope may not show.
+        // The counts key is the images key plus 'counts', so the scope check compares that prefix.
+        placeholderData: (previousData, previousQuery) =>
+            previousData && hasMatchingPrivacyScope(previousQuery?.queryKey.slice(0, -1), imagesQueryKey) ? previousData : undefined,
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded,
     });
 
-    return { ...query, queryKey: imagesQueryKey, counts: countsQuery.data };
+    return {
+        ...query,
+        queryKey: imagesQueryKey,
+        counts: countsQuery.data,
+        // The read failed and nothing is cached: the counts stay unknown until the next refresh.
+        countsFailed: countsQuery.isError && countsQuery.data === undefined,
+    };
 };
