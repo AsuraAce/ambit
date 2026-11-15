@@ -83,6 +83,11 @@ describe('CollectionItem thumbnail hydration states', () => {
         expect(screen.getByLabelText(label).textContent).toBe('\u2014');
         expect(screen.queryByText('123')).toBeNull();
     });
+    it('keeps a held count visible during a repair and says it is updating', () => {
+        // Within the same owner scope the last count is a fair guide, so it stays, labelled as updating.
+        renderCollectionItem({ ...baseCollection, count: 123, countState: 'stale' });
+        expect(screen.getByLabelText('123 images, updating count').textContent).toBe('123');
+    });
     it('renders a skeleton while a collection thumbnail is pending', () => {
         renderCollectionItem(baseCollection, { isThumbnailPending: true });
 

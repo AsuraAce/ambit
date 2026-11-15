@@ -11,6 +11,9 @@ export const getCollectionCount = (collection: Collection): number | undefined =
 export const getCollectionCountLabel = (collection: Collection): string | undefined => {
     if (collection.countState === 'pending') return 'Updating count';
     if (collection.countState === 'failed') return 'Count unavailable';
+    if (collection.countState === 'stale' && collection.count !== undefined) {
+        return `${collection.count.toLocaleString()} images, updating count`;
+    }
     return getCollectionCount(collection) === undefined ? 'Count not calculated' : undefined;
 };
 

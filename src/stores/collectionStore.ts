@@ -34,6 +34,34 @@ type CountTicket = { generation: number; revision: number };
 let ordinaryCountRead: { ticket: CountTicket; promise: Promise<Map<string, number>> } | null = null;
 let pendingOrdinaryCounts: CountTicket | null = null;
 let ordinaryCountHydration: Promise<void> | null = null;
+// The generation whose counts `collections` shows. Counts are kept across a held read only
+// within one generation: a new owner scope never shows the previous owner's counts.
+let publishedCollectionsGeneration: number | null = null;
+let pendingSmartRefresh: RefreshSmartCountsOptions | null = null;
+
+const mergeSmartRefreshes = (held: RefreshSmartCountsOptions | null, next: RefreshSmartCountsOptions): RefreshSmartCountsOptions => {
+    if (!held) return { ...next, delayMs: undefined, consistency: undefined };
+    return {
+        includeArchived: held.includeArchived || next.includeArchived,
+        collectionIds: held.collectionIds && next.collectionIds ? [...new Set([...held.collectionIds, ...next.collectionIds])] : undefined,
+        includeThumbnails: held.includeThumbnails !== false || next.includeThumbnails !== false,
+        includePromptSearch: held.includePromptSearch || next.includePromptSearch,
+        markPending: held.markPending || next.markPending,
+    };
+};
+
+// Keeps each ordinary collection's last count, marked stale, while its next read is held.
+const retainHeldCounts = (cols: Collection[], previous: Collection[]): Collection[] => {
+    const previousById = new Map(previous.map((collection) => [collection.id, collection]));
+    return cols.map((collection) => {
+        if (collection.filters || collection.countState !== 'pending') return collection;
+        const last = previousById.get(collection.id);
+        if (!last || last.filters || last.count === undefined || (last.countState !== 'ready' && last.countState !== 'stale')) {
+            return collection;
+        }
+        return { ...collection, count: last.count, countState: 'stale' };
+    });
+};
 
 const isCurrentCountTicket = (ticket: CountTicket) =>
     ticket.generation === initializationGeneration && ticket.revision === collectionRefreshRunId;
@@ -267,7 +295,13 @@ export const useCollectionStore = create<CollectionState>()(
 
             setOrdinaryCountsReady: (ready) => {
                 set({ ordinaryCountsReady: ready, hasOpenedGallery: get().hasOpenedGallery || ready });
-                if (ready) void get().refreshPendingOrdinaryCounts();
+                if (!ready) return;
+                void get().refreshPendingOrdinaryCounts();
+                if (pendingSmartRefresh) {
+                    const held = pendingSmartRefresh;
+                    pendingSmartRefresh = null;
+                    void get().refreshSmartCounts(held);
+                }
             },
 
             refreshPendingOrdinaryCounts: async () => {
@@ -331,7 +365,8 @@ export const useCollectionStore = create<CollectionState>()(
             refreshCollections: async (debounced = false, options = {}) => {
                 const isAuthoritative = options.consistency === 'authoritative';
                 const refreshGeneration = initializationGeneration;
-                const deferCounts = !get().hasOpenedGallery && !isBrowserMockMode();
+                // Counts wait for the gallery to open and for any repair, which holds `ordinaryCountsReady`.
+                const deferCounts = (!get().hasOpenedGallery || !get().ordinaryCountsReady) && !isBrowserMockMode();
                 const requestedRunId = invalidateCollectionRefreshes();
                 pendingOrdinaryCounts = null;
                 const run = async (initialRunId: number) => {
@@ -376,7 +411,13 @@ export const useCollectionStore = create<CollectionState>()(
                                 return;
                             }
 
-                            set({ collections: cols });
+                            set((state) => ({
+                                collections:
+                                    deferCounts && publishedCollectionsGeneration === refreshGeneration
+                                        ? retainHeldCounts(cols, state.collections)
+                                        : cols,
+                            }));
+                            publishedCollectionsGeneration = refreshGeneration;
                             if (deferCounts && cols.some((collection) => !collection.filters)) {
                                 pendingOrdinaryCounts = { generation: refreshGeneration, revision: currentRunId };
                                 void get().refreshPendingOrdinaryCounts();
@@ -511,6 +552,19 @@ export const useCollectionStore = create<CollectionState>()(
                         if (isAuthoritative) {
                             throw new Error('Smart collection summaries cannot refresh while an import is active.');
                         }
+                        return;
+                    }
+
+                    // A repair after the gallery opened holds background smart counts too; the
+                    // repair's own authoritative refresh still runs. Held requests run when it ends.
+                    if (
+                        !isAuthoritative &&
+                        !collectionsSnapshot &&
+                        get().hasOpenedGallery &&
+                        !get().ordinaryCountsReady &&
+                        !isBrowserMockMode()
+                    ) {
+                        pendingSmartRefresh = mergeSmartRefreshes(pendingSmartRefresh, options);
                         return;
                     }
 
@@ -697,6 +751,7 @@ export const useCollectionStore = create<CollectionState>()(
             invalidateInitialization: () => {
                 invalidateCollectionRefreshes();
                 pendingOrdinaryCounts = null;
+                pendingSmartRefresh = null;
                 thumbnailRefreshRunId += 1;
                 smartCountRunId += 1;
                 smartCountRunsByCollection.clear();
