@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
     incrementScopeCountsVersion: vi.fn(),
     shouldPrefetchResultPages: vi.fn(),
     refreshSmartCounts: vi.fn(),
+    invalidateRetainedThumbnails: vi.fn(),
 }));
 
 vi.mock('../SettingsContext', () => ({ useSettings: () => mocks.settings.current }));
@@ -106,8 +107,11 @@ vi.mock('../../stores/libraryStore', () => ({
     ),
 }));
 vi.mock('../../stores/collectionStore', () => ({
-    useCollectionStore: (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
-        selector({ refreshSmartCounts: mocks.refreshSmartCounts }),
+    useCollectionStore: Object.assign(
+        (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
+            selector({ refreshSmartCounts: mocks.refreshSmartCounts }),
+        { getState: () => ({ invalidateRetainedThumbnails: mocks.invalidateRetainedThumbnails }) }
+    ),
 }));
 vi.mock('../../utils/imageQueryCache', () => ({
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
@@ -270,7 +274,8 @@ describe('SearchProvider', () => {
         expect(latest.isLibraryReady).toBe(false);
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
+            data: { pages: [{ images: [] }] },
+            counts: { totalCount: 0, globalCount: 0 },
             status: 'success',
         };
         view.rerender(
@@ -362,7 +367,8 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             status: 'success',
-            data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
+            data: { pages: [{ images: [] }] },
+            counts: { totalCount: 0, globalCount: 0 },
         };
         view.rerender(
             <SearchProvider>
@@ -390,7 +396,8 @@ describe('SearchProvider', () => {
             mocks.imagesQuery.current = {
                 ...(mocks.imagesQuery.current as object),
                 status: 'success',
-                data: { pages: [{ images: [image()], totalCount: 1, globalCount: 5 }] },
+                data: { pages: [{ images: [image()] }] },
+                counts: { totalCount: 1, globalCount: 5 },
             };
             mocks.scopeQuery.current = {
                 data: undefined,
@@ -431,6 +438,23 @@ describe('SearchProvider', () => {
         }
     );
 
+    it('never shows the previous search total in the scope dropdown while the new count loads', async () => {
+        // The header may keep the last count to avoid a flash, but the dropdown labels this page's results.
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            status: 'success',
+            isPlaceholderData: false,
+            data: { pages: [{ images: [image()] }] },
+            counts: { totalCount: 40, globalCount: 50 },
+            countsArePlaceholder: true,
+        };
+        renderProvider();
+        await act(async () => {});
+
+        expect(latest.totalImages).toBe(40);
+        expect(latest.scopeResultCount).toBeUndefined();
+    });
+
     it('does not start a queued privacy refresh after InvokeAI admission closes', async () => {
         let resolveDb: (() => void) | undefined;
         mocks.settings.current = {
@@ -469,7 +493,8 @@ describe('SearchProvider', () => {
         const first = image();
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [first], totalCount: 4, globalCount: 9 }] },
+            data: { pages: [{ images: [first] }] },
+            counts: { totalCount: 4, globalCount: 9 },
             hasNextPage: true,
             isLoading: true,
         };
@@ -516,7 +541,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [previous], totalCount: 1, globalCount: 9 }] },
+            data: { pages: [{ images: [previous] }] },
+            counts: { totalCount: 1, globalCount: 9 },
             isFetching: true,
             isPlaceholderData: true,
         };
@@ -543,7 +569,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [blurred] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -573,7 +600,8 @@ describe('SearchProvider', () => {
 
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [safe] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             isFetching: false,
         };
         view.rerender(
@@ -604,7 +632,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [blurred] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -623,7 +652,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [safe] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         view.rerender(
@@ -636,10 +666,29 @@ describe('SearchProvider', () => {
         await waitFor(() => expect(latest.images).toEqual([safe]));
     });
 
+    it('presents a first page before its counts and reports the counts as loading', () => {
+        // The gallery opens as soon as its page is safe; the counts follow on their own.
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [image()] }] },
+            counts: undefined,
+            status: 'success',
+        };
+
+        renderProvider();
+
+        expect(latest.isLibraryReady).toBe(true);
+        expect(latest.images).toEqual([image()]);
+        expect(latest.totalImages).toBeNull();
+        expect(latest.globalTotal).toBeNull();
+        expect(latest.scopeResultCount).toBeUndefined();
+    });
+
     it('reports a cached first-page refresh as filtering without losing the global count', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [], totalCount: 0, globalCount: 9 }] },
+            data: { pages: [{ images: [] }] },
+            counts: { totalCount: 0, globalCount: 9 },
             isFetching: true,
         };
 
@@ -1087,6 +1136,8 @@ describe('SearchProvider', () => {
         await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
         expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledWith(['face']);
         expect(mocks.clearAllCollectionThumbnailCaches).toHaveBeenCalledOnce();
+        // Collection thumbnails read before or during the rebuild are never kept over a repair.
+        expect(mocks.invalidateRetainedThumbnails).toHaveBeenCalledTimes(2);
         expect(mocks.incrementFacetCacheVersion).toHaveBeenCalledOnce();
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['parameterRanges'] });
     });
@@ -1121,7 +1172,8 @@ describe('SearchProvider', () => {
         (mocks.searchState.current as SearchValue).images = [staleImage];
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [staleImage], totalCount: 1, globalCount: 1 }] },
+            data: { pages: [{ images: [staleImage] }] },
+            counts: { totalCount: 1, globalCount: 1 },
         };
         mocks.refreshPrivacyMaskIndex.mockReturnValue(
             new Promise((resolve) => {

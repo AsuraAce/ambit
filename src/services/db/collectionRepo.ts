@@ -6,6 +6,7 @@ import {
     type InvokeBoardSnapshotResult,
 } from '../../bindings';
 import { getDb } from './connection';
+import { selectReadonly } from './readonlySelect';
 import { isSameInvokePath } from '../invoke/pathIdentity';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
@@ -198,18 +199,14 @@ const chunk = <T>(items: T[], size: number): T[][] => {
     return chunks;
 };
 
-const loadImageThumbnailLookup = async (
-    db: Awaited<ReturnType<typeof getDb>>,
-    column: 'id' | 'path',
-    values: string[]
-): Promise<Map<string, CustomThumbnailMatch>> => {
+const loadImageThumbnailLookup = async (column: 'id' | 'path', values: string[]): Promise<Map<string, CustomThumbnailMatch>> => {
     const matches = new Map<string, CustomThumbnailMatch>();
     const uniqueValues = [...new Set(values.filter(Boolean))];
     const batches = chunk(uniqueValues, 900);
 
     for (const batch of batches) {
         const placeholders = batch.map(() => '?').join(',');
-        const rows = await db.select<ImageThumbnailLookupRow[]>(
+        const rows = await selectReadonly<ImageThumbnailLookupRow[]>(
             `SELECT images.id, images.path,
                     CASE
                         WHEN images.media_type = 'video' THEN NULLIF(images.thumbnail_path, '')
@@ -397,10 +394,7 @@ export const clearCollectionOwnerScopeCaches = async () => {
     );
 };
 
-const buildCollectionThumbnailSummaries = async (
-    db: Awaited<ReturnType<typeof getDb>>,
-    collections: CollectionThumbnailInput[]
-): Promise<CollectionThumbnailBuildResult> => {
+const buildCollectionThumbnailSummaries = async (collections: CollectionThumbnailInput[]): Promise<CollectionThumbnailBuildResult> => {
     if (collections.length === 0) return { summaries: {}, cacheUpdates: [] };
 
     const ids = [
@@ -415,7 +409,7 @@ const buildCollectionThumbnailSummaries = async (
 
     for (const idBatch of chunk(ids, 900)) {
         const placeholders = idBatch.map(() => '?').join(',');
-        const rows = await db.select<CollectionThumbnailRow[]>(
+        const rows = await selectReadonly<CollectionThumbnailRow[]>(
             `
             WITH ranked_thumbnails AS (
                 SELECT
@@ -454,9 +448,9 @@ const buildCollectionThumbnailSummaries = async (
 
     const thumbMap = new Map(thumbnailRows.map((row) => [row.collection_id, row]));
     const customThumbValues = collections.map((collection) => collection.custom_thumbnail).filter((value): value is string => !!value);
-    const customById = await loadImageThumbnailLookup(db, 'id', customThumbValues);
+    const customById = await loadImageThumbnailLookup('id', customThumbValues);
     const unresolvedCustomValues = customThumbValues.filter((value) => !customById.has(value));
-    const customByPath = await loadImageThumbnailLookup(db, 'path', unresolvedCustomValues);
+    const customByPath = await loadImageThumbnailLookup('path', unresolvedCustomValues);
 
     const cacheUpdates: DynamicThumbnailCacheUpdate[] = [];
     const summaries = Object.fromEntries(
@@ -1145,9 +1139,8 @@ export const moveImagesBetweenCollections = async (
 
 export const getOrdinaryCollectionCounts = async (): Promise<Map<string, number>> => {
     const startedAt = nowMs();
-    const db = await getDb();
     const counts = await measureStartupPhase('collection-counts', () =>
-        db.select<{ collection_id: string; count: number }[]>(
+        selectReadonly<{ collection_id: string; count: number }[]>(
             `SELECT ci.collection_id, COUNT(*) as count
          FROM scoped_collections c
          JOIN collection_images ci ON ci.collection_id = c.id
@@ -1212,7 +1205,7 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
                 id: collection.id,
                 custom_thumbnail: collection.customThumbnail ?? null,
             }));
-        const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(db, thumbnailInputs);
+        const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(thumbnailInputs);
         await writeDynamicThumbnailCache(db, cacheUpdates);
         mappedCollections = mappedCollections.map((collection) => ({
             ...collection,
@@ -1261,7 +1254,6 @@ export const getCollectionThumbnailSummaries = async (collections: Collection[])
     const db = await getDb();
     return timeDbCall('collectionThumbnails', `${collections.length} collections`, async () => {
         const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(
-            db,
             collections.map((collection) => ({
                 id: collection.id,
                 custom_thumbnail: collection.customThumbnail ?? null,
@@ -1342,7 +1334,7 @@ export const getSmartCollectionSummaries = async (
         const unionParams = queries.flatMap((q) => [q.id, ...q.params]);
 
         const res = await timeDbCall('smartCollectionSummaries.counts', `${smartCollections.length} collections`, () =>
-            db.select<{ id: string; count: number }[]>(unionSql, unionParams)
+            selectReadonly<{ id: string; count: number }[]>(unionSql, unionParams)
         );
         res.forEach((row) => {
             summaries[row.id] = { count: row.count, thumbnailSourceKind: 'dynamic' };
@@ -1352,7 +1344,7 @@ export const getSmartCollectionSummaries = async (
 
         for (const query of queries) {
             const normalRows = await timeDbCall('smartCollectionSummaries.thumbnail', query.id, () =>
-                db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
+                selectReadonly<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
                     `SELECT thumbnail_path, privacy_hidden
                  FROM scoped_images AS images
                  ${query.where}
@@ -1364,7 +1356,7 @@ export const getSmartCollectionSummaries = async (
                 )
             );
             const safeRows = await timeDbCall('smartCollectionSummaries.safeThumbnail', query.id, () =>
-                db.select<{ thumbnail_path?: string | null }[]>(
+                selectReadonly<{ thumbnail_path?: string | null }[]>(
                     `SELECT thumbnail_path
                  FROM scoped_images AS images
                  ${query.where}

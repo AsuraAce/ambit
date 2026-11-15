@@ -9,6 +9,17 @@ import type { Collection, FilterState } from '../../../types';
 const mocks = vi.hoisted(() => ({ getDb: vi.fn() }));
 vi.mock('../connection', () => ({ getDb: mocks.getDb }));
 
+// Held reads run on select_readonly's own connection; in these tests they reach the same fake database.
+vi.mock('../readonlySelect', async () => {
+    const { getDb } = await import('../connection');
+    return {
+        selectReadonly: vi.fn(async (sql: string, params?: unknown[]) => {
+            const db = await getDb();
+            return params === undefined ? db.select(sql) : db.select(sql, params);
+        }),
+    };
+});
+
 describe('library media scopes over SQLite', () => {
     let sqlite: DatabaseSync;
     beforeEach(() => {
@@ -23,6 +34,8 @@ describe('library media scopes over SQLite', () => {
             );
             CREATE VIEW scoped_images AS SELECT * FROM images
                 WHERE invoke_owner_id IS NULL OR invoke_owner_id = 'current';
+            -- m86 names the count index in this view; the rows it returns are the same.
+            CREATE VIEW scoped_count_images AS SELECT * FROM scoped_images;
             CREATE TABLE collection_images (collection_id TEXT, image_id TEXT);
             INSERT INTO images(id, media_type, source_kind, positive_prompt) VALUES
                 ('photo', 'image', 'photograph', 'portrait'),

@@ -279,7 +279,8 @@ export interface Collection {
     description?: string;
     imageIds: string[];
     count?: number;
-    countState?: 'pending' | 'ready' | 'failed';
+    /** `stale`: the last count, kept visible while a repair holds the next read. */
+    countState?: 'pending' | 'ready' | 'failed' | 'stale';
     thumbnail?: string;
     customThumbnail?: string;
     safeThumbnail?: string;

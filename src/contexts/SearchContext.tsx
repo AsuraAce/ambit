@@ -51,8 +51,12 @@ interface SearchContextType {
     setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
     facets: Facets;
     stats: LibraryStats;
-    totalImages: number; // This is the MATCHING count
-    globalTotal: number; // Total non-deleted images in library
+    /** The MATCHING count; null while it loads, after the first page has shown. */
+    totalImages: number | null;
+    /** Total non-deleted images in library; null while it loads. */
+    globalTotal: number | null;
+    /** The count read failed, so `totalImages` and `globalTotal` stay null until the next refresh. */
+    imageCountsFailed: boolean;
     sourceKindCounts?: SourceKindCounts;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
@@ -190,8 +194,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 );
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
+                    // Thumbnails read before or during the rebuild may show an image that is now hidden.
+                    useCollectionStore.getState().invalidateRetainedThumbnails();
                     await clearAllCollectionThumbnailCaches();
                     await measureStartupPhase('facets', () => rebuildThumbnailFacetCache());
+                    useCollectionStore.getState().invalidateRetainedThumbnails();
                     if (cancelled) return;
                     console.info(
                         `[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`
@@ -285,6 +292,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isPlaceholderData,
         status: imagesQueryStatus,
         queryKey: imagesQueryKey,
+        counts: imageCounts,
+        countsFailed: imageCountsFailed,
+        countsArePlaceholder: imageCountsArePlaceholder,
     } = useImagesQuery({
         filters,
         sortOption,
@@ -357,14 +367,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [filters, hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
 
-    const totalImagesCount = privacyExposureBlocked ? 0 : (queryData?.pages[0]?.totalCount ?? 0);
-    const globalTotalCount = privacyExposureBlocked ? 0 : (queryData?.pages[0]?.globalCount ?? 0);
+    const totalImagesCount = privacyExposureBlocked ? 0 : (imageCounts?.totalCount ?? null);
+    const globalTotalCount = privacyExposureBlocked ? 0 : (imageCounts?.globalCount ?? null);
     const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
     const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
     const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
     const sourceKindCounts = scopeCounts?.imageKinds;
     const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
-    const scopeResultCount = hasCurrentSafePage ? queryData?.pages[0]?.totalCount : undefined;
+    // The scope dropdown counts this page's own results, never the previous search's kept total.
+    const scopeResultCount = hasCurrentSafePage && !imageCountsArePlaceholder ? imageCounts?.totalCount : undefined;
     // While an owner-cache repair holds the scope counts, missing counts read as loading and no
     // earlier error or retry is offered; the held queries run again when the repair ends.
     const isOwnerCacheRepairing = useLibraryStore((state) => state.isOwnerCacheRepairing);
@@ -814,6 +825,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 stats: activeStats,
                 totalImages: totalImagesCount,
                 globalTotal: globalTotalCount,
+                imageCountsFailed: !privacyExposureBlocked && imageCountsFailed,
                 sourceKindCounts,
                 scopeCounts,
                 scopeAvailability,

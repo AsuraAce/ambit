@@ -201,6 +201,13 @@ const commandCases: CommandCase[] = [
     },
     { name: 'getMainDatabaseUrl', invokeName: 'get_main_database_url', args: [], returnsResult: true },
     { name: 'getPendingMigrationCount', invokeName: 'get_pending_migration_count', args: [], returnsResult: true },
+    {
+        name: 'selectReadonly',
+        invokeName: 'select_readonly',
+        args: ['SELECT ?', [1]],
+        payload: { sql: 'SELECT ?', params: [1] },
+        returnsResult: true,
+    },
     { name: 'getDbDiagnostics', invokeName: 'get_db_diagnostics', args: [], returnsResult: true },
     { name: 'showAppLogFolder', invokeName: 'show_app_log_folder', args: [], returnsResult: true },
     {

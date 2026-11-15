@@ -98,6 +98,19 @@ async getPendingMigrationCount() : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Runs one read-only statement on the library database and returns its rows,
+ * keyed by column name. A page load or exit after the call started stops it
+ * with [`READ_STOPPED`].
+ */
+async selectReadonly(sql: string, params: SqlValue[]) : Promise<Result<(Partial<{ [key in string]: SqlValue }>)[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("select_readonly", { sql, params }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getDbDiagnostics() : Promise<Result<DbDiagnostics, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_db_diagnostics") };
@@ -1091,6 +1104,10 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  */
 error: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null }
 export type SourceKind = "generated" | "photograph" | "other"
+/**
+ * A bound parameter or a result value: the SQLite types the count reads use.
+ */
+export type SqlValue = null | boolean | number | string
 export type StartupCacheAction = "restored" | "selective" | "full"
 export type StartupDatabaseRole = "ambit" | "invoke-source" | "mixed"
 export type StartupDiagnosticEvent = { launchId: string; phase: StartupPhase; status: StartupPhaseStatus; elapsedMs: number; durationMs: number | null; cacheAction: StartupCacheAction | null; databaseRole?: StartupDatabaseRole | null; attempt?: number | null; failureKind?: StartupFailureKind | null; repairDecision?: StartupRepairDecision | null; repairStage?: StartupRepairStage | null; repairReport?: StartupRepairReport | null }

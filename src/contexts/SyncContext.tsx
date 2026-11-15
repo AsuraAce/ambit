@@ -415,7 +415,7 @@ export const SyncProvider: React.FC<{
     // Shows the owner scope's current cache: gallery and reference queries, collections and
     // maintenance counts. The facet and collection caches are repaired separately.
     const publishOwnerScopeView = useCallback(
-        async (generation: number, assertCurrentCollections: () => void, traceOperationId?: symbol) => {
+        async (generation: number, assertCurrentCollections: () => void, traceOperationId?: symbol, retainThumbnails = false) => {
             incrementFacetCacheVersion();
             const [, , , , , maintenanceCounts] = await Promise.all([
                 invokeSyncTrace.measure(traceOperationId, 'gallery', () => queryClient.invalidateQueries({ queryKey: ['images'] })),
@@ -433,6 +433,7 @@ export const SyncProvider: React.FC<{
                         } else {
                             await refreshCollections(false, {
                                 includeThumbnails: false,
+                                retainThumbnails,
                                 scheduleSmartRefresh: false,
                                 consistency: 'authoritative',
                             });
@@ -505,7 +506,8 @@ export const SyncProvider: React.FC<{
                         }
                     }
                     assertCurrentCollections();
-                    await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId);
+                    // Only a background repair keeps the last thumbnails: nobody's visibility changed.
+                    await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId, isBackgroundRepair);
                     if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
                         await invokeSyncTrace.measure(traceOperationId, 'previews', () =>
                             measureStartupPhase('collections', () =>
@@ -578,7 +580,7 @@ export const SyncProvider: React.FC<{
                 }
             };
             clearLibraryStatsCache();
-            await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId);
+            await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId, true);
             useCollectionStore.getState().finishInitializationHydration(generation, false);
         },
         [publishOwnerScopeView]

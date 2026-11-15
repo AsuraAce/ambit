@@ -251,7 +251,7 @@ pub(crate) enum Refusal {
 }
 
 impl Refusal {
-    fn into_message(self) -> String {
+    pub(crate) fn into_message(self) -> String {
         match self {
             Self::Denied => STATEMENT_REFUSED.to_string(),
             Self::Sqlite(message) => format!("SQL refused before execution: {message}"),
@@ -302,7 +302,30 @@ impl StatementGuard {
     /// whole query if any statement fails to compile, trips the authorizer, or
     /// compiles to a program containing the `Vacuum` opcode.
     pub(crate) fn check(&self, sql: &str) -> Result<(), Refusal> {
+        self.check_statements(sql).map(|_| ())
+    }
+
+    /// [`check`](Self::check), and also refuses anything but exactly one
+    /// statement (comments and whitespace alone are not statements).
+    pub(crate) fn check_single(&self, sql: &str) -> Result<(), Refusal> {
+        match self.check_statements(sql)? {
+            1 => Ok(()),
+            _ => Err(Refusal::Denied),
+        }
+    }
+
+    /// The locked-down connection, for running a statement that passed
+    /// [`check_single`](Self::check_single). Its limit, `query_only` and
+    /// authorizer stay in force while the statement runs.
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
+    /// The checks behind [`check`](Self::check); returns how many statements
+    /// `sql` holds.
+    fn check_statements(&self, sql: &str) -> Result<usize, Refusal> {
         self.denied.store(false, Ordering::Relaxed);
+        let mut statements = 0;
         let bytes = sql.as_bytes();
         // SAFETY: the handle stays valid while `self.conn` is borrowed, and this
         // function never closes it.
@@ -338,10 +361,11 @@ impl StatementGuard {
             }
             if !statement.0.is_null() {
                 reject_program(&statement)?;
+                statements += 1;
             }
             offset += consumed;
         }
-        Ok(())
+        Ok(statements)
     }
 }
 
@@ -441,9 +465,63 @@ fn authorize(context: AuthContext<'_>) -> Authorization {
     }
 }
 
+/// Statements the guard must refuse, shared by the tests of every path that
+/// reuses it (the SQL plugin and `select_readonly`).
+#[cfg(test)]
+pub(crate) mod refused {
+    /// Statements that reach another file or load code.
+    pub(crate) const REACH_OTHER_FILES: &[&str] = &[
+        "ATTACH DATABASE 'C:/x/invokeai.db' AS inv",
+        "attach 'C:/x/invokeai.db' as inv; DELETE FROM inv.images; DETACH inv;",
+        "SELECT 1; ATTACH 'C:/x/invokeai.db' AS inv",
+        "DETACH DATABASE main",
+        "VACUUM INTO 'C:/x/copy.db'",
+        "/* a */ vAcUuM /* b */ InTo 'C:/x/copy.db'",
+        "VACUUM main INTO (SELECT 'C:/x/copy.db')",
+        "SELECT 1; VACUUM INTO 'C:/x/copy.db'",
+        "SELECT 1;\n-- comment\nVACUUM",
+        "EXPLAIN VACUUM INTO 'C:/x/copy.db'",
+        "SELECT load_extension('C:/x/evil.dll')",
+        "SELECT LOAD_EXTENSION('C:/x/evil.dll', 'entry')",
+        "PRAGMA temp_store_directory = 'C:/x'",
+        "PRAGMA data_store_directory = 'C:/x'",
+        "SELECT 1\0; VACUUM INTO 'C:/x/copy.db'",
+    ];
+
+    /// `ATTACH` and `DETACH` in every form the filename can take. SQLite hands
+    /// the authorizer no filename unless it is a plain literal.
+    pub(crate) const ATTACH_FORMS: &[&str] = &[
+        "ATTACH 'C:/x/' || 'invokeai.db' AS inv",
+        "ATTACH (SELECT path FROM images LIMIT 1) AS inv",
+        "ATTACH lower('C:/X/INVOKEAI.DB') AS inv",
+        "ATTACH printf('%s', 'C:/x/invokeai.db') AS inv",
+        "ATTACH ? AS inv",
+        "DETACH 'ma' || 'in'",
+        "DETACH (SELECT 'main')",
+        "ATTACH 'C:/x/' || 'invokeai.db' AS inv; \
+         CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN \
+           INSERT INTO images (id) SELECT name FROM boards; DELETE FROM boards; END; \
+         INSERT INTO images (id, path) VALUES ('x', 'y')",
+    ];
+
+    /// TEMP objects, which would exist only on the connection that runs them.
+    pub(crate) const TEMP_OBJECTS: &[&str] = &[
+        "CREATE TEMP TABLE t (v)",
+        "CREATE TEMPORARY TABLE t AS SELECT 1",
+        "CREATE TABLE temp.t (v)",
+        "CREATE TABLE TEMP.t AS SELECT 1",
+        "CREATE TEMP VIEW v AS SELECT 1",
+        "CREATE VIEW temp.v AS SELECT 1",
+        "CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN SELECT 1; END",
+        "CREATE TRIGGER temp.pwn AFTER INSERT ON main.images BEGIN SELECT 1; END",
+        "CREATE VIRTUAL TABLE temp.f USING fts5(body)",
+        "SELECT 1; CREATE TEMP TABLE t (v)",
+    ];
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{sql_load_allowed, Refusal, StatementGuard};
+    use super::{refused, sql_load_allowed, Refusal, StatementGuard};
     use rusqlite::{
         hooks::{AuthContext, Authorization},
         Connection,
@@ -502,23 +580,7 @@ mod tests {
     #[test]
     fn statements_that_reach_other_files_are_refused() {
         let guard = guard();
-        for sql in [
-            "ATTACH DATABASE 'C:/x/invokeai.db' AS inv",
-            "attach 'C:/x/invokeai.db' as inv; DELETE FROM inv.images; DETACH inv;",
-            "SELECT 1; ATTACH 'C:/x/invokeai.db' AS inv",
-            "DETACH DATABASE main",
-            "VACUUM INTO 'C:/x/copy.db'",
-            "/* a */ vAcUuM /* b */ InTo 'C:/x/copy.db'",
-            "VACUUM main INTO (SELECT 'C:/x/copy.db')",
-            "SELECT 1; VACUUM INTO 'C:/x/copy.db'",
-            "SELECT 1;\n-- comment\nVACUUM",
-            "EXPLAIN VACUUM INTO 'C:/x/copy.db'",
-            "SELECT load_extension('C:/x/evil.dll')",
-            "SELECT LOAD_EXTENSION('C:/x/evil.dll', 'entry')",
-            "PRAGMA temp_store_directory = 'C:/x'",
-            "PRAGMA data_store_directory = 'C:/x'",
-            "SELECT 1\0; VACUUM INTO 'C:/x/copy.db'",
-        ] {
+        for &sql in refused::REACH_OTHER_FILES {
             assert_eq!(
                 guard.check(sql),
                 Err(Refusal::Denied),
@@ -531,19 +593,7 @@ mod tests {
     fn attach_and_detach_are_refused_whatever_form_the_name_takes() {
         // SQLite hands the authorizer no filename unless it is a plain literal.
         let guard = guard();
-        for sql in [
-            "ATTACH 'C:/x/' || 'invokeai.db' AS inv",
-            "ATTACH (SELECT path FROM images LIMIT 1) AS inv",
-            "ATTACH lower('C:/X/INVOKEAI.DB') AS inv",
-            "ATTACH printf('%s', 'C:/x/invokeai.db') AS inv",
-            "ATTACH ? AS inv",
-            "DETACH 'ma' || 'in'",
-            "DETACH (SELECT 'main')",
-            "ATTACH 'C:/x/' || 'invokeai.db' AS inv; \
-             CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN \
-               INSERT INTO images (id) SELECT name FROM boards; DELETE FROM boards; END; \
-             INSERT INTO images (id, path) VALUES ('x', 'y')",
-        ] {
+        for &sql in refused::ATTACH_FORMS {
             assert_eq!(
                 guard.check(sql),
                 Err(Refusal::Denied),
@@ -556,18 +606,7 @@ mod tests {
     fn temp_objects_are_refused() {
         // TEMP objects exist only on the pool connection, out of the guard's sight.
         let guard = guard();
-        for sql in [
-            "CREATE TEMP TABLE t (v)",
-            "CREATE TEMPORARY TABLE t AS SELECT 1",
-            "CREATE TABLE temp.t (v)",
-            "CREATE TABLE TEMP.t AS SELECT 1",
-            "CREATE TEMP VIEW v AS SELECT 1",
-            "CREATE VIEW temp.v AS SELECT 1",
-            "CREATE TEMP TRIGGER pwn AFTER INSERT ON main.images BEGIN SELECT 1; END",
-            "CREATE TRIGGER temp.pwn AFTER INSERT ON main.images BEGIN SELECT 1; END",
-            "CREATE VIRTUAL TABLE temp.f USING fts5(body)",
-            "SELECT 1; CREATE TEMP TABLE t (v)",
-        ] {
+        for &sql in refused::TEMP_OBJECTS {
             assert_eq!(
                 guard.check(sql),
                 Err(Refusal::Denied),

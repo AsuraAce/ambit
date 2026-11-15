@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../types';
 import {
+    getImageCountsQueryKey,
     patchImageFlagsInQueryCaches,
     removeImagesFromQueryCaches,
     restoreImagesInQueryCaches,
@@ -41,36 +42,38 @@ describe('imageQueryCache', () => {
         const second = image('2');
         const third = image('3');
         queryClient.setQueryData(key, {
-            pages: [
-                { images: [first, second], totalCount: 3, globalCount: 3 },
-                { images: [third], totalCount: -1, globalCount: -1 },
-            ],
+            pages: [{ images: [first, second] }, { images: [third] }],
             pageParams: [undefined, { id: '2', val: 1 }],
         });
+        // The counts live in their own query under the images key, not in the pages.
+        queryClient.setQueryData(getImageCountsQueryKey(key), { totalCount: 3, globalCount: 5 });
+        queryClient.setQueryData(getImageCountsQueryKey(['images', { scope: 'other' }]), { totalCount: 9, globalCount: 5 });
 
         removeImagesFromQueryCaches(queryClient, ['2', '3']);
 
-        const data = queryClient.getQueryData<{
-            pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
-        }>(key);
+        const data = queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key);
         expect(data?.pages.map((page) => page.images.map((item) => item.id))).toEqual([['1'], []]);
-        expect(data?.pages[0]).toMatchObject({ totalCount: 1, globalCount: 1 });
-        expect(data?.pages[1]).toMatchObject({ totalCount: -1, globalCount: -1 });
+        expect(queryClient.getQueryData(getImageCountsQueryKey(key))).toEqual({ totalCount: 1, globalCount: 3 });
+        // A scope whose cached pages never held the removed images keeps its count until it refreshes.
+        expect(queryClient.getQueryData(getImageCountsQueryKey(['images', { scope: 'other' }]))).toEqual({ totalCount: 9, globalCount: 5 });
     });
 
     it('does not adjust an image cache that no longer contains the removed ids', () => {
         const queryClient = new QueryClient();
         const key = ['images', { scope: 'already-removed' }] as const;
         const data = {
-            pages: [{ images: [image('1')], totalCount: 1, globalCount: 1 }],
+            pages: [{ images: [image('1')] }],
             pageParams: [undefined],
         };
+        const counts = { totalCount: 1, globalCount: 1 };
         queryClient.setQueryData(key, data);
+        queryClient.setQueryData(getImageCountsQueryKey(key), counts);
 
         removeImagesFromQueryCaches(queryClient, ['missing']);
         removeImagesFromQueryCaches(queryClient, []);
 
         expect(queryClient.getQueryData(key)).toBe(data);
+        expect(queryClient.getQueryData(getImageCountsQueryKey(key))).toBe(counts);
     });
 
     it('patches all cached image result pages so optimistic flags survive query re-emissions', () => {

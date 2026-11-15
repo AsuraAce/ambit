@@ -155,6 +155,7 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     },
     totalImages: 0,
     globalTotal: 0,
+    imageCountsFailed: false,
     scopeCountsLoading: false,
     scopeCountsError: false,
     retryScopeCounts: async () => {},

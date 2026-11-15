@@ -53,6 +53,7 @@ pub mod m82_photo_refresh;
 pub mod m83_photo_scope_invalidation;
 pub mod m84_thumbnail_repair_version;
 pub mod m85_invoke_name_override;
+pub mod m86_scope_count_indexes;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -114,6 +115,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m83_photo_scope_invalidation::migration83());
     migrations.push(m84_thumbnail_repair_version::migration84());
     migrations.push(m85_invoke_name_override::migration85());
+    migrations.push(m86_scope_count_indexes::migration86());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -152,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn migrations_include_mainline_and_photography_through_invoke_name_override_85() {
+    fn migrations_include_mainline_and_photography_through_scope_count_indexes_86() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -195,6 +197,7 @@ mod tests {
         assert!(versions.contains(&83));
         assert!(versions.contains(&84));
         assert!(versions.contains(&85));
+        assert!(versions.contains(&86));
     }
 
     #[test]
@@ -227,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_invoke_name_override_85_pending() {
+    fn database_at_mainline_49_has_migrations_through_scope_count_indexes_86_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -241,7 +244,7 @@ mod tests {
             pending_after_49,
             vec![
                 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
-                71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85
+                71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86
             ]
         );
     }

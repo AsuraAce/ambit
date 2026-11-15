@@ -1188,7 +1188,7 @@ fn maintenance_m80_upgrade_and_reload_preserve_counts() {
         &upgraded.as_array().unwrap()[..history.as_array().unwrap().len()],
         history.as_array().unwrap()
     );
-    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 85);
+    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 86);
     ipc(&sql.webview, "close", json!({"db":db}));
     sql.load(&path);
     assert_eq!(

@@ -91,6 +91,13 @@ describe('ViewControls', () => {
         expect(screen.getByLabelText('Collection total not available').textContent).toBe('\u2014');
         expect(screen.queryByText('0')).toBeNull();
     });
+    it('shows a dash, never zero, for a matching count that is still loading', () => {
+        // The page shows before its count; a 0 would claim an empty result.
+        setup({ displayedCount: null, totalCount: 120, scopeName: 'Big collection' });
+        expect(screen.getByText('—')).toBeTruthy();
+        expect(screen.getByText('120')).toBeTruthy();
+        expect(screen.queryByText('0')).toBeNull();
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false };

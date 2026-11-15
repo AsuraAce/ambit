@@ -185,7 +185,7 @@ describe('ordinary collection startup counts', () => {
         const replacement = deferred<Map<string, number>>();
         const { useCollectionStore: store } = await import('../collectionStore');
         await store.getState().initialize({ deferHydration: true });
-        store.setState({ hasOpenedGallery: true });
+        store.setState({ hasOpenedGallery: true, ordinaryCountsReady: true });
         mocks.counts.mockReturnValueOnce(replacement.promise);
         const runtime = store.getState().refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false });
         const rejected = expect(runtime).rejects.toThrow('old owner failed');
@@ -197,26 +197,59 @@ describe('ordinary collection startup counts', () => {
         expect(store.getState().collections[0]).toMatchObject({ id: 'other-owner', countState: 'pending' });
     });
 
-    it('keeps runtime counts awaited after readiness is withdrawn for an owner transition', async () => {
-        const count = deferred<Map<string, number>>();
-        mocks.counts.mockReturnValueOnce(count.promise);
+    it('holds counts for a new owner while its repair runs, without the previous owner counts', async () => {
+        // The count scans compete with the repair for the database, so they wait for it to end.
         const { useCollectionStore: store } = await import('../collectionStore');
         store.getState().setOrdinaryCountsReady(true);
+        await store.getState().refreshCollections(false, { scheduleSmartRefresh: false });
+        expect(store.getState().collections[0]).toMatchObject({ count: 4, countState: 'ready' });
         store.getState().setOrdinaryCountsReady(false);
         store.getState().invalidateInitialization();
-        let settled = false;
-        const refresh = store
-            .getState()
-            .refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false })
-            .then(() => {
-                settled = true;
-            });
-        await vi.waitFor(() => expect(mocks.counts).toHaveBeenCalledOnce());
-        expect(settled).toBe(false);
+        mocks.counts.mockClear();
+        mocks.counts.mockResolvedValue(new Map([['ordinary', 2]]));
+
+        await store.getState().refreshCollections(false, { consistency: 'authoritative', scheduleSmartRefresh: false });
+
+        expect(mocks.counts).not.toHaveBeenCalled();
         expect(store.getState().hasOpenedGallery).toBe(true);
-        count.resolve(new Map([['ordinary', 2]]));
-        await refresh;
-        expect(store.getState().collections[0].count).toBe(2);
+        // Another owner's count would be wrong for this one, so it reads as pending, not stale.
+        expect(store.getState().collections[0]).toMatchObject({ count: undefined, countState: 'pending' });
+        store.getState().setOrdinaryCountsReady(true);
+        await vi.waitFor(() => expect(store.getState().collections[0]).toMatchObject({ count: 2, countState: 'ready' }));
+        expect(mocks.counts).toHaveBeenCalledOnce();
+    });
+
+    it('keeps the last counts visible, marked stale, while a repair in the same owner scope holds them', async () => {
+        const { useCollectionStore: store } = await import('../collectionStore');
+        store.getState().setOrdinaryCountsReady(true);
+        await store.getState().refreshCollections(false, { scheduleSmartRefresh: false });
+        store.getState().setOrdinaryCountsReady(false);
+        mocks.counts.mockClear();
+        mocks.counts.mockResolvedValue(new Map([['ordinary', 9]]));
+
+        await store.getState().refreshCollections(false, { includeThumbnails: false, scheduleSmartRefresh: false });
+
+        expect(mocks.counts).not.toHaveBeenCalled();
+        expect(store.getState().collections[0]).toMatchObject({ count: 4, countState: 'stale' });
+        store.getState().setOrdinaryCountsReady(true);
+        await vi.waitFor(() => expect(store.getState().collections[0]).toMatchObject({ count: 9, countState: 'ready' }));
+    });
+
+    it('holds background smart counts during a repair and runs them when it ends', async () => {
+        const { useCollectionStore: store } = await import('../collectionStore');
+        const repo = await import('../../services/db/collectionRepo');
+        const smart: Collection = { id: 'smart', name: 'Smart', createdAt: 1, imageIds: [], filters: {} as Collection['filters'] };
+        store.setState({ collections: [smart], hasOpenedGallery: true, ordinaryCountsReady: false });
+        vi.mocked(repo.getSmartCollectionSummaries).mockClear();
+
+        await store.getState().refreshSmartCounts({ includeArchived: false, markPending: true });
+        expect(repo.getSmartCollectionSummaries).not.toHaveBeenCalled();
+        // The repair's own authoritative refresh is not held.
+        await store.getState().refreshSmartCounts({ includeArchived: true, includePromptSearch: true, consistency: 'authoritative' });
+        expect(repo.getSmartCollectionSummaries).toHaveBeenCalledOnce();
+
+        store.getState().setOrdinaryCountsReady(true);
+        await vi.waitFor(() => expect(repo.getSmartCollectionSummaries).toHaveBeenCalledTimes(2));
     });
 
     it('coalesces pending snapshot edits into one latest read and retains added collections', async () => {

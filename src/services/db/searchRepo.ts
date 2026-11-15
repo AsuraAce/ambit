@@ -1,6 +1,7 @@
 import { AIImage, AssetScope, FacetType, type LibraryScopeCounts } from '../../types';
 import { addLibraryScopeCount, createEmptyLibraryScopeCounts } from '../../utils/libraryScopeCounts';
 import { getDb } from './connection';
+import { selectReadonly } from './readonlySelect';
 import { mapRowToImage, getImageFieldsLight, type ImageRow } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
 import { getAssetMatchKey, resolveAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
@@ -383,6 +384,32 @@ const getDiskModifiedAtForFacetRow = (
 const BASE_VISIBLE_WHERE =
     'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
 const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
+
+// The WHERE terms the m86 count index holds (m86_scope_count_indexes.rs reads this list).
+// A count whose WHERE clause uses only these reads `scoped_count_images`, which names that
+// index, so it never reads the metadata-heavy image rows. Any other term keeps `scoped_images`
+// and the planner's own choice of index.
+const COUNT_INDEX_TERMS = new Set([
+    'invoke_scope_hidden = 0',
+    'is_deleted = 0',
+    'IFNULL(is_intermediate_gen, 0) = 0',
+    'IFNULL(is_grid_gen, 0) = 0',
+    'IFNULL(is_invoke_asset_gen, 0) = 0',
+    'privacy_hidden = 0',
+    '(media_type = ? OR media_type IS NULL)',
+    'media_type = ?',
+    'source_kind = ?',
+]);
+
+const countSourceFor = (finalWhere: string): string =>
+    finalWhere.startsWith('WHERE ') &&
+    finalWhere
+        .slice('WHERE '.length)
+        .split(' AND ')
+        .every((term) => COUNT_INDEX_TERMS.has(term))
+        ? 'scoped_count_images'
+        : 'scoped_images';
+
 const KEYWORD_BATCH_SIZE = 500;
 
 const isDefaultGlobalScope = (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): boolean => {
@@ -396,7 +423,6 @@ const appendTrailingPredicate = (whereClause: string, predicate?: string): strin
 const loraReferencePredicate = resourceReferenceEqualsSql('il.lora_name');
 
 export const countImages = async (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): Promise<number> => {
-    const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
 
@@ -409,7 +435,9 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
         `;
-        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, loraName, ...params]));
+        const result = await timeDbCall('countImages', reason, () =>
+            selectReadonly<CountRow[]>(query, [collectionId, loraName, ...params])
+        );
         return result[0]?.count || 0;
     }
 
@@ -421,7 +449,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
-        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, ...params]));
+        const result = await timeDbCall('countImages', reason, () => selectReadonly<CountRow[]>(query, [collectionId, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -433,15 +461,15 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             CROSS JOIN scoped_images AS images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
         `;
-        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [loraName, ...params]));
+        const result = await timeDbCall('countImages', reason, () => selectReadonly<CountRow[]>(query, [loraName, ...params]));
         return result[0]?.count || 0;
     }
 
     // Simple count using denormalized columns - no JOIN needed
-    const fromClause = 'FROM scoped_images AS images';
+    const fromClause = `FROM ${countSourceFor(finalWhere)} AS images`;
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
-    const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
+    const result = await timeDbCall('countImages', reason, () => selectReadonly<CountRow[]>(query, params));
     return result[0]?.count || 0;
 };
 
@@ -465,11 +493,10 @@ export const countLibraryScopes = async (
     collectionId?: string,
     loraName?: string
 ): Promise<LibraryScopeCounts> => {
-    const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const select = 'SELECT images.source_kind, images.media_type, count(*) as count';
     const group = 'GROUP BY images.source_kind, images.media_type';
-    let query = `${select} FROM scoped_images AS images ${finalWhere} ${group}`;
+    let query = `${select} FROM ${countSourceFor(finalWhere)} AS images ${finalWhere} ${group}`;
     let queryParams = params;
 
     if (collectionId && loraName) {
@@ -496,7 +523,7 @@ export const countLibraryScopes = async (
         queryParams = [loraName, ...params];
     }
 
-    const rows = await timeDbCall('countLibraryScopes', 'media-scope', () => db.select<LibraryScopeCountRow[]>(query, queryParams));
+    const rows = await timeDbCall('countLibraryScopes', 'media-scope', () => selectReadonly<LibraryScopeCountRow[]>(query, queryParams));
     return mapLibraryScopeCounts(rows);
 };
 
@@ -505,9 +532,8 @@ export const countLibraryScopes = async (
  * Result can be cached at the query layer.
  */
 export const countGlobalImages = async (): Promise<number> => {
-    const db = await getDb();
     const result = await timeDbCall('countGlobalImages', 'default', () =>
-        db.select<CountRow[]>(`SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`)
+        selectReadonly<CountRow[]>(`SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`)
     );
     return result[0]?.count || 0;
 };
@@ -831,14 +857,13 @@ const getScopedFacetCountMaps = async (
     collectionId?: string,
     loraName?: string
 ): Promise<Map<string, Map<string, number>>> => {
-    const db = await getDb();
     const scopedParts = buildScopedImageQueryParts(
         whereClause,
         params,
         collectionId,
         loraName,
         ['images.id AS id', 'images.resolved_model_name AS resolved_model_name', 'images.model_name AS model_name', 'images.tool AS tool'],
-        {}
+        { defaultFromClause: `FROM ${countSourceFor(whereClause || DEFAULT_VISIBLE_WHERE)} AS images` }
     );
 
     const queries = cacheTypes.map(async (cacheType) => {
@@ -846,7 +871,7 @@ const getScopedFacetCountMaps = async (
         if (!sql) return [cacheType, new Map<string, number>()] as const;
 
         const rows = await timeDbCall(`facets.scoped.${cacheType}`, scopedParts.reason, () =>
-            db.select<ModelStatsRow[]>(sql, scopedParts.queryParams)
+            selectReadonly<ModelStatsRow[]>(sql, scopedParts.queryParams)
         );
 
         return [
@@ -895,7 +920,6 @@ export const getLibraryStatsSummary = async (
         return globalStatsSummaryCache;
     }
 
-    const db = await getDb();
     const scopedParts = buildScopedImageQueryParts(
         whereClause,
         params,
@@ -949,13 +973,13 @@ export const getLibraryStatsSummary = async (
 
         const [mediaStatsRows, averageRows, modelRows] = await Promise.all([
             timeDbCall('libraryStats.mediaStats', scopedParts.reason, () =>
-                db.select<MediaStatsRow[]>(mediaStatsQuery, scopedParts.queryParams)
+                selectReadonly<MediaStatsRow[]>(mediaStatsQuery, scopedParts.queryParams)
             ),
             timeDbCall('libraryStats.avgSteps', scopedParts.reason, () =>
-                db.select<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)
+                selectReadonly<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)
             ),
             timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () =>
-                db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams)
+                selectReadonly<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams)
             ),
         ]);
         const summary = buildLibraryStatsSummary(mediaStatsRows[0], averageRows[0]?.avg_steps, modelRows);
@@ -1020,7 +1044,6 @@ export const getKeywordStats = async (
     signal?: AbortSignal
 ): Promise<{ text: string; value: number }[]> => {
     signal?.throwIfAborted();
-    const db = await getDb();
 
     try {
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
@@ -1050,7 +1073,7 @@ export const getKeywordStats = async (
             `;
 
             const rows = await timeDbCall('keywordStats.promptBatch', scopedParts.reason, () =>
-                db.select<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
+                selectReadonly<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
             );
             signal?.throwIfAborted();
 

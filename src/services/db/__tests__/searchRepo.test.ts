@@ -7,6 +7,17 @@ vi.mock('../connection', () => ({
     getDb: () => getDbMock(),
 }));
 
+// Held reads run on select_readonly's own connection; in these tests they reach the same fake database.
+vi.mock('../readonlySelect', async () => {
+    const { getDb } = await import('../connection');
+    return {
+        selectReadonly: vi.fn(async (sql: string, params?: unknown[]) => {
+            const db = await getDb();
+            return params === undefined ? db.select(sql) : db.select(sql, params);
+        }),
+    };
+});
+
 vi.mock('../../../bindings', () => ({
     commands: {
         getValidFacetNames: getValidFacetNamesMock,
@@ -31,7 +42,7 @@ const createFacetDb = (
         if (normalizedSql.startsWith('SELECT m.resource_type, m.name, m.hash,')) {
             return diskRows;
         }
-        if (normalizedSql.includes('scoped_images AS images')) {
+        if (/scoped_(?:count_)?images AS images/.test(normalizedSql)) {
             if (normalizedSql.includes("COALESCE(tool, 'Unknown')")) return scopedRows.tools ?? deriveScopedRows(cacheRows, 'tools');
             if (normalizedSql.includes('JOIN image_loras')) return scopedRows.loras ?? deriveScopedRows(cacheRows, 'loras');
             if (normalizedSql.includes('JOIN image_embeddings')) return scopedRows.embeddings ?? deriveScopedRows(cacheRows, 'embeddings');
@@ -113,6 +124,50 @@ describe('searchRepo basic queries', () => {
         const sql = db.select.mock.calls[0]?.[0] as string;
         expect(sql).toContain(scopedSource);
         expect(sql).not.toMatch(/\b(?:FROM|JOIN|CROSS JOIN)\s+images\b/);
+    });
+
+    it('reads unfiltered counts from the count index view and keeps every other filter on scoped_images', async () => {
+        // The view names the m86 index, which holds only these terms: a count with
+        // any other term must keep the planner's own plan over the full rows.
+        const db = { select: vi.fn().mockResolvedValue([{ count: 1 }]) };
+        getDbMock.mockResolvedValue(db);
+        const { countImages, countLibraryScopes } = await import('../searchRepo');
+        const visible =
+            'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+
+        await countImages('', []);
+        await countImages(`${visible} AND privacy_hidden = 0`, []);
+        await countLibraryScopes(`${visible} AND (media_type = ? OR media_type IS NULL) AND source_kind = ?`, ['image', 'photograph']);
+        await countImages(`${visible} AND positive_prompt LIKE ?`, ['%cat%']);
+        await countLibraryScopes(`${visible} AND privacy_hidden = 0`, [], 'collection-1');
+
+        const sources = db.select.mock.calls.map(([sql]) => /FROM (\S+) AS images|JOIN (\S+) AS images/.exec(sql as string));
+        expect(sources.map((match) => match?.[1] ?? match?.[2])).toEqual([
+            'scoped_count_images',
+            'scoped_count_images',
+            'scoped_count_images',
+            'scoped_images',
+            'scoped_images',
+        ]);
+    });
+
+    it('runs the held count and stats reads on the stoppable read-only connection', async () => {
+        // Exit and reload stop only reads on select_readonly's connection; a count left on the
+        // plugin pool keeps the app open until it finishes (minutes on a large library).
+        const db = { select: vi.fn().mockResolvedValue([{ count: 1 }]) };
+        getDbMock.mockResolvedValue(db);
+        const { selectReadonly } = await import('../readonlySelect');
+        vi.mocked(selectReadonly).mockClear();
+        const { countGlobalImages, countImages, countLibraryScopes, getLibraryStatsSummary } = await import('../searchRepo');
+
+        await countImages('', []);
+        await countImages('WHERE is_deleted = 0', [], 'collection-1');
+        await countLibraryScopes('', []);
+        await countGlobalImages();
+        await getLibraryStatsSummary('WHERE is_deleted = 0', []);
+
+        expect(vi.mocked(selectReadonly).mock.calls.map(([sql]) => sql)).toEqual(db.select.mock.calls.map(([sql]) => sql));
+        expect(selectReadonly).toHaveBeenCalledTimes(7);
     });
 
     it('sends each selected-filter count directly with unchanged query arguments', async () => {
@@ -299,7 +354,8 @@ describe('searchRepo fallbacks and caching', () => {
             modelStats: [],
             keywordStats: [],
         });
-        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats', expect.any(Error));
+        // The held reads now open the database inside each stats reader, which logs and returns its own empty result.
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('[DB] Failed to get library stats'), expect.any(Error));
         errorSpy.mockRestore();
     });
 
@@ -1691,7 +1747,7 @@ describe('searchRepo scoped stats queries', () => {
 
         const [scopedSql] = findSelectCall(
             db,
-            (value) => value.includes('scoped_images AS images') && value.includes('JOIN image_loras')
+            (value) => value.includes('scoped_count_images AS images') && value.includes('JOIN image_loras')
         ) as [string, unknown[]];
         expect(scopedSql).toContain("instr(il.lora_name, ' (')");
         expect(scopedSql).toContain('GROUP BY CASE');
