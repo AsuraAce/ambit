@@ -314,7 +314,13 @@ mod tests {
         assert!(before.iter().flatten().all(|result| !result.is_empty()));
 
         conn.execute_batch(migration86().sql).unwrap();
-        for statistics in ["SELECT 1", "ANALYZE", "PRAGMA optimize(0x10002)"] {
+        // The exit optimize samples first: that is what a library gets on its first exit.
+        for statistics in [
+            "SELECT 1",
+            crate::db::SHUTDOWN_OPTIMIZE_SQL,
+            "ANALYZE",
+            "PRAGMA optimize(0x10002)",
+        ] {
             conn.execute_batch(statistics).unwrap();
             assert_all_counts_index_only(&conn);
             for ((mode, owner), expected) in modes.iter().zip(&before) {

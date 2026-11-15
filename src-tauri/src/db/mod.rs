@@ -90,15 +90,20 @@ fn optimize_before_exit(conn: &Connection) {
         log::error!("[DB] Shutdown optimization skipped: {}", e);
         return;
     }
-    // 0x10002 is the recommended flag for shutdown (limit work to reasonable time)
-    // and analyze tables that need it.
-    match conn.execute("PRAGMA optimize(0x10002)", []) {
+    match conn.execute_batch(SHUTDOWN_OPTIMIZE_SQL) {
         Ok(_) => log::info!("[DB] Shutdown optimization complete"),
         Err(e) => log::warn!("[DB] Shutdown optimization skipped: {}", e),
     }
 }
 
 const SHUTDOWN_OPTIMIZE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 0x10002 analyzes every table that needs statistics, which includes any table with
+/// an index that has none yet. The mask leaves out 0x10, SQLite's own analysis limit,
+/// so the limit is set here: unbounded, the first exit after a new index read every
+/// row of a 296k-image library for 17 s. A 400-row sample is enough for the planner.
+pub(crate) const SHUTDOWN_OPTIMIZE_SQL: &str =
+    "PRAGMA analysis_limit = 400; PRAGMA optimize(0x10002);";
 
 #[derive(serde::Deserialize, Clone, specta::Type)]
 pub struct ImageRecord {
@@ -411,6 +416,38 @@ mod tests {
         drop(exiting);
         drop(writer);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn shutdown_optimize_samples_a_new_index_instead_of_reading_every_row() {
+        // After a migration adds an index, the first exit analyzes its table. On a large
+        // library a full read holds the exiting process for many seconds, long enough
+        // for a relaunch or an update restart to find it still running.
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY, kind INTEGER);
+             WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 50000)
+             INSERT INTO images (kind) SELECT x % 7 FROM n;
+             CREATE INDEX idx_images_kind ON images(kind);",
+        )
+        .expect("seed");
+
+        optimize_before_exit(&conn);
+
+        let stat: String = conn
+            .query_row(
+                "SELECT stat FROM sqlite_stat1 WHERE idx = 'idx_images_kind'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the new index has statistics");
+        // A full read sees 50000 / 7 = 7143 rows per kind; a 400-row sample sees ~400.
+        let per_kind: i64 = stat
+            .split(' ')
+            .nth(1)
+            .and_then(|value| value.parse().ok())
+            .expect("rows per kind");
+        assert!(per_kind < 1000, "the analysis read every row: {stat}");
     }
 
     fn write_file(path: &Path, contents: &str) {
