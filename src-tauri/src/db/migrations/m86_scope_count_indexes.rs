@@ -13,6 +13,11 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 /// index and picks the sort index for the scope counts, which reads every row.
 /// `searchRepo.ts` uses the view only when every WHERE term is one the index
 /// holds, so filtered counts keep their own plans.
+///
+/// The migration analyzes the new index while its pages are still cached (0.15 s on
+/// a 296k-image library). An index without statistics makes the exit `PRAGMA optimize`
+/// analyze all 50 indexes on `images`, which kept the process running for 15 s after
+/// the window closed; a relaunch or update restart in that time finds it still there.
 pub fn migration86() -> Migration {
     Migration {
         version: 86,
@@ -26,6 +31,7 @@ pub fn migration86() -> Migration {
                     invoke_source_id, invoke_owner_id, source_kind, media_type,
                     resolved_model_name, model_name, tool
                 );
+            ANALYZE idx_images_scope_counts_v1;
         "#,
             image_scope_view_sql!(
                 "scoped_count_images",
@@ -314,13 +320,7 @@ mod tests {
         assert!(before.iter().flatten().all(|result| !result.is_empty()));
 
         conn.execute_batch(migration86().sql).unwrap();
-        // The exit optimize samples first: that is what a library gets on its first exit.
-        for statistics in [
-            "SELECT 1",
-            crate::db::SHUTDOWN_OPTIMIZE_SQL,
-            "ANALYZE",
-            "PRAGMA optimize(0x10002)",
-        ] {
+        for statistics in ["SELECT 1", "ANALYZE", "PRAGMA optimize(0x10002)"] {
             conn.execute_batch(statistics).unwrap();
             assert_all_counts_index_only(&conn);
             for ((mode, owner), expected) in modes.iter().zip(&before) {
@@ -377,5 +377,34 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains(INDEX), "{error}");
+    }
+
+    #[test]
+    fn the_first_exit_after_m86_has_no_images_index_to_analyze() {
+        // A library whose earlier exits analyzed every index. If m86 left its index
+        // without statistics, the exit optimize would analyze all of `images`.
+        let conn = Connection::open_in_memory().unwrap();
+        schema(&conn, 85);
+        conn.execute_batch(
+            "WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v + 1 FROM n WHERE v < 3000)
+             INSERT INTO images(id, path, metadata_json) SELECT CAST(v AS TEXT), CAST(v AS TEXT), '{}' FROM n;
+             ANALYZE;",
+        )
+        .unwrap();
+
+        conn.execute_batch(migration86().sql).unwrap();
+
+        // 0x10003 is the exit mask (0x10002) plus 0x1, which lists the work instead of doing it.
+        let planned: Vec<String> = conn
+            .prepare("PRAGMA optimize(0x10003)")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            !planned.iter().any(|sql| sql.contains("images")),
+            "{planned:?}"
+        );
     }
 }
