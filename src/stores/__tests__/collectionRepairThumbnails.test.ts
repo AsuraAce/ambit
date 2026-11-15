@@ -109,6 +109,22 @@ describe('collection thumbnails during a repair', () => {
         expect(store.getState().collections[0].thumbnail).not.toBe('stale-a');
     });
 
+    it('clears the skeletons when a privacy mask change stops a thumbnail read', async () => {
+        // No replacement run follows that stop, so a kept pending id would leave a skeleton forever.
+        const store = await loadStore([collection('a')]);
+        const read = deferred<Record<string, Partial<Collection>>>();
+        mocks.thumbnails.mockReturnValueOnce(read.promise);
+
+        const hydration = store.getState().refreshCollectionThumbnails();
+        await vi.waitFor(() => expect(store.getState().thumbnailHydrationPendingIds).toEqual({ a: true }));
+        store.getState().invalidateRetainedThumbnails();
+        read.resolve({ a: { thumbnail: 'stale-a' } });
+        await hydration;
+
+        expect(store.getState().thumbnailHydrationPendingIds).toEqual({});
+        expect(store.getState().collections[0].thumbnail).toBeUndefined();
+    });
+
     it('replaces the kept thumbnails all at once when the repaired set is ready', async () => {
         // 60 collections take two reads; the sidebar must not show a mix of old and new.
         const ids = Array.from({ length: 60 }, (_, index) => `c${index}`);

@@ -575,6 +575,10 @@ export const useCollectionStore = create<CollectionState>()(
                                 await get().refreshCollectionThumbnails(false, force, options);
                                 return;
                             }
+                            // A privacy mask change stopped this run and no newer run replaced it, so
+                            // nothing else clears the skeletons; the collection refresh that follows
+                            // the change reads fresh thumbnails.
+                            if (runId === thumbnailRefreshRunId) set({ thumbnailHydrationPendingIds: {} });
                         }
                     } catch (e) {
                         if (runId === thumbnailRefreshRunId) {
