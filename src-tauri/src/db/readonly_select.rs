@@ -306,6 +306,7 @@ mod tests {
         let library = Library::new("guard");
         // A folder that exists, so only the guard can stop this copy.
         let copy = library.path().with_extension("copy.db");
+        let _ = std::fs::remove_file(&copy);
         let extra = [
             format!("VACUUM INTO '{}'", copy.display()),
             "SELECT 1; SELECT 2".to_string(),
@@ -321,7 +322,9 @@ mod tests {
             assert_eq!(error, guard_refusal(&library, &sql), "{sql:?}");
         }
         assert_eq!(library.rows(), 2, "no refused statement may write");
-        assert!(!copy.exists());
+        let copied = copy.exists();
+        let _ = std::fs::remove_file(&copy);
+        assert!(!copied, "VACUUM INTO must not copy the library");
         assert!(!Path::new("C:/x/copy.db").exists());
     }
 

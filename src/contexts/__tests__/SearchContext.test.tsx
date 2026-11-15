@@ -438,6 +438,23 @@ describe('SearchProvider', () => {
         }
     );
 
+    it('never shows the previous search total in the scope dropdown while the new count loads', async () => {
+        // The header may keep the last count to avoid a flash, but the dropdown labels this page's results.
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            status: 'success',
+            isPlaceholderData: false,
+            data: { pages: [{ images: [image()] }] },
+            counts: { totalCount: 40, globalCount: 50 },
+            countsArePlaceholder: true,
+        };
+        renderProvider();
+        await act(async () => {});
+
+        expect(latest.totalImages).toBe(40);
+        expect(latest.scopeResultCount).toBeUndefined();
+    });
+
     it('does not start a queued privacy refresh after InvokeAI admission closes', async () => {
         let resolveDb: (() => void) | undefined;
         mocks.settings.current = {

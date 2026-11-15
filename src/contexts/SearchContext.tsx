@@ -294,6 +294,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         queryKey: imagesQueryKey,
         counts: imageCounts,
         countsFailed: imageCountsFailed,
+        countsArePlaceholder: imageCountsArePlaceholder,
     } = useImagesQuery({
         filters,
         sortOption,
@@ -373,7 +374,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
     const sourceKindCounts = scopeCounts?.imageKinds;
     const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
-    const scopeResultCount = hasCurrentSafePage ? imageCounts?.totalCount : undefined;
+    // The scope dropdown counts this page's own results, never the previous search's kept total.
+    const scopeResultCount = hasCurrentSafePage && !imageCountsArePlaceholder ? imageCounts?.totalCount : undefined;
     // While an owner-cache repair holds the scope counts, missing counts read as loading and no
     // earlier error or retry is offered; the held queries run again when the repair ends.
     const isOwnerCacheRepairing = useLibraryStore((state) => state.isOwnerCacheRepairing);

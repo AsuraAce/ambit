@@ -226,6 +226,8 @@ export const useImagesQuery = ({
         ...query,
         queryKey: imagesQueryKey,
         counts: countsQuery.data,
+        /** The counts shown are the previous search's, kept while this one's count loads. */
+        countsArePlaceholder: countsQuery.isPlaceholderData,
         // The read failed and nothing is cached: the counts stay unknown until the next refresh.
         countsFailed: countsQuery.isError && countsQuery.data === undefined,
     };
