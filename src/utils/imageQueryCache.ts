@@ -3,11 +3,25 @@ import type { AIImage } from '../types';
 
 interface ImagesPage {
     images: AIImage[];
+}
+
+type ImagesQueryData = InfiniteData<ImagesPage, unknown>;
+
+export interface ImageCounts {
     totalCount: number;
     globalCount: number;
 }
 
-type ImagesQueryData = InfiniteData<ImagesPage, unknown>;
+const IMAGE_COUNTS_KEY = 'counts';
+
+/** The counts for an images query sit under its key, so invalidating ['images'] refreshes both. */
+export const getImageCountsQueryKey = <Key extends QueryKey>(imagesQueryKey: Key) => [...imagesQueryKey, IMAGE_COUNTS_KEY] as const;
+
+const getImagesQueriesData = (queryClient: QueryClient) =>
+    queryClient.getQueriesData<ImagesQueryData>({
+        queryKey: ['images'],
+        predicate: (query) => query.queryKey[query.queryKey.length - 1] !== IMAGE_COUNTS_KEY,
+    });
 
 interface ImageQueryOrderOptions {
     previousOrder?: readonly AIImage[];
@@ -80,7 +94,7 @@ export const updateImagesQueryCaches = (
     updateImage: (image: AIImage) => AIImage,
     options: ImageQueryOrderOptions = {}
 ): void => {
-    queryClient.getQueriesData<ImagesQueryData>({ queryKey: ['images'] }).forEach(([queryKey, data]) => {
+    getImagesQueriesData(queryClient).forEach(([queryKey, data]) => {
         if (!data) return;
         const nextData = updateImagesQueryData(data, queryKey, updateImage, options);
         if (nextData !== data) {
@@ -93,7 +107,7 @@ export const removeImagesFromQueryCaches = (queryClient: QueryClient, ids: Itera
     const idSet = new Set(ids);
     if (idSet.size === 0) return;
 
-    queryClient.getQueriesData<ImagesQueryData>({ queryKey: ['images'] }).forEach(([queryKey, data]) => {
+    getImagesQueriesData(queryClient).forEach(([queryKey, data]) => {
         if (!data) return;
 
         const removedIds = new Set<string>();
@@ -108,14 +122,17 @@ export const removeImagesFromQueryCaches = (queryClient: QueryClient, ids: Itera
 
         if (removedIds.size === 0) return;
 
-        const removedCount = removedIds.size;
-        const nextPages = pages.map((page) => {
-            const totalCount = page.totalCount < 0 ? page.totalCount : Math.max(0, page.totalCount - removedCount);
-            const globalCount = page.globalCount < 0 ? page.globalCount : Math.max(0, page.globalCount - removedCount);
-            return totalCount === page.totalCount && globalCount === page.globalCount ? page : { ...page, totalCount, globalCount };
-        });
+        queryClient.setQueryData(queryKey, { ...data, pages });
 
-        queryClient.setQueryData(queryKey, { ...data, pages: nextPages });
+        const removedCount = removedIds.size;
+        queryClient.setQueryData<ImageCounts>(getImageCountsQueryKey(queryKey), (counts) =>
+            counts
+                ? {
+                      totalCount: Math.max(0, counts.totalCount - removedCount),
+                      globalCount: Math.max(0, counts.globalCount - removedCount),
+                  }
+                : counts
+        );
     });
 };
 

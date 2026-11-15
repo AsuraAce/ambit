@@ -183,9 +183,10 @@ describe('useAppHandlers', () => {
         const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
         const queryKey = ['images', { scope: 'library' }] as const;
         queryClient.setQueryData(queryKey, {
-            pages: [{ images: mockImages, totalCount: 1, globalCount: 1 }],
+            pages: [{ images: mockImages }],
             pageParams: [undefined],
         });
+        queryClient.setQueryData([...queryKey, 'counts'], { totalCount: 1, globalCount: 1 });
         const { result } = renderHandlers();
 
         await act(async () => {
@@ -195,11 +196,8 @@ describe('useAppHandlers', () => {
         expect(mockRemoveImagesFromLibrary).toHaveBeenCalledWith(['img1']);
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
-        expect(
-            queryClient.getQueryData<{
-                pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
-            }>(queryKey)?.pages[0]
-        ).toMatchObject({ images: [], totalCount: 0, globalCount: 0 });
+        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(queryKey)?.pages[0].images).toEqual([]);
+        expect(queryClient.getQueryData([...queryKey, 'counts'])).toEqual({ totalCount: 0, globalCount: 0 });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['invoke-image-references'] });
     });
@@ -311,9 +309,10 @@ describe('useAppHandlers', () => {
     it('should handle delete file for removed items', async () => {
         const queryKey = ['images', { scope: 'stale-library' }] as const;
         queryClient.setQueryData(queryKey, {
-            pages: [{ images: mockImages, totalCount: 1, globalCount: 1 }],
+            pages: [{ images: mockImages }],
             pageParams: [undefined],
         });
+        queryClient.setQueryData([...queryKey, 'counts'], { totalCount: 1, globalCount: 1 });
         const { result } = renderHandlers();
 
         await act(async () => {
@@ -322,11 +321,8 @@ describe('useAppHandlers', () => {
 
         expect(mockDeleteRemovedImagesFromDisk).toHaveBeenCalledWith(['img1']);
         expect(dispatchedImages).toEqual([]);
-        expect(
-            queryClient.getQueryData<{
-                pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
-            }>(queryKey)?.pages[0]
-        ).toMatchObject({ images: [], totalCount: 0, globalCount: 0 });
+        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(queryKey)?.pages[0].images).toEqual([]);
+        expect(queryClient.getQueryData([...queryKey, 'counts'])).toEqual({ totalCount: 0, globalCount: 0 });
     });
 
     it('keeps a committed disk deletion successful when gallery refresh fails', async () => {
@@ -513,9 +509,10 @@ describe('useAppHandlers', () => {
         dispatchedImages = [mockImages[0], duplicate];
         const queryKey = ['images', { scope: 'library' }] as const;
         queryClient.setQueryData(queryKey, {
-            pages: [{ images: [mockImages[0], duplicate], totalCount: 2, globalCount: 2 }],
+            pages: [{ images: [mockImages[0], duplicate] }],
             pageParams: [undefined],
         });
+        queryClient.setQueryData([...queryKey, 'counts'], { totalCount: 2, globalCount: 2 });
         const { result } = renderHandlers();
         act(() => result.current.handleGroupImages(['img1']));
         expect(dispatchedImages[0].groupId).toBeTruthy();
@@ -532,9 +529,8 @@ describe('useAppHandlers', () => {
             }>(queryKey)?.pages[0]
         ).toMatchObject({
             images: [expect.objectContaining({ id: 'img1', isFavorite: true, isPinned: true, userMasked: undefined })],
-            totalCount: 1,
-            globalCount: 1,
         });
+        expect(queryClient.getQueryData([...queryKey, 'counts'])).toEqual({ totalCount: 1, globalCount: 1 });
         expect(mockAddToast).toHaveBeenCalledWith('Moved 1 duplicate to Removed', 'success');
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
     });

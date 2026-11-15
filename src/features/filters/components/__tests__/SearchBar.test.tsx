@@ -31,7 +31,7 @@ interface SearchHarnessOptions {
     recentSearches?: string[];
     setRecentSearches?: React.Dispatch<React.SetStateAction<string[]>>;
     scopeName?: string;
-    displayedCount?: number;
+    displayedCount?: number | null;
     isFiltering?: boolean;
     submitNavigatesToGrid?: boolean;
     onDraftPendingChange?: (isPending: boolean) => void;
@@ -59,7 +59,7 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
             recentSearches={options.recentSearches ?? []}
             setRecentSearches={setRecentSearches}
             scopeName={options.scopeName ?? 'Library'}
-            displayedCount={options.displayedCount ?? 10}
+            displayedCount={options.displayedCount === undefined ? 10 : options.displayedCount}
             isFiltering={options.isFiltering ?? false}
             submitNavigatesToGrid={options.submitNavigatesToGrid ?? false}
             onDraftPendingChange={onDraftPendingChange}
@@ -384,6 +384,14 @@ describe('SearchBar query readiness and trigger behavior', () => {
         await flushSearchPopover();
 
         expect(screen.getByRole('status').textContent).toBe('No matches in Collection: Favorites.');
+    });
+
+    it('announces no count for results whose count is still loading', async () => {
+        // The results show before their count; "No matches" or "0 matches" would be false.
+        renderSearchBar(createDefaultFilters({ searchQuery: 'portrait' }), { displayedCount: null });
+        await flushSearchPopover();
+
+        expect(screen.queryByRole('status')).toBeNull();
     });
 
     it('reports searching instead of no matches while an applied query is fetching', async () => {

@@ -30,8 +30,8 @@ type ModelChartStat = {
 
 const SKELETON_BAR_WIDTHS = ['92%', '76%', '84%', '63%', '71%'];
 
-const formatAnalysisTarget = (globalTotal: number) =>
-    globalTotal > 0 ? `Analyzing ${globalTotal.toLocaleString()} library images` : 'Analyzing library images';
+const formatAnalysisTarget = (globalTotal: number | null) =>
+    globalTotal !== null && globalTotal > 0 ? `Analyzing ${globalTotal.toLocaleString()} library images` : 'Analyzing library images';
 
 export const StatsDashboard: React.FC<ChartsProps> = ({ images: _images, onFilter }) => {
     const setKeywordStatsEnabled = useLibraryStore((state) => state.setKeywordStatsEnabled);

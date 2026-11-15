@@ -310,9 +310,10 @@ describe('useMaintenanceOps metadata recovery', () => {
         const queryKey = ['images', { scope: 'library' }] as const;
         const other = { ...image, id: 'other' };
         queryClient.setQueryData(queryKey, {
-            pages: [{ images: [image, other], totalCount: 2, globalCount: 2 }],
+            pages: [{ images: [image, other] }],
             pageParams: [undefined],
         });
+        queryClient.setQueryData([...queryKey, 'counts'], { totalCount: 2, globalCount: 2 });
         const setImages = vi.fn();
         const { result } = renderHook(
             () =>
@@ -331,7 +332,7 @@ describe('useMaintenanceOps metadata recovery', () => {
             pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
         }>(queryKey);
         expect(cached?.pages[0].images.map((item) => item.id)).toEqual(['other']);
-        expect(cached?.pages[0]).toMatchObject({ totalCount: 1, globalCount: 1 });
+        expect(queryClient.getQueryData([...queryKey, 'counts'])).toEqual({ totalCount: 1, globalCount: 1 });
         const updater = setImages.mock.calls[0][0] as (previous: AIImage[]) => AIImage[];
         expect(updater([image, other]).map((item) => item.id)).toEqual(['other']);
     });

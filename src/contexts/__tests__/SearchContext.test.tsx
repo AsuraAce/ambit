@@ -270,7 +270,8 @@ describe('SearchProvider', () => {
         expect(latest.isLibraryReady).toBe(false);
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
+            data: { pages: [{ images: [] }] },
+            counts: { totalCount: 0, globalCount: 0 },
             status: 'success',
         };
         view.rerender(
@@ -362,7 +363,8 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             status: 'success',
-            data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
+            data: { pages: [{ images: [] }] },
+            counts: { totalCount: 0, globalCount: 0 },
         };
         view.rerender(
             <SearchProvider>
@@ -390,7 +392,8 @@ describe('SearchProvider', () => {
             mocks.imagesQuery.current = {
                 ...(mocks.imagesQuery.current as object),
                 status: 'success',
-                data: { pages: [{ images: [image()], totalCount: 1, globalCount: 5 }] },
+                data: { pages: [{ images: [image()] }] },
+                counts: { totalCount: 1, globalCount: 5 },
             };
             mocks.scopeQuery.current = {
                 data: undefined,
@@ -469,7 +472,8 @@ describe('SearchProvider', () => {
         const first = image();
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [first], totalCount: 4, globalCount: 9 }] },
+            data: { pages: [{ images: [first] }] },
+            counts: { totalCount: 4, globalCount: 9 },
             hasNextPage: true,
             isLoading: true,
         };
@@ -516,7 +520,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [previous], totalCount: 1, globalCount: 9 }] },
+            data: { pages: [{ images: [previous] }] },
+            counts: { totalCount: 1, globalCount: 9 },
             isFetching: true,
             isPlaceholderData: true,
         };
@@ -543,7 +548,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [blurred] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -573,7 +579,8 @@ describe('SearchProvider', () => {
 
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [safe] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             isFetching: false,
         };
         view.rerender(
@@ -604,7 +611,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [blurred] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -623,7 +631,8 @@ describe('SearchProvider', () => {
         };
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
+            data: { pages: [{ images: [safe] }] },
+            counts: { totalCount: 1, globalCount: 2 },
             queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey,
         };
         view.rerender(
@@ -636,10 +645,29 @@ describe('SearchProvider', () => {
         await waitFor(() => expect(latest.images).toEqual([safe]));
     });
 
+    it('presents a first page before its counts and reports the counts as loading', () => {
+        // The gallery opens as soon as its page is safe; the counts follow on their own.
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [image()] }] },
+            counts: undefined,
+            status: 'success',
+        };
+
+        renderProvider();
+
+        expect(latest.isLibraryReady).toBe(true);
+        expect(latest.images).toEqual([image()]);
+        expect(latest.totalImages).toBeNull();
+        expect(latest.globalTotal).toBeNull();
+        expect(latest.scopeResultCount).toBeUndefined();
+    });
+
     it('reports a cached first-page refresh as filtering without losing the global count', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [], totalCount: 0, globalCount: 9 }] },
+            data: { pages: [{ images: [] }] },
+            counts: { totalCount: 0, globalCount: 9 },
             isFetching: true,
         };
 
@@ -1121,7 +1149,8 @@ describe('SearchProvider', () => {
         (mocks.searchState.current as SearchValue).images = [staleImage];
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
-            data: { pages: [{ images: [staleImage], totalCount: 1, globalCount: 1 }] },
+            data: { pages: [{ images: [staleImage] }] },
+            counts: { totalCount: 1, globalCount: 1 },
         };
         mocks.refreshPrivacyMaskIndex.mockReturnValue(
             new Promise((resolve) => {

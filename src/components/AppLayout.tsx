@@ -100,7 +100,7 @@ interface AppLayoutProps {
     setLayoutMode: (mode: LayoutMode) => void;
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
-    displayedCount: number;
+    displayedCount: number | null;
     scopeTotal: number | null;
     scopeName: string;
     isFiltering: boolean;
@@ -652,7 +652,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     </>
                                 ) : globalTotal === 0 ? (
                                     <LibraryEmptyStateContainer onImport={onOpenImportModal} />
-                                ) : (
+                                ) : globalTotal === null ? null : ( // Until the library total arrives, an empty page cannot tell an empty library from no matches.
                                     <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
                                         <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">
                                             <Search className="w-12 h-12 text-zinc-400 dark:text-zinc-500" />

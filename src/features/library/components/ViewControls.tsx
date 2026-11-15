@@ -27,7 +27,8 @@ const COUNT_LOADING_REVEAL_DELAY_MS = 180;
 const COUNT_LOADING_MIN_VISIBLE_MS = 300;
 
 interface CountPresentation {
-    displayedCount: number;
+    /** Null while the matching count loads after its page has shown. */
+    displayedCount: number | null;
     totalCount: number | null;
     scopeName: string;
     ownerPresentationKey: string;
@@ -43,7 +44,7 @@ interface ViewControlsProps {
     setSortOption: (opt: SortOption) => void;
     thumbnailSize: number;
     setThumbnailSize: (size: number) => void;
-    displayedCount: number;
+    displayedCount: number | null;
     totalCount: number | null;
     scopeName: string;
     ownerPresentationKey?: string;
@@ -332,10 +333,10 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                     </span>
                 ) : countPresentation.displayedCount !== countPresentation.totalCount ? (
                     <span
-                        aria-label={`${countPresentation.displayedCount.toLocaleString()} matches in ${countPresentation.scopeName}; ${countPresentation.totalCount === null ? 'collection total not available' : `${countPresentation.totalCount.toLocaleString()} total`}`}
+                        aria-label={`${countPresentation.displayedCount?.toLocaleString() ?? 'Counting'} matches in ${countPresentation.scopeName}; ${countPresentation.totalCount === null ? 'collection total not available' : `${countPresentation.totalCount.toLocaleString()} total`}`}
                     >
-                        <span title={countPresentation.displayedCount.toLocaleString()} className="text-sage-600 dark:text-sage-400">
-                            {formatCountCompact(countPresentation.displayedCount)}
+                        <span title={countPresentation.displayedCount?.toLocaleString()} className="text-sage-600 dark:text-sage-400">
+                            {countPresentation.displayedCount === null ? '—' : formatCountCompact(countPresentation.displayedCount)}
                         </span>
                         <span className="px-1 opacity-40">/</span>
                         <span

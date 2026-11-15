@@ -37,7 +37,7 @@ interface AppHeaderProps {
     setLayoutMode: (mode: LayoutMode) => void;
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
-    displayedCount: number;
+    displayedCount: number | null;
     totalCount: number | null;
     scopeName: string;
     scopeCounts?: LibraryScopeCounts;

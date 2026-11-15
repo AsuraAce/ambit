@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { measureStartupPhase } from '../utils/startupDiagnostics';
 import { FilterState, SortOption, AppSettings, Collection, PaginationCursor } from '../types';
 import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
@@ -9,6 +9,7 @@ import { searchBrowserMockImages } from '../services/browserMockData';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 import { getInvokeOwnerQueryScopeKey, previousQueryMatchesInvokeScope } from '../utils/invokeOwnerQueryScope';
+import { getImageCountsQueryKey } from '../utils/imageQueryCache';
 
 interface UseImagesQueryProps {
     filters: FilterState;
@@ -85,21 +86,18 @@ export const useImagesQuery = ({
         [effectiveMaskedKeywords, filters, invokeOwnerScopeKey, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]
     );
 
+    const buildWhere = () => buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, allCollections);
+
     const query = useInfiniteQuery({
         queryKey: imagesQueryKey,
         queryFn: async ({ pageParam }) => {
             if (useBrowserMocks) {
                 const cursor = pageParam;
-                return searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id, { privacyEnabled, settings });
+                const page = searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id, { privacyEnabled, settings });
+                return { images: page.images };
             }
 
-            const { where, params, collectionId, loraName } = buildSqlWhereClause(
-                filters,
-                privacyEnabled,
-                settings.maskingMode,
-                effectiveMaskedKeywords,
-                allCollections
-            );
+            const { where, params, collectionId, loraName } = buildWhere();
 
             let sortField = 'display_timestamp';
             let sortOrder: 'ASC' | 'DESC' = 'DESC';
@@ -134,20 +132,16 @@ export const useImagesQuery = ({
 
             const prioritizePinned = filters.collectionId !== null;
 
-            // parallelize count and search for the first page
+            // The first page never waits for its counts, which run in their own query below.
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
             if (pageParam === undefined) {
                 const startedAt = performance.now();
-                const [images, totalCount, globalCount] = await measureStartupPhase('first-page', () =>
-                    Promise.all([
-                        searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
-                        countImages(where, params, collectionId, loraName),
-                        countGlobalImages(), // Fast path: no JOIN, simple indexed count
-                    ])
+                const images = await measureStartupPhase('first-page', () =>
+                    searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined)
                 );
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
-                return { images, totalCount, globalCount };
+                return { images };
             } else {
                 const cursor = pageParam;
                 const startedAt = performance.now();
@@ -164,7 +158,7 @@ export const useImagesQuery = ({
                 );
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: load more ${elapsedMs}ms`);
-                return { images, totalCount: -1, globalCount: -1 };
+                return { images };
             }
         },
         initialPageParam: undefined as PaginationCursor | undefined,
@@ -199,5 +193,30 @@ export const useImagesQuery = ({
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
     });
 
-    return { ...query, queryKey: imagesQueryKey };
+    // Nested under the images key, so every invalidation of ['images'] refreshes the counts too.
+    const countsQuery = useQuery({
+        queryKey: getImageCountsQueryKey(imagesQueryKey),
+        queryFn: async () => {
+            if (useBrowserMocks) {
+                const { totalCount, globalCount } = searchBrowserMockImages(filters, sortOption, 1, undefined, {
+                    privacyEnabled,
+                    settings,
+                });
+                return { totalCount, globalCount };
+            }
+
+            const { where, params, collectionId, loraName } = buildWhere();
+            const [totalCount, globalCount] = await Promise.all([
+                countImages(where, params, collectionId, loraName),
+                countGlobalImages(), // Fast path: no JOIN, simple indexed count
+            ]);
+            return { totalCount, globalCount };
+        },
+        // No placeholder: a count from another filter or privacy scope would describe the wrong
+        // images, so it reads as loading ("—") until this scope's count arrives.
+        gcTime: 1000 * 60 * 10,
+        enabled: settingsLoaded,
+    });
+
+    return { ...query, queryKey: imagesQueryKey, counts: countsQuery.data };
 };

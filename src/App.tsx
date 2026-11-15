@@ -76,7 +76,7 @@ const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
 
 interface RetainedLibraryPresentation {
     images: AIImage[];
-    totalImages: number;
+    totalImages: number | null;
     scopeTotal: number | null;
     scopeName: string;
     availableTags: string[];
@@ -694,10 +694,9 @@ export default function App() {
         !activeCollection && filters.collectionId ? (smartCollections.find((c) => c.id === filters.collectionId) ?? null) : null;
     const scopeName = activeCollection ? activeCollection.name : activeSmartCollection ? activeSmartCollection.name : 'Library';
     const activeCollectionCount = activeCollection ? getCollectionCount(activeCollection) : undefined;
-    const scopeTotal =
-        activeCollection && activeCollectionCount === undefined
-            ? null
-            : Math.max(activeCollection ? activeCollectionCount! : activeSmartCollection ? totalImages : globalTotal, totalImages);
+    // A count still loading reads as null ("—"); the matching count never raises a total above itself.
+    const scopeBaseTotal = activeCollection ? activeCollectionCount : activeSmartCollection ? totalImages : globalTotal;
+    const scopeTotal = scopeBaseTotal === undefined || scopeBaseTotal === null ? null : Math.max(scopeBaseTotal, totalImages ?? 0);
     const currentLibraryPresentation: RetainedLibraryPresentation = {
         images,
         totalImages,

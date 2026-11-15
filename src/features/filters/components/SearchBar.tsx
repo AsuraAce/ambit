@@ -27,7 +27,7 @@ interface SearchBarProps {
     recentSearches: string[];
     setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
     scopeName: string;
-    displayedCount: number;
+    displayedCount: number | null;
     isFiltering: boolean;
     submitNavigatesToGrid: boolean;
     onDraftPendingChange: (isPending: boolean) => void;
@@ -176,6 +176,8 @@ export const SearchBar = React.memo(
             if (!trimmedValue) return null;
             if (searchProps.isAiSearchEnabled || submitNavigatesToGrid) return triggerGuidance;
             if (isDraftPending || isFiltering) return `Searching ${scopeName}…`;
+            // The results show before their count; announce nothing until the count arrives.
+            if (displayedCount === null) return null;
             if (displayedCount === 0) return `No matches in ${scopeName}.`;
             return `${displayedCount.toLocaleString()} ${displayedCount === 1 ? 'match' : 'matches'} in ${scopeName}.`;
             // eslint-disable-next-line react-hooks/exhaustive-deps -- keeps the status recomputing in step with the raw query values while typing

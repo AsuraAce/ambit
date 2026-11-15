@@ -548,6 +548,17 @@ describe('AppLayout', () => {
         expect(screen.queryByRole('heading', { name: 'Building your library…' })).toBeNull();
     });
 
+    it('shows neither the empty library nor no matches before the library total arrives', () => {
+        // The first page can arrive before its counts; an empty page alone cannot tell the two apart.
+        searchState.value.images = [];
+        (searchState.value as { totalImages: number | null; globalTotal: number | null }).totalImages = null;
+        (searchState.value as { totalImages: number | null; globalTotal: number | null }).globalTotal = null;
+        render(<AppLayout {...defaultProps} />);
+
+        expect(screen.queryByRole('heading', { name: 'No Matches Found' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+    });
+
     it('clears filters from the no-matches state', () => {
         const clearAllFilters = vi.fn();
         searchState.value.images = [];
