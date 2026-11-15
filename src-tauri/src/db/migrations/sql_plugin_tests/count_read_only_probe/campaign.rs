@@ -126,7 +126,7 @@ fn queries() -> ProbeResult<[String; 4]> {
     let base = string_constant(SEARCH, "BASE_VISIBLE_WHERE")?;
     let default = string_constant(SEARCH, "DEFAULT_VISIBLE_WHERE")?;
     if default.matches("${BASE_VISIBLE_WHERE}").count() != 1
-        || !count_source.contains("const fromClause = 'FROM scoped_images AS images';")
+        || !count_source.contains("const fromClause = `FROM ${countSourceFor(finalWhere)} AS images`;")
         || !count_source
             .contains("const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;")
         || !count_source
@@ -154,7 +154,8 @@ fn queries() -> ProbeResult<[String; 4]> {
     Ok([
         collection.to_owned(),
         maintenance.to_owned(),
-        format!("SELECT count(*) as count FROM scoped_images AS images {predicate}"),
+        // Every default term is a count-index term, so countSourceFor picks the m86 view.
+        format!("SELECT count(*) as count FROM scoped_count_images AS images {predicate}"),
         global.to_owned(),
     ])
 }

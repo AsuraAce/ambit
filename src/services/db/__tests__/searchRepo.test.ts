@@ -31,7 +31,7 @@ const createFacetDb = (
         if (normalizedSql.startsWith('SELECT m.resource_type, m.name, m.hash,')) {
             return diskRows;
         }
-        if (normalizedSql.includes('scoped_images AS images')) {
+        if (/scoped_(?:count_)?images AS images/.test(normalizedSql)) {
             if (normalizedSql.includes("COALESCE(tool, 'Unknown')")) return scopedRows.tools ?? deriveScopedRows(cacheRows, 'tools');
             if (normalizedSql.includes('JOIN image_loras')) return scopedRows.loras ?? deriveScopedRows(cacheRows, 'loras');
             if (normalizedSql.includes('JOIN image_embeddings')) return scopedRows.embeddings ?? deriveScopedRows(cacheRows, 'embeddings');
@@ -113,6 +113,31 @@ describe('searchRepo basic queries', () => {
         const sql = db.select.mock.calls[0]?.[0] as string;
         expect(sql).toContain(scopedSource);
         expect(sql).not.toMatch(/\b(?:FROM|JOIN|CROSS JOIN)\s+images\b/);
+    });
+
+    it('reads unfiltered counts from the count index view and keeps every other filter on scoped_images', async () => {
+        // The view names the m86 index, which holds only these terms: a count with
+        // any other term must keep the planner's own plan over the full rows.
+        const db = { select: vi.fn().mockResolvedValue([{ count: 1 }]) };
+        getDbMock.mockResolvedValue(db);
+        const { countImages, countLibraryScopes } = await import('../searchRepo');
+        const visible =
+            'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+
+        await countImages('', []);
+        await countImages(`${visible} AND privacy_hidden = 0`, []);
+        await countLibraryScopes(`${visible} AND (media_type = ? OR media_type IS NULL) AND source_kind = ?`, ['image', 'photograph']);
+        await countImages(`${visible} AND positive_prompt LIKE ?`, ['%cat%']);
+        await countLibraryScopes(`${visible} AND privacy_hidden = 0`, [], 'collection-1');
+
+        const sources = db.select.mock.calls.map(([sql]) => /FROM (\S+) AS images|JOIN (\S+) AS images/.exec(sql as string));
+        expect(sources.map((match) => match?.[1] ?? match?.[2])).toEqual([
+            'scoped_count_images',
+            'scoped_count_images',
+            'scoped_count_images',
+            'scoped_images',
+            'scoped_images',
+        ]);
     });
 
     it('sends each selected-filter count directly with unchanged query arguments', async () => {
@@ -1691,7 +1716,7 @@ describe('searchRepo scoped stats queries', () => {
 
         const [scopedSql] = findSelectCall(
             db,
-            (value) => value.includes('scoped_images AS images') && value.includes('JOIN image_loras')
+            (value) => value.includes('scoped_count_images AS images') && value.includes('JOIN image_loras')
         ) as [string, unknown[]];
         expect(scopedSql).toContain("instr(il.lora_name, ' (')");
         expect(scopedSql).toContain('GROUP BY CASE');

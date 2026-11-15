@@ -23,6 +23,8 @@ describe('library media scopes over SQLite', () => {
             );
             CREATE VIEW scoped_images AS SELECT * FROM images
                 WHERE invoke_owner_id IS NULL OR invoke_owner_id = 'current';
+            -- m86 names the count index in this view; the rows it returns are the same.
+            CREATE VIEW scoped_count_images AS SELECT * FROM scoped_images;
             CREATE TABLE collection_images (collection_id TEXT, image_id TEXT);
             INSERT INTO images(id, media_type, source_kind, positive_prompt) VALUES
                 ('photo', 'image', 'photograph', 'portrait'),

@@ -383,6 +383,32 @@ const getDiskModifiedAtForFacetRow = (
 const BASE_VISIBLE_WHERE =
     'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
 const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
+
+// The WHERE terms the m86 count index holds (m86_scope_count_indexes.rs reads this list).
+// A count whose WHERE clause uses only these reads `scoped_count_images`, which names that
+// index, so it never reads the metadata-heavy image rows. Any other term keeps `scoped_images`
+// and the planner's own choice of index.
+const COUNT_INDEX_TERMS = new Set([
+    'invoke_scope_hidden = 0',
+    'is_deleted = 0',
+    'IFNULL(is_intermediate_gen, 0) = 0',
+    'IFNULL(is_grid_gen, 0) = 0',
+    'IFNULL(is_invoke_asset_gen, 0) = 0',
+    'privacy_hidden = 0',
+    '(media_type = ? OR media_type IS NULL)',
+    'media_type = ?',
+    'source_kind = ?',
+]);
+
+const countSourceFor = (finalWhere: string): string =>
+    finalWhere.startsWith('WHERE ') &&
+    finalWhere
+        .slice('WHERE '.length)
+        .split(' AND ')
+        .every((term) => COUNT_INDEX_TERMS.has(term))
+        ? 'scoped_count_images'
+        : 'scoped_images';
+
 const KEYWORD_BATCH_SIZE = 500;
 
 const isDefaultGlobalScope = (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): boolean => {
@@ -438,7 +464,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
     }
 
     // Simple count using denormalized columns - no JOIN needed
-    const fromClause = 'FROM scoped_images AS images';
+    const fromClause = `FROM ${countSourceFor(finalWhere)} AS images`;
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
     const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
@@ -469,7 +495,7 @@ export const countLibraryScopes = async (
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const select = 'SELECT images.source_kind, images.media_type, count(*) as count';
     const group = 'GROUP BY images.source_kind, images.media_type';
-    let query = `${select} FROM scoped_images AS images ${finalWhere} ${group}`;
+    let query = `${select} FROM ${countSourceFor(finalWhere)} AS images ${finalWhere} ${group}`;
     let queryParams = params;
 
     if (collectionId && loraName) {
@@ -838,7 +864,7 @@ const getScopedFacetCountMaps = async (
         collectionId,
         loraName,
         ['images.id AS id', 'images.resolved_model_name AS resolved_model_name', 'images.model_name AS model_name', 'images.tool AS tool'],
-        {}
+        { defaultFromClause: `FROM ${countSourceFor(whereClause || DEFAULT_VISIBLE_WHERE)} AS images` }
     );
 
     const queries = cacheTypes.map(async (cacheType) => {
