@@ -68,10 +68,7 @@ pub(crate) fn collect_traversal_issues(
         collector.trace_sampler_name(graph, root_sampler_id, root_sampler);
     }
 
-    // A pre-enhancer request keeps the generated-value diagnostic visible.
-    if is_missing_prompt_value(&metadata.positive_prompt)
-        || metadata.positive_prompt_before_enhancer
-    {
+    if is_missing_prompt_value(&metadata.positive_prompt) {
         collector.trace_sampler_prompt(
             graph,
             root_sampler_id,

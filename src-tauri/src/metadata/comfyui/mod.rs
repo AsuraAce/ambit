@@ -374,7 +374,11 @@ fn merge_graph_metadata(
             );
         }
     }
-    if !is_missing_prompt_value(&graph.positive_prompt) {
+    // A pre-enhancer request is weak: a saved prompt (for example from saver
+    // nodes' `parameters`) is the text the model actually used.
+    let graph_prompt_is_weak_request =
+        graph.positive_prompt_before_enhancer && !is_missing_prompt_value(&base.positive_prompt);
+    if !is_missing_prompt_value(&graph.positive_prompt) && !graph_prompt_is_weak_request {
         if let Some(layer) = selected_graph_layer(
             graph_diagnostics,
             ComfyMetadataField::PositivePrompt,
@@ -891,10 +895,7 @@ fn extract_comfyui_graph_with_diagnostics(
     // Layer 3: Graph Evaluator (Smart Backtracking)
     // Only run if we are missing critical info, OR if we want to fill in gaps.
     diagnostics.attempt(ComfyParseLayer::SamplerTraversal);
-    let mut evaluator = ComfyEvaluator::new(&graph);
-    if !recover_enhancer_request {
-        evaluator = evaluator.without_enhancer_request();
-    }
+    let evaluator = ComfyEvaluator::new(&graph);
     let (traversal_meta, output_diagnostics) = if collect_traversal_issues {
         evaluator.extract_with_traversal_diagnostics()
     } else {
@@ -908,6 +909,7 @@ fn extract_comfyui_graph_with_diagnostics(
         output_diagnostics.authoritative_sampler_custom_path;
     diagnostics.traversal_issues = output_diagnostics.traversal_issues;
     diagnostics.traversal_issues_truncated = output_diagnostics.traversal_issues_truncated;
+    let enhancer_request = output_diagnostics.enhancer_request;
     let selected_samplerless_output = output_diagnostics.selected_output_candidate_count > 0
         && output_diagnostics.unique_root_sampler_count == 0
         && !chunks_contain_sampler_definition(chunks);
@@ -988,6 +990,18 @@ fn extract_comfyui_graph_with_diagnostics(
             ComfyParseLayer::GlobalScan,
             &scan_sources,
         );
+    }
+
+    // Last resort: the typed request behind a direct prompt enhancer, only
+    // when no layer found the prompt. Text and marker are set together; every
+    // earlier layer runs exactly as it would without the rule.
+    if let Some(request) = enhancer_request.filter(|_| recover_enhancer_request) {
+        if is_missing_prompt_value(&meta.positive_prompt) {
+            let before = ComfyMetadataSnapshot::from_metadata(&meta);
+            meta.positive_prompt = request;
+            meta.positive_prompt_before_enhancer = true;
+            diagnostics.record_diff(&before, &meta, ComfyParseLayer::SamplerTraversal);
+        }
     }
 
     (meta, diagnostics)

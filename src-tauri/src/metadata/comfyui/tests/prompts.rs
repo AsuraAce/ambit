@@ -1780,6 +1780,28 @@ fn enhancer_request_stands_in_when_its_output_feeds_the_encoder_unchanged() {
 }
 
 #[test]
+fn enhancer_request_never_replaces_a_saved_parameters_prompt() {
+    // Saver nodes write `parameters` from their runtime input, so with an
+    // enhancer wired in that text is the enhanced prompt the model used. The
+    // request must not replace it, and the pill would wrongly claim the used
+    // prompt isn't saved, so the marker stays off.
+    let enhanced = "a fluffy orange cat on a sunlit windowsill, soft light";
+    let mut chunks = transform_prompt_chunks(vec![(
+        "3",
+        json!({ "class_type": "TextGenerate", "inputs": { "prompt": "a cat" } }),
+    )]);
+    chunks.insert(
+        "parameters".to_string(),
+        format!("{enhanced}\nSteps: 4, Sampler: euler, CFG scale: 1, Seed: 1"),
+    );
+
+    let with_rule = merge_with_traversal(&chunks, true);
+    assert_eq!(with_rule.0.positive_prompt, enhanced);
+    assert!(!with_rule.0.positive_prompt_before_enhancer);
+    assert_eq!(with_rule, merge_with_traversal(&chunks, false));
+}
+
+#[test]
 fn enhancer_request_is_not_shown_when_the_enhancer_reads_media() {
     for media in ["image", "video", "audio"] {
         let mut inputs = json!({ "prompt": "Describe this in detail." });
