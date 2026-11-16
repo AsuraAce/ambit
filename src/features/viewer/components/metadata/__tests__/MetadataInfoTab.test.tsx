@@ -164,6 +164,36 @@ describe('MetadataInfoTab', () => {
         expect(props.setPromptValue).not.toHaveBeenCalled();
     });
 
+    it('marks a prompt typed into a prompt enhancer and explains why it is shown', () => {
+        const parsed = metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true });
+        renderTab(image(parsed, parsed));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Original prompt' }));
+        expect(screen.getByRole('tooltip').textContent).toBe(
+            "ComfyUI's prompt enhancer rewrote this prompt before generating. The rewritten version isn't saved in the image, so this is the original prompt that was typed in."
+        );
+    });
+
+    it('does not mark prompts without an enhancer request', () => {
+        const parsed = metadata({ positivePrompt: 'A night street' });
+        renderTab(image(parsed, parsed));
+
+        expect(screen.queryByRole('button', { name: 'Original prompt' })).toBeNull();
+    });
+
+    it('drops the enhancer mark once the user replaces the prompt, and keeps it on the parsed original', () => {
+        renderTab(
+            image(
+                metadata({ positivePrompt: 'My own prompt', positivePromptBeforeEnhancer: true }),
+                metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true })
+            )
+        );
+
+        expect(screen.queryByRole('button', { name: 'Original prompt' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Original' }));
+        expect(screen.getByRole('button', { name: 'Original prompt' })).not.toBeNull();
+    });
+
     it('only shows revert when editable metadata differs', () => {
         const unchanged = renderTab(image(metadata({ steps: 0 }), metadata({ steps: 20 })));
         expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();

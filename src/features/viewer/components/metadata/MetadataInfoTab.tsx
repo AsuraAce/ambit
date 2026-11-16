@@ -9,6 +9,7 @@ import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 import { formatInvokeImageCategory, isKnownInvokeImageAsset } from '../../../../utils/invokeImageSource';
 import { InvokeReferenceLinks } from './InvokeReferenceLinks';
 import { MetadataTextAreaField } from './MetadataTextAreaField';
+import { OriginalPromptBadge } from './OriginalPromptBadge';
 import { MetadataChip } from './MetadataChip';
 import { MetadataParameterList } from './MetadataParameterList';
 import { MetadataSectionHeader } from './MetadataSectionHeader';
@@ -333,6 +334,11 @@ export const MetadataInfoTab = ({
         </>
     );
 
+    // The parser marks a prompt typed into a prompt enhancer; a user edit replaces that text.
+    const showsPromptBeforeEnhancer = showOriginalPrompt
+        ? image.originalMetadata?.positivePromptBeforeEnhancer === true
+        : image.metadata.positivePromptBeforeEnhancer === true && !isModified('positivePrompt');
+
     return (
         <>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -355,6 +361,7 @@ export const MetadataInfoTab = ({
                         source={isModified('positivePrompt') ? 'user_override' : undefined}
                         headerAction={
                             <div className="flex items-center gap-1">
+                                {showsPromptBeforeEnhancer ? <OriginalPromptBadge /> : null}
                                 {image.originalMetadata && image.originalMetadata.positivePrompt !== image.metadata.positivePrompt ? (
                                     <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-white/10 dark:bg-white/5">
                                         <button
