@@ -1,4 +1,3 @@
-use super::conditioning::PROMPT_ENHANCER_NODE_TYPE;
 use super::diagnostics::{ComfyMetadataField, ComfyTraversalIssue, ComfyTraversalIssueReason};
 use super::graph::{
     get_input_source, get_node_param, get_node_type, get_switch_branch_input_strict, ComfyGraph,
@@ -92,27 +91,6 @@ pub(crate) fn collect_traversal_issues(
     }
 
     collector.finish()
-}
-
-/// Whether the sampler's positive prompt is produced by a prompt enhancer
-/// whose generated text is not stored, so any recovered text is the request.
-pub(crate) fn positive_prompt_crosses_prompt_enhancer(
-    graph: &ComfyGraph,
-    root_sampler_id: &str,
-    root_sampler: &Value,
-) -> bool {
-    let mut collector = IssueCollector { issues: Vec::new() };
-    collector.trace_sampler_prompt(
-        graph,
-        root_sampler_id,
-        root_sampler,
-        "positive",
-        ComfyMetadataField::PositivePrompt,
-    );
-    collector.issues.iter().any(|issue| {
-        issue.reason == ComfyTraversalIssueReason::GeneratedValueUnavailable
-            && issue.node_type == PROMPT_ENHANCER_NODE_TYPE
-    })
 }
 
 impl IssueCollector {

@@ -46,11 +46,23 @@ pub(crate) struct OutputSelection {
 
 pub struct ComfyEvaluator<'a> {
     pub graph: &'a ComfyGraph,
+    recover_enhancer_request: bool,
 }
 
 impl<'a> ComfyEvaluator<'a> {
     pub fn new(graph: &'a ComfyGraph) -> Self {
-        Self { graph }
+        Self {
+            graph,
+            recover_enhancer_request: true,
+        }
+    }
+
+    /// Leaves the positive prompt empty when a prompt enhancer produced it,
+    /// instead of using the typed request. Video import keeps its results
+    /// unchanged this way until the video parser adopts the rule.
+    pub(crate) fn without_enhancer_request(mut self) -> Self {
+        self.recover_enhancer_request = false;
+        self
     }
 
     pub(crate) fn extract_with_output_diagnostics(
@@ -129,13 +141,15 @@ impl<'a> ComfyEvaluator<'a> {
             );
         diagnostics.field_source_node_ids = field_source_node_ids;
         diagnostics.resource_source_node_ids = resource_source_node_ids;
-        metadata.positive_prompt_before_enhancer =
-            !is_missing_prompt_value(&metadata.positive_prompt)
-                && super::traversal_diagnostics::positive_prompt_crosses_prompt_enhancer(
-                    self.graph,
-                    root_sampler_id,
-                    root_node,
-                );
+        // The request text and its marker come from one decision.
+        if self.recover_enhancer_request && is_missing_prompt_value(&metadata.positive_prompt) {
+            if let Some(request) =
+                super::conditioning::direct_enhancer_request(self.graph, root_sampler_id, root_node)
+            {
+                metadata.positive_prompt = request;
+                metadata.positive_prompt_before_enhancer = true;
+            }
+        }
 
         if collect_traversal_issues {
             let issue_collection = super::traversal_diagnostics::collect_traversal_issues(

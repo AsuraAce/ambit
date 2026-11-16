@@ -27,21 +27,38 @@ use self::evaluator::{is_sampler_node, ComfyEvaluator};
 use self::graph::ComfyGraph;
 use self::strategies::{global_scan, scan_explicit_nodes};
 
+/// The image parse, kept for tests; image import goes through
+/// `merge_comfyui_metadata` and video import through
+/// `extract_comfyui_video_metadata`.
+#[cfg(test)]
 pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetadata {
     extract_comfyui_metadata_with_diagnostics(chunks).0
+}
+
+/// Video import's parse: like `extract_comfyui_metadata`, but a positive
+/// prompt produced by a prompt enhancer stays empty instead of showing the
+/// typed request, so video results stay as they were before that rule.
+pub(crate) fn extract_comfyui_video_metadata(chunks: &HashMap<String, String>) -> ImageMetadata {
+    let mut metadata = ImageMetadata {
+        tool: "ComfyUI".to_string(),
+        ..ImageMetadata::default()
+    };
+    merge_comfyui_metadata_internal(&mut metadata, chunks, false, false);
+    metadata
 }
 
 pub(crate) fn merge_comfyui_metadata(
     base: &mut ImageMetadata,
     chunks: &HashMap<String, String>,
 ) -> ComfyParseDiagnostics {
-    merge_comfyui_metadata_internal(base, chunks, false)
+    merge_comfyui_metadata_internal(base, chunks, false, true)
 }
 
 fn merge_comfyui_metadata_internal(
     base: &mut ImageMetadata,
     chunks: &HashMap<String, String>,
     collect_traversal_issues: bool,
+    recover_enhancer_request: bool,
 ) -> ComfyParseDiagnostics {
     let mut diagnostics = ComfyParseDiagnostics::default();
 
@@ -52,8 +69,11 @@ fn merge_comfyui_metadata_internal(
         record_flat_parameter_sources(&mut diagnostics, base, &flat_meta);
     }
 
-    let (mut graph_meta, graph_diagnostics) =
-        extract_comfyui_graph_with_diagnostics(chunks, collect_traversal_issues);
+    let (mut graph_meta, graph_diagnostics) = extract_comfyui_graph_with_diagnostics(
+        chunks,
+        collect_traversal_issues,
+        recover_enhancer_request,
+    );
     diagnostics.graph_node_count = graph_diagnostics.graph_node_count;
     diagnostics.selected_output_candidate_count = graph_diagnostics.selected_output_candidate_count;
     diagnostics.unique_output_root_sampler_count =
@@ -636,7 +656,7 @@ pub(crate) fn build_comfyui_diagnostics_report(
         tool: "ComfyUI".to_string(),
         ..ImageMetadata::default()
     };
-    let diagnostics = merge_comfyui_metadata_internal(&mut metadata, chunks, true);
+    let diagnostics = merge_comfyui_metadata_internal(&mut metadata, chunks, true, true);
     let mut chunk_keys: Vec<String> = chunks.keys().cloned().collect();
     chunk_keys.sort();
 
@@ -812,6 +832,7 @@ fn bounded_diagnostic_label(value: &str) -> String {
     value.chars().take(MAX_LABEL_CHARS).collect()
 }
 
+#[cfg(test)]
 pub(crate) fn extract_comfyui_metadata_with_diagnostics(
     chunks: &HashMap<String, String>,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
@@ -826,6 +847,7 @@ pub(crate) fn extract_comfyui_metadata_with_diagnostics(
 fn extract_comfyui_graph_with_diagnostics(
     chunks: &HashMap<String, String>,
     collect_traversal_issues: bool,
+    recover_enhancer_request: bool,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
     let mut meta = ImageMetadata {
         tool: "ComfyUI".to_string(),
@@ -869,7 +891,10 @@ fn extract_comfyui_graph_with_diagnostics(
     // Layer 3: Graph Evaluator (Smart Backtracking)
     // Only run if we are missing critical info, OR if we want to fill in gaps.
     diagnostics.attempt(ComfyParseLayer::SamplerTraversal);
-    let evaluator = ComfyEvaluator::new(&graph);
+    let mut evaluator = ComfyEvaluator::new(&graph);
+    if !recover_enhancer_request {
+        evaluator = evaluator.without_enhancer_request();
+    }
     let (traversal_meta, output_diagnostics) = if collect_traversal_issues {
         evaluator.extract_with_traversal_diagnostics()
     } else {
