@@ -1,11 +1,14 @@
 use super::models::{FileEntry, FolderStats, MediaCandidateKind};
+#[cfg(any(test, not(feature = "perf-harness-serial-traversal")))]
 use super::SCAN_POOL;
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
 const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "webm", "mov", "m4v", "mkv"];
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
 const IMAGE_CANDIDATE_BATCH_SIZE: usize = 256;
 
 fn canonical_root(root: &Path) -> Option<PathBuf> {
@@ -135,6 +138,14 @@ fn scan_dir_recursive_inner(
 }
 
 pub fn collect_images_recursive(root: &Path, current: &Path, files: &mut Vec<String>) {
+    #[cfg(feature = "perf-harness-serial-traversal")]
+    collect_images_recursive_serial(root, current, files);
+    #[cfg(not(feature = "perf-harness-serial-traversal"))]
+    collect_images_recursive_batched(root, current, files);
+}
+
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
+fn collect_images_recursive_batched(root: &Path, current: &Path, files: &mut Vec<String>) {
     let Some(root_canonical) = canonical_root(root) else {
         return;
     };
@@ -142,6 +153,7 @@ pub fn collect_images_recursive(root: &Path, current: &Path, files: &mut Vec<Str
     collect_images_recursive_inner(root, &root_canonical, current, files, &mut visited);
 }
 
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
 fn collect_images_recursive_inner(
     root: &Path,
     root_canonical: &Path,
@@ -188,6 +200,7 @@ fn collect_images_recursive_inner(
     }
 }
 
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
 fn flush_image_candidates(
     root: &Path,
     root_canonical: &Path,
@@ -410,6 +423,60 @@ fn collect_images_with_stats_since_recursive_inner(
     }
 }
 
+// The former serial traversal. Tests keep it as an independent ordering and safety oracle;
+// the `perf-harness-serial-traversal` feature (release gate #378 baseline builds) routes
+// `collect_images_recursive` back to it. Neither is enabled in production builds.
+#[cfg(any(test, feature = "perf-harness-serial-traversal"))]
+fn collect_images_recursive_serial(root: &Path, current: &Path, files: &mut Vec<String>) {
+    let Some(root_canonical) = canonical_root(root) else {
+        return;
+    };
+    let mut visited = HashSet::new();
+    collect_images_recursive_serial_inner(root, &root_canonical, current, files, &mut visited);
+}
+
+#[cfg(any(test, feature = "perf-harness-serial-traversal"))]
+fn collect_images_recursive_serial_inner(
+    root: &Path,
+    root_canonical: &Path,
+    current: &Path,
+    files: &mut Vec<String>,
+    visited: &mut HashSet<PathBuf>,
+) {
+    if files.len() > 300_000 {
+        return;
+    }
+
+    let Some(current_canonical) = canonical_inside_root(root_canonical, current) else {
+        return;
+    };
+    if !visited.insert(current_canonical) {
+        return;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(current) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+
+            if safe_dir(root_canonical, &p, file_type) {
+                if !is_thumbnail_dir(&p) {
+                    collect_images_recursive_serial_inner(root, root_canonical, &p, files, visited);
+                }
+            } else if safe_file(root_canonical, &p, file_type)
+                && is_image_path(&p)
+                && !is_thumbnail_file(&p)
+            {
+                if let Ok(rel) = p.strip_prefix(root) {
+                    files.push(rel.to_string_lossy().replace("\\", "/"));
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,62 +518,6 @@ mod tests {
 
     fn normalized(path: &Path) -> String {
         path.to_string_lossy().replace("\\", "/")
-    }
-
-    // Retain the former serial traversal as an independent ordering and safety oracle.
-    fn collect_images_recursive_serial(root: &Path, current: &Path, files: &mut Vec<String>) {
-        let Some(root_canonical) = canonical_root(root) else {
-            return;
-        };
-        let mut visited = HashSet::new();
-        collect_images_recursive_serial_inner(root, &root_canonical, current, files, &mut visited);
-    }
-
-    fn collect_images_recursive_serial_inner(
-        root: &Path,
-        root_canonical: &Path,
-        current: &Path,
-        files: &mut Vec<String>,
-        visited: &mut HashSet<PathBuf>,
-    ) {
-        if files.len() > 300_000 {
-            return;
-        }
-
-        let Some(current_canonical) = canonical_inside_root(root_canonical, current) else {
-            return;
-        };
-        if !visited.insert(current_canonical) {
-            return;
-        }
-
-        if let Ok(entries) = fs::read_dir(current) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                let Ok(file_type) = entry.file_type() else {
-                    continue;
-                };
-
-                if safe_dir(root_canonical, &p, file_type) {
-                    if !is_thumbnail_dir(&p) {
-                        collect_images_recursive_serial_inner(
-                            root,
-                            root_canonical,
-                            &p,
-                            files,
-                            visited,
-                        );
-                    }
-                } else if safe_file(root_canonical, &p, file_type)
-                    && is_image_path(&p)
-                    && !is_thumbnail_file(&p)
-                {
-                    if let Ok(rel) = p.strip_prefix(root) {
-                        files.push(rel.to_string_lossy().replace("\\", "/"));
-                    }
-                }
-            }
-        }
     }
 
     fn assert_relative_scan_matches_serial(root: &Path, current: &Path, initial: Vec<String>) {

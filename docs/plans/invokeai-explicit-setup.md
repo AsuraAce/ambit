@@ -199,6 +199,14 @@ The historical R18 capture has no matching frontend operation/render state. A ne
 
 The saved code baseline is available, but paired disposable catalog states and timing samples have not been captured. Do not substitute mocked-test durations or unrelated prior startup measurements for these medians/ranges.
 
+#### Unattended harness for release gate #378
+
+The saved `ec9e5747` baseline patch is no longer on disk, so the paired baseline is rebuilt from the candidate tree: the `perf-harness-serial-traversal` Cargo feature routes `collect_images_recursive` back to the serial walk that the batched R27 validation replaced. That is the only performance change in `scanner/traversal.rs` since `ec9e5747`, so the ≥25% traversal target still measures exactly R27. The comparison with what users have today is the 0.14.0 build, in the manual-path and upgrade cases.
+
+- The `perf-harness` Cargo feature, `VITE_AMBIT_PERF_HARNESS=1` and `src/perfHarness/` exist only for these runs. `build.rs` stops a harness build unless `AMBIT_PERF_HARNESS_ID` is a disposable `com.ambit.p378.<label>` identifier, so a harness binary cannot act as the production app or touch its profile, database folders or keyring entry. Production builds do not set the feature or the variable and contain none of it.
+- `PerfHarnessDriver` reads `perf-harness/scenario.json` from AppLocalData, waits for the startup catch-up and idle, runs its steps through the calls the UI uses (`sync-now`, `switch-owner`, `manual-sync`), and writes `perf-harness/result.json` next to the completed sync traces. Without a scenario file it does nothing.
+- The runner, builds, source variants and evidence live outside the repository under `D:\ambit-378\`.
+
 ## R23 measured service comparison
 
 Each case uses 150,000 generated PNG files and disposable SQLite source/catalog states: unchanged, 150 stale paths (sparse), and 15,000 stale paths (many). Actual baseline/current `syncImages` and path-resolver code executes in manual mode with a cursor beyond every source row. There are no new images to import. Source SHA-256, initial catalog SHA-256 and final projection hashes match for each comparison; image counts, memberships, foreign keys and the 250-move batch bound pass.

@@ -1,7 +1,11 @@
 use keyring::Entry;
 use tauri::command;
 
+#[cfg(not(feature = "perf-harness"))]
 const SERVICE_NAME: &str = "Ambit";
+// Release-gate harness builds (#378) must never read or write the owner's real Gemini key entry.
+#[cfg(feature = "perf-harness")]
+const SERVICE_NAME: &str = concat!("Ambit-", env!("AMBIT_PERF_HARNESS_ID"));
 const ACCOUNT_NAME: &str = "gemini_api_key";
 
 #[command(rename_all = "camelCase")]

@@ -199,6 +199,16 @@ pub fn run() {
     let builder = create_builder();
     let context = tauri::generate_context!();
     let active_identifier = context.config().identifier.clone();
+    // A harness binary must run under the disposable identifier it was built for, never the production one
+    // (the config identifier decides every profile path).
+    #[cfg(feature = "perf-harness")]
+    if active_identifier != env!("AMBIT_PERF_HARNESS_ID") {
+        eprintln!(
+            "perf-harness build refuses to start: config identifier {active_identifier:?} does not match AMBIT_PERF_HARNESS_ID {:?}",
+            env!("AMBIT_PERF_HARNESS_ID")
+        );
+        std::process::exit(78);
+    }
     let startup_journal = startup_log::install(process_started, &active_identifier);
     // Move legacy production app-data before the SQL plugin resolves images.db.
     if !cfg!(debug_assertions) {

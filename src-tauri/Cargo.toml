@@ -13,6 +13,12 @@ rust-version = "1.90.0"
 # Enables the isolated native acceptance profile. This is intentionally rejected
 # in release builds so QA-only behavior cannot ship in production artifacts.
 qa-profile = []
+# Release-gate performance harness (#378). Builds only with a disposable
+# `com.ambit.p378.*` identifier in AMBIT_PERF_HARNESS_ID (enforced by build.rs), so a
+# harness binary can never read or write the production profile or keyring entry.
+perf-harness = []
+# Baseline builds for #378: route InvokeAI relative traversal back to the serial walk.
+perf-harness-serial-traversal = ["perf-harness"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
