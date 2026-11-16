@@ -168,17 +168,28 @@ describe('MetadataInfoTab', () => {
         const parsed = metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true });
         renderTab(image(parsed, parsed));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Original prompt' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Original Prompt' }));
         expect(screen.getByRole('tooltip').textContent).toBe(
-            "ComfyUI's prompt enhancer rewrote this prompt before generating. The rewritten version isn't saved in the image, so this is the original prompt that was typed in."
+            "An AI prompt enhancer rewrote this prompt before the image was generated. The rewritten version isn't saved in the image, so this is the original prompt."
         );
+    });
+
+    it('keeps the enhancer mark inside the prompt box, beside the text in read and edit modes', () => {
+        const parsed = metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true });
+        renderTab(image(parsed, parsed));
+
+        const box = () => screen.getByRole('textbox', { name: 'Positive prompt' }).parentElement;
+        expect(box()?.contains(screen.getByRole('button', { name: 'Original Prompt' }))).toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        expect(box()?.contains(screen.getByRole('button', { name: 'Original Prompt' }))).toBe(true);
     });
 
     it('does not mark prompts without an enhancer request', () => {
         const parsed = metadata({ positivePrompt: 'A night street' });
         renderTab(image(parsed, parsed));
 
-        expect(screen.queryByRole('button', { name: 'Original prompt' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Original Prompt' })).toBeNull();
     });
 
     it('drops the enhancer mark once the user replaces the prompt, and keeps it on the parsed original', () => {
@@ -189,9 +200,9 @@ describe('MetadataInfoTab', () => {
             )
         );
 
-        expect(screen.queryByRole('button', { name: 'Original prompt' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Original Prompt' })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Original' }));
-        expect(screen.getByRole('button', { name: 'Original prompt' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Original Prompt' })).not.toBeNull();
     });
 
     it('only shows revert when editable metadata differs', () => {

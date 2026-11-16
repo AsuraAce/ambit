@@ -359,9 +359,9 @@ export const MetadataInfoTab = ({
                         readOnly={showOriginalPrompt || !onUpdatePrompt}
                         isDirty={isPromptDirty}
                         source={isModified('positivePrompt') ? 'user_override' : undefined}
+                        badge={showsPromptBeforeEnhancer ? <OriginalPromptBadge /> : undefined}
                         headerAction={
                             <div className="flex items-center gap-1">
-                                {showsPromptBeforeEnhancer ? <OriginalPromptBadge /> : null}
                                 {image.originalMetadata && image.originalMetadata.positivePrompt !== image.metadata.positivePrompt ? (
                                     <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-white/10 dark:bg-white/5">
                                         <button
