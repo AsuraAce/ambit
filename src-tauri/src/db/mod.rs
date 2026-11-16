@@ -11,8 +11,17 @@ pub mod migrations;
 pub mod readonly_select;
 pub mod reparse;
 
-#[cfg(any(test, all(windows, not(debug_assertions))))]
+#[cfg(all(
+    any(test, all(windows, not(debug_assertions))),
+    not(feature = "perf-harness")
+))]
 const PRODUCTION_IDENTIFIER: &str = "io.github.asuraace.ambit";
+// Release-gate harness builds (#378) look for their catalog under their own disposable id.
+#[cfg(all(
+    any(test, all(windows, not(debug_assertions))),
+    feature = "perf-harness"
+))]
+const PRODUCTION_IDENTIFIER: &str = env!("AMBIT_PERF_HARNESS_ID");
 pub const MAIN_DB_FILE_NAME: &str = "images.db";
 pub const LEGACY_MAIN_DB_URL: &str = "sqlite:images.db";
 

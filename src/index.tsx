@@ -27,6 +27,12 @@ const ReactQueryDevtools = React.lazy(() =>
     }))
 );
 
+// Release-gate harness (#378): a build-time switch, so production bundles drop the driver chunk.
+const PerfHarnessDriver =
+    import.meta.env.VITE_AMBIT_PERF_HARNESS === '1'
+        ? React.lazy(() => import('./perfHarness/PerfHarnessDriver').then((module) => ({ default: module.PerfHarnessDriver })))
+        : null;
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
     throw new Error('Could not find root element to mount to');
@@ -50,6 +56,11 @@ root.render(
                     <StartupMaintenanceGate>
                         <LibraryProvider>
                             <App />
+                            {PerfHarnessDriver && (
+                                <React.Suspense fallback={null}>
+                                    <PerfHarnessDriver />
+                                </React.Suspense>
+                            )}
                         </LibraryProvider>
                     </StartupMaintenanceGate>
                     {import.meta.env.DEV && !isCaptureMode() && (

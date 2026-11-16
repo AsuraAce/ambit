@@ -1,5 +1,13 @@
+#[cfg(not(feature = "perf-harness"))]
 const PRODUCTION_IDENTIFIER: &str = "io.github.asuraace.ambit";
+#[cfg(not(feature = "perf-harness"))]
 const LEGACY_PRODUCTION_IDENTIFIER: &str = "com.ambit.app";
+// Release-gate harness builds (#378) treat their own disposable identifier as "production",
+// so the startup migrations and purge checks below never look at the real profile folders.
+#[cfg(feature = "perf-harness")]
+const PRODUCTION_IDENTIFIER: &str = env!("AMBIT_PERF_HARNESS_ID");
+#[cfg(feature = "perf-harness")]
+const LEGACY_PRODUCTION_IDENTIFIER: &str = concat!(env!("AMBIT_PERF_HARNESS_ID"), ".legacy");
 const MAIN_DATABASE_FILES: [&str; 3] = ["images.db", "images.db-wal", "images.db-shm"];
 const PURGE_DATABASE_FILES: [&str; 3] = ["images.db-wal", "images.db-shm", "images.db"];
 const PURGE_MARKER_FILE: &str = ".purge_on_restart";

@@ -857,5 +857,6 @@ export const createInvokeSyncTrace = (options: InvokeTraceOptions) => {
 };
 
 export const invokeSyncTrace = createInvokeSyncTrace({
-    enabled: import.meta.env.DEV && import.meta.env.VITE_INVOKE_SYNC_TRACE === '1',
+    // The release-gate harness (#378) measures release builds, so it opts in with its own flag.
+    enabled: (import.meta.env.DEV || import.meta.env.VITE_AMBIT_PERF_HARNESS === '1') && import.meta.env.VITE_INVOKE_SYNC_TRACE === '1',
 });

@@ -281,7 +281,7 @@ export default function App() {
     const layoutMode = settings.libraryLayoutMode ?? 'masonry';
     const updater = useAppUpdater({
         addToast,
-        autoCheckEnabled: settings.autoCheckForUpdates !== false,
+        autoCheckEnabled: settings.autoCheckForUpdates !== false && import.meta.env.VITE_AMBIT_PERF_HARNESS !== '1',
         isSettingsLoaded,
     });
 
