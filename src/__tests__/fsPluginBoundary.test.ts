@@ -12,7 +12,7 @@ const ALLOWED = new Map([
     ['services/TauriFsRepository.ts', 'settings and library files in AppLocalData'],
     ['services/thumbnailService.ts', "Ambit's thumbnails in AppLocalData"],
     ['utils/invokeSyncTrace.ts', 'sync traces in AppLocalData'],
-    ['perfHarness/PerfHarnessDriver.tsx', 'the #378 harness scenario and result files in AppLocalData'],
+    ['perfHarness/PerfHarnessDriver.tsx', 'the #378 harness scenario and result files, and the invoke-sync-trace read, in AppLocalData'],
     ['services/exportService.ts', 'the ZIP written to the dialog-picked export folder'],
     ['features/viewer/components/WorkflowInspector.tsx', 'workflow JSON written to the save-dialog path'],
 ]);
