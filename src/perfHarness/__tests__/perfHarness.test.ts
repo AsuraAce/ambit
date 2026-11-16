@@ -18,10 +18,11 @@ const makeDeps = (overrides: Partial<PerfHarnessDeps> = {}) => {
         startInvokeSync: vi.fn().mockResolvedValue({ status: 'completed' }),
         waitForStartup: vi.fn().mockResolvedValue({ startupObserved: true }),
         waitForIdle: vi.fn().mockResolvedValue(undefined),
-        readTrace: vi.fn().mockImplementation(async () => ({ runId: `run-${traceCounter++}` })),
+        readTrace: vi.fn().mockImplementation(async () => ({ runId: `run-${traceCounter++}`, wallStartedAtEpochMs: 5000 })),
         writeResult: vi.fn().mockImplementation(async (json: string) => {
             results.push(JSON.parse(json) as Record<string, unknown>);
         }),
+        launchedAtEpochMs: 4000,
         now: () => 1000,
         sleep: vi.fn().mockResolvedValue(undefined),
         ...overrides,
@@ -30,6 +31,13 @@ const makeDeps = (overrides: Partial<PerfHarnessDeps> = {}) => {
 };
 
 describe('parsePerfHarnessScenario', () => {
+    it('accepts a positive idle timeout and refuses anything else', () => {
+        const text = (idleTimeoutMin: unknown) => JSON.stringify({ label: 'x', steps: [], idleTimeoutMin });
+        expect(parsePerfHarnessScenario(text(45)).idleTimeoutMin).toBe(45);
+        expect(() => parsePerfHarnessScenario(text(0))).toThrow(/idleTimeoutMin/);
+        expect(() => parsePerfHarnessScenario(text('45'))).toThrow(/idleTimeoutMin/);
+    });
+
     it('refuses an unknown step so a typo cannot silently measure nothing', () => {
         expect(() => parsePerfHarnessScenario(JSON.stringify({ label: 'x', steps: [{ kind: 'sync-nwo' }] }))).toThrow(
             /Unknown scenario step/
@@ -85,11 +93,21 @@ describe('runPerfHarnessScenario', () => {
     });
 
     it('keeps a trace for a step only when it is new, so a skipped sync is not credited with the last one', async () => {
-        const { deps, last } = makeDeps({ readTrace: vi.fn().mockResolvedValue({ runId: 'same-run' }) });
+        const { deps, last } = makeDeps({ readTrace: vi.fn().mockResolvedValue({ runId: 'same-run', wallStartedAtEpochMs: 5000 }) });
         await runPerfHarnessScenario({ label: 'c1', steps: [{ kind: 'sync-now' }] }, deps);
         const [step] = last().steps as Array<{ traceFresh: boolean; trace: unknown }>;
         expect(step?.traceFresh).toBe(false);
         expect(step?.trace).toBeNull();
-        expect((last().startup as { trace: unknown }).trace).toEqual({ runId: 'same-run' });
+        expect((last().startup as { trace: unknown }).trace).toEqual({ runId: 'same-run', wallStartedAtEpochMs: 5000 });
+    });
+
+    it('ignores a trace that started before this launch, such as one restored with a golden profile', async () => {
+        const { deps, last } = makeDeps({
+            readTrace: vi.fn().mockResolvedValue({ runId: 'stale-run', wallStartedAtEpochMs: 3999 }),
+        });
+        await runPerfHarnessScenario({ label: 'c1', steps: [{ kind: 'sync-now' }] }, deps);
+        expect((last().startup as { trace: unknown }).trace).toBeNull();
+        const [step] = last().steps as Array<{ traceFresh: boolean }>;
+        expect(step?.traceFresh).toBe(false);
     });
 });

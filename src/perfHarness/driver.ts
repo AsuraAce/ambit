@@ -13,10 +13,17 @@ export interface PerfHarnessDeps {
     waitForStartup: () => Promise<{ startupObserved: boolean }>;
     waitForIdle: () => Promise<void>;
     /** Latest completed sync trace, or null when none exists yet. */
-    readTrace: () => Promise<{ runId?: string } | null>;
+    readTrace: () => Promise<TraceFile | null>;
+    /** When this app launch began (page time origin). A trace that started earlier is left over from a previous launch. */
+    launchedAtEpochMs: number;
     writeResult: (json: string) => Promise<void>;
     now: () => number;
     sleep: (ms: number) => Promise<void>;
+}
+
+interface TraceFile {
+    runId?: string;
+    wallStartedAtEpochMs?: number;
 }
 
 interface StepRecord {
@@ -43,10 +50,15 @@ export const runPerfHarnessScenario = async (scenario: PerfHarnessScenario, deps
     const write = () =>
         deps.writeResult(JSON.stringify({ version: 1, label: scenario.label, state, error, startedAtEpochMs, startup, steps }, null, 2));
 
-    const captureTrace = async (): Promise<{ trace: { runId?: string } | null; fresh: boolean }> => {
+    const captureTrace = async (): Promise<{ trace: TraceFile | null; fresh: boolean }> => {
         await deps.sleep(TRACE_FLUSH_WAIT_MS);
         const trace = await deps.readTrace();
-        const fresh = trace !== null && trace.runId !== lastRunId;
+        // A trace file restored with a golden profile has an older start time and must never count as this run's.
+        const fresh =
+            trace !== null &&
+            trace.runId !== lastRunId &&
+            typeof trace.wallStartedAtEpochMs === 'number' &&
+            trace.wallStartedAtEpochMs >= deps.launchedAtEpochMs;
         if (trace?.runId) lastRunId = trace.runId;
         return { trace, fresh };
     };

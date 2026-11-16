@@ -4,6 +4,8 @@ export type PerfHarnessStep = { kind: 'sync-now' } | { kind: 'switch-owner'; own
 export interface PerfHarnessScenario {
     label: string;
     steps: PerfHarnessStep[];
+    /** How long to wait for the app to settle before failing; a full import needs far more than the default. */
+    idleTimeoutMin?: number;
 }
 
 export const PERF_HARNESS_SCENARIO_PATH = 'perf-harness/scenario.json';
@@ -31,5 +33,8 @@ export const parsePerfHarnessScenario = (text: string): PerfHarnessScenario => {
                 throw new Error(`Unknown scenario step: ${String(step.kind)}`);
         }
     });
-    return { label: raw.label, steps };
+    if (raw.idleTimeoutMin !== undefined && (typeof raw.idleTimeoutMin !== 'number' || !(raw.idleTimeoutMin > 0))) {
+        throw new Error('idleTimeoutMin must be a positive number.');
+    }
+    return { label: raw.label, steps, ...(raw.idleTimeoutMin !== undefined ? { idleTimeoutMin: raw.idleTimeoutMin } : {}) };
 };

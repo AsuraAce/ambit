@@ -8,7 +8,7 @@ import { PERF_HARNESS_RESULT_PATH, PERF_HARNESS_SCENARIO_PATH, parsePerfHarnessS
 
 const POLL_MS = 500;
 const STABLE_MS = 3_000;
-const IDLE_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
 /** A startup catch-up that never shows up (nothing configured) must not stall the run forever. */
 const STARTUP_GIVE_UP_MS = 90_000;
 
@@ -61,6 +61,7 @@ export function PerfHarnessDriver() {
             );
         };
 
+        let idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS;
         const deps: PerfHarnessDeps = {
             getSettings: () => useSettingsStore.getState().settings,
             applyInvokeConnection: (draft) => syncRef.current.applyInvokeConnection(draft),
@@ -81,15 +82,16 @@ export function PerfHarnessDriver() {
                     } else {
                         idleSince = null;
                     }
-                    if (now - startedAt > IDLE_TIMEOUT_MS) throw new Error('Timed out waiting for the app to become idle.');
+                    if (now - startedAt > idleTimeoutMs) throw new Error('Timed out waiting for the app to become idle.');
                     await sleep(POLL_MS);
                 }
             },
             readTrace: async () => {
                 const text = await readAppLocal('invoke-sync-trace/invoke-sync-trace-last-completed.json');
-                return text ? (JSON.parse(text) as { runId?: string }) : null;
+                return text ? (JSON.parse(text) as { runId?: string; wallStartedAtEpochMs?: number }) : null;
             },
             writeResult: (json) => writeAppLocal(PERF_HARNESS_RESULT_PATH, json),
+            launchedAtEpochMs: performance.timeOrigin,
             now: () => Date.now(),
             sleep,
         };
@@ -98,7 +100,9 @@ export function PerfHarnessDriver() {
             try {
                 const text = await readAppLocal(PERF_HARNESS_SCENARIO_PATH);
                 if (!text) return;
-                await runPerfHarnessScenario(parsePerfHarnessScenario(text), deps);
+                const scenario = parsePerfHarnessScenario(text);
+                if (scenario.idleTimeoutMin) idleTimeoutMs = scenario.idleTimeoutMin * 60_000;
+                await runPerfHarnessScenario(scenario, deps);
             } catch (error) {
                 await writeAppLocal(
                     PERF_HARNESS_RESULT_PATH,

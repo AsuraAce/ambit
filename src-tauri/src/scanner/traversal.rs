@@ -1,7 +1,7 @@
 use super::models::{FileEntry, FolderStats, MediaCandidateKind};
 #[cfg(any(test, not(feature = "perf-harness-serial-traversal")))]
 use super::SCAN_POOL;
-#[cfg(any(test, not(feature = "perf-harness-serial-traversal")))]
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
