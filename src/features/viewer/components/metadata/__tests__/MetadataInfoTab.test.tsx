@@ -174,15 +174,15 @@ describe('MetadataInfoTab', () => {
         );
     });
 
-    it('keeps the enhancer mark inside the prompt box, beside the text in read and edit modes', () => {
+    it('shows the enhancer mark inside the read-only prompt text and hides it while the user edits', () => {
         const parsed = metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true });
         renderTab(image(parsed, parsed));
 
-        const box = () => screen.getByRole('textbox', { name: 'Positive prompt' }).parentElement;
-        expect(box()?.contains(screen.getByRole('button', { name: 'Original Prompt' }))).toBe(true);
+        const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+        expect(prompt.contains(screen.getByRole('button', { name: 'Original Prompt' }))).toBe(true);
 
         fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
-        expect(box()?.contains(screen.getByRole('button', { name: 'Original Prompt' }))).toBe(true);
+        expect(screen.queryByRole('button', { name: 'Original Prompt' })).toBeNull();
     });
 
     it('does not mark prompts without an enhancer request', () => {
