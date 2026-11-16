@@ -878,3 +878,31 @@ behavior. Parser version 46 covers this narrower fallback policy.
 
 The manifest now contains 93 core targets, 16 extended image targets, and 469
 excluded entries: 101 golden, 2 pattern-covered, 6 partial, and 0 unassessed.
+
+## MOSS-Image Intake
+
+Captured on `2026-11-16` from release `v0.11.109` at commit
+`ff15d86b5a143d546ed632826d72501298563ddb`. This intake is newer than the
+`v0.11.18` coverage manifest, so these six workflows are not manifest entries
+until the next catalog refresh.
+
+| Workflow | Upstream Git blob | Bytes | Normalized nodes |
+| --- | --- | ---: | ---: |
+| `image_moss_image_t2i` | `458bc3c646cb70bb329b39703481e4f45c69745a` | 75663 | 20 |
+| `image_moss_image_base_t2i` | `3d9c0a2d72e2b512d3f665a24613bdecf7b99920` | 74370 | 20 |
+| `image_moss_image_t2i_bboxes` | `7678a41f079e399b93d9ea58ddb52683eb551ff7` | 93448 | 24 |
+| `image_moss_image_base_t2i_bboxes` | `17a6792e1d682c895a0f3fc7ce622ff0d108e40a` | 86928 | 24 |
+| `image_moss_image_edit` | `c57dd7cdc7c4c4851473d1b368002d46c15f3bda` | 25907 | 17 |
+| `image_moss_image_color_depth_control` | `2157485fe14db7c9be75ec9c85d16d8b2528cdc9` | 48405 | 27 |
+
+The two text-to-image workflows ship with the `TextGenerate` prompt enhancer on.
+Its rewritten prompt is not stored, so the positive prompt is the typed request
+fed to the enhancer, marked with `positivePromptBeforeEnhancer`. The
+`generated_value_unavailable` diagnostic remains, so they stay partial. Krea2
+Turbo and SUPIR concatenate the enhancer's instructions with the user's text, so
+their requests cannot be separated and their positive prompts remain empty.
+
+The two layout workflows have the enhancer off. Their positive prompt is the
+`MOSSImageLayoutPrompt` caption; the bounding-box element descriptions that node
+adds are not included. Edit and color/depth control are golden. Parser version
+47 covers the enhancer-request fallback.
