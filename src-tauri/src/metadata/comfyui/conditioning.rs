@@ -16,6 +16,8 @@ use std::collections::{HashSet, VecDeque};
 
 const MAX_TRANSFORM_STRING_BYTES: usize = 64 * 1024;
 const MAX_TRANSFORM_PATTERN_BYTES: usize = 4 * 1024;
+/// ComfyUI's core LLM prompt enhancer node.
+pub(crate) const PROMPT_ENHANCER_NODE_TYPE: &str = "TextGenerate";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StringEvaluationMode {
@@ -1477,6 +1479,122 @@ fn evaluate_string_node_with_mode(
     }
 
     None
+}
+
+const MAX_ENHANCER_PATH_DEPTH: usize = 10;
+const ENHANCER_MEDIA_INPUTS: [&str; 3] = ["image", "video", "audio"];
+
+/// The request typed into a prompt enhancer whose generated text is the
+/// sampler's positive prompt. The generated text is not stored in the image,
+/// so the request stands in for it, and the caller marks the prompt with
+/// `positive_prompt_before_enhancer`.
+///
+/// This holds only when nothing else shapes the prompt: the positive
+/// conditioning comes straight from a `CLIPTextEncode` whose text is the
+/// enhancer output (through previews and switches only), the enhancer has no
+/// image, video or audio input, and its request is one typed text value.
+/// Anything else (captioning a picture, text added after the enhancer,
+/// instructions mixed into the request) returns `None`, because the request
+/// would not describe what the model was given.
+pub(crate) fn direct_enhancer_request(
+    graph: &ComfyGraph,
+    sampler_id: &str,
+    sampler: &Value,
+) -> Option<String> {
+    let (owner_id, conditioning_input) = match get_input_source(sampler, "guider") {
+        InputSourceConnection::Connected(source) => {
+            let guider = graph.get_node(&source.node_id)?;
+            let input = if get_node_type(guider) == "BasicGuider" {
+                "conditioning"
+            } else {
+                super::eval_core::cfg_guider_params(guider)?.1
+            };
+            (source.node_id, input)
+        }
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected => (sampler_id.to_string(), "positive"),
+    };
+    let owner = graph.get_node(&owner_id)?;
+    let InputSourceConnection::Connected(encoder_source) =
+        get_input_source(owner, conditioning_input)
+    else {
+        return None;
+    };
+    let encoder = graph.get_node(&encoder_source.node_id)?;
+    if get_node_type(encoder) != "CLIPTextEncode" {
+        return None;
+    }
+    let enhancer = enhancer_feeding_input(graph, encoder, "text", 0)?;
+    let has_media_input = ENHANCER_MEDIA_INPUTS
+        .iter()
+        .any(|input| get_input_source(enhancer, input) != InputSourceConnection::Unconnected);
+    if has_media_input {
+        return None;
+    }
+    plain_request_value(graph, enhancer, "prompt", 0)
+        .filter(|request| !is_missing_prompt_value(request))
+}
+
+/// The prompt enhancer whose generated text reaches `input_name` unchanged.
+fn enhancer_feeding_input<'a>(
+    graph: &'a ComfyGraph,
+    node: &Value,
+    input_name: &str,
+    depth: usize,
+) -> Option<&'a Value> {
+    if depth > MAX_ENHANCER_PATH_DEPTH {
+        return None;
+    }
+    let InputSourceConnection::Connected(source) = get_input_source(node, input_name) else {
+        return None;
+    };
+    let source_node = graph.get_node(&source.node_id)?;
+    match get_node_type(source_node) {
+        // Slot 0 is the generated text; slot 1 is the model's reasoning.
+        PROMPT_ENHANCER_NODE_TYPE if source.output_slot.unwrap_or(0) == 0 => Some(source_node),
+        "PreviewAny" => enhancer_feeding_input(graph, source_node, "source", depth + 1),
+        "ComfySwitchNode" => {
+            let branch = get_switch_branch_input_strict(graph, source_node)?;
+            enhancer_feeding_input(graph, source_node, branch, depth + 1)
+        }
+        _ => None,
+    }
+}
+
+/// The value of `input_name` when it is one typed text value, passed through
+/// primitives, previews and switches only. A request built by string
+/// transforms (for example the enhancer's own instructions joined with the
+/// user's text) returns `None`, because the user's part cannot be told apart.
+fn plain_request_value(
+    graph: &ComfyGraph,
+    node: &Value,
+    input_name: &str,
+    depth: usize,
+) -> Option<String> {
+    if depth > MAX_ENHANCER_PATH_DEPTH {
+        return None;
+    }
+    let source = match get_input_source(node, input_name) {
+        InputSourceConnection::Connected(source) => source,
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected => {
+            return get_node_param(node, input_name)
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+    };
+    let source_node = graph.get_node(&source.node_id)?;
+    match get_node_type(source_node) {
+        "PrimitiveNode" | "PrimitiveString" | "PrimitiveStringMultiline" => {
+            plain_request_value(graph, source_node, "value", depth + 1)
+        }
+        "PreviewAny" => plain_request_value(graph, source_node, "source", depth + 1),
+        "ComfySwitchNode" => {
+            let branch = get_switch_branch_input_strict(graph, source_node)?;
+            plain_request_value(graph, source_node, branch, depth + 1)
+        }
+        _ => None,
+    }
 }
 
 fn evaluate_string_source_with_mode(

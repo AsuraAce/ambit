@@ -59,6 +59,7 @@ export interface ImageMetadata {
     sampler: string;
     positivePrompt: string;
     negativePrompt: string;
+    positivePromptBeforeEnhancer?: boolean; // Positive prompt is the request typed into a prompt enhancer
     workflowJson?: string; // For ComfyUI raw data
     rawParameters?: string; // The exact raw string extracted from the file
 

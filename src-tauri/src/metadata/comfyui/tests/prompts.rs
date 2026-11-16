@@ -5,6 +5,10 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 fn extract_transform_prompt(nodes: Vec<(&str, Value)>) -> (ImageMetadata, ComfyParseDiagnostics) {
+    extract_comfyui_metadata_with_diagnostics(&transform_prompt_chunks(nodes))
+}
+
+fn transform_prompt_chunks(nodes: Vec<(&str, Value)>) -> HashMap<String, String> {
     let mut graph = json!({
         "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
         "2": { "class_type": "CLIPTextEncode", "inputs": { "text": ["3", 0] } },
@@ -30,8 +34,7 @@ fn extract_transform_prompt(nodes: Vec<(&str, Value)>) -> (ImageMetadata, ComfyP
         graph.insert(node_id.to_string(), node);
     }
 
-    let chunks = HashMap::from([("prompt".to_string(), Value::Object(graph).to_string())]);
-    extract_comfyui_metadata_with_diagnostics(&chunks)
+    HashMap::from([("prompt".to_string(), Value::Object(graph).to_string())])
 }
 
 fn extract_workflow_transform_prompt(
@@ -202,7 +205,7 @@ fn flux_text_encoder_links_override_stale_widgets_and_fail_closed_independently(
         ),
         (
             "4",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "generator input" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "generator input" } }),
         ),
     ]);
 
@@ -231,11 +234,11 @@ fn flux_text_encoder_uses_unlinked_workflow_widgets_and_suppresses_empty_provena
         ),
         (
             "3",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "first input" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "first input" } }),
         ),
         (
             "4",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "second input" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "second input" } }),
         ),
         (
             "99",
@@ -1233,7 +1236,7 @@ fn authoritative_unresolved_sampler_prompt_blocks_disconnected_global_fallback()
             "inputs": { "text": "stale widget prompt" },
             "_resolved_inputs": { "text": "3" }
         },
-        "3": { "class_type": "TextGenerate", "inputs": { "prompt": "generator instruction" } },
+        "3": { "class_type": "OllamaGenerate", "inputs": { "prompt": "generator instruction" } },
         "4": {
             "class_type": "KSampler",
             "inputs": {
@@ -1267,7 +1270,7 @@ fn authoritative_unresolved_sampler_prompt_blocks_disconnected_global_fallback()
 fn basic_guider_linked_conditioning_blocks_disconnected_global_prompt_fallback() {
     let prompt = r#"{
         "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
-        "2": { "class_type": "TextGenerate", "inputs": { "prompt": "generator instruction" } },
+        "2": { "class_type": "OllamaGenerate", "inputs": { "prompt": "generator instruction" } },
         "3": { "class_type": "CLIPTextEncode", "inputs": { "text": ["2", 0] } },
         "4": {
             "class_type": "BasicGuider",
@@ -1399,8 +1402,8 @@ fn unresolved_linked_string_intermediaries_do_not_reopen_stale_literals() {
                 "scheduler": "simple"
             }
         },
-        "7": { "class_type": "TextGenerate", "inputs": { "prompt": "positive instruction" } },
-        "8": { "class_type": "TextGenerate", "inputs": { "prompt": "negative instruction" } },
+        "7": { "class_type": "OllamaGenerate", "inputs": { "prompt": "positive instruction" } },
+        "8": { "class_type": "OllamaGenerate", "inputs": { "prompt": "negative instruction" } },
         "9": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0] } },
         "10": { "class_type": "SaveImage", "inputs": { "images": ["9", 0] } }
     }"#;
@@ -1577,7 +1580,7 @@ fn unresolved_or_cyclic_string_replace_does_not_reopen_stale_prompts() {
             ),
             (
                 "4",
-                json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+                json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "instruction" } }),
             ),
             (
                 "99",
@@ -1714,7 +1717,7 @@ fn string_concatenate_preserves_empty_sides_but_not_stale_link_fallbacks() {
         ),
         (
             "4",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "instruction" } }),
         ),
     ]);
     assert_eq!(meta.positive_prompt, "");
@@ -1723,6 +1726,200 @@ fn string_concatenate_preserves_empty_sides_but_not_stale_link_fallbacks() {
             .field_sources
             .get(&ComfyMetadataField::PositivePrompt),
         None
+    );
+}
+
+fn has_generated_prompt_issue(report: &ComfyParserDiagnosticsReport) -> bool {
+    report.traversal_issues.iter().any(|issue| {
+        issue.field == "positive_prompt"
+            && issue.node_type == "TextGenerate"
+            && issue.reason == "generated_value_unavailable"
+    })
+}
+
+fn merge_with_traversal(
+    chunks: &HashMap<String, String>,
+    recover_enhancer_request: bool,
+) -> (ImageMetadata, ComfyParseDiagnostics) {
+    let mut meta = ImageMetadata::default();
+    let diagnostics = super::super::merge_comfyui_metadata_internal(
+        &mut meta,
+        chunks,
+        true,
+        recover_enhancer_request,
+    );
+    (meta, diagnostics)
+}
+
+/// The typed request may stand in for the prompt only when the enhancer's
+/// output reaches the encoder unchanged. Every rejection must parse exactly as
+/// it did before the rule existed: empty prompt, no marker, and the same
+/// field sources and traversal diagnostics.
+fn assert_enhancer_request_rejected(nodes: Vec<(&str, Value)>, why: &str) {
+    let chunks = transform_prompt_chunks(nodes);
+    let with_rule = merge_with_traversal(&chunks, true);
+    assert_eq!(with_rule.0.positive_prompt, "", "{why}");
+    assert!(!with_rule.0.positive_prompt_before_enhancer, "{why}");
+    assert_eq!(with_rule, merge_with_traversal(&chunks, false), "{why}");
+}
+
+#[test]
+fn enhancer_request_stands_in_when_its_output_feeds_the_encoder_unchanged() {
+    // Positive control for the rejections below: the same graph shape without
+    // any of their changes shows the request, marked, and keeps the diagnostic.
+    let chunks = transform_prompt_chunks(vec![(
+        "3",
+        json!({ "class_type": "TextGenerate", "inputs": { "prompt": "a cat" } }),
+    )]);
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert_eq!(meta.positive_prompt, "a cat");
+    assert!(meta.positive_prompt_before_enhancer);
+    assert!(has_generated_prompt_issue(
+        &build_comfyui_diagnostics_report(&chunks)
+    ));
+}
+
+#[test]
+fn enhancer_request_never_replaces_a_saved_parameters_prompt() {
+    // Saver nodes write `parameters` from their runtime input, so with an
+    // enhancer wired in that text is the enhanced prompt the model used. The
+    // request must not replace it, and the pill would wrongly claim the used
+    // prompt isn't saved, so the marker stays off.
+    let enhanced = "a fluffy orange cat on a sunlit windowsill, soft light";
+    let mut chunks = transform_prompt_chunks(vec![(
+        "3",
+        json!({ "class_type": "TextGenerate", "inputs": { "prompt": "a cat" } }),
+    )]);
+    chunks.insert(
+        "parameters".to_string(),
+        format!("{enhanced}\nSteps: 4, Sampler: euler, CFG scale: 1, Seed: 1"),
+    );
+
+    let with_rule = merge_with_traversal(&chunks, true);
+    assert_eq!(with_rule.0.positive_prompt, enhanced);
+    assert!(!with_rule.0.positive_prompt_before_enhancer);
+    assert_eq!(with_rule, merge_with_traversal(&chunks, false));
+}
+
+#[test]
+fn enhancer_request_is_not_shown_when_the_enhancer_reads_media() {
+    for media in ["image", "video", "audio"] {
+        let mut inputs = json!({ "prompt": "Describe this in detail." });
+        inputs[media] = json!(["4", 0]);
+        assert_enhancer_request_rejected(
+            vec![
+                (
+                    "3",
+                    json!({ "class_type": "TextGenerate", "inputs": inputs }),
+                ),
+                (
+                    "4",
+                    json!({ "class_type": "LoadImage", "inputs": { "image": "input.png" } }),
+                ),
+            ],
+            &format!(
+                "a linked {media} input makes the enhancer a captioner; its request is an \
+                 instruction about the media, not the prompt the image was made from"
+            ),
+        );
+    }
+}
+
+#[test]
+fn enhancer_request_is_not_shown_when_its_output_is_concatenated() {
+    assert_enhancer_request_rejected(
+        vec![
+            (
+                "3",
+                json!({
+                    "class_type": "StringConcatenate",
+                    "inputs": {
+                        "string_a": ["4", 0],
+                        "string_b": "masterpiece",
+                        "delimiter": ", "
+                    }
+                }),
+            ),
+            (
+                "4",
+                json!({ "class_type": "TextGenerate", "inputs": { "prompt": "a cat" } }),
+            ),
+        ],
+        "the encoder saw generated text plus a suffix; the request alone would misstate it",
+    );
+}
+
+#[test]
+fn enhancer_request_is_not_shown_when_its_output_is_replaced() {
+    assert_enhancer_request_rejected(
+        vec![
+            (
+                "3",
+                json!({
+                    "class_type": "StringReplace",
+                    "inputs": { "string": ["4", 0], "find": "cat", "replace": "dog" }
+                }),
+            ),
+            (
+                "4",
+                json!({ "class_type": "TextGenerate", "inputs": { "prompt": "a cat" } }),
+            ),
+        ],
+        "the encoder saw edited generated text; the request alone would misstate it",
+    );
+}
+
+#[test]
+fn enhancer_request_is_not_shown_when_the_request_is_itself_computed() {
+    assert_enhancer_request_rejected(
+        vec![
+            (
+                "3",
+                json!({ "class_type": "TextGenerate", "inputs": { "prompt": ["4", 0] } }),
+            ),
+            (
+                "4",
+                json!({
+                    "class_type": "StringConcatenate",
+                    "inputs": { "string_a": "a cat", "string_b": "sunset", "delimiter": ", " }
+                }),
+            ),
+        ],
+        "only text the user typed counts as their request; a built string is not",
+    );
+}
+
+#[test]
+fn string_concatenate_with_enhancer_side_keeps_empty_prompt() {
+    // Same stale-link case as
+    // string_concatenate_preserves_empty_sides_but_not_stale_link_fallbacks,
+    // with the enhancer node: concatenation still blocks the request.
+    let nodes = vec![
+        (
+            "3",
+            json!({
+                "class_type": "StringConcatenate",
+                "widgets_values": ["stale", "literal", ", "],
+                "_resolved_inputs": { "string_a": "4" }
+            }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+        ),
+    ];
+    let (meta, diagnostics) = extract_transform_prompt(nodes.clone());
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+    assert!(!meta.positive_prompt_before_enhancer);
+    assert_enhancer_request_rejected(
+        nodes,
+        "the encoder saw the enhancer output joined with other text; the request alone would \
+         misstate it",
     );
 }
 

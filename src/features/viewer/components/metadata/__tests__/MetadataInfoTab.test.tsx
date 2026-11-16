@@ -164,6 +164,47 @@ describe('MetadataInfoTab', () => {
         expect(props.setPromptValue).not.toHaveBeenCalled();
     });
 
+    it('marks a prompt typed into a prompt enhancer and explains why it is shown', () => {
+        const parsed = metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true });
+        renderTab(image(parsed, parsed));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Original Prompt' }));
+        expect(screen.getByRole('tooltip').textContent).toBe(
+            "An AI prompt enhancer rewrote this prompt before the image was generated. The rewritten version isn't saved in the image, so this is the original prompt."
+        );
+    });
+
+    it('shows the enhancer mark inside the read-only prompt text and hides it while the user edits', () => {
+        const parsed = metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true });
+        renderTab(image(parsed, parsed));
+
+        const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+        expect(prompt.contains(screen.getByRole('button', { name: 'Original Prompt' }))).toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        expect(screen.queryByRole('button', { name: 'Original Prompt' })).toBeNull();
+    });
+
+    it('does not mark prompts without an enhancer request', () => {
+        const parsed = metadata({ positivePrompt: 'A night street' });
+        renderTab(image(parsed, parsed));
+
+        expect(screen.queryByRole('button', { name: 'Original Prompt' })).toBeNull();
+    });
+
+    it('drops the enhancer mark once the user replaces the prompt, and keeps it on the parsed original', () => {
+        renderTab(
+            image(
+                metadata({ positivePrompt: 'My own prompt', positivePromptBeforeEnhancer: true }),
+                metadata({ positivePrompt: 'A night street', positivePromptBeforeEnhancer: true })
+            )
+        );
+
+        expect(screen.queryByRole('button', { name: 'Original Prompt' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Original' }));
+        expect(screen.getByRole('button', { name: 'Original Prompt' })).not.toBeNull();
+    });
+
     it('only shows revert when editable metadata differs', () => {
         const unchanged = renderTab(image(metadata({ steps: 0 }), metadata({ steps: 20 })));
         expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();

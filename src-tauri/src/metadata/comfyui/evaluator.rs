@@ -7,7 +7,7 @@ use super::graph::{
     get_node_input_links, get_node_type, get_source_id, get_switch_branch_input_strict, ComfyGraph,
     InputConnection, InputSourceConnection,
 };
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -35,6 +35,10 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) traversal_issues_truncated: bool,
     pub(crate) field_source_node_ids: ComfyFieldSourceNodeIds,
     pub(crate) resource_source_node_ids: ComfyResourceSourceNodeIds,
+    /// The typed request behind a direct prompt enhancer, when traversal left
+    /// the positive prompt empty. A last resort: the caller applies it, with
+    /// its marker, only if no other layer finds the prompt.
+    pub(crate) enhancer_request: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -129,6 +133,13 @@ impl<'a> ComfyEvaluator<'a> {
             );
         diagnostics.field_source_node_ids = field_source_node_ids;
         diagnostics.resource_source_node_ids = resource_source_node_ids;
+        if is_missing_prompt_value(&metadata.positive_prompt) {
+            diagnostics.enhancer_request = super::conditioning::direct_enhancer_request(
+                self.graph,
+                root_sampler_id,
+                root_node,
+            );
+        }
 
         if collect_traversal_issues {
             let issue_collection = super::traversal_diagnostics::collect_traversal_issues(

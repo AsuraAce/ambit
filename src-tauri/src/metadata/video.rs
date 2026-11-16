@@ -1,4 +1,5 @@
-use super::{extract_comfyui_metadata, ImageMetadata, VIDEO_PARSER_VERSION};
+use super::comfyui::extract_comfyui_video_metadata;
+use super::{ImageMetadata, VIDEO_PARSER_VERSION};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -366,7 +367,7 @@ fn candidate_from_chunks(
             selected_chunks.insert("prompt".into(), selected_prompt);
         }
     }
-    let mut image_metadata = extract_comfyui_metadata(&selected_chunks);
+    let mut image_metadata = extract_comfyui_video_metadata(&selected_chunks);
     image_metadata.workflow_json = chunks
         .get(selected_key)
         .cloned()
@@ -1070,6 +1071,68 @@ mod tests {
             classify_generation_mode(&workflow("VideoModel")),
             VideoGenerationMode::Unknown
         );
+    }
+
+    #[test]
+    fn video_prompt_stays_empty_behind_a_prompt_enhancer() {
+        // The image viewer may show the typed request behind a TextGenerate
+        // enhancer; video results must stay as they were before that rule.
+        let prompt = serde_json::json!({
+            "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "model.safetensors"}},
+            "2": {"class_type": "CLIPTextEncode", "inputs": {"text": ["3", 0]}},
+            "3": {"class_type": "TextGenerate", "inputs": {"prompt": "a cat"}},
+            "4": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "model": ["1", 0],
+                    "positive": ["2", 0],
+                    "seed": 1,
+                    "steps": 4,
+                    "cfg": 1.0,
+                    "sampler_name": "euler",
+                    "scheduler": "simple"
+                }
+            },
+            "5": {"class_type": "VAEDecode", "inputs": {"samples": ["4", 0]}},
+            "6": {"class_type": "CreateVideo", "inputs": {"images": ["5", 0], "fps": 24}},
+            "7": {
+                "class_type": "SaveVideo",
+                "inputs": {"video": ["6", 0]},
+                "properties": {"cnr_id": "comfy-core"}
+            }
+        });
+        let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+        let candidate = candidate_from_chunks(
+            &chunks,
+            &prompt,
+            "raw evidence".into(),
+            MetadataEvidenceSource::Embedded,
+        )
+        .expect("connected SaveVideo ancestry should parse");
+        assert_eq!(candidate.metadata.positive_prompt, "");
+        assert_eq!(candidate.metadata.steps, 4);
+
+        // The same generation saved as an image does show the request, and
+        // the video entry point refuses it even on that graph, so a later
+        // change to video output selection cannot leak the marker into video.
+        let mut image_graph = prompt.clone();
+        let nodes = image_graph.as_object_mut().unwrap();
+        nodes.remove("6");
+        nodes.insert(
+            "7".into(),
+            serde_json::json!({"class_type": "SaveImage", "inputs": {"images": ["5", 0]}}),
+        );
+        let image_chunks = HashMap::from([("prompt".to_string(), image_graph.to_string())]);
+
+        let mut image = ImageMetadata::default();
+        crate::metadata::comfyui::merge_comfyui_metadata(&mut image, &image_chunks);
+        assert_eq!(image.positive_prompt, "a cat");
+        assert!(image.positive_prompt_before_enhancer);
+
+        let video_entry = extract_comfyui_video_metadata(&image_chunks);
+        assert_eq!(video_entry.positive_prompt, "");
+        assert!(!video_entry.positive_prompt_before_enhancer);
     }
 
     #[test]

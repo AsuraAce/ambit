@@ -13,6 +13,8 @@ interface MetadataTextAreaFieldProps {
     source?: string;
     isDirty?: boolean;
     headerAction?: React.ReactNode;
+    /** Floated top-right inside the read surface so the text wraps around it; hidden while editing. */
+    badge?: React.ReactNode;
     status?: React.ReactNode;
     overlay?: React.ReactNode;
     className?: string;
@@ -56,6 +58,7 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
     source,
     isDirty = false,
     headerAction,
+    badge,
     status,
     overlay,
     className = '',
@@ -152,6 +155,7 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
                             (readOnly ? ' cursor-default opacity-80' : '')
                         }
                     >
+                        {badge ? <span className="float-right ml-2 flex h-5 select-none">{badge}</span> : null}
                         {value ? readContent : <span className="text-gray-400">{field.placeholder}</span>}
                     </div>
                 ) : (

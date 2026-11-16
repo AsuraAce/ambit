@@ -1,5 +1,7 @@
 use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
-use crate::metadata::comfyui::extract_comfyui_metadata_with_diagnostics;
+use crate::metadata::comfyui::{
+    build_comfyui_diagnostics_report, extract_comfyui_metadata_with_diagnostics,
+};
 use crate::metadata::ImageMetadata;
 use serde_json::json;
 use std::collections::HashMap;
@@ -572,6 +574,38 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "utility_sdpose_ood_image_to_pose",
         chunks_json: include_str!(
             "fixtures/official_catalog/utility_sdpose_ood_image_to_pose.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_moss_image_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_moss_image_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_moss_image_base_t2i",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_moss_image_base_t2i.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_moss_image_t2i_bboxes",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_moss_image_t2i_bboxes.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_moss_image_base_t2i_bboxes",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_moss_image_base_t2i_bboxes.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_moss_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_moss_image_edit.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_moss_image_color_depth_control",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_moss_image_color_depth_control.chunks.json"
         ),
     },
 ];
@@ -3430,5 +3464,183 @@ fn multiple_character_angles_remains_an_honest_ambiguous_partial() {
             output_roots: 8,
             output_ambiguous: true,
         },
+    );
+}
+
+const MOSS_T2I_REQUEST: &str = "Cinematic night street photograph: a model in an exaggerated balloon-sleeve white wool coat walking toward camera under a huge illuminated theatre marquee, the marquee bulbs spelling \"MOSS\" in tall capital letters, wet asphalt with long reflections, warm tungsten glow against cold blue night, 35mm film grain, low angle";
+const MOSS_BASE_T2I_REQUEST: &str = "Black-and-white grunge event poster: a model in an oversized black hoodie and wide black trousers sits low on a concrete floor, photographed from a low wide angle so the sneakers are huge in the foreground, grey concrete wall behind, torn newspapers lying scattered on the floor around them. The word \"MOSS\" is set in gigantic heavy condensed capitals filling the top half of the poster behind the figure, slightly cropped by the frame edges. Along the bottom a grid of small info blocks separated by thin rules: \"SATURDAY\" and \"01 SEPT 2026\" and \"DOORS OPEN 10:00 PM\" on the left, \"MOSS IMAGE\" with \"TEXT / LAYOUT / TYPE\" in the middle,  \"SUPPORTING ACT\" with \"MOSS\" on the right, and a barcode block in the bottom right corner. Monochrome, high contrast, fine film grain, editorial print, paper texture.";
+const MOSS_T2I_BBOXES_CAPTION: &str = "Dark fantasy editorial poster in a lush overgrown ruin: a knight in moss-covered plate armour in a heroic kneeling pose, torso upright and head lifted, one hand gripping a massive greatsword planted point-down beside him, the other forearm on his raised knee, a dense bouquet of daisies and pink roses growing out of the open helmet instead of a face, ivy and crumbling columns behind, petals drifting in the air, soft volumetric light from above, deep green and moss palette with muted cream type.";
+const MOSS_BASE_T2I_BBOXES_CAPTION: &str = "Premium 3D render on a dark olive gradient background: a floating weathered bark fragment covered in velvet moss, pale pink peonies and tiny white umbel flowers, clusters of translucent quartz crystals growing out of the wood, cinematic rim light, soft shadow, ultra realistic product photography. Bottom right the word MOSS is set in a lime-green geometric display face stacked on two rows, a small block of white monospaced text sits in the top left, and a thin white plus mark in the bottom left corner. 4k, no watermark.";
+const MOSS_EDIT_INSTRUCTION: &str = "Change only the pink floral blazer to a plain black wool coat. Keep both women, their faces, glasses, berets, poses, the embroidered cardigan and the concrete wall background unchanged.";
+const MOSS_NEGATIVE: &str = "nsfw, worst quality, bad anatomy, watermark, jpeg artifact";
+
+/// The MOSS-Image text-to-image templates ship with the prompt enhancer on.
+/// Its rewritten prompt is not stored, so the typed request stands in and is
+/// marked, while the generated-value blocker stays visible as a partial.
+fn assert_moss_request_stands_in(name: &str, expected: ExpectedMetadata<'_>) {
+    assert_fixture(name, expected);
+    let chunks = load_chunks(name);
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert!(
+        meta.positive_prompt_before_enhancer,
+        "{name} request marker"
+    );
+    let report = build_comfyui_diagnostics_report(&chunks);
+    assert_eq!(report.traversal_issues.len(), 1, "{name} blockers");
+    let issue = &report.traversal_issues[0];
+    assert_eq!(issue.field, "positive_prompt");
+    assert_eq!(issue.node_type, "TextGenerate");
+    assert_eq!(issue.reason, "generated_value_unavailable");
+}
+
+#[test]
+fn moss_image_t2i_shows_the_request_before_the_enhancer() {
+    assert_moss_request_stands_in(
+        "image_moss_image_t2i",
+        ExpectedMetadata {
+            model: "moss_image_sft_int8_convrot",
+            seed: Some(438_829_726_369_282),
+            steps: 25,
+            cfg: 2.5,
+            sampler: "er_sde (simple)",
+            positive_prompt: MOSS_T2I_REQUEST,
+            negative_prompt: MOSS_NEGATIVE,
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn moss_image_base_t2i_shows_the_request_before_the_enhancer() {
+    assert_moss_request_stands_in(
+        "image_moss_image_base_t2i",
+        ExpectedMetadata {
+            model: "moss_image_base_int8_convrot",
+            seed: Some(524_391_326_626_742),
+            steps: 25,
+            cfg: 2.5,
+            sampler: "er_sde (simple)",
+            positive_prompt: MOSS_BASE_T2I_REQUEST,
+            negative_prompt: MOSS_NEGATIVE,
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+/// With the enhancer off, the layout prompt's caption is the positive prompt.
+/// The bounding-box element descriptions it adds are not part of it.
+#[test]
+fn moss_image_layout_templates_use_the_layout_caption() {
+    for (name, model, seed, caption) in [
+        (
+            "image_moss_image_t2i_bboxes",
+            "moss_image_sft_int8_convrot",
+            571_710_880_652_220,
+            MOSS_T2I_BBOXES_CAPTION,
+        ),
+        (
+            "image_moss_image_base_t2i_bboxes",
+            "moss_image_base_int8_convrot",
+            246_188_418_917_220,
+            MOSS_BASE_T2I_BBOXES_CAPTION,
+        ),
+    ] {
+        assert_fixture(
+            name,
+            ExpectedMetadata {
+                model,
+                seed: Some(seed),
+                steps: 25,
+                cfg: 2.5,
+                sampler: "er_sde (simple)",
+                positive_prompt: caption,
+                negative_prompt: MOSS_NEGATIVE,
+                loras: &[],
+                control_nets: &[],
+                source: ComfyParseLayer::SamplerTraversal,
+                graph_node_count: 24,
+                output_candidates: 1,
+                output_roots: 1,
+                output_ambiguous: false,
+            },
+        );
+    }
+}
+
+#[test]
+fn moss_image_edit_is_golden() {
+    assert_fixture(
+        "image_moss_image_edit",
+        ExpectedMetadata {
+            model: "moss_image_sft_int8_convrot",
+            seed: Some(42),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (normal)",
+            positive_prompt: MOSS_EDIT_INSTRUCTION,
+            negative_prompt: MOSS_NEGATIVE,
+            loras: &["moss_image_edit_lora_rank_64_bf16"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn moss_image_color_depth_control_is_golden() {
+    assert_fixture(
+        "image_moss_image_color_depth_control",
+        ExpectedMetadata {
+            model: "moss_image_sft_int8_convrot",
+            seed: Some(1_099_957_152_091_484),
+            steps: 25,
+            cfg: 3.0,
+            sampler: "ER-SDE (simple)",
+            positive_prompt: "a photograph of a woman in the night city",
+            negative_prompt: MOSS_NEGATIVE,
+            loras: &["moss_image_color_depth_control"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+/// The request marker belongs only to a positive prompt recovered from a plain
+/// enhancer request. Requests merged with enhancer instructions (Krea2, SUPIR)
+/// and every other catalog workflow stay unmarked.
+#[test]
+fn only_plain_enhancer_requests_mark_the_positive_prompt() {
+    let marked = FIXTURES
+        .iter()
+        .filter(|fixture| {
+            let (meta, _) = extract_comfyui_metadata_with_diagnostics(&load_chunks(fixture.name));
+            meta.positive_prompt_before_enhancer
+        })
+        .map(|fixture| fixture.name)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        marked,
+        ["image_moss_image_t2i", "image_moss_image_base_t2i"]
     );
 }
