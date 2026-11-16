@@ -16,6 +16,8 @@ use std::collections::{HashSet, VecDeque};
 
 const MAX_TRANSFORM_STRING_BYTES: usize = 64 * 1024;
 const MAX_TRANSFORM_PATTERN_BYTES: usize = 4 * 1024;
+/// ComfyUI's core LLM prompt enhancer node.
+pub(crate) const PROMPT_ENHANCER_NODE_TYPE: &str = "TextGenerate";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StringEvaluationMode {
@@ -1108,6 +1110,24 @@ fn evaluate_string_node_with_mode(
         return None;
     }
 
+    // A prompt enhancer's generated text is not stored in the image, so its
+    // typed request stands in. Callers mark this with
+    // `positive_prompt_before_enhancer`.
+    if t == PROMPT_ENHANCER_NODE_TYPE {
+        if !is_plain_request_input(graph, node, "prompt", 0) {
+            return None;
+        }
+        return trace_text_input_with_state(
+            graph,
+            node_id,
+            "prompt",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        );
+    }
+
     if t == "PreviewAny" {
         return trace_text_input_with_state(
             graph,
@@ -1477,6 +1497,42 @@ fn evaluate_string_node_with_mode(
     }
 
     None
+}
+
+/// Whether an enhancer's request input comes from one typed text value. A
+/// request built by string transforms (for example the enhancer's own
+/// instructions concatenated with the user's text) is rejected, because the
+/// user's part cannot be told apart from the instructions.
+fn is_plain_request_input(
+    graph: &ComfyGraph,
+    node: &Value,
+    input_name: &str,
+    depth: usize,
+) -> bool {
+    if depth > 10 {
+        return false;
+    }
+    let source = match get_input_source(node, input_name) {
+        InputSourceConnection::Connected(source) => source,
+        InputSourceConnection::DeclaredUnresolved => return false,
+        InputSourceConnection::Unconnected => {
+            return get_node_param(node, input_name)
+                .and_then(Value::as_str)
+                .is_some();
+        }
+    };
+    let Some(source_node) = graph.get_node(&source.node_id) else {
+        return false;
+    };
+    match get_node_type(source_node) {
+        "PrimitiveNode" | "PrimitiveString" | "PrimitiveStringMultiline" => {
+            is_plain_request_input(graph, source_node, "value", depth + 1)
+        }
+        "PreviewAny" => is_plain_request_input(graph, source_node, "source", depth + 1),
+        "ComfySwitchNode" => get_switch_branch_input_strict(graph, source_node)
+            .is_some_and(|branch| is_plain_request_input(graph, source_node, branch, depth + 1)),
+        _ => false,
+    }
 }
 
 fn evaluate_string_source_with_mode(

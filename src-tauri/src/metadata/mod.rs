@@ -20,7 +20,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata, scan_webp_metadata};
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 46;
+pub const CURRENT_PARSER_VERSION: u32 = 47;
 
 /// Video metadata evolves independently from the mature image parsers.
 pub const VIDEO_PARSER_VERSION: u32 = 1;
@@ -64,6 +64,11 @@ pub struct ImageMetadata {
     pub positive_prompt: String,
     #[serde(rename = "negativePrompt")]
     pub negative_prompt: String,
+    /// The positive prompt is the user's request typed into a prompt enhancer
+    /// (for example ComfyUI `TextGenerate`), not the enhanced text the model
+    /// used, because that text is not stored in the image.
+    #[serde(rename = "positivePromptBeforeEnhancer", default)]
+    pub positive_prompt_before_enhancer: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub loras: Vec<String>,
     #[serde(rename = "controlNets", skip_serializing_if = "Vec::is_empty")]
@@ -137,6 +142,8 @@ impl ImageMetadata {
         }
         if is_missing_prompt_value(&self.positive_prompt) {
             self.positive_prompt = other.positive_prompt;
+            self.positive_prompt_before_enhancer = other.positive_prompt_before_enhancer
+                && !is_missing_prompt_value(&self.positive_prompt);
         }
         if is_missing_prompt_value(&self.negative_prompt) {
             self.negative_prompt = other.negative_prompt;
@@ -193,6 +200,7 @@ impl Default for ImageMetadata {
             sampler: "Unknown".to_string(),
             positive_prompt: String::new(),
             negative_prompt: String::new(),
+            positive_prompt_before_enhancer: false,
             loras: Vec::new(),
             control_nets: Vec::new(),
             ip_adapters: Vec::new(),
@@ -258,6 +266,8 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
 
     if is_missing_prompt_value(&base.positive_prompt) {
         base.positive_prompt = secondary.positive_prompt;
+        base.positive_prompt_before_enhancer = secondary.positive_prompt_before_enhancer
+            && !is_missing_prompt_value(&base.positive_prompt);
     }
 
     if is_missing_prompt_value(&base.negative_prompt) {

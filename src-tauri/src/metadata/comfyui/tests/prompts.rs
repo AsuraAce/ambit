@@ -202,7 +202,7 @@ fn flux_text_encoder_links_override_stale_widgets_and_fail_closed_independently(
         ),
         (
             "4",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "generator input" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "generator input" } }),
         ),
     ]);
 
@@ -231,11 +231,11 @@ fn flux_text_encoder_uses_unlinked_workflow_widgets_and_suppresses_empty_provena
         ),
         (
             "3",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "first input" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "first input" } }),
         ),
         (
             "4",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "second input" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "second input" } }),
         ),
         (
             "99",
@@ -1233,7 +1233,7 @@ fn authoritative_unresolved_sampler_prompt_blocks_disconnected_global_fallback()
             "inputs": { "text": "stale widget prompt" },
             "_resolved_inputs": { "text": "3" }
         },
-        "3": { "class_type": "TextGenerate", "inputs": { "prompt": "generator instruction" } },
+        "3": { "class_type": "OllamaGenerate", "inputs": { "prompt": "generator instruction" } },
         "4": {
             "class_type": "KSampler",
             "inputs": {
@@ -1267,7 +1267,7 @@ fn authoritative_unresolved_sampler_prompt_blocks_disconnected_global_fallback()
 fn basic_guider_linked_conditioning_blocks_disconnected_global_prompt_fallback() {
     let prompt = r#"{
         "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
-        "2": { "class_type": "TextGenerate", "inputs": { "prompt": "generator instruction" } },
+        "2": { "class_type": "OllamaGenerate", "inputs": { "prompt": "generator instruction" } },
         "3": { "class_type": "CLIPTextEncode", "inputs": { "text": ["2", 0] } },
         "4": {
             "class_type": "BasicGuider",
@@ -1399,8 +1399,8 @@ fn unresolved_linked_string_intermediaries_do_not_reopen_stale_literals() {
                 "scheduler": "simple"
             }
         },
-        "7": { "class_type": "TextGenerate", "inputs": { "prompt": "positive instruction" } },
-        "8": { "class_type": "TextGenerate", "inputs": { "prompt": "negative instruction" } },
+        "7": { "class_type": "OllamaGenerate", "inputs": { "prompt": "positive instruction" } },
+        "8": { "class_type": "OllamaGenerate", "inputs": { "prompt": "negative instruction" } },
         "9": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0] } },
         "10": { "class_type": "SaveImage", "inputs": { "images": ["9", 0] } }
     }"#;
@@ -1577,7 +1577,7 @@ fn unresolved_or_cyclic_string_replace_does_not_reopen_stale_prompts() {
             ),
             (
                 "4",
-                json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+                json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "instruction" } }),
             ),
             (
                 "99",
@@ -1714,7 +1714,7 @@ fn string_concatenate_preserves_empty_sides_but_not_stale_link_fallbacks() {
         ),
         (
             "4",
-            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+            json!({ "class_type": "OllamaGenerate", "inputs": { "prompt": "instruction" } }),
         ),
     ]);
     assert_eq!(meta.positive_prompt, "");

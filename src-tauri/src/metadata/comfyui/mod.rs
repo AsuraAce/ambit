@@ -361,6 +361,7 @@ fn merge_graph_metadata(
             is_missing_prompt_value(&base.positive_prompt),
         ) {
             base.positive_prompt = std::mem::take(&mut graph.positive_prompt);
+            base.positive_prompt_before_enhancer = graph.positive_prompt_before_enhancer;
             copy_selected_graph_source(
                 diagnostics,
                 graph_diagnostics,
@@ -1022,6 +1023,7 @@ fn clear_core_fields(meta: &mut ImageMetadata) {
     meta.cfg_present = false;
     meta.sampler = "Unknown".to_string();
     meta.positive_prompt.clear();
+    meta.positive_prompt_before_enhancer = false;
     meta.negative_prompt.clear();
 }
 

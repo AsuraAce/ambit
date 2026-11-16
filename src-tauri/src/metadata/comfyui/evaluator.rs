@@ -7,7 +7,7 @@ use super::graph::{
     get_node_input_links, get_node_type, get_source_id, get_switch_branch_input_strict, ComfyGraph,
     InputConnection, InputSourceConnection,
 };
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -118,7 +118,7 @@ impl<'a> ComfyEvaluator<'a> {
         let mut loras = Vec::new();
         let mut ip_adapters = Vec::new();
         let mut hypernetworks = Vec::new();
-        let (metadata, field_source_node_ids, resource_source_node_ids) =
+        let (mut metadata, field_source_node_ids, resource_source_node_ids) =
             super::eval_core::extract_from_sampler(
                 self.graph,
                 root_sampler_id,
@@ -129,6 +129,13 @@ impl<'a> ComfyEvaluator<'a> {
             );
         diagnostics.field_source_node_ids = field_source_node_ids;
         diagnostics.resource_source_node_ids = resource_source_node_ids;
+        metadata.positive_prompt_before_enhancer =
+            !is_missing_prompt_value(&metadata.positive_prompt)
+                && super::traversal_diagnostics::positive_prompt_crosses_prompt_enhancer(
+                    self.graph,
+                    root_sampler_id,
+                    root_node,
+                );
 
         if collect_traversal_issues {
             let issue_collection = super::traversal_diagnostics::collect_traversal_issues(
