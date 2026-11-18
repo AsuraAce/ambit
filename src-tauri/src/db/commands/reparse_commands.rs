@@ -87,6 +87,7 @@ pub async fn reparse_metadata_batch(
     run_blocking(app, move |conn| {
         use crate::metadata::reparse::reparse_from_json;
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("reparse.metadata_batch");
         let mut processed = 0;
         let mut updated = 0;
         let mut errors = 0;
