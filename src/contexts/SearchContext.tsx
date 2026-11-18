@@ -33,7 +33,7 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getEffectiveImageKind, normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
-import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
+import { patchImageFlagsInQueryCaches, pickImages, restoreImagesInList, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -529,8 +529,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle favorite failed', e);
-                setImages(imgs);
-                restoreImagesInQueryCaches(queryClient, imgs);
+                // Revert only this image: the user may have opened another view meanwhile (#484).
+                const touched = pickImages(imgs, [id]);
+                setImages((current) => restoreImagesInList(current, touched));
+                restoreImagesInQueryCaches(queryClient, touched);
             }
         },
         [queryClient, refreshCollectionsAfterImageFlagChange, setImages]
@@ -560,8 +562,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle pin failed', e);
-                setImages(imgs);
-                restoreImagesInQueryCaches(queryClient, imgs, {
+                const touched = pickImages(imgs, [id]);
+                setImages((current) => restoreImagesInList(current, touched, { previousOrder: nextImages, nextOrder: imgs }));
+                restoreImagesInQueryCaches(queryClient, touched, {
                     previousOrder: nextImages,
                     nextOrder: imgs,
                     reorderQueryKey: imagesQueryKey,

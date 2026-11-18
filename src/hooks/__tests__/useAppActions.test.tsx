@@ -20,6 +20,12 @@ vi.mock('../useToast', () => ({
 }));
 
 const mockSetImages = vi.fn();
+// What the store holds after every setImages call so far, starting from `images`; rollbacks pass an updater.
+const replaySetImages = <T,>(images: T[]): T[] =>
+    mockSetImages.mock.calls.reduce((current: T[], call: unknown[]) => {
+        const next = call[0] as T[] | ((previous: T[]) => T[]);
+        return typeof next === 'function' ? next(current) : next;
+    }, images);
 const mockToggleImageFavorite = vi.fn();
 const mockToggleImagePin = vi.fn();
 const mockSetImageMasks = vi.fn();
@@ -369,7 +375,7 @@ describe('useAppActions', () => {
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(errorToast, 'error'));
 
         expect(write.mock.calls.map(([id]) => id)).toEqual(['1', '2']);
-        expect(mockSetImages).toHaveBeenLastCalledWith(mockStoreImages);
+        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
         expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         errorSpy.mockRestore();
@@ -461,7 +467,7 @@ describe('useAppActions', () => {
 
         expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
         await waitFor(() => {
-            expect(mockSetImages.mock.calls[1][0].map((img: { id: string }) => img.id)).toEqual(['1', '2']);
+            expect(replaySetImages(mockStoreImages).map((img) => img.id)).toEqual(['1', '2']);
             expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error');
         });
     });
@@ -697,13 +703,14 @@ describe('useAppActions', () => {
         expect(mockToggleImageFavorite).toHaveBeenCalledWith('2', false);
         expect(mockAddToast).toHaveBeenCalledWith('Unfavorited 1 item', 'success');
         first.unmount();
+        mockSetImages.mockClear();
 
         mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const second = renderHook(() => useAppActions(props));
         act(() => second.result.current.handleFavoriteImage('1'));
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
-        expect(mockSetImages).toHaveBeenCalledWith(mockStoreImages);
+        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
         errorSpy.mockRestore();
     });
 
@@ -834,7 +841,7 @@ describe('useAppActions', () => {
 
         expect(mockAddToast).toHaveBeenCalledWith('Failed to update content mask', 'error');
         expect(mockAddToast).not.toHaveBeenCalledWith('2 items Manually Masked', 'info');
-        expect(mockSetImages).toHaveBeenLastCalledWith(mockStoreImages);
+        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
         expect(cachedMasks()).toEqual([undefined, undefined]);
         errorSpy.mockRestore();
         mockUpdateImagesQueryCaches.mockReset();

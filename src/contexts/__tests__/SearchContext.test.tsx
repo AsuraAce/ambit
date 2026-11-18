@@ -113,7 +113,8 @@ vi.mock('../../stores/collectionStore', () => ({
         { getState: () => ({ invalidateRetainedThumbnails: mocks.invalidateRetainedThumbnails }) }
     ),
 }));
-vi.mock('../../utils/imageQueryCache', () => ({
+vi.mock('../../utils/imageQueryCache', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../utils/imageQueryCache')>()),
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
     restoreImagesInQueryCaches: mocks.restoreImagesInQueryCaches,
 }));
@@ -984,6 +985,37 @@ describe('SearchProvider', () => {
             nextOrder: [original],
             reorderQueryKey: latest.imagesQueryKey,
         });
+    });
+
+    it('keeps the newly opened view when a favorite or pin write from the previous view fails (#484)', async () => {
+        // The rollback may revert only what the write changed; restoring the old view's snapshot would
+        // put images from outside the open collection on screen.
+        const libraryImage = image({ id: 'library' });
+        const holidayImage = image({ id: 'holiday' });
+        const state = mocks.searchState.current as SearchValue;
+        state.images = [libraryImage];
+        mocks.applyOptimisticPinOrder.mockImplementation((images: AIImage[]) => images);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let failFavorite: (error: Error) => void = () => undefined;
+        let failPin: (error: Error) => void = () => undefined;
+        mocks.updateFavorite.mockReturnValueOnce(new Promise((_, reject) => (failFavorite = reject)));
+        mocks.updatePinned.mockReturnValueOnce(new Promise((_, reject) => (failPin = reject)));
+        renderProvider();
+
+        let favoriteWrite: Promise<void> = Promise.resolve();
+        let pinWrite: Promise<void> = Promise.resolve();
+        act(() => {
+            favoriteWrite = latest.toggleFavorite(libraryImage.id);
+            pinWrite = latest.togglePin(libraryImage.id);
+        });
+        state.images = [holidayImage];
+        await act(async () => {
+            failFavorite(new Error('favorite failed'));
+            failPin(new Error('pin failed'));
+            await Promise.all([favoriteWrite, pinWrite]);
+        });
+
+        expect(state.images).toEqual([holidayImage]);
     });
 
     it('loads and persists recent searches and hidden-content preferences', async () => {
