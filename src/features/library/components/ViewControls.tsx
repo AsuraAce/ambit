@@ -32,6 +32,8 @@ interface CountPresentation {
     totalCount: number | null;
     scopeName: string;
     ownerPresentationKey: string;
+    /** The collection (or Library, null) the count describes. */
+    collectionId: string | null;
 }
 
 interface ViewControlsProps {
@@ -122,8 +124,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     const viewMenuRef = useRef<HTMLDivElement>(null);
     const sortTriggerRef = useRef<HTMLButtonElement>(null);
     const viewTriggerRef = useRef<HTMLButtonElement>(null);
+    const collectionId = filters.collectionId;
     const settledCountPresentationRef = useRef<CountPresentation | null>(
-        isFiltering ? null : { displayedCount, totalCount, scopeName, ownerPresentationKey }
+        isFiltering ? null : { displayedCount, totalCount, scopeName, ownerPresentationKey, collectionId }
     );
     const isCountLoadingVisible = useDelayedBusyPresentation(Boolean(isFiltering), {
         revealDelayMs: COUNT_LOADING_REVEAL_DELAY_MS,
@@ -132,17 +135,20 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
     React.useLayoutEffect(() => {
         if (isFiltering) return;
-        settledCountPresentationRef.current = { displayedCount, totalCount, scopeName, ownerPresentationKey };
-    }, [displayedCount, isFiltering, ownerPresentationKey, scopeName, totalCount]);
+        settledCountPresentationRef.current = { displayedCount, totalCount, scopeName, ownerPresentationKey, collectionId };
+    }, [collectionId, displayedCount, isFiltering, ownerPresentationKey, scopeName, totalCount]);
 
     const showCountLoading = isCountLoadingVisible;
     const settledCountPresentation = settledCountPresentationRef.current;
-    const hasSettledCurrentOwnerScope = settledCountPresentation?.ownerPresentationKey === ownerPresentationKey;
-    const isAwaitingFirstSettledCount = Boolean(isFiltering) && !showCountLoading && !hasSettledCurrentOwnerScope;
+    // A kept count bridges a search or sort change inside one view. Another owner scope, collection
+    // or the Library never shows it: that count describes images the new view does not hold (#479).
+    const hasSettledCurrentView =
+        settledCountPresentation?.ownerPresentationKey === ownerPresentationKey && settledCountPresentation.collectionId === collectionId;
+    const isAwaitingFirstSettledCount = Boolean(isFiltering) && !showCountLoading && !hasSettledCurrentView;
     const countPresentation =
-        isFiltering && !showCountLoading && hasSettledCurrentOwnerScope
+        isFiltering && !showCountLoading && hasSettledCurrentView
             ? settledCountPresentation
-            : { displayedCount, totalCount, scopeName, ownerPresentationKey };
+            : { displayedCount, totalCount, scopeName, ownerPresentationKey, collectionId };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {

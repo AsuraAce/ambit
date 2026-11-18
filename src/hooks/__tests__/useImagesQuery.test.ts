@@ -460,6 +460,13 @@ describe('useImagesQuery', () => {
             imageIds: [],
             filters: createDefaultFilters({ searchQuery: 'portrait' }),
         };
+        const landscapes: Collection = {
+            id: 'landscapes',
+            name: 'Landscapes',
+            createdAt: 3,
+            imageIds: [],
+            filters: createDefaultFilters({ searchQuery: 'landscape' }),
+        };
         const keysFor = (view: Collection[]) => {
             renderImagesHook('date_desc', view);
             return { images: config().queryKey, counts: countsConfig().queryKey };
@@ -469,6 +476,7 @@ describe('useImagesQuery', () => {
             ['the Library', 'a collection', library, [holiday]],
             ['the Library', 'a smart collection', library, [portraits]],
             ['a collection', 'another collection', [holiday], [portraits]],
+            ['a smart collection', 'another smart collection', [portraits], [landscapes]],
             ['a collection', 'the Library', [holiday], library],
         ])('drops the page and count of %s when %s opens', (_from, _to, fromView, toView) => {
             const previous = keysFor(fromView);
@@ -493,6 +501,18 @@ describe('useImagesQuery', () => {
             expect(countsConfig().placeholderData(previousCounts, { queryKey: [countsKey[0], otherSearch, ...countsKey.slice(2)] })).toBe(
                 previousCounts
             );
+        });
+
+        it('keeps the page and count while an edited rule of the open smart collection loads', () => {
+            // Same view, new rules: like a search change, the grid stays until the new page arrives.
+            const previous = keysFor([portraits]);
+            keysFor([{ ...portraits, filters: createDefaultFilters({ searchQuery: 'portrait studio' }) }]);
+            expect(config().queryKey[6]).not.toBe(previous.images[6]);
+            const previousPage = { pages: [{ images: [image()] }] };
+            const previousCounts = { totalCount: 7, globalCount: 20 };
+
+            expect(config().placeholderData(previousPage, { queryKey: previous.images })).toBe(previousPage);
+            expect(countsConfig().placeholderData(previousCounts, { queryKey: previous.counts })).toBe(previousCounts);
         });
     });
 

@@ -469,6 +469,31 @@ describe('AppLayout', () => {
         expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
     });
 
+    it('opens another collection or the Library at the top, but keeps scroll for a change inside one view (#479)', () => {
+        // Otherwise a new view opens part-way down, at the old offset clamped to the skeleton's height.
+        const scrollContainerRef = { current: null as HTMLDivElement | null };
+        const renderView = (filters: object, sortOption = 'date-desc') => (
+            <AppLayout {...defaultProps} scrollContainerRef={scrollContainerRef} filters={filters} sortOption={sortOption} />
+        );
+        const { rerender } = render(renderView({ collectionId: null }));
+        const scrollContainer = scrollContainerRef.current as HTMLDivElement;
+
+        scrollContainer.scrollTop = 400;
+        rerender(renderView({ collectionId: null, searchQuery: 'beach' }, 'name_asc'));
+        expect(scrollContainer.scrollTop).toBe(400);
+
+        rerender(renderView({ collectionId: 'collection-a' }));
+        expect(scrollContainer.scrollTop).toBe(0);
+
+        scrollContainer.scrollTop = 250;
+        rerender(renderView({ collectionId: 'collection-b' }));
+        expect(scrollContainer.scrollTop).toBe(0);
+
+        scrollContainer.scrollTop = 250;
+        rerender(renderView({}));
+        expect(scrollContainer.scrollTop).toBe(0);
+    });
+
     it('shows loading instead of a false empty state while a valid search draft is pending', () => {
         searchState.value.images = [];
         searchState.value.totalImages = 0;
