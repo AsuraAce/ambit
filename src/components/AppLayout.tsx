@@ -38,6 +38,7 @@ import type { useFileOperations } from '../hooks/useFileOperations';
 import type { useModalManager } from '../hooks/useModalManager';
 import { PrivacyProtectionGate } from './ui/PrivacyProtectionGate';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
+import LibraryLoadError from '../features/library/components/LibraryLoadError';
 
 setupGlobalLogging();
 
@@ -254,6 +255,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         images,
         globalTotal,
         imageCountsFailed,
+        imagesFailed,
+        retryImages,
         sourceKindCounts,
         scopeCounts,
         scopeAvailability,
@@ -661,6 +664,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             </>
                                         )}
                                     </>
+                                ) : imagesFailed ? (
+                                    <LibraryLoadError onRetry={retryImages} />
                                 ) : globalTotal === 0 ? (
                                     <LibraryEmptyStateContainer onImport={onOpenImportModal} />
                                 ) : globalTotal === null && !imageCountsFailed ? null : ( // Until the library total arrives, an empty page cannot tell an empty library from no matches; if it cannot be read, no matches is the useful answer.

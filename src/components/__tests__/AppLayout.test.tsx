@@ -519,6 +519,24 @@ describe('AppLayout', () => {
         expect(capturedProps.header?.isFiltering).toBe(true);
     });
 
+    it.each([
+        ['an empty library count', 0],
+        ['a library with images', 4],
+        ['an unknown library count', null],
+    ])('shows a load error with Retry, never import or no matches, when the first page fails (%s) (#483)', async (_case, globalTotal) => {
+        // A failed read says nothing about the library: offering to import into it, or saying nothing
+        // matches, would tell the user something false.
+        const retryImages = vi.fn();
+        Object.assign(searchState.value, { images: [], totalImages: null, globalTotal, imagesFailed: true, retryImages });
+        render(<AppLayout {...defaultProps} />);
+
+        expect(screen.getByRole('alert').textContent).toContain('Images could not load');
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+        expect(screen.queryByText('No Matches Found')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(retryImages).toHaveBeenCalledOnce();
+    });
+
     it('opens import from an empty library', async () => {
         const onOpenImportModal = vi.fn();
         searchState.value.images = [];

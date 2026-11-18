@@ -4,7 +4,9 @@ import { GeneratorTool, type AIImage } from '../../types';
 import {
     getImageCountsQueryKey,
     patchImageFlagsInQueryCaches,
+    pickImages,
     removeImagesFromQueryCaches,
+    restoreImagesInList,
     restoreImagesInQueryCaches,
     updateImagesQueryCaches,
 } from '../imageQueryCache';
@@ -315,5 +317,36 @@ describe('imageQueryCache', () => {
 
         restoreImagesInQueryCaches(queryClient, []);
         expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images).toEqual([absent]);
+    });
+
+    describe('restoreImagesInList (#484)', () => {
+        // A rollback reverts only what its write changed. The store may hold another view by then,
+        // and that view must keep its own images and order.
+        const first = image('first');
+        const second = image('second');
+        const snapshot = [first, second];
+        const optimistic = [{ ...second, isPinned: true }, first];
+
+        it('restores the touched image and the snapshot order while the list is unchanged', () => {
+            const restored = restoreImagesInList(optimistic, pickImages(snapshot, ['second']), {
+                previousOrder: optimistic,
+                nextOrder: snapshot,
+            });
+            expect(restored).toEqual(snapshot);
+        });
+
+        it('patches only the touched image, in place, once the list holds another view', () => {
+            const otherView = [image('other'), { ...second, isPinned: true }];
+            const restored = restoreImagesInList(otherView, pickImages(snapshot, ['second']), {
+                previousOrder: optimistic,
+                nextOrder: snapshot,
+            });
+            expect(restored).toEqual([otherView[0], second]);
+        });
+
+        it('returns the same list when it holds none of the touched images', () => {
+            const otherView = [image('other')];
+            expect(restoreImagesInList(otherView, pickImages(snapshot, ['second']))).toBe(otherView);
+        });
     });
 });
