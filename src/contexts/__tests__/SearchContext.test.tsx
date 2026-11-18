@@ -666,6 +666,117 @@ describe('SearchProvider', () => {
         await waitFor(() => expect(latest.images).toEqual([safe]));
     });
 
+    describe('opening another view (#479)', () => {
+        // The store keeps the last page it was given. A newly opened collection, smart collection or
+        // Library must show the loading skeleton (no images, filtering) rather than that page, while a
+        // refresh of the same view must keep it so imports and mask changes do not blank the grid.
+        const libraryImage = image({ id: 'library' });
+        const holidayImage = image({ id: 'holiday' });
+        const keyFor = (collectionId: string | null): ImagesQueryKey => [
+            'images',
+            { ...baseFilters, collectionId },
+            'date_desc',
+            false,
+            'blur',
+            [],
+            null,
+            'invoke:none',
+        ];
+        const showView = (
+            view: ReturnType<typeof renderProvider>,
+            collectionId: string | null,
+            query: Record<string, unknown>,
+            collectionsLoaded = true
+        ) => {
+            const state = mocks.searchState.current as SearchValue;
+            state.filters = { ...baseFilters, collectionId };
+            mocks.collections.current = { ...(mocks.collections.current as object), isLoaded: collectionsLoaded };
+            mocks.imagesQuery.current = {
+                ...(mocks.imagesQuery.current as object),
+                isLoading: false,
+                isFetching: false,
+                status: 'success',
+                queryKey: keyFor(collectionId),
+                ...query,
+            };
+            // The mocked store does not re-render on setImages as Zustand does, so render twice:
+            // once to run the sync effect and once to read what it stored.
+            for (let pass = 0; pass < 2; pass++) {
+                view.rerender(
+                    <SearchProvider>
+                        <Consumer />
+                    </SearchProvider>
+                );
+            }
+        };
+        const openLibrary = () => {
+            mocks.imagesQuery.current = {
+                ...(mocks.imagesQuery.current as object),
+                data: { pages: [{ images: [libraryImage] }] },
+                status: 'success',
+                queryKey: keyFor(null),
+            };
+            const view = renderProvider();
+            expect(latest.images).toEqual([libraryImage]);
+            return view;
+        };
+        const loading = { data: undefined, isLoading: true, isFetching: true, status: 'pending' };
+
+        it('shows the skeleton, not the Library, while a collection loads, then its own page', () => {
+            const view = openLibrary();
+
+            showView(view, 'holiday', loading);
+            expect(latest.images).toEqual([]);
+            expect(latest.isFiltering).toBe(true);
+
+            showView(view, 'holiday', { data: { pages: [{ images: [holidayImage] }] } });
+            expect(latest.images).toEqual([holidayImage]);
+        });
+
+        it('shows the skeleton, not the collection, while another collection or the Library loads', () => {
+            const view = openLibrary();
+            showView(view, 'holiday', { data: { pages: [{ images: [holidayImage] }] } });
+
+            showView(view, 'portraits', loading);
+            expect(latest.images).toEqual([]);
+
+            showView(view, 'holiday', { data: { pages: [{ images: [holidayImage] }] } });
+            showView(view, null, loading);
+            expect(latest.images).toEqual([]);
+            expect(latest.isFiltering).toBe(true);
+        });
+
+        it('keeps the page through a refetch or invalidation of the same view', () => {
+            const view = openLibrary();
+
+            showView(view, null, { data: { pages: [{ images: [libraryImage] }] }, isFetching: true });
+            expect(latest.images).toEqual([libraryImage]);
+            // Even a refetch that briefly has no data is the same view, so the page stays.
+            showView(view, null, loading);
+            expect(latest.images).toEqual([libraryImage]);
+        });
+
+        it('keeps the page when a refresh of the same view fails, with or without cached data', () => {
+            const view = openLibrary();
+
+            showView(view, null, { data: { pages: [{ images: [libraryImage] }] }, status: 'error', isError: true });
+            expect(latest.images).toEqual([libraryImage]);
+            showView(view, null, { data: undefined, status: 'error', isError: true });
+            expect(latest.images).toEqual([libraryImage]);
+        });
+
+        it('waits for database queries to be enabled before clearing a view', () => {
+            const view = openLibrary();
+
+            showView(view, 'holiday', { ...loading, isFetching: false }, false);
+            expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
+            expect(latest.images).toEqual([libraryImage]);
+
+            showView(view, 'holiday', loading);
+            expect(latest.images).toEqual([]);
+        });
+    });
+
     it('presents a first page before its counts and reports the counts as loading', () => {
         // The gallery opens as soon as its page is safe; the counts follow on their own.
         mocks.imagesQuery.current = {
