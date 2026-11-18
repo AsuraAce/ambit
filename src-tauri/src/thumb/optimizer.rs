@@ -1558,6 +1558,7 @@ fn persist_thumbnail_results(
 ) -> Result<BatchStats, String> {
     let mut stats = BatchStats::default();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("thumbnails.persist_results");
 
     tx.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS thumbnail_optimizer_results (

@@ -29,6 +29,8 @@ END";
 struct ScopedBusyTimeout<'connection> {
     conn: &'connection Connection,
     previous_timeout: std::time::Duration,
+    // Ends with the guard, which the caller keeps for as long as its transaction (#464).
+    _hold: Option<crate::db::write_hold::WriteHold>,
 }
 
 impl Drop for ScopedBusyTimeout<'_> {
@@ -54,9 +56,10 @@ fn begin_owner_preparation_transaction_with_timeout<'connection>(
         .map_err(|error| error.to_string())?;
     conn.busy_timeout(timeout)
         .map_err(|error| error.to_string())?;
-    let scoped_timeout = ScopedBusyTimeout {
+    let mut scoped_timeout = ScopedBusyTimeout {
         conn,
         previous_timeout: std::time::Duration::from_millis(previous_timeout_ms),
+        _hold: None,
     };
     let transaction_entry_started = Instant::now();
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(|error| {
@@ -77,6 +80,7 @@ fn begin_owner_preparation_transaction_with_timeout<'connection>(
         "[DB] owner preparation transaction entry succeeded operation={operation} database_role=ambit_local sqlite_extended_code=0 wait_ms={}",
         transaction_entry_started.elapsed().as_millis()
     );
+    scoped_timeout._hold = Some(crate::db::write_hold::WriteHold::begin(operation));
 
     Ok((scoped_timeout, transaction))
 }
@@ -416,6 +420,7 @@ pub fn refresh_privacy_mask_index_for_conn(
     }
 
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("privacy.refresh_mask_index");
     tx.execute("DELETE FROM privacy_mask_keywords", [])
         .map_err(|e| e.to_string())?;
 
@@ -516,6 +521,7 @@ fn save_images_batch_inner(
     images: &[ImageRecord],
 ) -> Result<usize, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("images.save_batch");
 
     {
         use crate::{db::reparse::CURRENT_PHOTO_REFRESH_VERSION, metadata::CURRENT_PARSER_VERSION};
@@ -912,6 +918,7 @@ fn reconcile_invoke_image_sources_inner(
     updates: &[InvokeImageSourceUpdate],
 ) -> Result<InvokeImageSourceReconcileResult, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("invoke.reconcile_image_sources");
     let mut result = InvokeImageSourceReconcileResult::default();
 
     {
@@ -969,6 +976,7 @@ fn reconcile_invoke_owner_inventory_inner(
     let tx = conn
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("invoke.reconcile_owner_inventory");
     tx.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_inventory (
              id TEXT PRIMARY KEY,
@@ -1630,6 +1638,19 @@ fn mask_restored_scope_thumbnails(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// Brings the live facet cache up to the current privacy mask, as for a restored snapshot.
+/// A staged facet rebuild reads an older snapshot, so an image masked while it built would
+/// otherwise come back as a visible facet thumbnail when the rows are swapped in (#464).
+pub(crate) fn mask_facet_cache_thumbnails(conn: &Connection) -> Result<(), String> {
+    for sql in restored_scope_mask_statements()
+        .iter()
+        .filter(|sql| sql.trim_start().starts_with("UPDATE facet_cache"))
+    {
+        conn.execute(sql, []).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn invoke_scope_cache_build_session_id() -> String {
     static PROCESS_ID: OnceLock<String> = OnceLock::new();
     let process = PROCESS_ID.get_or_init(|| {
@@ -2033,6 +2054,7 @@ fn replace_invoke_image_references_inner(
     reference_sets: &[InvokeImageReferenceSet],
 ) -> Result<InvokeImageReferenceReplaceResult, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("invoke.replace_image_references");
     let mut result = InvokeImageReferenceReplaceResult::default();
 
     {
@@ -2145,6 +2167,7 @@ fn move_image_path_identities_inner(
     moves: &[ImagePathIdentityMove],
 ) -> Result<ImagePathIdentityMoveResult, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("images.move_path_identities");
     tx.execute_batch("PRAGMA defer_foreign_keys = ON;")
         .map_err(|e| e.to_string())?;
 
@@ -2380,6 +2403,7 @@ fn mark_image_path_identities_missing_inner(
     ids: &[String],
 ) -> Result<usize, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("images.mark_path_identities_missing");
     let mut marked = 0;
     let mut seen = BTreeSet::new();
 
@@ -2495,6 +2519,7 @@ pub async fn begin_active_invoke_scope_cache_build(
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("owner_cache.begin_build");
         let claim = begin_active_scope_cache_build_for_session_inner(&tx, &session_id)?;
         tx.commit().map_err(|error| error.to_string())?;
         Ok(claim)
@@ -2515,6 +2540,7 @@ pub async fn abort_active_invoke_scope_cache_build(
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("owner_cache.abort_build");
         let status = abort_active_scope_cache_build_for_session_inner(&tx, &ticket, &session_id)?;
         tx.commit().map_err(|error| error.to_string())?;
         Ok(status)
@@ -2535,6 +2561,7 @@ pub async fn commit_active_invoke_scope_cache(
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("owner_cache.commit");
         let status = commit_active_scope_cache_for_session_inner(&tx, &ticket, &session_id)?;
         tx.commit().map_err(|error| error.to_string())?;
         Ok(status)
@@ -3254,6 +3281,7 @@ pub async fn refresh_boards_native(
         }
 
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("invoke.refresh_boards_native");
         let mut updated_count = 0;
         {
             let mut update_stmt = tx
@@ -3284,6 +3312,7 @@ pub async fn refresh_boards_native(
 pub async fn mark_images_corrupt(app: AppHandle, ids: Vec<String>) -> Result<usize, String> {
     run_blocking(app, move |conn| {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("images.mark_corrupt");
         let mut updated_count = 0;
         {
             let mut stmt = tx.prepare_cached("UPDATE images SET is_corrupt = 1, thumbnail_path = '', micro_thumbnail = NULL WHERE id = ?1").map_err(|e| e.to_string())?;
@@ -3404,6 +3433,7 @@ pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult,
         }
 
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("maintenance.verify_library_integrity");
         let mut missing_count = 0;
         let mut thumb_count = 0;
         {

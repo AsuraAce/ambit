@@ -10,6 +10,7 @@ pub mod facets;
 pub mod migrations;
 pub mod readonly_select;
 pub mod reparse;
+pub mod write_hold;
 
 #[cfg(all(
     any(test, all(windows, not(debug_assertions))),

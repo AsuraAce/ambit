@@ -333,6 +333,7 @@ pub async fn start_reparse_job(
 
             // SERIAL PHASE: Update database in a single transaction
             let tx = conn.transaction().map_err(|e| e.to_string())?;
+            let _hold = crate::db::write_hold::WriteHold::begin("reparse.job_batch");
             {
                 let mut update_stmt = tx.prepare_cached(
                     "UPDATE images SET
@@ -646,6 +647,7 @@ pub async fn start_reparse_job(
                         .collect();
 
                 let tx = conn.transaction().map_err(|e| e.to_string())?;
+                let _hold = crate::db::write_hold::WriteHold::begin("reparse.photo_batch");
                 {
                     let mut update_photo = tx
                         .prepare_cached(UPDATE_PHOTO_METADATA_SQL)

@@ -519,6 +519,7 @@ where
     };
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let _hold = crate::db::write_hold::WriteHold::begin("resources.purge_folder_assets");
     let mut resources = FacetResourceTouches::default();
     let mut model_candidates = Vec::new();
 

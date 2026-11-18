@@ -50,7 +50,10 @@ fn swap_staged_facet_cache(conn: &mut rusqlite::Connection) -> Result<usize, Str
             row.get(0)
         })
         .map_err(|error| error.to_string())?;
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let _hold = super::write_hold::WriteHold::begin("facets.swap_staged_cache");
     tx.execute("DELETE FROM main.facet_cache", [])
         .map_err(|error| error.to_string())?;
     tx.execute(
@@ -59,9 +62,11 @@ fn swap_staged_facet_cache(conn: &mut rusqlite::Connection) -> Result<usize, Str
         [],
     )
     .map_err(|error| error.to_string())?;
-    tx.commit().map_err(|error| error.to_string())?;
-    conn.execute("DROP TABLE temp.facet_cache", [])
+    tx.execute("DROP TABLE temp.facet_cache", [])
         .map_err(|error| error.to_string())?;
+    // The staged rows come from an older snapshot; mask them against the live images.
+    apply_live_privacy_to_facet_cache(&tx)?;
+    tx.commit().map_err(|error| error.to_string())?;
     Ok(count as usize)
 }
 
@@ -127,7 +132,6 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
 
         // --- PHASE 1: HARVEST ---
         {
-            let tx = conn.transaction().map_err(|e| e.to_string())?;
             println!("[FacetCache] Harvesting models from images...");
             let start_harvest = std::time::Instant::now();
             let _ = app.emit(
@@ -139,9 +143,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
                 },
             );
 
-            harvest_models(&tx)?;
-
-            tx.commit().map_err(|e| e.to_string())?;
+            harvest_models_staged(&mut conn)?;
             println!(
                 "[FacetCache] Harvest completed in {:?}.",
                 start_harvest.elapsed()
@@ -1143,11 +1145,21 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
     Ok(true)
 }
 
+fn model_hash_exists(conn: &rusqlite::Connection, hash: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM main.models WHERE hash = ?1)",
+        [hash],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn refresh_resource_facet(
     conn: &rusqlite::Connection,
     config: ResourceFacetConfig,
     name: &str,
     now: u64,
+    stage_models: bool,
 ) -> Result<bool, String> {
     let started_at = std::time::Instant::now();
 
@@ -1214,25 +1226,41 @@ fn refresh_resource_facet(
         )
         .map_err(|e| e.to_string())?;
 
-    if has_images {
+    let model_hash = format!("{}{}", config.hash_prefix, name);
+    let model_params = params![
+        model_hash,
+        name,
+        config.harvest_source,
+        now as i64,
+        config.resource_type
+    ];
+    let mut model = select_model_source(conn, config.resource_type, name)?;
+    if has_images && stage_models {
+        // A read snapshot cannot write `models`: queue the row for the swap, and use the
+        // row the insert below would have read back (only `hash` is unique on `models`).
+        if model.is_none() && !model_hash_exists(conn, &model_hash)? {
+            conn.execute(
+                "INSERT OR IGNORE INTO temp.staged_resource_models
+                 (hash, name, lookup_source, scanned_at, resource_type)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                model_params,
+            )
+            .map_err(|e| e.to_string())?;
+            model = Some(fallback_model_source(name, Some(model_hash.clone()), None));
+        }
+    } else if has_images {
         with_active_scope_model_invalidation_suppressed(conn, || {
             conn.execute(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    format!("{}{}", config.hash_prefix, name),
-                    name,
-                    config.harvest_source,
-                    now as i64,
-                    config.resource_type
-                ],
+                model_params,
             )
             .map(|_| ())
             .map_err(|e| e.to_string())
         })?;
+        model = select_model_source(conn, config.resource_type, name)?;
     }
 
-    let model = select_model_source(conn, config.resource_type, name)?;
     let model_ms = model_started_at.elapsed();
     if stats.count == 0 && model.is_none() {
         conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
@@ -1347,13 +1375,29 @@ where
         emit_progress(resource_index_progress_payload(0, total, message, 0));
     }
 
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    let refreshed = refresh_live_facet_resources_in_transaction_with_progress(
-        &tx,
-        touches,
-        &mut emit_progress,
-    )?;
-    tx.commit().map_err(|e| e.to_string())?;
+    // Same staging as the incremental rebuild: the refresh reads for most of a minute on a
+    // large library, and doing it in place held the write lock all that time (#464).
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS temp.staged_resource_models;
+         CREATE TEMP TABLE staged_resource_models (
+            hash TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            lookup_source TEXT,
+            scanned_at INTEGER,
+            resource_type TEXT
+         );",
+    )
+    .map_err(|e| e.to_string())?;
+    let staged = create_facet_staging_table(conn)
+        .and_then(|()| stage_live_facet_resources(conn, touches, &mut emit_progress))
+        .and_then(|(refreshed, marker)| {
+            swap_staged_facet_resources(conn, &items, &marker).map(|()| refreshed)
+        });
+    let _ = conn.execute_batch(
+        "DROP TABLE IF EXISTS temp.facet_cache;
+         DROP TABLE IF EXISTS temp.staged_resource_models;",
+    );
+    let refreshed = staged?;
 
     if total > 0 {
         emit_progress(resource_index_progress_payload(
@@ -1364,17 +1408,86 @@ where
     Ok(refreshed)
 }
 
+fn stage_live_facet_resources<F>(
+    conn: &mut rusqlite::Connection,
+    touches: &FacetResourceTouches,
+    emit_progress: &mut F,
+) -> Result<(usize, Option<ScopeChangeMarker>), String>
+where
+    F: FnMut(ResourceIndexProgressPayload),
+{
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let marker = read_scope_change_marker(&tx)?;
+    let refreshed = refresh_live_facet_resources_in_transaction_with_progress(
+        &tx,
+        touches,
+        emit_progress,
+        true,
+    )?;
+    sanitize_owner_hidden_facet_thumbnails(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok((refreshed, marker))
+}
+
+/// Replaces the refreshed resources' live rows with the staged ones in one short
+/// transaction; see `swap_staged_facet_types` for why a stale snapshot still swaps.
+fn swap_staged_facet_resources(
+    conn: &mut rusqlite::Connection,
+    items: &[ResourceRefreshItem],
+    staged_marker: &Option<ScopeChangeMarker>,
+) -> Result<(), String> {
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let _hold = super::write_hold::WriteHold::begin("facets.swap_staged_resources");
+    with_active_scope_model_invalidation_suppressed(&tx, || {
+        tx.execute(
+            "INSERT OR IGNORE INTO main.models (hash, name, lookup_source, scanned_at, resource_type)
+             SELECT hash, name, lookup_source, scanned_at, resource_type
+             FROM temp.staged_resource_models ORDER BY rowid",
+            [],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    })?;
+    for item in items {
+        // The same rows each refresh function deletes before rebuilding its resource.
+        let sql = match item.kind {
+            ResourceIndexKind::Tools => {
+                "DELETE FROM main.facet_cache WHERE facet_type = ?1 AND resource_name = ?2"
+            }
+            _ => {
+                "DELETE FROM main.facet_cache
+                 WHERE facet_type = ?1 AND LOWER(resource_name) = LOWER(?2)"
+            }
+        };
+        tx.execute(sql, params![item.kind.facet_type(), item.name])
+            .map_err(|e| e.to_string())?;
+    }
+    tx.execute(
+        "INSERT INTO main.facet_cache SELECT * FROM temp.facet_cache",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute("DROP TABLE temp.facet_cache", [])
+        .map_err(|e| e.to_string())?;
+    apply_live_privacy_to_facet_cache(&tx)?;
+    mark_owner_cache_dirty_if_changed(&tx, staged_marker)?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
 pub(crate) fn refresh_live_facet_resources_in_transaction(
     conn: &rusqlite::Connection,
     touches: &FacetResourceTouches,
 ) -> Result<usize, String> {
-    refresh_live_facet_resources_in_transaction_with_progress(conn, touches, &mut |_| {})
+    refresh_live_facet_resources_in_transaction_with_progress(conn, touches, &mut |_| {}, false)
 }
 
 fn refresh_live_facet_resources_in_transaction_with_progress<F>(
     conn: &rusqlite::Connection,
     touches: &FacetResourceTouches,
     emit_progress: &mut F,
+    stage_models: bool,
 ) -> Result<usize, String>
 where
     F: FnMut(ResourceIndexProgressPayload),
@@ -1395,7 +1508,7 @@ where
             ResourceIndexKind::Tools => refresh_tool_facet(conn, &item.name)?,
             _ => {
                 let config = resource_config(item.kind.facet_type())?;
-                refresh_resource_facet(conn, config, &item.name, now)?
+                refresh_resource_facet(conn, config, &item.name, now, stage_models)?
             }
         };
 
@@ -1466,19 +1579,69 @@ fn rebuild_incremental_facet_types(
         return Ok(Vec::new());
     }
 
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
     // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
-    harvest_models(&tx)?;
+    harvest_models_staged(conn)?;
 
-    for db_facet_type in &normalized_types {
+    // Build into a TEMP table that shadows the live cache on this connection, under a read
+    // snapshot only, then swap the rows in one short write transaction. Building in place
+    // held the write lock for the whole build, 30-40 s on a large library, and every user
+    // write in that window failed (#464).
+    create_facet_staging_table(conn)?;
+    let staged = stage_incremental_facet_types(conn, &normalized_types)
+        .and_then(|marker| swap_staged_facet_types(conn, &normalized_types, &marker));
+    if staged.is_err() {
+        let _ = conn.execute("DROP TABLE IF EXISTS temp.facet_cache", []);
+    }
+    staged?;
+
+    Ok(normalized_types)
+}
+
+/// The owner scope cache's change counter as a staged build saw it. Library and resource
+/// triggers advance it (m69-m85), so a swap can tell that its snapshot is out of date.
+#[derive(Debug, PartialEq, Eq)]
+struct ScopeChangeMarker {
+    scope_key: String,
+    generation: i64,
+}
+
+fn read_scope_change_marker(
+    conn: &rusqlite::Connection,
+) -> Result<Option<ScopeChangeMarker>, String> {
+    conn.query_row(
+        "SELECT s.scope_key, s.generation
+         FROM invoke_scope_cache_control control
+         JOIN invoke_scope_cache_state s ON s.scope_key = control.active_scope_key
+         WHERE control.state_key = 'current'",
+        [],
+        |row| {
+            Ok(ScopeChangeMarker {
+                scope_key: row.get(0)?,
+                generation: row.get(1)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// Brings swapped-in rows up to the live library: the staged rows come from an older
+/// snapshot, and an image masked or hidden since must not show as a facet thumbnail.
+fn apply_live_privacy_to_facet_cache(conn: &rusqlite::Connection) -> Result<(), String> {
+    sanitize_owner_hidden_facet_thumbnails(conn)?;
+    crate::db::commands::image_commands::mask_facet_cache_thumbnails(conn)
+}
+
+fn stage_incremental_facet_types(
+    conn: &mut rusqlite::Connection,
+    normalized_types: &[String],
+) -> Result<Option<ScopeChangeMarker>, String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    // Read inside the build's snapshot, so the marker matches the rows staged.
+    let marker = read_scope_change_marker(&tx)?;
+
+    for db_facet_type in normalized_types {
         let facet_started_at = std::time::Instant::now();
-
-        tx.execute(
-            "DELETE FROM facet_cache WHERE facet_type = ?1",
-            [db_facet_type],
-        )
-        .map_err(|e| e.to_string())?;
 
         match db_facet_type.as_str() {
             "checkpoints" => build_checkpoint_facets(&tx)?,
@@ -1501,8 +1664,70 @@ fn rebuild_incremental_facet_types(
     sanitize_owner_hidden_facet_thumbnails(&tx)?;
 
     tx.commit().map_err(|e| e.to_string())?;
+    Ok(marker)
+}
 
-    Ok(normalized_types)
+/// Replaces the requested types' live rows with the staged ones in one transaction, so a
+/// reader sees either the old cache or all of the rebuilt types, never part of them.
+///
+/// A change committed while the rows were staged is not in them. The swap still goes ahead,
+/// so a busy library cannot keep the cache from ever updating, and the change converges:
+/// the trigger that advanced the marker also marked the owner scope cache dirty (or, during
+/// an owner-cache build, makes its commit fail and retry), so the owner repair rebuilds it.
+/// Each frontend writer also queues its own facet refresh after its write. Only privacy
+/// cannot wait for that, so the live mask is applied inside the swap.
+fn swap_staged_facet_types(
+    conn: &mut rusqlite::Connection,
+    normalized_types: &[String],
+    staged_marker: &Option<ScopeChangeMarker>,
+) -> Result<(), String> {
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let _hold = super::write_hold::WriteHold::begin("facets.swap_staged_types");
+    let placeholders = vec!["?"; normalized_types.len()].join(", ");
+    tx.execute(
+        &format!("DELETE FROM main.facet_cache WHERE facet_type IN ({placeholders})"),
+        rusqlite::params_from_iter(normalized_types),
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO main.facet_cache SELECT * FROM temp.facet_cache",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute("DROP TABLE temp.facet_cache", [])
+        .map_err(|e| e.to_string())?;
+    // With the staging table gone these reach the live cache, against the live images.
+    apply_live_privacy_to_facet_cache(&tx)?;
+    mark_owner_cache_dirty_if_changed(&tx, staged_marker)?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+fn mark_owner_cache_dirty_if_changed(
+    conn: &rusqlite::Connection,
+    staged_marker: &Option<ScopeChangeMarker>,
+) -> Result<(), String> {
+    let live_marker = read_scope_change_marker(conn)?;
+    if let (Some(staged), Some(live)) = (staged_marker, &live_marker) {
+        if staged != live {
+            // Defensive: the coordinator lock keeps an owner commit out of this window, so
+            // the trigger's dirty mark is still there. Never leave it 'ready' on old rows.
+            conn.execute(
+                "UPDATE invoke_scope_cache_state
+                 SET status = 'dirty', updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                 WHERE scope_key = ?1 AND status = 'ready'",
+                [&live.scope_key],
+            )
+            .map_err(|e| e.to_string())?;
+            log::info!(
+                "[FacetCache] library changed during the staged rebuild (generation {} -> {}); the owner cache stays dirty for repair",
+                staged.generation,
+                live.generation
+            );
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1876,11 +2101,50 @@ fn get_valid_facet_names_for_query(
     })
 }
 
+#[cfg(test)]
 fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
-    with_active_scope_model_invalidation_suppressed(conn, || harvest_models_inner(conn))
+    with_active_scope_model_invalidation_suppressed(conn, || harvest_models_into(conn, "models"))
 }
 
-fn harvest_models_inner(conn: &rusqlite::Connection) -> Result<(), String> {
+/// Harvests the library's models without holding the write lock for the scan (#464).
+/// The scan of `images` fills a TEMP table under a read snapshot; only the insert of
+/// its rows into `models`, almost always none new, runs in a write transaction.
+fn harvest_models_staged(conn: &mut rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS temp.harvested_models;
+         CREATE TEMP TABLE harvested_models AS
+         SELECT hash, name, lookup_source, scanned_at, resource_type FROM main.models WHERE 0;",
+    )
+    .map_err(|e| e.to_string())?;
+    let result = (|| {
+        let scan = conn.transaction().map_err(|e| e.to_string())?;
+        harvest_models_into(&scan, "temp.harvested_models")?;
+        scan.commit().map_err(|e| e.to_string())?;
+
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let _hold = super::write_hold::WriteHold::begin("facets.harvest_models");
+        with_active_scope_model_invalidation_suppressed(&tx, || {
+            // Rowid order keeps the scan's order, so a hash seen twice keeps the same name.
+            tx.execute(
+                "INSERT OR IGNORE INTO main.models (hash, name, lookup_source, scanned_at, resource_type)
+                 SELECT hash, name, lookup_source, scanned_at, resource_type
+                 FROM temp.harvested_models ORDER BY rowid",
+                [],
+            )
+            .map(|_| ())
+            .map_err(|e| format!("Harvest insert failed: {}", e))
+        })?;
+        tx.commit().map_err(|e| e.to_string())
+    })();
+    let dropped = conn
+        .execute("DROP TABLE IF EXISTS temp.harvested_models", [])
+        .map_err(|e| e.to_string());
+    result.and(dropped.map(|_| ()))
+}
+
+fn harvest_models_into(conn: &rusqlite::Connection, target: &str) -> Result<(), String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -1890,7 +2154,8 @@ fn harvest_models_inner(conn: &rusqlite::Connection) -> Result<(), String> {
     // OPTIMIZATION: Use the `model_hash` and `resolved_model_name` columns directly
     // instead of parsing metadata_json.
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+        &format!(
+            "INSERT OR IGNORE INTO {target} (hash, name, lookup_source, scanned_at, resource_type)
             SELECT DISTINCT
             model_hash,
             resolved_model_name,
@@ -1900,7 +2165,8 @@ fn harvest_models_inner(conn: &rusqlite::Connection) -> Result<(), String> {
             FROM scoped_images
             WHERE invoke_scope_hidden = 0
             AND model_hash IS NOT NULL
-            AND resolved_model_name IS NOT NULL",
+            AND resolved_model_name IS NOT NULL"
+        ),
         params![now],
     )
     .map_err(|e| format!("Harvest Checkpoints failed: {}", e))?;
@@ -1954,7 +2220,7 @@ fn harvest_models_inner(conn: &rusqlite::Connection) -> Result<(), String> {
 
         conn.execute(
             &format!(
-                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+                "INSERT OR IGNORE INTO {} (hash, name, lookup_source, scanned_at, resource_type)
                 SELECT DISTINCT
                 '{}' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''),
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''),
@@ -1965,6 +2231,7 @@ fn harvest_models_inner(conn: &rusqlite::Connection) -> Result<(), String> {
                 INNER JOIN scoped_images i ON i.id = jt.image_id
                 WHERE i.invoke_scope_hidden = 0
                 AND jt.{} IS NOT NULL AND jt.{} != ''",
+                target,
                 prefix, col,
                 col,
                 source,
@@ -2495,6 +2762,10 @@ fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "facets_lock_bench.rs"]
+mod lock_bench;
 
 #[cfg(test)]
 mod tests {
@@ -3945,5 +4216,346 @@ mod tests {
             )
             .unwrap();
         assert_eq!(override_sensitive, 0);
+    }
+
+    /// Opens a file library in WAL mode, as the app does, with `images` rows that use
+    /// every facet type. A shared in-memory database cannot show WAL lock behaviour.
+    fn open_lock_test_library(
+        name: &str,
+        image_count: i64,
+    ) -> (std::path::PathBuf, rusqlite::Connection) {
+        let path = std::env::temp_dir().join(format!(
+            "ambit-464-{name}-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        crate::db::configure_connection(&conn).unwrap();
+        for migration in init_db() {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch(&format!(
+            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < {image_count})
+             INSERT INTO images (id, path, timestamp, tool, thumbnail_path, resolved_model_name, model_hash)
+             SELECT 'img-' || x, 'img-' || x || '.png', x, 'Tool' || (x % 7), 'thumb-' || x || '.webp',
+                    'Model' || (x % 40), 'hash-' || (x % 40)
+             FROM n;
+             INSERT INTO image_loras (image_id, lora_name) SELECT id, 'Lora' || (timestamp % 90) FROM images;
+             INSERT INTO image_embeddings (image_id, embedding_name) SELECT id, 'Emb' || (timestamp % 30) FROM images;
+             INSERT INTO image_hypernetworks (image_id, hypernetwork_name) SELECT id, 'Hyper' || (timestamp % 5) FROM images;
+             INSERT INTO image_controlnets (image_id, controlnet_name) SELECT id, 'Cnet' || (timestamp % 11) FROM images;
+             INSERT INTO image_ipadapters (image_id, ipadapter_name) SELECT id, 'Ipad' || (timestamp % 13) FROM images;
+             CREATE TABLE user_write_probe (id INTEGER PRIMARY KEY, n INTEGER NOT NULL);
+             INSERT INTO user_write_probe (id, n) VALUES (1, 0);"
+        ))
+        .unwrap();
+        (path, conn)
+    }
+
+    fn remove_lock_test_library(path: &std::path::Path) {
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
+    // #464: the post-mask refresh rebuilt six facet types inside one write transaction,
+    // so every mask, favorite or count write in the next 30-40 s on a large library
+    // waited out its busy timeout and failed. A user write must get in while it builds.
+    #[test]
+    fn incremental_facet_rebuild_leaves_user_writes_free_while_it_builds() {
+        let (path, _setup) = open_lock_test_library("incremental", 4_000);
+        let mut rebuild = rusqlite::Connection::open(&path).unwrap();
+        crate::db::configure_connection(&rebuild).unwrap();
+
+        // A user write that will not wait: it fails at once while the lock is held.
+        let user = rusqlite::Connection::open(&path).unwrap();
+        user.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let user = std::panic::AssertUnwindSafe(user);
+        let succeeded = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let refused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        {
+            let succeeded = succeeded.clone();
+            let refused = refused.clone();
+            rebuild.progress_handler(
+                2_000,
+                Some(move || {
+                    match user.execute("UPDATE user_write_probe SET n = n + 1 WHERE id = 1", []) {
+                        Ok(_) => succeeded.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                        Err(_) => refused.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                    };
+                    false
+                }),
+            );
+        }
+
+        let facet_types: Vec<String> = [
+            "checkpoints",
+            "loras",
+            "embeddings",
+            "hypernetworks",
+            "controlNets",
+            "ipAdapters",
+        ]
+        .iter()
+        .map(|facet_type| facet_type.to_string())
+        .collect();
+        rebuild_incremental_facet_types(&mut rebuild, &facet_types).unwrap();
+        rebuild.progress_handler(0, None::<fn() -> bool>);
+
+        let succeeded = succeeded.load(std::sync::atomic::Ordering::Relaxed);
+        let refused = refused.load(std::sync::atomic::Ordering::Relaxed);
+        let lora_rows: i64 = rebuild
+            .query_row(
+                "SELECT COUNT(*) FROM main.facet_cache WHERE facet_type = 'loras'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(rebuild);
+        remove_lock_test_library(&path);
+
+        assert!(
+            succeeded + refused >= 20,
+            "too few probes ran: {succeeded} + {refused}"
+        );
+        // Only the short swap at the end may turn a write away.
+        assert!(
+            refused * 10 <= succeeded + refused,
+            "user writes were refused while the rebuild ran: {refused} refused, {succeeded} succeeded"
+        );
+        assert_eq!(
+            lora_rows, 90,
+            "the rebuilt LoRA facets must be in the live cache"
+        );
+    }
+
+    // #464: the owner-cache repair refreshes up to 64 resources at a time; doing that in
+    // one write transaction held the lock for ~49 s on the owner's library.
+    #[test]
+    fn resource_refresh_leaves_user_writes_free_while_it_reads() {
+        let (path, _setup) = open_lock_test_library("resources", 4_000);
+        let mut refresh = rusqlite::Connection::open(&path).unwrap();
+        crate::db::configure_connection(&refresh).unwrap();
+
+        let user = rusqlite::Connection::open(&path).unwrap();
+        user.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let user = std::panic::AssertUnwindSafe(user);
+        let succeeded = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let refused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        {
+            let succeeded = succeeded.clone();
+            let refused = refused.clone();
+            refresh.progress_handler(
+                2_000,
+                Some(move || {
+                    match user.execute("UPDATE user_write_probe SET n = n + 1 WHERE id = 1", []) {
+                        Ok(_) => succeeded.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                        Err(_) => refused.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                    };
+                    false
+                }),
+            );
+        }
+
+        let touches = FacetResourceTouches {
+            checkpoints: vec!["Model1".to_string(), "Model2".to_string()],
+            loras: (0..30).map(|n| format!("Lora{n}")).collect(),
+            embeddings: vec!["Emb1".to_string(), "Emb2".to_string()],
+            tools: vec!["Tool1".to_string()],
+            ..Default::default()
+        };
+        let refreshed = refresh_live_facet_resources(&mut refresh, &touches).unwrap();
+        refresh.progress_handler(0, None::<fn() -> bool>);
+
+        let succeeded = succeeded.load(std::sync::atomic::Ordering::Relaxed);
+        let refused = refused.load(std::sync::atomic::Ordering::Relaxed);
+        let lora_rows: i64 = refresh
+            .query_row(
+                "SELECT COUNT(*) FROM main.facet_cache WHERE facet_type = 'loras'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let lora_models: i64 = refresh
+            .query_row(
+                "SELECT COUNT(*) FROM main.models WHERE resource_type = ?1",
+                [resource_config("loras").unwrap().resource_type],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(refresh);
+        remove_lock_test_library(&path);
+
+        assert_eq!(refreshed, 35);
+        assert!(
+            succeeded + refused >= 20,
+            "too few probes ran: {succeeded} + {refused}"
+        );
+        assert!(
+            refused * 10 <= succeeded + refused,
+            "user writes were refused while the refresh ran: {refused} refused, {succeeded} succeeded"
+        );
+        assert_eq!(
+            lora_rows, 30,
+            "the refreshed rows must be in the live cache"
+        );
+        // The refresh registers a model for each resource it finds in use.
+        assert_eq!(lora_models, 30);
+    }
+
+    fn stage_loras(conn: &mut rusqlite::Connection) -> Option<ScopeChangeMarker> {
+        harvest_models_staged(conn).unwrap();
+        create_facet_staging_table(conn).unwrap();
+        stage_incremental_facet_types(conn, &["loras".to_string()]).unwrap()
+    }
+
+    // #464 review: the staged rows come from a snapshot taken before the swap. An image the
+    // user masks in between must not come back as a visible facet thumbnail.
+    #[test]
+    fn image_masked_while_facets_stage_is_not_a_visible_thumbnail_after_the_swap() {
+        let (path, setup) = open_lock_test_library("privacy-swap", 1);
+        let mut rebuild = rusqlite::Connection::open(&path).unwrap();
+        crate::db::configure_connection(&rebuild).unwrap();
+
+        let marker = stage_loras(&mut rebuild);
+        let staged: (Option<String>, i64) = rebuild
+            .query_row(
+                "SELECT safe_thumbnail_path, thumbnail_is_sensitive FROM temp.facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'Lora1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(staged, (Some("thumb-1.webp".to_string()), 0));
+
+        setup
+            .execute("UPDATE images SET user_masked = 1 WHERE id = 'img-1'", [])
+            .unwrap();
+        swap_staged_facet_types(&mut rebuild, &["loras".to_string()], &marker).unwrap();
+
+        let live: (Option<String>, i64) = rebuild
+            .query_row(
+                "SELECT safe_thumbnail_path, thumbnail_is_sensitive FROM facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'Lora1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        drop(rebuild);
+        drop(setup);
+        remove_lock_test_library(&path);
+        assert_eq!(
+            live,
+            (None, 1),
+            "the masked image must not be a safe or plain thumbnail"
+        );
+    }
+
+    // #464 review: a swap of rows staged before a library change still goes ahead, and the
+    // owner scope cache is left dirty, so its repair brings the change in.
+    #[test]
+    fn swap_of_a_stale_snapshot_leaves_the_owner_cache_dirty() {
+        let (path, setup) = open_lock_test_library("stale-swap", 3);
+        let mut rebuild = rusqlite::Connection::open(&path).unwrap();
+        crate::db::configure_connection(&rebuild).unwrap();
+        // The library's models are already known, as after any earlier rebuild.
+        harvest_models_staged(&mut rebuild).unwrap();
+        setup
+            .execute_batch(
+                "INSERT INTO invoke_scope_cache_state (
+                     scope_key, db_path, images_root, scope_mode, owner_id,
+                     status, generation, built_generation, updated_at
+                 ) VALUES ('scope-a', 'db', 'root', 'all', NULL, 'ready', 4, 4, 0);
+                 UPDATE invoke_scope_cache_control SET active_scope_key = 'scope-a'
+                 WHERE state_key = 'current';",
+            )
+            .unwrap();
+
+        let marker = stage_loras(&mut rebuild);
+        assert_eq!(
+            marker,
+            Some(ScopeChangeMarker {
+                scope_key: "scope-a".to_string(),
+                generation: 4
+            })
+        );
+        setup
+            .execute("UPDATE images SET timestamp = 99 WHERE id = 'img-2'", [])
+            .unwrap();
+        swap_staged_facet_types(&mut rebuild, &["loras".to_string()], &marker).unwrap();
+
+        let (status, lora_rows): (String, i64) = rebuild
+            .query_row(
+                "SELECT (SELECT status FROM invoke_scope_cache_state WHERE scope_key = 'scope-a'),
+                        (SELECT COUNT(*) FROM facet_cache WHERE facet_type = 'loras')",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let staging_left: i64 = rebuild
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_temp_master WHERE name = 'facet_cache'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(rebuild);
+        drop(setup);
+        remove_lock_test_library(&path);
+        assert_eq!(status, "dirty");
+        assert_eq!(lora_rows, 3, "the swap still replaces the cache");
+        assert_eq!(
+            staging_left, 0,
+            "the staging table must not outlive the swap"
+        );
+    }
+
+    // A failed staged rebuild must leave the live cache as it was and drop its staging
+    // table, so the connection holds no TEMP shadow or open transaction afterwards.
+    #[test]
+    fn failed_incremental_swap_keeps_the_live_cache_and_drops_the_staging_table() {
+        let (path, setup) = open_lock_test_library("failed-swap", 3);
+        setup
+            .execute(
+                "INSERT INTO facet_cache (facet_type, resource_name, count) VALUES ('loras', 'Before', 7)",
+                [],
+            )
+            .unwrap();
+        let mut rebuild = rusqlite::Connection::open(&path).unwrap();
+        crate::db::configure_connection(&rebuild).unwrap();
+        rebuild
+            .execute_batch(
+                "CREATE TEMP TRIGGER stop_incremental_swap BEFORE INSERT ON main.facet_cache
+                 BEGIN SELECT RAISE(ABORT, 'interrupted'); END;",
+            )
+            .unwrap();
+
+        assert!(rebuild_incremental_facet_types(&mut rebuild, &["loras".to_string()]).is_err());
+        let (live, staging_left, autocommit): (String, i64, bool) = (
+            rebuild
+                .query_row(
+                    "SELECT group_concat(resource_name || ':' || count) FROM main.facet_cache WHERE facet_type = 'loras'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap(),
+            rebuild
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' AND name = 'facet_cache'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap(),
+            rebuild.is_autocommit(),
+        );
+        drop(rebuild);
+        drop(setup);
+        remove_lock_test_library(&path);
+        assert_eq!(live, "Before:7");
+        assert_eq!(staging_left, 0);
+        assert!(autocommit, "no transaction may stay open after the failure");
     }
 }
