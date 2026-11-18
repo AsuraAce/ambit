@@ -16,24 +16,16 @@ describe('DonationModal', () => {
 
         fireEvent.click(screen.getByText('Sponsor on GitHub'));
 
-        // The link opens through a dynamic import of the shell plugin, so allow
-        // for a slow module load when the machine is busy.
-        await waitFor(
-            () => {
-                expect(open).toHaveBeenCalledWith('https://github.com/sponsors/AsuraAce');
-            },
-            { timeout: 10_000 }
-        );
+        await waitFor(() => {
+            expect(open).toHaveBeenCalledWith('https://github.com/sponsors/AsuraAce');
+        });
 
         fireEvent.click(screen.getByText('Buy me a coffee'));
 
-        await waitFor(
-            () => {
-                expect(open).toHaveBeenCalledWith('https://ko-fi.com/astraoriondev');
-            },
-            { timeout: 10_000 }
-        );
-    }, 20_000);
+        await waitFor(() => {
+            expect(open).toHaveBeenCalledWith('https://ko-fi.com/astraoriondev');
+        });
+    });
 
     it('closes from the dismiss button and backdrop but not the dialog body', () => {
         const onClose = vi.fn();
