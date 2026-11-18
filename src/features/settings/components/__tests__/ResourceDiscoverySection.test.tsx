@@ -69,6 +69,7 @@ describe('ResourceDiscoverySection', () => {
         expect(screen.getByRole('button', { name: 'Add Path' }).hasAttribute('disabled')).toBe(true);
         expect(screen.getByLabelText('Removing resource folder D:/StableDiffusion/models').hasAttribute('disabled')).toBe(true);
         expect(screen.getByLabelText('Remove resource folder D:/StableDiffusion/models/Lora').hasAttribute('disabled')).toBe(true);
+        expect(screen.getAllByText('Removing…')).toHaveLength(1);
     });
 
     it('forwards path editing and discovery commands', () => {

@@ -5,6 +5,7 @@ import { commands, type ResourcePurgeResult, type ThumbnailScanResult } from '..
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { useLibraryStore } from '../../../stores/libraryStore';
+import { useResourceRemovalStore } from '../../../stores/resourceRemovalStore';
 import { pickLibraryFolder, requestLibraryFolderGrant } from '../../../services/assetScope';
 import { scanResourceThumbnails } from '../../../services/importService';
 import { refreshFacetCacheForResourcesStrict, rebuildFacetCacheIncremental } from '../../../services/db/imageRepo';
@@ -103,6 +104,8 @@ const waitForResourceScanCompletionState = () => new Promise<void>((resolve) => 
 
 const getErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+const setRemovingResourcePath = (path: string | null) => useResourceRemovalStore.getState().setRemovingResourcePath(path);
+
 const isCancellationError = (error: unknown): boolean => getErrorMessage(error).toLowerCase().includes('cancel');
 
 const isLibraryBusyForHashResolution = () => {
@@ -130,10 +133,9 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const [newResourcePath, setNewResourcePath] = React.useState('');
-    const [removingResourcePath, setRemovingResourcePath] = React.useState<string | null>(null);
+    const removingResourcePath = useResourceRemovalStore((state) => state.removingResourcePath);
     const [isResolveConfirmOpen, setIsResolveConfirmOpen] = React.useState(false);
     const resourceInputRef = React.useRef<HTMLInputElement>(null);
-    const removingResourcePathRef = React.useRef<string | null>(null);
 
     const {
         isResolvingModels: isResolving,
@@ -221,7 +223,7 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
     );
 
     const handleBrowseResource = React.useCallback(async () => {
-        if (removingResourcePathRef.current) return;
+        if (useResourceRemovalStore.getState().removingResourcePath) return;
 
         try {
             const selected = await pickLibraryFolder('resourceFolder');
@@ -239,7 +241,7 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
     const handleAddResourceFolder = React.useCallback(
         async (e: React.FormEvent) => {
             e.preventDefault();
-            if (removingResourcePathRef.current) return;
+            if (useResourceRemovalStore.getState().removingResourcePath) return;
             if (!newResourcePath.trim()) return;
 
             const pathToAdd = normalizePath(newResourcePath.trim());
@@ -300,14 +302,13 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
 
     const handleRemoveResourceFolder = React.useCallback(
         async (path: string) => {
-            if (isScanningDiscovery || isPopulatingThumbnails || removingResourcePathRef.current) return;
+            if (isScanningDiscovery || isPopulatingThumbnails || useResourceRemovalStore.getState().removingResourcePath) return;
 
             const normalizedPath = normalizePath(path);
             const remainingPaths = (settings.resourceFolders || [])
                 .map(normalizePath)
                 .filter((configuredPath) => configuredPath !== normalizedPath);
 
-            removingResourcePathRef.current = normalizedPath;
             setRemovingResourcePath(path);
 
             try {
@@ -326,9 +327,8 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
                 addToast(purgeResult ? formatResourcePurgeToast(purgeResult) : 'Removed resource folder', 'success');
             } catch (error) {
                 console.error('Failed to remove resource folder', error);
-                addToast('Failed to remove resource folder', 'error');
+                addToast(getErrorMessage(error).trim() || 'Failed to remove resource folder', 'error');
             } finally {
-                removingResourcePathRef.current = null;
                 setRemovingResourcePath(null);
             }
         },
@@ -336,7 +336,7 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
     );
 
     const handleScanNow = React.useCallback(async () => {
-        if (removingResourcePathRef.current) return;
+        if (useResourceRemovalStore.getState().removingResourcePath) return;
         if (!settings.resourceFolders?.length) return;
         setIsScanningDiscovery(true);
         try {

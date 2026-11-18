@@ -370,7 +370,46 @@ describe('useResourcesTabLogic', () => {
         expect(setSettings).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().facetCacheVersion).toBe(0);
         expect(result.current.removingResourcePath).toBeNull();
+        expect(addToastMock).toHaveBeenCalledWith('facet refresh failed', 'error');
+    });
+
+    it('falls back to the generic failure text when the backend gives no message', async () => {
+        vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({ status: 'error', error: '' });
+        const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/AmbitFixtures/Models'] });
+
+        await act(async () => {
+            await result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
+        });
+
         expect(addToastMock).toHaveBeenCalledWith('Failed to remove resource folder', 'error');
+    });
+
+    it('keeps showing a running removal after the Resources tab closes and reopens', async () => {
+        const settings = { ...baseSettings, resourceFolders: ['D:/AmbitFixtures/Models'] };
+        const purge = createDeferred<Awaited<ReturnType<typeof commands.purgeResourceFolderAssets>>>();
+        vi.mocked(commands.purgeResourceFolderAssets).mockReturnValueOnce(purge.promise);
+        const first = renderResourcesHook(settings);
+
+        let removalPromise!: Promise<void>;
+        await act(async () => {
+            removalPromise = first.result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
+            await Promise.resolve();
+        });
+        first.unmount();
+
+        const second = renderResourcesHook(settings);
+        expect(second.result.current.removingResourcePath).toBe('D:/AmbitFixtures/Models');
+
+        await act(async () => {
+            await second.result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
+        });
+        expect(commands.purgeResourceFolderAssets).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            purge.resolve({ status: 'error', error: 'done' });
+            await removalPromise;
+        });
+        expect(second.result.current.removingResourcePath).toBeNull();
     });
 
     it('serializes resource cleanup and blocks discovery actions until purge completes', async () => {
