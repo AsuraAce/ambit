@@ -1,8 +1,10 @@
 ﻿import * as React from 'react';
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder, getDetectedSourceKind } from '../types';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
+import { useSearchStore } from '../stores/searchStore';
 import { useSearch } from '../contexts/SearchContext';
 import {
     processWebFiles,
@@ -18,6 +20,7 @@ import { formatUnscannableRootsWarning } from '../utils/importSourceStatus';
 import { getThumbnailDir } from '../services/thumbnailService';
 import { ensureFolderAccessible } from '../services/assetScope';
 import { rebuildFacetCache } from '../services/db/imageRepo';
+import { hasActiveResultFilters } from '../utils/filterState';
 
 interface ImportOptions {
     mode?: ImportMode;
@@ -59,6 +62,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
     const { addToast } = useToast();
     const { beginImportRun, setImportProgressForRun, finishImportRun } = useLibraryStore();
     const { refreshHiddenAvailability, refreshMetadata } = useSearch();
+    const queryClient = useQueryClient();
 
     const extractNativePaths = useCallback((files: File[]): string[] => {
         return files
@@ -79,6 +83,11 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 if (uniqueNewImages.length > 500 || (result.stats.processed > 0 && result.stats.imported > 0)) {
                     console.log(`[ImportOps] Batch import detected. Triggering full metadata refresh.`);
                     await refreshMetadata();
+                } else if (hasActiveResultFilters(useSearchStore.getState().filters)) {
+                    // New images may not belong in the collection, search or filtered view open now (an import
+                    // can outlast a view change), nor ahead of a collection's pinned images (#462), so that view
+                    // refetches with its own filters and order.
+                    await Promise.all([queryClient.invalidateQueries({ queryKey: ['images'] }), refreshCollections()]);
                 } else {
                     setImages((prev) => {
                         const reallyUnique = uniqueNewImages.filter((n) => !prev.some((p) => p.id === n.id));
@@ -124,7 +133,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 }
             }
         },
-        [images, setImages, addToast, refreshCollections, refreshMetadata, refreshHiddenAvailability]
+        [images, queryClient, setImages, addToast, refreshCollections, refreshMetadata, refreshHiddenAvailability]
     );
 
     // A filesystem root is skipped on every scan until the user replaces it, so say so in every mode.

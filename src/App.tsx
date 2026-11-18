@@ -16,6 +16,7 @@ import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { getCollectionCount } from './utils/collectionCount';
+import { orderAsDrawn, showsPinnedShelf } from './utils/pinnedShelf';
 import { useLibraryStore } from './stores/libraryStore';
 import { useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
 import { invokeSyncTrace } from './utils/invokeSyncTrace';
@@ -287,6 +288,10 @@ export default function App() {
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
+    // Shift-click ranges and drag positions count cards as drawn, pinned shelf first, so selection
+    // reads the list in that order even when the loaded list is not pinned first (#461).
+    const showPinnedShelf = showsPinnedShelf(filters, viewMode);
+    const imagesAsDrawn = React.useMemo(() => orderAsDrawn(images, showPinnedShelf), [images, showPinnedShelf]);
     const {
         selectedIds,
         setSelectedIds,
@@ -296,7 +301,7 @@ export default function App() {
         handleSelectionToggle,
         handleRangeSelection,
         clearSelection,
-    } = useSelection(images);
+    } = useSelection(imagesAsDrawn);
     const handleViewerImageClick = useCallback(
         (event: React.MouseEvent, id: string, index: number, setViewerIndex: (nextIndex: number) => void, revealGranted = false) => {
             handleImageClick(event, id, index, () => {

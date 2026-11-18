@@ -30,6 +30,7 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useProgressListeners } from '../hooks/useProgressListeners';
 import { setupGlobalLogging } from '../utils/logger';
 import { isCollectionThumbnailImage } from '../utils/thumbnailUtils';
+import { showsPinnedShelf } from '../utils/pinnedShelf';
 import type { useAppActions } from '../hooks/useAppActions';
 import type { useAppHandlers } from '../hooks/useAppHandlers';
 import type { useCollectionOperations } from '../hooks/useCollectionOperations';
@@ -292,10 +293,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     //     const toggleFavorite = storeToggleFavorite;
 
     // --- Performance Logic (Moved from JSX to resolve Rules of Hooks violation) ---
-    const showPinnedInShelf = React.useMemo(
-        () => filters.collectionId !== null && viewMode !== 'timeline' && !filters.pinnedOnly,
-        [filters.collectionId, viewMode, filters.pinnedOnly]
-    );
+    // Selection reads the images in this shelf-then-grid order (App, orderAsDrawn), so shelf and grid positions index it (#461).
+    const showPinnedInShelf = showsPinnedShelf(filters, viewMode);
 
     const pinnedImages = React.useMemo(() => (showPinnedInShelf ? images.filter((i) => i.isPinned) : []), [showPinnedInShelf, images]);
     const gridItems = React.useMemo(() => (showPinnedInShelf ? images.filter((i) => !i.isPinned) : images), [showPinnedInShelf, images]);
