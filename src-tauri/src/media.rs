@@ -34,6 +34,50 @@ const MINIMAL_STDOUT_LIMIT: usize = 256 * 1024;
 const STDERR_LIMIT: usize = 32 * 1024;
 const POSTER_LIMIT: usize = 2 * 1024 * 1024;
 const POSTER_SOURCE: &str = "ambit-video-v1";
+const VIDEO_POSTER_UPDATE_SQL: &str = "UPDATE images
+     SET thumbnail_path = ?1,
+         thumbnail_source = ?2,
+         thumbnail_version = 1,
+         thumbnail_failure_count = 0,
+         thumbnail_last_error = NULL
+     WHERE id = ?3 AND media_type = 'video' AND is_deleted = 0
+       AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)";
+const VIDEO_METADATA_UPDATE_SQL: &str = "UPDATE images SET
+        metadata_json = ?1,
+        original_parsed_json = ?2,
+        original_metadata_json = ?3,
+        parser_version = ?4,
+        model_name = ?5,
+        tool = ?6,
+        resolved_model_name = ?5,
+        steps = ?7,
+        seed = ?8,
+        cfg = ?9,
+        sampler = ?10,
+        generation_type = ?11,
+        positive_prompt = ?12,
+        negative_prompt = ?13,
+        detected_source_kind = ?14,
+        source_kind_override = CASE
+            WHEN source_kind_override = 'photograph' THEN NULL
+            ELSE source_kind_override
+        END,
+        source_kind = COALESCE(
+            CASE
+                WHEN source_kind_override = 'photograph' THEN NULL
+                ELSE source_kind_override
+            END,
+            ?14
+        ),
+        display_timestamp = timestamp
+     WHERE id = ?15 AND media_type = 'video'
+       AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)";
+const VIDEO_PROBE_INVALID_SQL: &str = "UPDATE images
+     SET probe_status = 'invalid',
+         playback_status = 'external_required',
+         is_corrupt = 1
+     WHERE media_type = 'video' AND (id = ?1 OR path = ?1)
+       AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)";
 const UPSERT_VIDEO_ASSET_SQL: &str = r#"
     INSERT INTO images (
         id, path, width, height, file_size, timestamp, metadata_json,
@@ -583,13 +627,7 @@ pub async fn store_video_poster(
         let normalized_thumbnail = normalized_thumbnail.clone();
         move |conn| {
             conn.execute(
-                "UPDATE images
-                 SET thumbnail_path = ?1,
-                     thumbnail_source = ?2,
-                     thumbnail_version = 1,
-                     thumbnail_failure_count = 0,
-                     thumbnail_last_error = NULL
-                 WHERE id = ?3 AND media_type = 'video' AND is_deleted = 0 AND id IN (SELECT id FROM scoped_images)",
+                VIDEO_POSTER_UPDATE_SQL,
                 params![normalized_thumbnail, POSTER_SOURCE, asset_id],
             )
             .map_err(|error| error.to_string())?;
@@ -1048,35 +1086,7 @@ fn update_video_metadata_record(
     let original_parsed_json =
         serde_json::to_string(parsed_metadata).map_err(|error| error.to_string())?;
     tx.execute(
-        "UPDATE images SET
-            metadata_json = ?1,
-            original_parsed_json = ?2,
-            original_metadata_json = ?3,
-            parser_version = ?4,
-            model_name = ?5,
-            tool = ?6,
-            resolved_model_name = ?5,
-            steps = ?7,
-            seed = ?8,
-            cfg = ?9,
-            sampler = ?10,
-            generation_type = ?11,
-            positive_prompt = ?12,
-            negative_prompt = ?13,
-            detected_source_kind = ?14,
-            source_kind_override = CASE
-                WHEN source_kind_override = 'photograph' THEN NULL
-                ELSE source_kind_override
-            END,
-            source_kind = COALESCE(
-                CASE
-                    WHEN source_kind_override = 'photograph' THEN NULL
-                    ELSE source_kind_override
-                END,
-                ?14
-            ),
-            display_timestamp = timestamp
-         WHERE id = ?15 AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+        VIDEO_METADATA_UPDATE_SQL,
         params![
             metadata_json,
             original_parsed_json,
@@ -1106,15 +1116,8 @@ async fn mark_known_video_probe_invalid(
     normalized_path: String,
 ) -> Result<(), String> {
     run_blocking(app, move |conn| {
-        conn.execute(
-            "UPDATE images
-             SET probe_status = 'invalid',
-                 playback_status = 'external_required',
-                 is_corrupt = 1
-             WHERE media_type = 'video' AND (id = ?1 OR path = ?1) AND id IN (SELECT id FROM scoped_images)",
-            [&normalized_path],
-        )
-        .map_err(|error| error.to_string())?;
+        conn.execute(VIDEO_PROBE_INVALID_SQL, [&normalized_path])
+            .map_err(|error| error.to_string())?;
         Ok(())
     })
     .await
@@ -1480,6 +1483,28 @@ mod tests {
     };
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    // #466: video poster, metadata and probe writes touch one row. A scope check that reads
+    // the whole library holds the write lock for that read, and user writes fail behind it.
+    #[test]
+    fn video_writes_check_scope_by_row() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql).expect("apply migration");
+        }
+        let mut scans = Vec::new();
+        for sql in [
+            super::VIDEO_POSTER_UPDATE_SQL,
+            super::VIDEO_METADATA_UPDATE_SQL,
+            super::VIDEO_PROBE_INVALID_SQL,
+        ] {
+            scans.push(crate::db::subquery_scans(&conn, sql));
+        }
+        assert!(
+            scans.iter().all(Vec::is_empty),
+            "scope checks must not scan: {scans:?}"
+        );
+    }
 
     // #415: `prepare_video_playback` grants the file a library row names. The
     // webview can write library rows, so a row naming a file outside every grant
