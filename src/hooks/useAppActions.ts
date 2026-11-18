@@ -6,6 +6,7 @@ import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import {
+    flagWriteDeadline,
     rebuildThumbnailFacetCache,
     setImageSourceKind,
     toggleImageFavorite,
@@ -110,6 +111,13 @@ export const useAppActions = ({
         });
     }, [filters.collectionId, refreshCollections, refreshSmartCounts]);
 
+    // A bulk flag write that fails partway leaves the earlier images changed in the database, so
+    // reload the gallery and collection counts from it after the rollback.
+    const resyncAfterPartialFlagWrite = React.useCallback(() => {
+        void queryClient.invalidateQueries({ queryKey: ['images'] });
+        refreshCollectionsAfterImageFlagChange();
+    }, [queryClient, refreshCollectionsAfterImageFlagChange]);
+
     const persistPinChanges = React.useCallback(
         async (
             ids: string[],
@@ -120,10 +128,16 @@ export const useAppActions = ({
             previousActiveImage?: AIImage,
             restoreGallery = true
         ) => {
+            // One write at a time: each retries while the library is busy, and a large selection in
+            // parallel would hold every pooled connection and stall gallery reads. All of them share
+            // one deadline from the click, so a bulk toggle fails within about 15 s, not 15 s per image.
+            const deadline = flagWriteDeadline();
+            let written = 0;
             try {
-                // One write at a time: each retries while the library is busy, and a large selection
-                // in parallel would hold every pooled connection and stall gallery reads.
-                for (const id of ids) await toggleImagePin(id, isPinned);
+                for (const id of ids) {
+                    await toggleImagePin(id, isPinned, deadline);
+                    written += 1;
+                }
                 if (!restoreGallery) {
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                 }
@@ -145,17 +159,32 @@ export const useAppActions = ({
                 if (previousActiveImage && activeImageState) {
                     activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
                 }
+                // The rollback reverts every image, but the writes before the failure did land.
+                if (written > 0) resyncAfterPartialFlagWrite();
                 addToast(errorMessage, 'error');
             }
         },
-        [refreshCollectionsAfterImageFlagChange, setImages, addToast, queryClient, imagesQueryKey, activeImageState]
+        [
+            refreshCollectionsAfterImageFlagChange,
+            resyncAfterPartialFlagWrite,
+            setImages,
+            addToast,
+            queryClient,
+            imagesQueryKey,
+            activeImageState,
+        ]
     );
 
     const persistFavoriteChanges = React.useCallback(
         async (ids: string[], isFavorite: boolean, previousImages: typeof images, previousActiveImage?: AIImage, restoreGallery = true) => {
+            // One write at a time with one deadline from the click, as for pins above.
+            const deadline = flagWriteDeadline();
+            let written = 0;
             try {
-                // One write at a time, as for pins above.
-                for (const id of ids) await toggleImageFavorite(id, isFavorite);
+                for (const id of ids) {
+                    await toggleImageFavorite(id, isFavorite, deadline);
+                    written += 1;
+                }
                 refreshCollectionsAfterImageFlagChange();
             } catch (error) {
                 console.error('[Favorite] Failed to persist favorite state', error);
@@ -170,10 +199,11 @@ export const useAppActions = ({
                 if (previousActiveImage && activeImageState) {
                     activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
                 }
+                if (written > 0) resyncAfterPartialFlagWrite();
                 addToast('Failed to update favorite state', 'error');
             }
         },
-        [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, activeImageState]
+        [addToast, queryClient, refreshCollectionsAfterImageFlagChange, resyncAfterPartialFlagWrite, setImages, activeImageState]
     );
 
     const executeDeleteByIds = React.useCallback(

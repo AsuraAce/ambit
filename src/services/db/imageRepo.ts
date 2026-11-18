@@ -918,6 +918,8 @@ const FAVORITE_SQL =
 // snapshot taken at its click, so it must give up while that snapshot is still recent.
 const FLAG_WRITE_BUSY_BUDGET_MS = 15_000;
 const FLAG_WRITE_RETRY_DELAY_MS = 250;
+/** One deadline for every write a click makes, so a bulk toggle also gives up about 15 s after the click. */
+export const flagWriteDeadline = () => Date.now() + FLAG_WRITE_BUSY_BUDGET_MS;
 const isDatabaseBusy = (error: unknown) =>
     /database is locked|pool timed out/i.test(error instanceof Error ? error.message : String(error));
 
@@ -940,9 +942,13 @@ const retryWhileDatabaseBusy = async (write: () => Promise<void>, deadline: numb
 // Writes to one image's flag run in order, so a retrying older toggle never lands after a newer one.
 const pendingFlagWrites = new Map<string, Promise<void>>();
 
-const writeImageFlag = (flag: 'favorite' | 'pin', normalizedId: string, write: () => Promise<void>): Promise<void> => {
+const writeImageFlag = (
+    flag: 'favorite' | 'pin',
+    normalizedId: string,
+    write: () => Promise<void>,
+    deadline = flagWriteDeadline()
+): Promise<void> => {
     const key = `${flag}:${normalizedId}`;
-    const deadline = Date.now() + FLAG_WRITE_BUSY_BUDGET_MS;
     const previous = pendingFlagWrites.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(() => retryWhileDatabaseBusy(write, deadline));
     pendingFlagWrites.set(key, current);
@@ -953,42 +959,54 @@ const writeImageFlag = (flag: 'favorite' | 'pin', normalizedId: string, write: (
     return current;
 };
 
-const writePinned = (id: string, isPinned: boolean) => {
+const writePinned = (id: string, isPinned: boolean, deadline?: number) => {
     const normalizedId = normalizePath(id);
-    return writeImageFlag('pin', normalizedId, async () => {
-        const db = await getDb();
-        const result = await db.execute(PIN_SQL, [isPinned ? 1 : 0, normalizedId]);
-        assertMutationMatched(result, normalizedId, 'Updating pin');
-        await clearCollectionThumbnailCacheForImages([normalizedId]);
-    });
+    return writeImageFlag(
+        'pin',
+        normalizedId,
+        async () => {
+            const db = await getDb();
+            const result = await db.execute(PIN_SQL, [isPinned ? 1 : 0, normalizedId]);
+            assertMutationMatched(result, normalizedId, 'Updating pin');
+            await clearCollectionThumbnailCacheForImages([normalizedId]);
+        },
+        deadline
+    );
 };
 
-const writeFavorite = (id: string, isFavorite: boolean) => {
+const writeFavorite = (id: string, isFavorite: boolean, deadline?: number) => {
     const normalizedId = normalizePath(id);
-    return writeImageFlag('favorite', normalizedId, async () => {
-        const db = await getDb();
-        const result = await db.execute(FAVORITE_SQL, [isFavorite ? 1 : 0, normalizedId]);
-        assertMutationMatched(result, normalizedId, 'Updating favorite');
-    });
+    return writeImageFlag(
+        'favorite',
+        normalizedId,
+        async () => {
+            const db = await getDb();
+            const result = await db.execute(FAVORITE_SQL, [isFavorite ? 1 : 0, normalizedId]);
+            assertMutationMatched(result, normalizedId, 'Updating favorite');
+        },
+        deadline
+    );
 };
 
-export const toggleImagePin = async (id: string, isPinned: boolean) => {
+/** `deadline` (from `flagWriteDeadline`) lets every write of a bulk toggle share one retry window from its click. */
+export const toggleImagePin = async (id: string, isPinned: boolean, deadline?: number) => {
     if (isBrowserMockMode()) {
         updateBrowserMockImage(id, { isPinned });
         return;
     }
 
-    await writePinned(id, isPinned);
+    await writePinned(id, isPinned, deadline);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
 
-export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
+/** `deadline` works as for `toggleImagePin`. */
+export const toggleImageFavorite = async (id: string, isFavorite: boolean, deadline?: number) => {
     if (isBrowserMockMode()) {
         updateBrowserMockImage(id, { isFavorite });
         return;
     }
 
-    await writeFavorite(id, isFavorite);
+    await writeFavorite(id, isFavorite, deadline);
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {

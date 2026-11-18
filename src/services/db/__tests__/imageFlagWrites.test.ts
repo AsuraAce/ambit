@@ -95,6 +95,17 @@ describe('favorite and pin writes on a busy library', () => {
         expect(flagUpdates().filter(([, values]) => (values as unknown[])[0] === 0)).toHaveLength(0);
     });
 
+    it('makes no attempt for a bulk write reached after the bulk click’s shared deadline', async () => {
+        const repo = await import('../imageRepo');
+        executeMock.mockResolvedValue({ rowsAffected: 1 });
+        const deadline = repo.flagWriteDeadline();
+        await vi.advanceTimersByTimeAsync(15_000);
+
+        await expect(repo.toggleImagePin('C:/library/late.png', true, deadline)).rejects.toThrow('database is locked');
+        await expect(repo.toggleImageFavorite('C:/library/late.png', true, deadline)).rejects.toThrow('database is locked');
+        expect(flagUpdates()).toHaveLength(0);
+    });
+
     it('fails at once on errors that waiting cannot fix', async () => {
         const { toggleImagePin } = await loadWrites();
         executeMock.mockResolvedValue({ rowsAffected: 0 });
