@@ -299,9 +299,14 @@ export default function App() {
     } = useSelection(images);
     const handleViewerImageClick = useCallback(
         (event: React.MouseEvent, id: string, index: number, setViewerIndex: (nextIndex: number) => void, revealGranted = false) => {
-            handleImageClick(event, id, index, (nextIndex) => {
+            handleImageClick(event, id, index, () => {
+                // A card's position can be counted against another list than the one the viewer opens on
+                // (a placeholder page under the pinned shelf, a refresh after the grid drew), so the
+                // clicked id picks the image (#456).
+                const viewerIndex = (viewerSessionImagesRef.current ?? imagesRef.current).findIndex((image) => image.id === id);
+                if (viewerIndex === -1) return;
                 setViewerRevealGrantId(revealGranted ? id : null);
-                setViewerIndex(nextIndex);
+                setViewerIndex(viewerIndex);
             });
         },
         [handleImageClick]

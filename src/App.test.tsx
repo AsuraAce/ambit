@@ -1893,6 +1893,43 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.viewer, 'ImageViewer').isMasked).toBe(true);
     });
 
+    // #456: a card's position can be counted against a list other than the one the viewer opens
+    // on. The image the owner clicked must open, and next/previous must step from it.
+    it('opens the clicked image when its grid position points at another image', async () => {
+        const passThroughClick = (_event: React.MouseEvent, _id: string, index: number, callback: (nextIndex: number) => void) =>
+            callback(index);
+        mocks.handleImageClick.mockImplementationOnce(passThroughClick).mockImplementationOnce(passThroughClick);
+        // Entering a collection keeps the Library page on screen until the collection's first page
+        // loads, so pinned images are not first. The pinned shelf still counts a grid card's position
+        // as grid index + pinned count: 'unpinned-a' (grid index 0, one pinned) arrives as 1.
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.images = [image('unpinned-a'), { ...image('pinned'), isPinned: true }, image('unpinned-b')];
+        const view = render(<App />);
+
+        const layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.handleImageClick({} as React.MouseEvent, 'unpinned-a', 1, layout.setSelectedImageIndex));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('unpinned-a'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('pinned'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+
+        // A refresh reorders the list after the grid counted the card's position.
+        const staleLayout = requireProbe(captured.appLayout, 'AppLayout');
+        mocks.images = [image('imported'), image('unpinned-b'), image('unpinned-a')];
+        view.rerender(<App />);
+        act(() => staleLayout.handleImageClick({} as React.MouseEvent, 'unpinned-b', 2, staleLayout.setSelectedImageIndex));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('unpinned-b'));
+
+        // A refresh while the viewer is open does not move it or its next/previous order.
+        mocks.images = [image('unpinned-a'), image('imported'), image('unpinned-b')];
+        view.rerender(<App />);
+        expect(captured.viewer?.image.id).toBe('unpinned-b');
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('unpinned-a'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onPrev());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('unpinned-b'));
+    });
+
     it('opens a referenced asset outside the current query without changing gallery results', async () => {
         const hiddenAsset = {
             ...image('hidden-control'),
