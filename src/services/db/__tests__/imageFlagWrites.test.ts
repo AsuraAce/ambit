@@ -59,15 +59,40 @@ describe('favorite and pin writes on a busy library', () => {
         }
     );
 
-    it('still reports a library that stays busy past the wait budget', async () => {
+    // A write that fails late rolls the gallery back to the snapshot taken at its click, undoing
+    // anything the user did since. So the wait is short and counts from the click.
+    it('gives up within 15 s of the click and starts no attempt after that', async () => {
         const { toggleImageFavorite } = await loadWrites();
-        executeMock.mockRejectedValue(BUSY);
+        const clickedAt = Date.now();
+        const attemptTimes: number[] = [];
+        executeMock.mockImplementation(() => {
+            attemptTimes.push(Date.now() - clickedAt);
+            return Promise.reject(BUSY);
+        });
 
         const saved = toggleImageFavorite('C:/library/comfy.png', true);
         const outcome = expect(saved).rejects.toBe(BUSY);
-        await vi.advanceTimersByTimeAsync(61_000);
+        await vi.advanceTimersByTimeAsync(15_500);
 
         await outcome;
+        expect(attemptTimes.length).toBeGreaterThan(1);
+        expect(Math.max(...attemptTimes)).toBeLessThan(15_000);
+    });
+
+    it('counts a queued toggle’s budget from its own click, not from when the earlier write finishes', async () => {
+        const { toggleImageFavorite, updateFavorite } = await loadWrites();
+        executeMock.mockRejectedValue(BUSY);
+
+        const on = toggleImageFavorite('C:/library/comfy.png', true);
+        const off = updateFavorite('C:/library/comfy.png', false);
+        const outcomes = Promise.allSettled([on, off]);
+        await vi.advanceTimersByTimeAsync(15_500);
+
+        const [first, second] = await outcomes;
+        expect(first.status).toBe('rejected');
+        expect(second.status).toBe('rejected');
+        // Both clicks share one 15 s window, so the second write never got a turn.
+        expect(flagUpdates().filter(([, values]) => (values as unknown[])[0] === 0)).toHaveLength(0);
     });
 
     it('fails at once on errors that waiting cannot fix', async () => {

@@ -1351,7 +1351,7 @@ describe('imageRepo batch removal', () => {
             [0, canonicalId]
         );
         expect(db.execute).toHaveBeenCalledWith(
-            "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+            "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)",
             ['playable', canonicalId]
         );
     });

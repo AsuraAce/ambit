@@ -308,6 +308,33 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
     });
 
+    // Each flag write retries while the library is busy (#457). Run in parallel, a large selection
+    // would hold every pooled connection and stall gallery reads, so bulk writes go one at a time.
+    it.each([
+        ['handleBulkPin', () => mockToggleImagePin],
+        ['handleBulkFavorite', () => mockToggleImageFavorite],
+    ] as const)('%s writes one image at a time', async (handler, getWrite) => {
+        const write = getWrite();
+        let inFlight = 0;
+        let maxInFlight = 0;
+        write.mockImplementation(async () => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            inFlight -= 1;
+        });
+        const { result } = renderHook(() => useAppActions({ ...props, selectedIds: new Set(['1', '2']) }));
+
+        await act(async () => {
+            result.current[handler]();
+            await vi.waitFor(() => expect(mockRefreshCollections).toHaveBeenCalledWith(true));
+        });
+
+        expect(write).toHaveBeenCalledTimes(2);
+        expect(maxInFlight).toBe(1);
+        write.mockReset();
+    });
+
     it('should keep single-image pin feedback outside the viewer path', async () => {
         const { result } = renderHook(() => useAppActions(props));
 

@@ -912,25 +912,29 @@ const FAVORITE_SQL =
     'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)';
 
 // The SQL plugin's pool gives every connection but one SQLite's 5 s busy wait (connection.ts sets
-// the 60 s timeout on one pooled connection), so a flag write can still meet a longer background
-// write. These idempotent writes retry for the 60 s the app means to wait, and the pool's acquire
-// timeout counts as busy too.
-const FLAG_WRITE_BUSY_BUDGET_MS = 60_000;
+// the 60 s timeout on one pooled connection), so a flag write can still meet another write. These
+// idempotent writes retry busy errors, and the pool's acquire timeout counts as busy too. The budget
+// runs from the click, queue wait included: a write that fails late rolls the gallery back to the
+// snapshot taken at its click, so it must give up while that snapshot is still recent.
+const FLAG_WRITE_BUSY_BUDGET_MS = 15_000;
 const FLAG_WRITE_RETRY_DELAY_MS = 250;
 const isDatabaseBusy = (error: unknown) =>
     /database is locked|pool timed out/i.test(error instanceof Error ? error.message : String(error));
 
-const retryWhileDatabaseBusy = async (write: () => Promise<void>) => {
-    const deadline = Date.now() + FLAG_WRITE_BUSY_BUDGET_MS;
-    for (;;) {
+const retryWhileDatabaseBusy = async (write: () => Promise<void>, deadline: number) => {
+    let lastError: unknown = new Error('database is locked: an earlier write to this image used up the retry budget');
+    // No attempt starts after the deadline; one already running may still take the pool's own timeouts.
+    while (Date.now() < deadline) {
         try {
             await write();
             return;
         } catch (error) {
-            if (!isDatabaseBusy(error) || Date.now() >= deadline) throw error;
+            if (!isDatabaseBusy(error)) throw error;
+            lastError = error;
         }
         await new Promise((resolve) => setTimeout(resolve, FLAG_WRITE_RETRY_DELAY_MS));
     }
+    throw lastError;
 };
 
 // Writes to one image's flag run in order, so a retrying older toggle never lands after a newer one.
@@ -938,8 +942,9 @@ const pendingFlagWrites = new Map<string, Promise<void>>();
 
 const writeImageFlag = (flag: 'favorite' | 'pin', normalizedId: string, write: () => Promise<void>): Promise<void> => {
     const key = `${flag}:${normalizedId}`;
+    const deadline = Date.now() + FLAG_WRITE_BUSY_BUDGET_MS;
     const previous = pendingFlagWrites.get(key) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(() => retryWhileDatabaseBusy(write));
+    const current = previous.catch(() => undefined).then(() => retryWhileDatabaseBusy(write, deadline));
     pendingFlagWrites.set(key, current);
     const forget = () => {
         if (pendingFlagWrites.get(key) === current) pendingFlagWrites.delete(key);
@@ -1032,7 +1037,8 @@ export const updateVideoPlaybackStatus = async (id: string, status: 'unknown' | 
     if (isBrowserMockMode()) return;
     const db = await getDb();
     const result = await db.execute(
-        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+        // Runs on every video play, often right before a pin, so its scope check reads one row (#457).
+        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)",
         [status, normalizePath(id)]
     );
     assertMutationMatched(result, normalizePath(id), 'Updating video playback status');

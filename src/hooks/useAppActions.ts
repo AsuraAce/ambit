@@ -121,7 +121,9 @@ export const useAppActions = ({
             restoreGallery = true
         ) => {
             try {
-                await Promise.all(ids.map((id) => toggleImagePin(id, isPinned)));
+                // One write at a time: each retries while the library is busy, and a large selection
+                // in parallel would hold every pooled connection and stall gallery reads.
+                for (const id of ids) await toggleImagePin(id, isPinned);
                 if (!restoreGallery) {
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                 }
@@ -152,7 +154,8 @@ export const useAppActions = ({
     const persistFavoriteChanges = React.useCallback(
         async (ids: string[], isFavorite: boolean, previousImages: typeof images, previousActiveImage?: AIImage, restoreGallery = true) => {
             try {
-                await Promise.all(ids.map((id) => toggleImageFavorite(id, isFavorite)));
+                // One write at a time, as for pins above.
+                for (const id of ids) await toggleImageFavorite(id, isFavorite);
                 refreshCollectionsAfterImageFlagChange();
             } catch (error) {
                 console.error('[Favorite] Failed to persist favorite state', error);
