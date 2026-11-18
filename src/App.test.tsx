@@ -12,6 +12,7 @@ import {
     type FilterState,
     type LayoutMode,
     type SmartCollection,
+    type SortOption,
     type ViewMode,
 } from './types';
 import type { ApplyInvokeConnectionOptions, InvokeConnectionApplyOutcome, InvokeOwnerScopeState } from './contexts/SyncContext';
@@ -198,6 +199,7 @@ const mocks = vi.hoisted(() => ({
     handleRangeSelection: vi.fn(),
     clearSelection: vi.fn(),
     selectionList: [] as AIImage[],
+    sortOption: 'date_desc' as SortOption,
     toggleTheme: vi.fn(),
     refreshMaintenanceCounts: vi.fn(),
     toggleAiSearch: vi.fn(),
@@ -382,7 +384,7 @@ vi.mock('./contexts/SearchContext', () => ({
         imagesQueryKey: ['images'],
         filters: mocks.filters,
         setFilters: mocks.setFilters,
-        sortOption: 'date_desc',
+        sortOption: mocks.sortOption,
         setSortOption: mocks.setSortOption,
         totalImages: mocks.images.length,
         globalTotal: mocks.images.length + 5,
@@ -619,6 +621,7 @@ describe('App orchestration', () => {
         useLibraryStore.setState({ isStartupCatchupPending: false });
         mocks.churnClearAllFiltersIdentity = false;
         mocks.filters = createDefaultFilters();
+        mocks.sortOption = 'date_desc';
         mocks.selectedIds = new Set();
         mocks.aiSearchOptions = null;
         mocks.dragDropOptions = null;
@@ -1952,6 +1955,23 @@ describe('App orchestration', () => {
         mocks.filters = createDefaultFilters({ collectionId: 'collection-a', pinnedOnly: true });
         view.rerender(<App />);
         expect(mocks.selectionList.map((candidate) => candidate.id)).toEqual(['unpinned-a', 'pinned', 'unpinned-b']);
+    });
+
+    // #461 review: the timeline draws day groups newest first, pinned images first in each group,
+    // then the sort order. Shift-click ranges and drag positions must follow that order too.
+    it('gives selection the cards in the order the timeline draws them', () => {
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.images = [image('u1'), image('u2'), { ...image('p1'), isPinned: true }];
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').changeViewMode('timeline'));
+        // Ctrl-click p1 then Shift-click u1 must not reach u2.
+        expect(mocks.selectionList.map((candidate) => candidate.id)).toEqual(['p1', 'u1', 'u2']);
+
+        mocks.filters = createDefaultFilters();
+        mocks.sortOption = 'name_asc';
+        mocks.images = [image('b'), image('c'), image('a')];
+        view.rerender(<App />);
+        expect(mocks.selectionList.map((candidate) => candidate.id)).toEqual(['a', 'b', 'c']);
     });
 
     it('opens a referenced asset outside the current query without changing gallery results', async () => {
