@@ -156,6 +156,8 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     totalImages: 0,
     globalTotal: 0,
     imageCountsFailed: false,
+    imagesFailed: false,
+    retryImages: vi.fn(),
     scopeCountsLoading: false,
     scopeCountsError: false,
     retryScopeCounts: async () => {},

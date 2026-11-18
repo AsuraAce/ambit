@@ -57,6 +57,10 @@ interface SearchContextType {
     globalTotal: number | null;
     /** The count read failed, so `totalImages` and `globalTotal` stay null until the next refresh. */
     imageCountsFailed: boolean;
+    /** The first page of this view failed to load and no page arrived; nothing says the library is empty. */
+    imagesFailed: boolean;
+    /** Loads this view's first page and counts again after a failure. */
+    retryImages: () => void;
     sourceKindCounts?: SourceKindCounts;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
@@ -290,6 +294,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isFetchingNextPage,
         isLoading: isQueryLoading,
         isPlaceholderData,
+        error: imagesQueryError,
         status: imagesQueryStatus,
         queryKey: imagesQueryKey,
         counts: imageCounts,
@@ -376,6 +381,16 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         queryData,
         setImages,
     ]);
+
+    // A failed first page with nothing cached must not read as an empty library or as no matches (#483).
+    const imagesFailed = !privacyExposureBlocked && imagesQueryStatus === 'error' && !queryData && !isFetching;
+    useEffect(() => {
+        if (imagesFailed) console.error('[Library] Failed to load images', imagesQueryError);
+    }, [imagesFailed, imagesQueryError]);
+    const retryImages = useCallback(() => {
+        // The counts key extends the images key, so this reloads both. Errors land in query state.
+        void queryClient.invalidateQueries({ queryKey: imagesQueryKey });
+    }, [imagesQueryKey, queryClient]);
 
     // Proactive prefetching: Load next page in background after current page loads
     // Only prefetch if we have less than 3 pages and user might scroll soon
@@ -851,6 +866,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 totalImages: totalImagesCount,
                 globalTotal: globalTotalCount,
                 imageCountsFailed: !privacyExposureBlocked && imageCountsFailed,
+                imagesFailed,
+                retryImages,
                 sourceKindCounts,
                 scopeCounts,
                 scopeAvailability,

@@ -778,6 +778,25 @@ describe('SearchProvider', () => {
         });
     });
 
+    it('reports a failed first page, and Retry reloads that view and its counts (#483)', () => {
+        // With no page, a failure must read as a failure, not as an empty library or no matches.
+        const failed = { data: undefined, status: 'error', error: new Error('database is locked'), isLoading: false, isFetching: false };
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), ...failed };
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        renderProvider();
+
+        expect(latest.imagesFailed).toBe(true);
+        expect(errorSpy).toHaveBeenCalledWith('[Library] Failed to load images', failed.error);
+        act(() => latest.retryImages());
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: latest.imagesQueryKey });
+
+        // While the retry runs the view is loading, not failed.
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isFetching: true };
+        renderProvider();
+        expect(latest.imagesFailed).toBe(false);
+        expect(latest.isFiltering).toBe(true);
+    });
+
     it('presents a first page before its counts and reports the counts as loading', () => {
         // The gallery opens as soon as its page is safe; the counts follow on their own.
         mocks.imagesQuery.current = {
