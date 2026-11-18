@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.2](https://github.com/AsuraAce/ambit/compare/v0.14.1...v0.14.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **comfyui:** show the typed request behind MOSS-Image's prompt enhancer ([#454](https://github.com/AsuraAce/ambit/issues/454)) ([428775f](https://github.com/AsuraAce/ambit/commit/428775f2e096bdf9615c9def3ecd011f1a8169d2))
+* **db:** check image scope by row so masks and other writes stop locking the library ([#465](https://github.com/AsuraAce/ambit/issues/465)) ([c8f0cfc](https://github.com/AsuraAce/ambit/commit/c8f0cfc6276f4c4dc8c665f5fbfaea75f1fe7539)), closes [#463](https://github.com/AsuraAce/ambit/issues/463)
+* **db:** stage facet rebuilds so background work stops locking out user writes ([#467](https://github.com/AsuraAce/ambit/issues/467)) ([f81b02c](https://github.com/AsuraAce/ambit/commit/f81b02cf060de511354d1c78cb44f4305304bad5))
+* **db:** stop folder removal and scoped writes from locking the library ([#471](https://github.com/AsuraAce/ambit/issues/471)) ([6214a01](https://github.com/AsuraAce/ambit/commit/6214a01be4fb1ebe31792b8a751feac8a4da4127)), closes [#469](https://github.com/AsuraAce/ambit/issues/469) [#466](https://github.com/AsuraAce/ambit/issues/466)
+* **library:** keep favorites and pins saving while background work holds the database ([#460](https://github.com/AsuraAce/ambit/issues/460)) ([703c6a7](https://github.com/AsuraAce/ambit/commit/703c6a7bfa9d9305cfd92d905e9f0d99138746aa))
+* **viewer:** open the clicked image, not the one at its grid position ([#459](https://github.com/AsuraAce/ambit/issues/459)) ([78177aa](https://github.com/AsuraAce/ambit/commit/78177aa94971ade5b0db6ac36e5d4a66f1910b9a)), closes [#456](https://github.com/AsuraAce/ambit/issues/456)
+
 ## [0.14.1](https://github.com/AsuraAce/ambit/compare/v0.14.0...v0.14.1) (2026-11-16)
 
 
