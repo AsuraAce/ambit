@@ -2478,3 +2478,45 @@ describe('imageRepo batch removal', () => {
         expect(db.select.mock.calls[1][0]).not.toContain('AND IFNULL(is_grid_gen');
     });
 });
+
+describe('rebuildThumbnailFacetCache', () => {
+    // #464: each rebuild takes 30-40 s on a large library. Three masks in a row queued three
+    // of them; a mask during a rebuild must still get a rebuild that sees its change.
+    it('gives masks made during a rebuild one shared rebuild that starts after them', async () => {
+        vi.clearAllMocks();
+        const releases: Array<() => void> = [];
+        invokeMock.mockImplementation(async (command: string) => {
+            if (command !== 'rebuild_facet_cache_incremental_batch') return undefined;
+            await new Promise<void>((resolve) => releases.push(resolve));
+            return 10;
+        });
+        const { rebuildThumbnailFacetCache } = await import('../imageRepo');
+        const settled: string[] = [];
+
+        const first = rebuildThumbnailFacetCache().then(() => settled.push('first'));
+        await vi.waitFor(() => expect(releases).toHaveLength(1));
+        const second = rebuildThumbnailFacetCache().then(() => settled.push('second'));
+        const third = rebuildThumbnailFacetCache().then(() => settled.push('third'));
+
+        releases[0]();
+        await first;
+        await vi.waitFor(() => expect(releases).toHaveLength(2));
+        // The first rebuild may have read the database before the later masks were written.
+        expect(settled).toEqual(['first']);
+
+        releases[1]();
+        await Promise.all([second, third]);
+        expect(settled).toEqual(['first', 'second', 'third']);
+        expect(invokeMock).toHaveBeenCalledTimes(2);
+        expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
+            facetTypes: expect.arrayContaining(['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters']),
+        });
+
+        // With nothing running, the next mask starts its own rebuild at once.
+        const next = rebuildThumbnailFacetCache();
+        await vi.waitFor(() => expect(releases).toHaveLength(3));
+        releases[2]();
+        await next;
+        expect(invokeMock).toHaveBeenCalledTimes(3);
+    });
+});

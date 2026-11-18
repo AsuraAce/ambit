@@ -410,8 +410,35 @@ export const refreshFacetCacheForResourcesStrict = async (resources: TouchedFace
     return count;
 };
 
-export const rebuildThumbnailFacetCache = async (): Promise<void> => {
-    await rebuildFacetCacheIncrementalBatch(['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters']);
+const THUMBNAIL_FACET_TYPES = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
+let runningThumbnailFacetRebuild: Promise<void> | null = null;
+let queuedThumbnailFacetRebuild: Promise<void> | null = null;
+
+const startThumbnailFacetRebuild = (): Promise<void> => {
+    const run = rebuildFacetCacheIncrementalBatch(THUMBNAIL_FACET_TYPES)
+        .then(() => undefined)
+        .finally(() => {
+            if (runningThumbnailFacetRebuild === run) runningThumbnailFacetRebuild = null;
+        });
+    runningThumbnailFacetRebuild = run;
+    return run;
+};
+
+/**
+ * Rebuilds the facet types whose thumbnails a mask or thumbnail change can affect. Each
+ * rebuild takes 30-40 s on a large library, and back-to-back masks used to queue one each
+ * (#464). A call during a rebuild waits for one more rebuild that starts after it, so it
+ * still sees its own change; any further calls in that time share that rebuild.
+ */
+export const rebuildThumbnailFacetCache = (): Promise<void> => {
+    if (queuedThumbnailFacetRebuild) return queuedThumbnailFacetRebuild;
+    if (!runningThumbnailFacetRebuild) return startThumbnailFacetRebuild();
+    const queued = runningThumbnailFacetRebuild.then(() => {
+        queuedThumbnailFacetRebuild = null;
+        return startThumbnailFacetRebuild();
+    });
+    queuedThumbnailFacetRebuild = queued;
+    return queued;
 };
 
 /**
