@@ -22,7 +22,7 @@ vi.mock('../useToast', () => ({
 const mockSetImages = vi.fn();
 const mockToggleImageFavorite = vi.fn();
 const mockToggleImagePin = vi.fn();
-const mockToggleImageMask = vi.fn();
+const mockSetImageMasks = vi.fn();
 // Each call returns a new value, so writes that share one deadline are easy to tell apart.
 let mockDeadlineCount = 0;
 const mockFlagWriteDeadline = vi.fn(() => (mockDeadlineCount += 1));
@@ -76,7 +76,7 @@ vi.mock('../../services/db/imageRepo', () => ({
         mockFlagDeadlines.push(deadline);
         return mockToggleImagePin(id, isPinned);
     },
-    toggleImageMask: (id: string, value: boolean | null) => mockToggleImageMask(id, value),
+    setImageMasks: (updates: unknown) => mockSetImageMasks(updates),
     setImageSourceKind: (ids: string[], value: string | null) => mockSetImageSourceKind(ids, value),
     rebuildThumbnailFacetCache: () => mockRebuildThumbnailFacetCache(),
     markAsDeleted: vi.fn(),
@@ -196,7 +196,7 @@ describe('useAppActions', () => {
         mockGeminiApiKey = null;
         mockToggleImageFavorite.mockResolvedValue(undefined);
         mockToggleImagePin.mockResolvedValue(undefined);
-        mockToggleImageMask.mockResolvedValue(undefined);
+        mockSetImageMasks.mockResolvedValue(undefined);
         mockSetImageSourceKind.mockResolvedValue(1);
         mockRebuildThumbnailFacetCache.mockResolvedValue(undefined);
         mockBackfillParameterColumns.mockResolvedValue(0);
@@ -741,7 +741,7 @@ describe('useAppActions', () => {
         expect(mockUpdateImagesQueryCaches).toHaveBeenCalledOnce();
         const updateCachedImage = mockUpdateImagesQueryCaches.mock.calls[0][1] as (image: AIImage) => AIImage;
         expect(updateCachedImage({ ...mockStoreImages[0], userMasked: false } as AIImage).userMasked).toBe(true);
-        expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
+        expect(mockSetImageMasks).toHaveBeenLastCalledWith([{ id: '1', userMasked: true }]);
         expect(mockAddToast).toHaveBeenCalledWith('1 item Manually Masked', 'info');
 
         await act(async () => result.current.handleBulkMask('1', false));
@@ -749,13 +749,13 @@ describe('useAppActions', () => {
         await act(async () => result.current.handleBulkMask('1', null));
         const maskAuto = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskAuto(mockStoreImages).map((image) => image.userMasked)).toEqual([undefined, undefined]);
-        expect(mockToggleImageMask).toHaveBeenCalledWith('1', null);
+        expect(mockSetImageMasks).toHaveBeenLastCalledWith([{ id: '1', userMasked: null }]);
         expect(mockAddToast).toHaveBeenCalledWith('1 item Reset to Auto Mask', 'info');
 
         await act(async () => result.current.handleBulkMask());
         const maskToggle = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskToggle(mockStoreImages).map((image) => image.userMasked)).toEqual([true, undefined]);
-        expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
+        expect(mockSetImageMasks).toHaveBeenLastCalledWith([{ id: '1', userMasked: true }]);
         expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
         expect(mockRebuildThumbnailFacetCache).toHaveBeenCalled();
         expect(mockIncrementFacetCacheVersion).toHaveBeenCalled();
@@ -765,19 +765,19 @@ describe('useAppActions', () => {
     it('uses the last selection for masking and no-ops without targets', async () => {
         const last = renderHook(() => useAppActions({ ...props, selectedIds: new Set(), lastSelectedId: '2' }));
         await act(async () => last.result.current.handleBulkMask());
-        expect(mockToggleImageMask).toHaveBeenCalledWith('2', true);
+        expect(mockSetImageMasks).toHaveBeenLastCalledWith([{ id: '2', userMasked: true }]);
         last.unmount();
 
-        mockToggleImageMask.mockClear();
+        mockSetImageMasks.mockClear();
         const none = renderHook(() => useAppActions({ ...props, selectedIds: new Set(), lastSelectedId: null }));
         await act(async () => none.result.current.handleBulkMask());
-        expect(mockToggleImageMask).not.toHaveBeenCalled();
+        expect(mockSetImageMasks).not.toHaveBeenCalled();
     });
 
     it('skips persistence when a toggled mask target is no longer in the image store', async () => {
         const { result } = renderHook(() => useAppActions(props));
         await act(async () => result.current.handleBulkMask('missing'));
-        expect(mockToggleImageMask).not.toHaveBeenCalled();
+        expect(mockSetImageMasks).not.toHaveBeenCalled();
         expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
     });
 
@@ -787,6 +787,57 @@ describe('useAppActions', () => {
         const multi = renderHook(() => useAppActions({ ...props, selectedIds: new Set(['1', '2']) }));
         await act(async () => multi.result.current.handleBulkMask(undefined, true));
         expect(mockAddToast).toHaveBeenCalledWith('2 items Manually Masked', 'info');
+    });
+
+    // A bulk force-mask of 12–36 images ran one write per image, all at once. Most failed with
+    // "database is locked", nothing said so, and in hide mode the images stayed on screen blurred
+    // until a later reload showed them unmasked (#463).
+    it('writes a bulk mask as one call for the whole selection', async () => {
+        mockPrivacyEnabled = true;
+        mockSettings = { ...mockSettings, maskingMode: 'hide' };
+        const { result } = renderHook(() => ({
+            actions: useAppActions({ ...props, selectedIds: new Set(['1', '2']) }),
+            queryClient: useQueryClient(),
+        }));
+        const invalidateQueries = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        await act(async () => result.current.actions.handleBulkMask(undefined, true));
+
+        expect(mockSetImageMasks).toHaveBeenCalledOnce();
+        expect(mockSetImageMasks).toHaveBeenCalledWith([
+            { id: '1', userMasked: true },
+            { id: '2', userMasked: true },
+        ]);
+        // Hide mode removes masked images by reloading the gallery.
+        expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        expect(mockAddToast).toHaveBeenCalledWith('2 items Manually Masked', 'info');
+    });
+
+    it('rolls back a failed bulk mask on screen and reports it', async () => {
+        const actualCache = await vi.importActual<typeof import('../../utils/imageQueryCache')>('../../utils/imageQueryCache');
+        mockUpdateImagesQueryCaches.mockImplementation(actualCache.updateImagesQueryCaches);
+        mockSetImageMasks.mockRejectedValue(new Error('database is locked'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => ({
+            actions: useAppActions({ ...props, selectedIds: new Set(['1', '2']) }),
+            queryClient: useQueryClient(),
+        }));
+        result.current.queryClient.setQueryData(mockImagesQueryKey, { pages: [{ images: mockStoreImages }], pageParams: [0] });
+        const cachedMasks = () =>
+            result.current.queryClient
+                .getQueryData<{ pages: { images: AIImage[] }[] }>(mockImagesQueryKey)
+                ?.pages[0].images.map((image) => image.userMasked);
+
+        await act(async () => {
+            await result.current.actions.handleBulkMask(undefined, true).catch(() => undefined);
+        });
+
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to update content mask', 'error');
+        expect(mockAddToast).not.toHaveBeenCalledWith('2 items Manually Masked', 'info');
+        expect(mockSetImages).toHaveBeenLastCalledWith(mockStoreImages);
+        expect(cachedMasks()).toEqual([undefined, undefined]);
+        errorSpy.mockRestore();
+        mockUpdateImagesQueryCaches.mockReset();
     });
 
     it('disables privacy mode when already enabled', () => {

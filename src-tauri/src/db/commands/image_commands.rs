@@ -3296,6 +3296,17 @@ pub async fn mark_images_corrupt(app: AppHandle, ids: Vec<String>) -> Result<usi
     }).await
 }
 
+const SET_IMAGE_SOURCE_KIND_SQL: &str = "UPDATE images
+     SET source_kind_override = ?1,
+         source_kind = COALESCE(?1, detected_source_kind),
+         display_timestamp = CASE
+             WHEN COALESCE(?1, detected_source_kind) = 'photograph'
+             THEN COALESCE(capture_wall_time_ms, timestamp)
+             ELSE timestamp
+         END
+     WHERE id = ?2
+       AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id AND scoped.media_type = 'image')";
+
 pub fn set_image_source_kind_for_conn(
     conn: &Connection,
     image_ids: &[String],
@@ -3309,17 +3320,7 @@ pub fn set_image_source_kind_for_conn(
     let mut updated = 0;
     {
         let mut stmt = tx
-            .prepare_cached(
-                "UPDATE images
-                 SET source_kind_override = ?1,
-                     source_kind = COALESCE(?1, detected_source_kind),
-                     display_timestamp = CASE
-                         WHEN COALESCE(?1, detected_source_kind) = 'photograph'
-                         THEN COALESCE(capture_wall_time_ms, timestamp)
-                         ELSE timestamp
-                     END
-                 WHERE id = ?2 AND id IN (SELECT id FROM scoped_images WHERE media_type = 'image')",
-            )
+            .prepare_cached(SET_IMAGE_SOURCE_KIND_SQL)
             .map_err(|e| e.to_string())?;
         let override_value = source_kind_override.map(SourceKind::as_str);
         for id in image_ids {
@@ -6357,6 +6358,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!(corrected, "visible");
+    }
+
+    #[test]
+    fn source_kind_correction_reads_only_the_target_row() {
+        // The correction runs once per selected image inside one transaction. A scope check that
+        // reads the whole library per image holds the write lock for minutes on a large library,
+        // and every other write fails with "database is locked" behind it (#463).
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let mut stmt = conn
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN {}",
+                super::SET_IMAGE_SOURCE_KIND_SQL
+            ))
+            .expect("explain source kind write");
+        let plan: Vec<String> = stmt
+            .query_map(params!["photograph", "id"], |row| row.get::<_, String>(3))
+            .expect("plan rows")
+            .collect::<Result<_, _>>()
+            .expect("plan");
+        // A media_type index search reads every image too, so each read of `i` must be by id.
+        assert!(
+            !plan.iter().any(|step| step.starts_with("SCAN i")
+                || (step.starts_with("SEARCH i ") && !step.contains("(id=?)"))),
+            "source kind write must read only the target image: {plan:?}"
+        );
     }
 
     #[test]

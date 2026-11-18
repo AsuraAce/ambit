@@ -146,7 +146,7 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
         const result = await db.execute(
             `UPDATE images SET is_missing = 1
              WHERE id IN (${placeholders})
-               AND id IN (SELECT id FROM scoped_images)`,
+               AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)`,
             batch
         );
         marked += result.rowsAffected;

@@ -75,6 +75,9 @@ pub struct ReparseBatchResult {
     pub errors: usize,
 }
 
+const REPARSE_UPDATE_SQL: &str = "UPDATE images SET metadata_json = ?1, model_hash = json_extract(?1, '$.modelHash'), model_name = json_extract(?1, '$.model'), tool = json_extract(?1, '$.tool'), resolved_model_name = COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?1, '$.modelHash')), json_extract(?1, '$.model')), steps = CAST(json_extract(?1, '$.steps') AS INTEGER), seed = CAST(json_extract(?1, '$.seed') AS INTEGER), cfg = CAST(json_extract(?1, '$.cfg') AS REAL), sampler = REPLACE(REPLACE(LOWER(json_extract(?1, '$.sampler')), '_', ' '), '-', ' '), generation_type = json_extract(?1, '$.generationType'), parser_version = ?2 WHERE id = ?3 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)";
+const REPARSE_SKIP_SQL: &str = "UPDATE images SET parser_version = ?1 WHERE id = ?2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)";
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn reparse_metadata_batch(
@@ -88,26 +91,45 @@ pub async fn reparse_metadata_batch(
         let mut updated = 0;
         let mut errors = 0;
         {
-            let mut update_stmt = tx.prepare_cached(
-                "UPDATE images SET metadata_json = ?1, model_hash = json_extract(?1, '$.modelHash'), model_name = json_extract(?1, '$.model'), tool = json_extract(?1, '$.tool'), resolved_model_name = COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?1, '$.modelHash')), json_extract(?1, '$.model')), steps = CAST(json_extract(?1, '$.steps') AS INTEGER), seed = CAST(json_extract(?1, '$.seed') AS INTEGER), cfg = CAST(json_extract(?1, '$.cfg') AS REAL), sampler = REPLACE(REPLACE(LOWER(json_extract(?1, '$.sampler')), '_', ' '), '-', ' '), generation_type = json_extract(?1, '$.generationType'), parser_version = ?2 WHERE id = ?3 AND id IN (SELECT id FROM scoped_images)"
-            ).map_err(|e| e.to_string())?;
+            let mut update_stmt = tx
+                .prepare_cached(REPARSE_UPDATE_SQL)
+                .map_err(|e| e.to_string())?;
 
             for img in &images {
                 processed += 1;
                 match reparse_from_json(&img.original_metadata_json, &img.tool) {
                     Some(result) => {
-                        if update_stmt.execute(rusqlite::params![result.metadata_json, CURRENT_PARSER_VERSION, img.id]).is_ok() { updated += 1; } else { errors += 1; }
+                        if update_stmt
+                            .execute(rusqlite::params![
+                                result.metadata_json,
+                                CURRENT_PARSER_VERSION,
+                                img.id
+                            ])
+                            .is_ok()
+                        {
+                            updated += 1;
+                        } else {
+                            errors += 1;
+                        }
                     }
                     None => {
-                        let _ = tx.execute("UPDATE images SET parser_version = ?1 WHERE id = ?2 AND id IN (SELECT id FROM scoped_images)", rusqlite::params![CURRENT_PARSER_VERSION, img.id]);
+                        let _ = tx.execute(
+                            REPARSE_SKIP_SQL,
+                            rusqlite::params![CURRENT_PARSER_VERSION, img.id],
+                        );
                         errors += 1;
                     }
                 }
             }
         }
         tx.commit().map_err(|e| e.to_string())?;
-        Ok(ReparseBatchResult { processed, updated, errors })
-    }).await
+        Ok(ReparseBatchResult {
+            processed,
+            updated,
+            errors,
+        })
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -134,8 +156,80 @@ pub async fn reset_parser_versions(app: AppHandle) -> Result<usize, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::metadata_reparse_count;
+    use super::{metadata_reparse_count, REPARSE_SKIP_SQL, REPARSE_UPDATE_SQL};
     use crate::metadata::{CURRENT_PARSER_VERSION, VIDEO_PARSER_VERSION};
+
+    fn migrated_db() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql).expect("apply migrations");
+        }
+        conn
+    }
+
+    // A reparse batch writes one image at a time inside one transaction. A scope check that reads
+    // the whole library per image holds the write lock for minutes on a large library, and every
+    // other write fails with "database is locked" behind it (#463).
+    #[test]
+    fn reparse_writes_read_only_the_target_row() {
+        let conn = migrated_db();
+        for (sql, params) in [
+            (REPARSE_UPDATE_SQL, rusqlite::params!["{}", 1, "id"]),
+            (REPARSE_SKIP_SQL, rusqlite::params![1, "id"]),
+        ] {
+            let mut stmt = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("explain reparse write");
+            let plan: Vec<String> = stmt
+                .query_map(params, |row| row.get::<_, String>(3))
+                .expect("plan rows")
+                .collect::<Result<_, _>>()
+                .expect("plan");
+            assert!(
+                !plan.iter().any(|step| step.starts_with("SCAN i")),
+                "reparse write must not scan images: {plan:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reparse_writes_skip_images_outside_the_library_scope() {
+        let conn = migrated_db();
+        conn.execute_batch(
+            "INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version)
+             VALUES ('visible', 'visible.png', 100, 0, 0),
+                    ('hidden', 'hidden.png', 100, 1, 0);",
+        )
+        .expect("rows");
+        for id in ["visible", "hidden"] {
+            conn.execute(REPARSE_UPDATE_SQL, rusqlite::params!["{}", 5, id])
+                .expect("reparse update");
+        }
+        let versions: Vec<(String, i64)> = conn
+            .prepare("SELECT id, parser_version FROM images ORDER BY id")
+            .expect("select")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("rows")
+            .collect::<Result<_, _>>()
+            .expect("versions");
+        assert_eq!(
+            versions,
+            vec![("hidden".to_string(), 0), ("visible".to_string(), 5)]
+        );
+
+        for id in ["visible", "hidden"] {
+            conn.execute(REPARSE_SKIP_SQL, rusqlite::params![9, id])
+                .expect("reparse skip");
+        }
+        let hidden: i64 = conn
+            .query_row(
+                "SELECT parser_version FROM images WHERE id = 'hidden'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("hidden version");
+        assert_eq!(hidden, 0);
+    }
 
     #[test]
     fn combined_count_uses_independent_image_and_video_parser_versions() {

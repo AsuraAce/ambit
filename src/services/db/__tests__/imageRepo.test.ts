@@ -293,7 +293,7 @@ describe('imageRepo batch removal', () => {
             getImageWithFullMetadata,
             toggleImagePin,
             toggleImageFavorite,
-            toggleImageMask,
+            setImageMasks,
             toggleImageIntermediate,
             updateImageWorkflow,
             updateImageWorkflowHint,
@@ -333,7 +333,7 @@ describe('imageRepo batch removal', () => {
         await expect(getImageWithFullMetadata('missing-source')).resolves.toBeNull();
         await expect(toggleImagePin('regular', true)).resolves.toBeUndefined();
         await expect(toggleImageFavorite('regular', true)).resolves.toBeUndefined();
-        await expect(toggleImageMask('regular', null)).resolves.toBeUndefined();
+        await expect(setImageMasks([{ id: 'regular', userMasked: null }])).resolves.toBeUndefined();
         await expect(toggleImageIntermediate('regular', true)).resolves.toBeUndefined();
         await expect(toggleImageIntermediate('missing-source', true)).resolves.toBeUndefined();
         await expect(updateImageWorkflow('regular', '{"nodes":[]}')).resolves.toBeUndefined();
@@ -1245,7 +1245,7 @@ describe('imageRepo batch removal', () => {
                 }
                 return [];
             }),
-            execute: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
         };
         getDbMock.mockResolvedValue(db);
 
@@ -1255,7 +1255,7 @@ describe('imageRepo batch removal', () => {
             getAllImages,
             toggleImagePin,
             toggleImageFavorite,
-            toggleImageMask,
+            setImageMasks,
             toggleImageIntermediate,
             updateFavorite,
             updatePinned,
@@ -1268,7 +1268,7 @@ describe('imageRepo batch removal', () => {
         await expect(getAllImages(10, 5, true, true, false)).resolves.toHaveLength(1);
         await toggleImagePin('C:/images/pin.png', true);
         await toggleImageFavorite('C:/images/fav.png', false);
-        await toggleImageMask('C:/images/mask.png', null);
+        await setImageMasks([{ id: 'C:/images/mask.png', userMasked: null }]);
         await toggleImageIntermediate('C:/images/intermediate.png', true);
         await updateFavorite('C:/images/update-fav.png', true);
         await updatePinned('C:/images/update-pin.png', false);
@@ -1280,16 +1280,24 @@ describe('imageRepo batch removal', () => {
         await updateThumbnailPath('C:/images/thumb.png', 'C:/thumbs/thumb.webp');
 
         const sqlCalls = db.execute.mock.calls.map(([sql]) => String(sql));
-        expect(sqlCalls).toContain('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain(
+            'UPDATE images SET notes = ? WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
+        );
         expect(sqlCalls).toContain(
             'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
         );
         expect(sqlCalls).toContain(
             'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
         );
-        expect(sqlCalls).toContain('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+        expect(
+            sqlCalls.some(
+                (sql) =>
+                    sql.startsWith('UPDATE images SET user_masked = target.value') &&
+                    sql.includes('EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)')
+            )
+        ).toBe(true);
         expect(sqlCalls).toContain(
-            "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)"
+            "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)"
         );
         expect(sqlCalls).toContain(
             'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
@@ -1299,7 +1307,7 @@ describe('imageRepo batch removal', () => {
         );
         expect(sqlCalls.some((sql) => sql.includes('DELETE FROM images'))).toBe(false);
         expect(sqlCalls).toContain(
-            'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)'
+            'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
         );
     });
 
@@ -1314,7 +1322,7 @@ describe('imageRepo batch removal', () => {
         await expect(updateThumbnailPath('hidden-owner-image', 'thumb.webp')).rejects.toThrow(
             'Thumbnail update failed because the asset was not found'
         );
-        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+        expect(db.execute.mock.calls[0][0]).toContain('EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)');
     });
 
     it('preserves verbatim video identities for user-facing mutations', async () => {
@@ -1325,19 +1333,19 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
         const verbatimId = '\\\\?\\C:\\videos\\clip.mp4';
         const canonicalId = '//?/C:/videos/clip.mp4';
-        const { updateImageNotesCol, toggleImagePin, toggleImageFavorite, toggleImageMask, updateVideoPlaybackStatus } =
+        const { updateImageNotesCol, toggleImagePin, toggleImageFavorite, setImageMasks, updateVideoPlaybackStatus } =
             await import('../imageRepo');
 
         await updateImageNotesCol(verbatimId, 'motion reference');
         await toggleImagePin(verbatimId, true);
         await toggleImageFavorite(verbatimId, true);
-        await toggleImageMask(verbatimId, false);
+        await setImageMasks([{ id: verbatimId, userMasked: false }]);
         await updateVideoPlaybackStatus(verbatimId, 'playable');
 
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-            'motion reference',
-            canonicalId,
-        ]);
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET notes = ? WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+            ['motion reference', canonicalId]
+        );
         expect(db.execute).toHaveBeenCalledWith(
             'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
             [1, canonicalId]
@@ -1346,10 +1354,9 @@ describe('imageRepo batch removal', () => {
             'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
             [1, canonicalId]
         );
-        expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
-            [0, canonicalId]
-        );
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('UPDATE images SET user_masked = target.value'), [
+            JSON.stringify({ [canonicalId]: 0 }),
+        ]);
         expect(db.execute).toHaveBeenCalledWith(
             "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)",
             ['playable', canonicalId]
@@ -1367,7 +1374,7 @@ describe('imageRepo batch removal', () => {
             updateImageNotesCol,
             toggleImagePin,
             toggleImageFavorite,
-            toggleImageMask,
+            setImageMasks,
             toggleImageIntermediate,
             updateVideoPlaybackStatus,
             updateFavorite,
@@ -1378,7 +1385,7 @@ describe('imageRepo batch removal', () => {
         await expect(updateImageNotesCol('C:/hidden.mp4', 'note')).rejects.toThrow('asset was not found');
         await expect(toggleImagePin('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
         await expect(toggleImageFavorite('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
-        await expect(toggleImageMask('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(setImageMasks([{ id: 'C:/hidden.mp4', userMasked: true }])).rejects.toThrow('assets were not found');
         await expect(toggleImageIntermediate('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
         await expect(updateVideoPlaybackStatus('C:/hidden.mp4', 'playable')).rejects.toThrow('asset was not found');
         await expect(updateFavorite('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
@@ -1844,7 +1851,7 @@ describe('imageRepo batch removal', () => {
             'C:/images/a.png',
         ]);
         expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+            'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
             ['C:/images/a.png']
         );
         expect(db.select.mock.calls[1][0]).toContain('IFNULL(is_intermediate_gen, 0) = 0');
@@ -1853,21 +1860,17 @@ describe('imageRepo batch removal', () => {
     });
 
     it('persists both explicit mask values', async () => {
-        const db = { select: vi.fn(), execute: vi.fn() };
+        const db = { select: vi.fn(), execute: vi.fn().mockResolvedValue({ rowsAffected: 2 }) };
         getDbMock.mockResolvedValue(db);
-        const { toggleImageMask } = await import('../imageRepo');
-        await toggleImageMask('C:/true.png', true);
-        await toggleImageMask('C:/false.png', false);
-        expect(db.execute).toHaveBeenNthCalledWith(
-            1,
-            'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
-            [1, 'C:/true.png']
-        );
-        expect(db.execute).toHaveBeenNthCalledWith(
-            2,
-            'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
-            [0, 'C:/false.png']
-        );
+        const { setImageMasks } = await import('../imageRepo');
+        await setImageMasks([
+            { id: 'C:/true.png', userMasked: true },
+            { id: 'C:/false.png', userMasked: false },
+        ]);
+        expect(db.execute).toHaveBeenCalledOnce();
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('UPDATE images SET user_masked = target.value'), [
+            JSON.stringify({ 'C:/true.png': 1, 'C:/false.png': 0 }),
+        ]);
     });
 
     it('returns cleanly when removal or restoration rows are absent and skips empty membership payloads', async () => {
@@ -2040,7 +2043,7 @@ describe('imageRepo batch removal', () => {
             [1, 'C:/a.png']
         );
         expect(db.execute).toHaveBeenCalledWith(
-            "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)",
+            "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)",
             [0, 'C:/a.png']
         );
         expect(db.execute).toHaveBeenCalledWith(
