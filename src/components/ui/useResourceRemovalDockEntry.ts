@@ -6,13 +6,10 @@ export const RESOURCE_REMOVAL_DOCK_DELAY_MS = 1000;
 
 /**
  * Path of the resource folder being removed once the removal has run for `RESOURCE_REMOVAL_DOCK_DELAY_MS`, else null.
- * `onReveal` runs when the entry appears (used to re-open a dismissed dock).
  */
-export const useResourceRemovalDockEntry = (onReveal: () => void): string | null => {
+export const useResourceRemovalDockEntry = (): string | null => {
     const removingPath = useResourceRemovalStore((state) => state.removingResourcePath);
     const [revealedPath, setRevealedPath] = React.useState<string | null>(null);
-    const onRevealRef = React.useRef(onReveal);
-    onRevealRef.current = onReveal;
 
     React.useEffect(() => {
         if (!removingPath) {
@@ -21,7 +18,6 @@ export const useResourceRemovalDockEntry = (onReveal: () => void): string | null
         }
         const timer = window.setTimeout(() => {
             setRevealedPath(removingPath);
-            onRevealRef.current();
         }, RESOURCE_REMOVAL_DOCK_DELAY_MS);
         return () => window.clearTimeout(timer);
     }, [removingPath]);

@@ -198,6 +198,49 @@ describe('ActivityDock', () => {
             expect(screen.getByText('Removing resource folder')).toBeTruthy();
         });
 
+        it('does not re-open the dock while another job is the one shown', () => {
+            vi.useFakeTimers();
+            useLibraryStore.setState({
+                isActivityDockDismissed: true,
+                isScanningDuplicates: true,
+                duplicateScanProgress: { current: 1, total: 2 },
+            });
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            act(() => void vi.advanceTimersByTime(2000));
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
+            act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
+            expect(screen.getByText('Removing resource folder')).toBeTruthy();
+        });
+
+        it('restarts the delay when the path changes', () => {
+            vi.useFakeTimers();
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            act(() => void vi.advanceTimersByTime(600));
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath('D:/Models/Other'));
+            act(() => void vi.advanceTimersByTime(600));
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+            act(() => void vi.advanceTimersByTime(400));
+            expect(screen.getByText('Other')).toBeTruthy();
+        });
+
+        it('shows the footer and full path, and leaves minimized and a repeat dismiss alone', () => {
+            vi.useFakeTimers();
+            useLibraryStore.setState({ isActivityDockMinimized: true });
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            act(() => void vi.advanceTimersByTime(1000));
+            expect(useLibraryStore.getState().isActivityDockMinimized).toBe(true);
+            act(() => useLibraryStore.setState({ isActivityDockMinimized: false }));
+            expect(screen.getByText('You can keep using Ambit while this runs.')).toBeTruthy();
+            expect(screen.getByText('Loras').getAttribute('title')).toBe(FOLDER);
+            act(() => useLibraryStore.setState({ isActivityDockDismissed: true }));
+            act(() => void vi.advanceTimersByTime(3000));
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
+        });
+
         it('yields to other foreground work and appears when it ends', () => {
             vi.useFakeTimers();
             useLibraryStore.setState({ isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2 } });

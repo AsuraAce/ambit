@@ -209,8 +209,7 @@ export const ActivityDock: React.FC = () => {
     const setInvokeOperation = useInvokeOwnerScopeStore((state) => state.setOperation);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
-    const reopenDock = React.useCallback(() => setIsActivityDockDismissed(false), [setIsActivityDockDismissed]);
-    const removingResourcePath = useResourceRemovalDockEntry(reopenDock);
+    const removingResourcePath = useResourceRemovalDockEntry();
     const isRemovingResource = removingResourcePath !== null;
 
     const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed);
@@ -250,6 +249,7 @@ export const ActivityDock: React.FC = () => {
 
     let progress: SyncProgress | null = null;
     let label = '';
+    let isRemovalShown = false;
     let isLowPriority = false;
     let supportsCancel = false;
     let footerMessage = 'Tracking continues in the top header.';
@@ -296,6 +296,7 @@ export const ActivityDock: React.FC = () => {
         progress = { current: 0, total: 0, message: 'Matching images to models...' };
         label = 'Smart Fill';
     } else if (isRemovingResource) {
+        isRemovalShown = true;
         progress = {
             current: 0,
             total: 0,
@@ -344,6 +345,16 @@ export const ActivityDock: React.FC = () => {
             mode === 'indeterminate' ||
             (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
     const showProgressBar = !isInvokeResult && (!isLiveWatchVisible || liveWatchPresentation.isExpanded);
+
+    const reopenedRemovalPathRef = React.useRef<string | null>(null);
+    React.useEffect(() => {
+        if (!removingResourcePath) reopenedRemovalPathRef.current = null;
+        if (!isRemovalShown) return;
+        if (reopenedRemovalPathRef.current !== removingResourcePath) {
+            reopenedRemovalPathRef.current = removingResourcePath;
+            setIsActivityDockDismissed(false);
+        }
+    }, [isRemovalShown, removingResourcePath, setIsActivityDockDismissed]);
 
     const [elapsedNow, setElapsedNow] = React.useState(() => Date.now());
 
@@ -602,6 +613,7 @@ export const ActivityDock: React.FC = () => {
                                 )}
                                 <div className="flex justify-between items-center px-0.5">
                                     <p
+                                        title={isRemovalShown ? (removingResourcePath ?? undefined) : undefined}
                                         role={isInvokePresentation ? 'status' : undefined}
                                         aria-live={isInvokePresentation ? 'polite' : undefined}
                                         aria-atomic={isInvokePresentation ? true : undefined}
