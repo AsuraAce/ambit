@@ -11,6 +11,7 @@ import {
 import { TooltipButton } from './InfoTooltip';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
+import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
@@ -208,11 +209,15 @@ export const ActivityDock: React.FC = () => {
     const setInvokeOperation = useInvokeOwnerScopeStore((state) => state.setOperation);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
+    const reopenDock = React.useCallback(() => setIsActivityDockDismissed(false), [setIsActivityDockDismissed]);
+    const removingResourcePath = useResourceRemovalDockEntry(reopenDock);
+    const isRemovingResource = removingResourcePath !== null;
+
     const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed);
     const isInvokeOperationActive = invokePresentation.isActiveVisible;
     const isManualSyncing = isInvokeOperationActive || (invokeOperation === null && syncStatus === 'syncing');
 
-    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Missing Audit > Populating > Background Healing > Reparsing > Live Watch
+    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Missing Audit > Populating > Resource Removal > Background Healing > Reparsing > Live Watch
     const isHighPriorityActive =
         isImporting ||
         isManualSyncing ||
@@ -221,7 +226,8 @@ export const ActivityDock: React.FC = () => {
         isScanningDiscovery ||
         isScanningDuplicates ||
         isScanningMissingFiles ||
-        isPopulatingThumbnails;
+        isPopulatingThumbnails ||
+        isRemovingResource;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
@@ -289,6 +295,15 @@ export const ActivityDock: React.FC = () => {
     } else if (isPopulatingThumbnails) {
         progress = { current: 0, total: 0, message: 'Matching images to models...' };
         label = 'Smart Fill';
+    } else if (isRemovingResource) {
+        progress = {
+            current: 0,
+            total: 0,
+            mode: 'indeterminate',
+            message: removingResourcePath.split(/[\\/]/).filter(Boolean).pop() ?? removingResourcePath,
+        };
+        label = 'Removing resource folder';
+        footerMessage = 'You can keep using Ambit while this runs.';
     } else if (isBackgroundActive) {
         progress = backgroundHealingProgress;
         label = 'Smart Thumbnails';

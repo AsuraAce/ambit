@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
 import { invoke } from '@tauri-apps/api/core';
+import { useResourceRemovalStore } from '../../../stores/resourceRemovalStore';
 import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../../stores/invokeOwnerScopeStore';
 
 vi.mock('framer-motion', () => ({
@@ -81,6 +82,7 @@ describe('ActivityDock', () => {
         vi.clearAllMocks();
         resetLibraryStore();
         useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
+        useResourceRemovalStore.setState({ removingResourcePath: null });
     });
 
     afterEach(() => {
@@ -156,6 +158,58 @@ describe('ActivityDock', () => {
             expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
         }
     );
+
+    describe('resource folder removal', () => {
+        const FOLDER = 'D:/Models/Loras';
+
+        it('shows the removal with the folder name after one second and clears when it ends', () => {
+            vi.useFakeTimers();
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+            act(() => void vi.advanceTimersByTime(1000));
+            expect(screen.getByText('Removing resource folder')).toBeTruthy();
+            expect(screen.getByText('Loras')).toBeTruthy();
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(null));
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+        });
+
+        it('never shows or re-opens the dock for a removal shorter than one second', () => {
+            vi.useFakeTimers();
+            useLibraryStore.setState({ isActivityDockDismissed: true });
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            act(() => void vi.advanceTimersByTime(900));
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(null));
+            act(() => void vi.advanceTimersByTime(2000));
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
+        });
+
+        it('re-opens a dismissed dock only when the entry appears', () => {
+            vi.useFakeTimers();
+            useLibraryStore.setState({ isActivityDockDismissed: true });
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
+            act(() => void vi.advanceTimersByTime(1000));
+            expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
+            expect(screen.getByText('Removing resource folder')).toBeTruthy();
+        });
+
+        it('yields to other foreground work and appears when it ends', () => {
+            vi.useFakeTimers();
+            useLibraryStore.setState({ isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2 } });
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            act(() => void vi.advanceTimersByTime(1000));
+            expect(screen.getByText('Duplicate Scan')).toBeTruthy();
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+            act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+            expect(screen.getByText('Removing resource folder')).toBeTruthy();
+        });
+    });
 
     describe('InvokeAI presentation timing', () => {
         beforeEach(() => {
