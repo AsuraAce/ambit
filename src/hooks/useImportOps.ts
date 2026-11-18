@@ -86,8 +86,10 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 } else if (hasActiveResultFilters(useSearchStore.getState().filters)) {
                     // New images may not belong in the collection, search or filtered view open now (an import
                     // can outlast a view change), nor ahead of a collection's pinned images (#462), so that view
-                    // refetches with its own filters and order.
-                    await Promise.all([queryClient.invalidateQueries({ queryKey: ['images'] }), refreshCollections()]);
+                    // refetches with its own filters and order. The refetch runs on, so the toast does not
+                    // wait for every loaded page; refetch errors land in query state.
+                    void queryClient.invalidateQueries({ queryKey: ['images'] });
+                    await refreshCollections();
                 } else {
                     setImages((prev) => {
                         const reallyUnique = uniqueNewImages.filter((n) => !prev.some((p) => p.id === n.id));

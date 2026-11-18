@@ -40,6 +40,7 @@ import { useAiSearchLogic } from './hooks/useAiSearchLogic';
 import { useFileOperations } from './hooks/useFileOperations';
 import { useCollectionOperations } from './hooks/useCollectionOperations';
 import { useTheme } from './hooks/useTheme';
+import { useTimeline } from './hooks/useTimeline';
 import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
@@ -106,6 +107,8 @@ const dismissStaticLoader = (immediate = false) => {
         loader.remove();
     }, 500);
 };
+
+const NO_IMAGES: AIImage[] = [];
 
 export default function App() {
     const { addToast } = useToast();
@@ -288,10 +291,15 @@ export default function App() {
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
-    // Shift-click ranges and drag positions count cards as drawn, pinned shelf first, so selection
-    // reads the list in that order even when the loaded list is not pinned first (#461).
+    // Shift-click ranges and drag positions count cards as drawn (pinned shelf first; in the timeline,
+    // its groups and sort), so selection reads the list in that order, not load order (#461).
+    const isTimeline = viewMode === 'timeline';
+    const { groups: timelineGroups } = useTimeline(isTimeline ? images : NO_IMAGES, sortOption);
     const showPinnedShelf = showsPinnedShelf(filters, viewMode);
-    const imagesAsDrawn = React.useMemo(() => orderAsDrawn(images, showPinnedShelf), [images, showPinnedShelf]);
+    const imagesAsDrawn = React.useMemo(
+        () => (isTimeline ? timelineGroups.flatMap((group) => group.images) : orderAsDrawn(images, showPinnedShelf)),
+        [isTimeline, timelineGroups, images, showPinnedShelf]
+    );
     const {
         selectedIds,
         setSelectedIds,
