@@ -11,6 +11,7 @@ import {
 import { TooltipButton } from './InfoTooltip';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
+import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
@@ -208,11 +209,14 @@ export const ActivityDock: React.FC = () => {
     const setInvokeOperation = useInvokeOwnerScopeStore((state) => state.setOperation);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
+    const removingResourcePath = useResourceRemovalDockEntry();
+    const isRemovingResource = removingResourcePath !== null;
+
     const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed);
     const isInvokeOperationActive = invokePresentation.isActiveVisible;
     const isManualSyncing = isInvokeOperationActive || (invokeOperation === null && syncStatus === 'syncing');
 
-    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Missing Audit > Populating > Background Healing > Reparsing > Live Watch
+    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Missing Audit > Populating > Resource Removal > Background Healing > Reparsing > Live Watch
     const isHighPriorityActive =
         isImporting ||
         isManualSyncing ||
@@ -221,7 +225,8 @@ export const ActivityDock: React.FC = () => {
         isScanningDiscovery ||
         isScanningDuplicates ||
         isScanningMissingFiles ||
-        isPopulatingThumbnails;
+        isPopulatingThumbnails ||
+        isRemovingResource;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
@@ -244,6 +249,7 @@ export const ActivityDock: React.FC = () => {
 
     let progress: SyncProgress | null = null;
     let label = '';
+    let isRemovalShown = false;
     let isLowPriority = false;
     let supportsCancel = false;
     let footerMessage = 'Tracking continues in the top header.';
@@ -289,6 +295,16 @@ export const ActivityDock: React.FC = () => {
     } else if (isPopulatingThumbnails) {
         progress = { current: 0, total: 0, message: 'Matching images to models...' };
         label = 'Smart Fill';
+    } else if (isRemovingResource) {
+        isRemovalShown = true;
+        progress = {
+            current: 0,
+            total: 0,
+            mode: 'indeterminate',
+            message: removingResourcePath.split(/[\\/]/).filter(Boolean).pop() ?? removingResourcePath,
+        };
+        label = 'Removing resource folder';
+        footerMessage = 'You can keep using Ambit while this runs.';
     } else if (isBackgroundActive) {
         progress = backgroundHealingProgress;
         label = 'Smart Thumbnails';
@@ -329,6 +345,16 @@ export const ActivityDock: React.FC = () => {
             mode === 'indeterminate' ||
             (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
     const showProgressBar = !isInvokeResult && (!isLiveWatchVisible || liveWatchPresentation.isExpanded);
+
+    const reopenedRemovalPathRef = React.useRef<string | null>(null);
+    React.useEffect(() => {
+        if (!removingResourcePath) reopenedRemovalPathRef.current = null;
+        if (!isRemovalShown) return;
+        if (reopenedRemovalPathRef.current !== removingResourcePath) {
+            reopenedRemovalPathRef.current = removingResourcePath;
+            setIsActivityDockDismissed(false);
+        }
+    }, [isRemovalShown, removingResourcePath, setIsActivityDockDismissed]);
 
     const [elapsedNow, setElapsedNow] = React.useState(() => Date.now());
 
@@ -587,6 +613,7 @@ export const ActivityDock: React.FC = () => {
                                 )}
                                 <div className="flex justify-between items-center px-0.5">
                                     <p
+                                        title={isRemovalShown ? (removingResourcePath ?? undefined) : undefined}
                                         role={isInvokePresentation ? 'status' : undefined}
                                         aria-live={isInvokePresentation ? 'polite' : undefined}
                                         aria-atomic={isInvokePresentation ? true : undefined}
