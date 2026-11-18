@@ -103,20 +103,22 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                         </span>
                                     )}
                                 </div>
-                                {isRemoving && (
-                                    <span className="mr-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400" role="status">
-                                        Removing…
-                                    </span>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => onRemove(path)}
-                                    disabled={isDiscoveryBusy}
-                                    aria-label={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
-                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-400"
-                                >
-                                    {isRemoving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                </button>
+                                <div className="flex flex-shrink-0 items-center">
+                                    {isRemoving && (
+                                        <span className="mr-2 text-xs text-gray-500 dark:text-gray-400" role="status">
+                                            Removing…
+                                        </span>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => onRemove(path)}
+                                        disabled={isDiscoveryBusy}
+                                        aria-label={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                                    >
+                                        {isRemoving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                    </button>
+                                </div>
                             </div>
                         );
                     })}

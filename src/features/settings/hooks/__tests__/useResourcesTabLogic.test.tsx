@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppSettings } from '../../../../types';
 import { commands, type ResolutionResult, type ThumbnailScanResult } from '../../../../bindings';
 import { useLibraryStore, type SyncProgress } from '../../../../stores/libraryStore';
+import { useResourceRemovalStore } from '../../../../stores/resourceRemovalStore';
 import { useResourcesTabLogic } from '../useResourcesTabLogic';
 
 const addToastMock = vi.hoisted(() => vi.fn());
@@ -131,6 +132,7 @@ const createDeferred = <T,>() => {
 describe('useResourcesTabLogic', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        useResourceRemovalStore.setState({ removingResourcePath: null });
         addToastMock.mockReset();
         scanResourceThumbnailsMock.mockResolvedValue(scanResult);
         requestGrantMock.mockResolvedValue(true);
