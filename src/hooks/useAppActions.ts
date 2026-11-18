@@ -16,6 +16,7 @@ import {
 import { backfillParameterColumns } from '../services/db/maintenanceRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import {
+    hasSameImageOrder,
     patchImageFlagsInQueryCaches,
     pickImages,
     restoreImagesInList,
@@ -152,6 +153,11 @@ export const useAppActions = ({
                 console.error('[Pin] Failed to persist pin state', error);
                 if (restoreGallery) {
                     // Revert only these images: the user may have opened another view meanwhile (#484).
+                    // A list that moved on since the optimistic write keeps a reverted pin where it was,
+                    // so reload it from the database to put that pin back in its sorted place.
+                    if (!hasSameImageOrder(useSearchStore.getState().images, optimisticImages)) {
+                        void queryClient.invalidateQueries({ queryKey: ['images'] });
+                    }
                     const touched = pickImages(previousImages, ids);
                     setImages((current) =>
                         restoreImagesInList(current, touched, { previousOrder: optimisticImages, nextOrder: previousImages })

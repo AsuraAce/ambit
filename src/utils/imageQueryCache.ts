@@ -29,7 +29,7 @@ interface ImageQueryOrderOptions {
     reorderQueryKey?: QueryKey;
 }
 
-const hasSameImageOrder = (images: readonly AIImage[], order: readonly AIImage[]): boolean =>
+export const hasSameImageOrder = (images: readonly AIImage[], order: readonly AIImage[]): boolean =>
     images.length === order.length && images.every((image, index) => image.id === order[index]?.id);
 
 const pageImagesChanged = (pages: ImagesPage[], nextPages: ImagesPage[]): boolean =>

@@ -1035,6 +1035,16 @@ describe('SearchProvider', () => {
         });
 
         expect(state.images).toEqual([holidayImage]);
+        // The caches revert only the image each write touched, as it was before that write.
+        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(1, mocks.queryClient, [libraryImage]);
+        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(
+            2,
+            mocks.queryClient,
+            [{ ...libraryImage, isFavorite: true }],
+            expect.objectContaining({ nextOrder: [{ ...libraryImage, isFavorite: true }] })
+        );
+        // The list moved on, so the reverted pin is re-sorted from the database.
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
     });
 
     it('loads and persists recent searches and hidden-content preferences', async () => {

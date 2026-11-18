@@ -33,7 +33,13 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getEffectiveImageKind, normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
-import { patchImageFlagsInQueryCaches, pickImages, restoreImagesInList, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
+import {
+    hasSameImageOrder,
+    patchImageFlagsInQueryCaches,
+    pickImages,
+    restoreImagesInList,
+    restoreImagesInQueryCaches,
+} from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -577,6 +583,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle pin failed', e);
+                // As in useAppActions: a list that moved on reloads so the reverted pin is sorted again.
+                if (!hasSameImageOrder(useSearchStore.getState().images, nextImages)) {
+                    void queryClient.invalidateQueries({ queryKey: ['images'] });
+                }
                 const touched = pickImages(imgs, [id]);
                 setImages((current) => restoreImagesInList(current, touched, { previousOrder: nextImages, nextOrder: imgs }));
                 restoreImagesInQueryCaches(queryClient, touched, {
