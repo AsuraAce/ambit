@@ -197,6 +197,7 @@ const mocks = vi.hoisted(() => ({
     handleSelectionToggle: vi.fn(),
     handleRangeSelection: vi.fn(),
     clearSelection: vi.fn(),
+    selectionList: [] as AIImage[],
     toggleTheme: vi.fn(),
     refreshMaintenanceCounts: vi.fn(),
     toggleAiSearch: vi.fn(),
@@ -400,16 +401,19 @@ vi.mock('./hooks/useThumbnailQueue', () => ({ useThumbnailQueue: mocks.thumbnail
 vi.mock('./hooks/useMetadataRefresh', () => ({ useMetadataRefresh: mocks.metadataRefresh }));
 vi.mock('./hooks/useTheme', () => ({ useTheme: () => ({ toggleTheme: mocks.toggleTheme }) }));
 vi.mock('./hooks/useSelection', () => ({
-    useSelection: () => ({
-        selectedIds: mocks.selectedIds,
-        setSelectedIds: mocks.setSelectedIds,
-        lastSelectedId: null,
-        setLastSelectedId: mocks.setLastSelectedId,
-        handleImageClick: mocks.handleImageClick,
-        handleSelectionToggle: mocks.handleSelectionToggle,
-        handleRangeSelection: mocks.handleRangeSelection,
-        clearSelection: mocks.clearSelection,
-    }),
+    useSelection: (list: AIImage[]) => {
+        mocks.selectionList = list;
+        return {
+            selectedIds: mocks.selectedIds,
+            setSelectedIds: mocks.setSelectedIds,
+            lastSelectedId: null,
+            setLastSelectedId: mocks.setLastSelectedId,
+            handleImageClick: mocks.handleImageClick,
+            handleSelectionToggle: mocks.handleSelectionToggle,
+            handleRangeSelection: mocks.handleRangeSelection,
+            clearSelection: mocks.clearSelection,
+        };
+    },
 }));
 vi.mock('./contexts/WatcherContext', () => ({ useWatchers: () => ({ refreshMaintenanceCounts: mocks.refreshMaintenanceCounts }) }));
 vi.mock('./hooks/useAppHandlers', () => ({ useAppHandlers: () => mocks.handlers }));
@@ -1928,6 +1932,26 @@ describe('App orchestration', () => {
         await waitFor(() => expect(captured.viewer?.image.id).toBe('unpinned-a'));
         act(() => requireProbe(captured.viewer, 'ImageViewer').onPrev());
         await waitFor(() => expect(captured.viewer?.image.id).toBe('unpinned-b'));
+    });
+
+    // #461: drag selection counts a grid card as grid index + pinned count and a shelf card by its
+    // shelf index, and Shift-click ranges run between two cards. Both only pick the cards the owner
+    // marked if selection reads the list in the order they are drawn: pinned shelf, then grid.
+    it('gives selection the cards in the order the pinned shelf and grid draw them', () => {
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.images = [image('unpinned-a'), { ...image('pinned'), isPinned: true }, image('unpinned-b')];
+        const view = render(<App />);
+        expect(mocks.selectionList.map((candidate) => candidate.id)).toEqual(['pinned', 'unpinned-a', 'unpinned-b']);
+        // The first grid card, dragged with one pinned card in the shelf, arrives as index 1.
+        expect(mocks.selectionList[0 + 1].id).toBe('unpinned-a');
+
+        // Without the shelf (the Library, or the pinned-only filter) the grid draws the list as it is.
+        mocks.filters = createDefaultFilters();
+        view.rerender(<App />);
+        expect(mocks.selectionList.map((candidate) => candidate.id)).toEqual(['unpinned-a', 'pinned', 'unpinned-b']);
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a', pinnedOnly: true });
+        view.rerender(<App />);
+        expect(mocks.selectionList.map((candidate) => candidate.id)).toEqual(['unpinned-a', 'pinned', 'unpinned-b']);
     });
 
     it('opens a referenced asset outside the current query without changing gallery results', async () => {

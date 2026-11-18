@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useImportOps } from '../useImportOps';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { GeneratorTool } from '../../types';
-import type { AIImage, AppSettings, MonitoredFolder } from '../../types';
+import type { AIImage, AppSettings, FilterState, MonitoredFolder } from '../../types';
 import type { ImportResult } from '../../services/importService';
 import type { Dispatch, SetStateAction } from 'react';
+import { QueryClient } from '@tanstack/react-query';
+import { createDefaultFilters } from '../../utils/filterState';
 
 type ScanFileEntry = { path: string; modified: number; size: number };
 type CommandOk<T> = { status: 'ok'; data: T };
@@ -22,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     refreshMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
     syncCollectionImages: vi.fn(),
+    filters: null as unknown as FilterState,
 }));
 
 vi.mock('../../bindings', () => ({
@@ -50,6 +53,7 @@ vi.mock('../../contexts/SearchContext', () => ({
     useSearch: () => ({
         refreshHiddenAvailability: mocks.refreshHiddenAvailability,
         refreshMetadata: mocks.refreshMetadata,
+        filters: mocks.filters,
     }),
 }));
 
@@ -135,6 +139,7 @@ describe('useImportOps', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.filters = createDefaultFilters();
         useLibraryStore.setState({
             isImporting: false,
             importProgress: null,
@@ -538,6 +543,39 @@ describe('useImportOps', () => {
             'info'
         );
         expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
+    });
+
+    // #462: a small import used to prepend its images into whatever view was open, so they showed in a
+    // collection or search they do not belong to, ahead of a collection's pinned images (#461).
+    it.each([
+        ['a collection', createDefaultFilters({ collectionId: 'collection-a' })],
+        ['a search', createDefaultFilters({ searchQuery: 'sunset' })],
+        ['a filter', createDefaultFilters({ favoritesOnly: true })],
+    ])('refetches %s instead of adding a small import to its list', async (_view, filters) => {
+        mocks.filters = filters;
+        const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({ images: [importedImage('added')] }));
+        const { result, setImages, refreshCollections } = renderImportOps({}, [importedImage('existing')]);
+
+        await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+        expect(setImages).not.toHaveBeenCalled();
+        expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        expect(refreshCollections).toHaveBeenCalledTimes(1);
+        invalidateQueries.mockRestore();
+    });
+
+    it('prepends a small import in the unfiltered Library without a refetch', async () => {
+        const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({ images: [importedImage('added')] }));
+        const { result, setImages } = renderImportOps({}, [importedImage('existing')]);
+
+        await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+        const update = setImages.mock.calls[0][0] as (value: AIImage[]) => AIImage[];
+        expect(update([importedImage('existing')]).map((image) => image.id)).toEqual(['added', 'existing']);
+        expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['images'] });
+        invalidateQueries.mockRestore();
     });
 
     it('uses metadata refresh for imported batches reported by the backend', async () => {
