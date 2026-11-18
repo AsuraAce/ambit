@@ -764,63 +764,61 @@ pub async fn resolve_hashes_online(
     })
 }
 
-/// Helper to sync the 'images.resolved_model_name' column with the 'models' table.
-/// This fixes the issue where resolved hashes wouldn't show up in the UI until a re-scan.
-fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    log::info!("[CivitAI] Syncing resolved model names to images table...");
+const FALLBACK_RESOLVED_NAME_SQL: &str = "UPDATE images
+     SET resolved_model_name = model_name
+     WHERE model_name IS NOT NULL
+     AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)
+     AND model_name != ''
+     AND (
+        resolved_model_name IS NULL
+        OR resolved_model_name = ''
+        OR resolved_model_name = 'Unknown'
+        OR resolved_model_name = 'Unknown Model'
+     )";
 
-    let fallback_count = conn.execute(
-        "UPDATE images
-         SET resolved_model_name = model_name
-         WHERE model_name IS NOT NULL
-         AND id IN (SELECT id FROM scoped_images)
-         AND model_name != ''
-         AND (
-            resolved_model_name IS NULL
-            OR resolved_model_name = ''
-            OR resolved_model_name = 'Unknown'
-            OR resolved_model_name = 'Unknown Model'
-         )",
-        [],
-    )?;
-
-    // We update any image where the model_hash matches a known non-failed model,
-    // and the current resolved_name is either missing or outdated.
-    let resolved_count = conn.execute(
-        "UPDATE images 
-         SET resolved_model_name = (
+const RESOLVED_NAME_FROM_MODELS_SQL: &str = "UPDATE images
+     SET resolved_model_name = (
+        SELECT m.name
+        FROM models m
+        WHERE m.hash = images.model_hash
+        AND COALESCE(m.lookup_source, '') != 'civitai_failed'
+        AND m.name != 'Unknown Model'
+        LIMIT 1
+     )
+     WHERE model_hash IS NOT NULL
+     AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)
+     AND EXISTS (
+        SELECT 1
+        FROM models m
+        WHERE m.hash = images.model_hash
+        AND COALESCE(m.lookup_source, '') != 'civitai_failed'
+        AND m.name != 'Unknown Model'
+     )
+     AND (
+        resolved_model_name IS NULL
+        OR resolved_model_name = ''
+        OR resolved_model_name = 'Unknown'
+        OR resolved_model_name = 'Unknown Model'
+        OR resolved_model_name != (
             SELECT m.name
             FROM models m
             WHERE m.hash = images.model_hash
             AND COALESCE(m.lookup_source, '') != 'civitai_failed'
             AND m.name != 'Unknown Model'
             LIMIT 1
-         )
-         WHERE model_hash IS NOT NULL
-         AND id IN (SELECT id FROM scoped_images)
-         AND EXISTS (
-            SELECT 1
-            FROM models m
-            WHERE m.hash = images.model_hash
-            AND COALESCE(m.lookup_source, '') != 'civitai_failed'
-            AND m.name != 'Unknown Model'
-         )
-         AND (
-            resolved_model_name IS NULL 
-            OR resolved_model_name = ''
-            OR resolved_model_name = 'Unknown' 
-            OR resolved_model_name = 'Unknown Model'
-            OR resolved_model_name != (
-                SELECT m.name
-                FROM models m
-                WHERE m.hash = images.model_hash
-                AND COALESCE(m.lookup_source, '') != 'civitai_failed'
-                AND m.name != 'Unknown Model'
-                LIMIT 1
-            )
-         )",
-        [],
-    )?;
+        )
+     )";
+
+/// Helper to sync the 'images.resolved_model_name' column with the 'models' table.
+/// This fixes the issue where resolved hashes wouldn't show up in the UI until a re-scan.
+fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    log::info!("[CivitAI] Syncing resolved model names to images table...");
+
+    let fallback_count = conn.execute(FALLBACK_RESOLVED_NAME_SQL, [])?;
+
+    // We update any image where the model_hash matches a known non-failed model,
+    // and the current resolved_name is either missing or outdated.
+    let resolved_count = conn.execute(RESOLVED_NAME_FROM_MODELS_SQL, [])?;
 
     let count = fallback_count + resolved_count;
 
@@ -840,6 +838,21 @@ mod tests {
             conn.execute_batch(migration.sql).expect("apply migration");
         }
         conn
+    }
+
+    // #466: the resolved-name sync runs after every CivitAI lookup. A scope check that reads
+    // the whole library as a list holds the write lock for that read on a large library.
+    #[test]
+    fn resolved_name_sync_writes_check_scope_by_row() {
+        let conn = setup_conn();
+        let mut scans = Vec::new();
+        for sql in [FALLBACK_RESOLVED_NAME_SQL, RESOLVED_NAME_FROM_MODELS_SQL] {
+            scans.push(crate::db::subquery_scans(&conn, sql));
+        }
+        assert!(
+            scans.iter().all(Vec::is_empty),
+            "scope checks must not scan: {scans:?}"
+        );
     }
 
     // #384: the cache import reads a whole file the webview names.

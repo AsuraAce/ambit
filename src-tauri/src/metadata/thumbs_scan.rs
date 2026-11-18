@@ -1,4 +1,4 @@
-use crate::db::facets::{refresh_live_facet_resources_in_transaction, FacetResourceTouches};
+use crate::db::facets::{lock_facet_builds, refresh_live_facet_resources, FacetResourceTouches};
 use crate::db::resolve_db_path;
 use crate::metadata::models::{ModelDiscoveryState, ThumbnailScanResult};
 use rusqlite::{params, Connection};
@@ -490,8 +490,57 @@ fn purge_resource_folder_assets_inner(
         conn,
         folder_path,
         remaining_paths,
-        refresh_live_facet_resources_in_transaction,
+        |conn, touches| {
+            let _coordinator = lock_facet_builds()?;
+            refresh_live_facet_resources(conn, touches)
+        },
     )
+}
+
+const PURGE_REFRESH_FAILED_MESSAGE: &str = "The folder's resources were removed. Only the filter counts are behind; removing the folder again brings them up to date.";
+
+/// Resources whose facet rows a purge could not refresh, by database path. The purge has
+/// already committed, so its retry finds nothing left to remove; it refreshes these instead.
+/// An InvokeAI owner scope also queues them for its cache repair, but a library without one
+/// has no other record of them.
+static PENDING_PURGE_REFRESH: std::sync::Mutex<Vec<(String, FacetResourceTouches)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn merge_resource_touches(into: &mut FacetResourceTouches, from: &FacetResourceTouches) {
+    for (target, source) in [
+        (&mut into.checkpoints, &from.checkpoints),
+        (&mut into.loras, &from.loras),
+        (&mut into.embeddings, &from.embeddings),
+        (&mut into.hypernetworks, &from.hypernetworks),
+        (&mut into.control_nets, &from.control_nets),
+        (&mut into.ip_adapters, &from.ip_adapters),
+        (&mut into.tools, &from.tools),
+    ] {
+        for name in source {
+            push_unique_resource_name(target, name);
+        }
+    }
+}
+
+fn take_pending_purge_refresh(db_key: &str) -> FacetResourceTouches {
+    let mut pending = PENDING_PURGE_REFRESH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    pending
+        .iter()
+        .position(|(key, _)| key == db_key)
+        .map(|index| pending.swap_remove(index).1)
+        .unwrap_or_default()
+}
+
+fn remember_pending_purge_refresh(db_key: &str, touches: FacetResourceTouches) {
+    let mut pending = PENDING_PURGE_REFRESH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match pending.iter_mut().find(|(key, _)| key == db_key) {
+        Some((_, existing)) => merge_resource_touches(existing, &touches),
+        None => pending.push((db_key.to_string(), touches)),
+    }
 }
 
 fn purge_resource_folder_assets_with_refresh<F>(
@@ -501,7 +550,7 @@ fn purge_resource_folder_assets_with_refresh<F>(
     refresh_facets: F,
 ) -> Result<ResourcePurgeResult, String>
 where
-    F: FnOnce(&Connection, &FacetResourceTouches) -> Result<usize, String>,
+    F: FnOnce(&mut Connection, &FacetResourceTouches) -> Result<usize, String>,
 {
     if normalize_scan_path(folder_path).is_empty() {
         return Err("Resource folder path is required".to_string());
@@ -630,8 +679,22 @@ where
             .execute("DELETE FROM scanned_files WHERE path = ?1", params![path])
             .map_err(|e| e.to_string())?;
     }
-    let refreshed_facets = refresh_facets(&tx, &resources)?;
     tx.commit().map_err(|e| e.to_string())?;
+    drop(_hold);
+
+    // The facet refresh reads for most of a minute on a large library, so it runs after the
+    // purge commits, staged, instead of holding the write lock inside the purge (#469).
+    let db_key = conn.path().unwrap_or_default().to_string();
+    let mut to_refresh = take_pending_purge_refresh(&db_key);
+    merge_resource_touches(&mut to_refresh, &resources);
+    let refreshed_facets = match refresh_facets(conn, &to_refresh) {
+        Ok(refreshed) => refreshed,
+        Err(error) => {
+            log::warn!("[ResourcePurge] facet refresh failed after the purge committed: {error}");
+            remember_pending_purge_refresh(&db_key, to_refresh);
+            return Err(PURGE_REFRESH_FAILED_MESSAGE.to_string());
+        }
+    };
 
     Ok(ResourcePurgeResult {
         removed_models,
@@ -1717,30 +1780,174 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn purge_rolls_back_when_facet_refresh_fails() {
-        let mut conn = registration_test_conn();
-        let path = "C:/AI/models/loras/Foo.safetensors";
-        let hash = format!("file:{path}");
-        insert_test_model(&conn, &hash, "Foo", "disk_scan", "loras");
-        insert_test_scanned_file(&conn, path, &hash);
+    /// A migrated file library in WAL mode, as the app opens it, with `lora_count` LoRAs
+    /// registered from disk under `C:/AI/models/loras` and used by `image_count` images.
+    fn open_purge_test_library(
+        name: &str,
+        image_count: i64,
+        lora_count: i64,
+    ) -> (std::path::PathBuf, Connection) {
+        let path = std::env::temp_dir().join(format!(
+            "ambit-469-{name}-{}-{}.db",
+            std::process::id(),
+            now_millis()
+        ));
+        let conn = Connection::open(&path).unwrap();
+        crate::db::configure_connection(&conn).unwrap();
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch(&format!(
+            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < {image_count})
+             INSERT INTO images (id, path, timestamp, thumbnail_path)
+             SELECT 'img-' || x, 'img-' || x || '.png', x, 'thumb-' || x || '.webp' FROM n;
+             INSERT INTO image_loras (image_id, lora_name)
+             SELECT id, 'Lora' || (timestamp % {lora_count}) FROM images;
+             WITH RECURSIVE n(x) AS (SELECT 0 UNION ALL SELECT x + 1 FROM n WHERE x < {lora_count} - 1)
+             INSERT INTO models (hash, name, lookup_source, resource_type)
+             SELECT 'file:C:/AI/models/loras/Lora' || x || '.safetensors', 'Lora' || x, 'disk_scan', 'loras'
+             FROM n;
+             INSERT INTO scanned_files (path, size, modified, hash)
+             SELECT substr(hash, 6), 1, 1, hash FROM models WHERE lookup_source = 'disk_scan';
+             CREATE TABLE user_write_probe (id INTEGER PRIMARY KEY, n INTEGER NOT NULL);
+             INSERT INTO user_write_probe (id, n) VALUES (1, 0);"
+        ))
+        .unwrap();
+        (path, conn)
+    }
 
-        let result = purge_resource_folder_assets_with_refresh(
+    fn remove_purge_test_library(path: &Path) {
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
+    // #469: removing a resource folder refreshed its facets inside the purge's write
+    // transaction; 64 resources on a 296k-image library held the lock for 65 s, and every
+    // favorite, pin or mask in that time failed. A user write must get in while it reads.
+    #[test]
+    fn folder_purge_leaves_user_writes_free_while_facets_refresh() {
+        let (path, _setup) = open_purge_test_library("concurrent", 4_000, 30);
+        let mut purge = Connection::open(&path).unwrap();
+        crate::db::configure_connection(&purge).unwrap();
+
+        // A user write that will not wait: it fails at once while the lock is held.
+        let user = Connection::open(&path).unwrap();
+        user.busy_timeout(Duration::ZERO).unwrap();
+        let user = std::panic::AssertUnwindSafe(user);
+        let succeeded = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let refused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        {
+            let succeeded = succeeded.clone();
+            let refused = refused.clone();
+            purge.progress_handler(
+                2_000,
+                Some(move || {
+                    match user.execute("UPDATE user_write_probe SET n = n + 1 WHERE id = 1", []) {
+                        Ok(_) => succeeded.fetch_add(1, Ordering::Relaxed),
+                        Err(_) => refused.fetch_add(1, Ordering::Relaxed),
+                    };
+                    false
+                }),
+            );
+        }
+
+        let result =
+            purge_resource_folder_assets_inner(&mut purge, "C:/AI/models/loras", &[]).unwrap();
+        purge.progress_handler(0, None::<fn() -> bool>);
+
+        let succeeded = succeeded.load(Ordering::Relaxed);
+        let refused = refused.load(Ordering::Relaxed);
+        let lora_rows: i64 = purge
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache WHERE facet_type = 'loras'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(purge);
+        remove_purge_test_library(&path);
+
+        assert_eq!(result.removed_models, 30);
+        assert_eq!(result.refreshed_facets, 30);
+        assert!(
+            succeeded + refused >= 20,
+            "too few probes ran: {succeeded} + {refused}"
+        );
+        // Only the short purge and swap transactions may turn a write away.
+        assert!(
+            refused * 10 <= succeeded + refused,
+            "user writes were refused while the facets refreshed: {refused} refused, {succeeded} succeeded"
+        );
+        assert_eq!(
+            lora_rows, 30,
+            "the refreshed rows must be in the live cache"
+        );
+    }
+
+    // #469: the refresh now runs after the purge commits, so a failed refresh can no longer
+    // undo the purge. A library without an InvokeAI owner scope has no cache repair queue, and
+    // a retry finds nothing left to purge, so the retry must refresh what the failure left.
+    #[test]
+    fn failed_facet_refresh_keeps_the_purge_and_the_retry_refreshes_its_resources() {
+        let (path, _setup) = open_purge_test_library("refresh-fails", 10, 2);
+        let mut conn = Connection::open(&path).unwrap();
+        crate::db::configure_connection(&conn).unwrap();
+        let count = |conn: &Connection, sql: &str| -> i64 {
+            conn.query_row(sql, [], |row| row.get(0)).unwrap()
+        };
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM invoke_scope_cache_state"),
+            0,
+            "a library without an InvokeAI scope has no owner-cache repair to fall back on"
+        );
+
+        let failed = purge_resource_folder_assets_with_refresh(
             &mut conn,
             "C:/AI/models/loras",
             &[],
             |_, _| Err("forced refresh failure".to_string()),
         );
 
-        assert_eq!(result.unwrap_err(), "forced refresh failure");
-        let model_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
-            .unwrap();
-        let scanned_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM scanned_files", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(model_count, 1);
-        assert_eq!(scanned_count, 1);
+        assert_eq!(failed.unwrap_err(), PURGE_REFRESH_FAILED_MESSAGE);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM models"), 0);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM scanned_files"), 0);
+
+        let mut retried = None;
+        let retry = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &[],
+            |_, touches| {
+                retried = Some(touches.clone());
+                Ok(touches.loras.len())
+            },
+        )
+        .unwrap();
+        assert_eq!(retry.removed_models, 0);
+        assert_eq!(retry.refreshed_facets, 2);
+        let mut retried_loras = retried.unwrap().loras;
+        retried_loras.sort();
+        assert_eq!(retried_loras, vec!["Lora0", "Lora1"]);
+
+        let mut later = None;
+        purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &[],
+            |_, touches| {
+                later = Some(touches.clone());
+                Ok(0)
+            },
+        )
+        .unwrap();
+        drop(conn);
+        remove_purge_test_library(&path);
+        assert_eq!(
+            later.unwrap(),
+            FacetResourceTouches::default(),
+            "a refreshed resource must not be refreshed again"
+        );
     }
 
     #[test]

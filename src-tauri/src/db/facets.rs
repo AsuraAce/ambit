@@ -1351,8 +1351,7 @@ fn refresh_resource_facet(
     Ok(true)
 }
 
-#[cfg(test)]
-fn refresh_live_facet_resources(
+pub(crate) fn refresh_live_facet_resources(
     conn: &mut rusqlite::Connection,
     touches: &FacetResourceTouches,
 ) -> Result<usize, String> {
@@ -1476,6 +1475,7 @@ fn swap_staged_facet_resources(
     tx.commit().map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 pub(crate) fn refresh_live_facet_resources_in_transaction(
     conn: &rusqlite::Connection,
     touches: &FacetResourceTouches,

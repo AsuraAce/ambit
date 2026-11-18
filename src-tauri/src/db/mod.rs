@@ -350,6 +350,47 @@ fn production_database_migration_urls_for_roots(
     urls
 }
 
+/// The steps of `sql`'s query plan where a subquery, such as a scope check, reads the whole
+/// library instead of the rows the statement touches: a list subquery (`id IN (SELECT ...)`,
+/// which reads every row in scope even through an index) or a scan inside any subquery.
+/// Parameters stay unbound. A write that holds the lock while it reads the whole library
+/// locks every other writer out on a large library (#463, #466).
+#[cfg(test)]
+pub(crate) fn subquery_scans(conn: &rusqlite::Connection, sql: &str) -> Vec<String> {
+    let mut stmt = conn
+        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+        .expect("explain query");
+    let mut rows = stmt.raw_query();
+    let mut steps: Vec<(i64, i64, String)> = Vec::new();
+    while let Some(row) = rows.next().expect("plan row") {
+        steps.push((
+            row.get(0).expect("id"),
+            row.get(1).expect("parent"),
+            row.get(3).expect("detail"),
+        ));
+    }
+    let in_subquery = |mut parent: i64| {
+        while parent != 0 {
+            let Some((_, grandparent, detail)) = steps.iter().find(|step| step.0 == parent) else {
+                return false;
+            };
+            if detail.contains("SUBQUERY") {
+                return true;
+            }
+            parent = *grandparent;
+        }
+        false
+    };
+    steps
+        .iter()
+        .filter(|(_, parent, detail)| {
+            detail.starts_with("LIST SUBQUERY")
+                || (detail.starts_with("SCAN") && in_subquery(*parent))
+        })
+        .map(|(_, _, detail)| detail.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

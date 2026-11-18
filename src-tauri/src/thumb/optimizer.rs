@@ -1039,20 +1039,31 @@ fn get_thumbnail_optimization_failures_for_conn(
     Ok(ThumbnailOptimizationFailureList { failures })
 }
 
+const RETRY_FAILED_THUMBNAILS_SQL: &str = "UPDATE images
+     SET thumbnail_failure_count = 0,
+         thumbnail_last_error = NULL,
+         thumbnail_last_attempt_at = NULL
+     WHERE EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)
+       AND is_deleted = 0
+       AND media_type = 'image'
+       AND is_missing = 0
+       AND COALESCE(thumbnail_failure_count, 0) > 0";
+
+const MARK_AMBIT_THUMBNAILS_STALE_SQL: &str = "UPDATE images
+     SET thumbnail_version = 0
+     WHERE thumbnail_source = 'ambit'
+       AND COALESCE(thumbnail_version, 0) >= ?1
+       AND thumbnail_path IS NOT NULL
+       AND thumbnail_path != ''
+       AND path != thumbnail_path
+       AND EXISTS (
+           SELECT 1 FROM scoped_images AS scoped
+           WHERE scoped.id = images.id AND scoped.invoke_scope_hidden = 0
+       )";
+
 fn retry_failed_thumbnail_optimizations_for_conn(conn: &Connection) -> Result<usize, String> {
-    conn.execute(
-        "UPDATE images
-         SET thumbnail_failure_count = 0,
-             thumbnail_last_error = NULL,
-             thumbnail_last_attempt_at = NULL
-         WHERE id IN (SELECT id FROM scoped_images)
-           AND is_deleted = 0
-           AND media_type = 'image'
-           AND is_missing = 0
-           AND COALESCE(thumbnail_failure_count, 0) > 0",
-        [],
-    )
-    .map_err(|e| e.to_string())
+    conn.execute(RETRY_FAILED_THUMBNAILS_SQL, [])
+        .map_err(|e| e.to_string())
 }
 
 fn mark_current_ambit_thumbnails_stale_if_cache_missing_or_empty(
@@ -1064,14 +1075,7 @@ fn mark_current_ambit_thumbnails_stale_if_cache_missing_or_empty(
     }
 
     conn.execute(
-        "UPDATE images
-         SET thumbnail_version = 0
-         WHERE thumbnail_source = 'ambit'
-           AND COALESCE(thumbnail_version, 0) >= ?1
-           AND thumbnail_path IS NOT NULL
-           AND thumbnail_path != ''
-           AND path != thumbnail_path
-           AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)",
+        MARK_AMBIT_THUMBNAILS_STALE_SQL,
         params![CURRENT_THUMBNAIL_VERSION],
     )
     .map_err(|error| error.to_string())
@@ -2068,6 +2072,24 @@ fn millis_to_u64(value: u128) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #466: the retry and cache-loss writes run over the library. A scope check that reads
+    // the whole library as a list holds the write lock for that read as well.
+    #[test]
+    fn thumbnail_bulk_writes_check_scope_by_row() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql).expect("apply migration");
+        }
+        let mut scans = Vec::new();
+        for sql in [RETRY_FAILED_THUMBNAILS_SQL, MARK_AMBIT_THUMBNAILS_STALE_SQL] {
+            scans.push(crate::db::subquery_scans(&conn, sql));
+        }
+        assert!(
+            scans.iter().all(Vec::is_empty),
+            "scope checks must not scan: {scans:?}"
+        );
+    }
 
     fn setup_queue_db() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory db");
