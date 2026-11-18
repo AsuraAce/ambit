@@ -20,6 +20,12 @@ vi.mock('../useToast', () => ({
 }));
 
 const mockSetImages = vi.fn();
+// What the store holds after every setImages call so far, starting from `images`; rollbacks pass an updater.
+const replaySetImages = <T,>(images: T[]): T[] =>
+    mockSetImages.mock.calls.reduce((current: T[], call: unknown[]) => {
+        const next = call[0] as T[] | ((previous: T[]) => T[]);
+        return typeof next === 'function' ? next(current) : next;
+    }, images);
 const mockToggleImageFavorite = vi.fn();
 const mockToggleImagePin = vi.fn();
 const mockSetImageMasks = vi.fn();
@@ -35,6 +41,8 @@ const mockRefreshCollections = vi.fn();
 const mockRefreshSmartCounts = vi.fn();
 const mockSetPrivacyEnabled = vi.fn();
 const mockUpdateImagesQueryCaches = vi.fn();
+// The list the store holds right now: setImages writes it, getState reads it, a test may replace it.
+let mockLiveImages: MockImage[] | undefined;
 let mockStoreImages: MockImage[] = [
     {
         id: '1',
@@ -96,12 +104,15 @@ vi.mock('../../utils/imageQueryCache', async (importOriginal) => {
 });
 
 vi.mock('../../stores/searchStore', () => ({
-    useSearchStore: (selector: any) =>
-        selector({
-            images: mockStoreImages,
-            setImages: mockSetImages,
-            filters: mockStoreFilters,
-        }),
+    useSearchStore: Object.assign(
+        (selector: any) =>
+            selector({
+                images: mockStoreImages,
+                setImages: mockSetImages,
+                filters: mockStoreFilters,
+            }),
+        { getState: () => ({ images: mockLiveImages ?? mockStoreImages }) }
+    ),
 }));
 
 vi.mock('../../stores/settingsStore', () => {
@@ -163,6 +174,11 @@ describe('useAppActions', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockLiveImages = undefined;
+        mockSetImages.mockImplementation((next: MockImage[] | ((current: MockImage[]) => MockImage[])) => {
+            const current = mockLiveImages ?? mockStoreImages;
+            mockLiveImages = typeof next === 'function' ? next(current) : next;
+        });
         mockFlagDeadlines.length = 0;
         mockStoreImages = [
             {
@@ -369,7 +385,7 @@ describe('useAppActions', () => {
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(errorToast, 'error'));
 
         expect(write.mock.calls.map(([id]) => id)).toEqual(['1', '2']);
-        expect(mockSetImages).toHaveBeenLastCalledWith(mockStoreImages);
+        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
         expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         errorSpy.mockRestore();
@@ -461,9 +477,44 @@ describe('useAppActions', () => {
 
         expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
         await waitFor(() => {
-            expect(mockSetImages.mock.calls[1][0].map((img: { id: string }) => img.id)).toEqual(['1', '2']);
+            expect(replaySetImages(mockStoreImages).map((img) => img.id)).toEqual(['1', '2']);
             expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error');
         });
+    });
+
+    it('reloads the gallery after a pin rollback once the list has moved on, so the pin is sorted again', async () => {
+        // Pin 1, then another page loads before the write fails: the rollback can only revert 1 in
+        // place, so its sorted position has to come from the database.
+        let failPin: (error: Error) => void = () => undefined;
+        mockToggleImagePin.mockReturnValueOnce(new Promise((_, reject) => (failPin = reject)));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => ({ actions: useAppActions(props), queryClient: useQueryClient() }));
+        const invalidateQueries = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        act(() => result.current.actions.handlePinImage('1', true));
+        mockLiveImages = [...(mockLiveImages ?? []), { id: '3', isFavorite: false, isPinned: false, filename: '3.png', timestamp: 50 }];
+        await act(async () => failPin(new Error('database is locked')));
+
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error'));
+        expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        errorSpy.mockRestore();
+    });
+
+    it('leaves a newly opened view untouched when a favorite write from the previous view fails (#484)', async () => {
+        // The rollback may revert only what the write changed, never restore the old view's list.
+        let failFavorite: (error: Error) => void = () => undefined;
+        mockToggleImageFavorite.mockReturnValueOnce(new Promise((_, reject) => (failFavorite = reject)));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => useAppActions(props));
+
+        act(() => result.current.handleBulkFavorite());
+        const otherView = [{ id: 'other', isFavorite: false, isPinned: false, filename: 'other.png', timestamp: 1 }];
+        mockLiveImages = otherView;
+        await act(async () => failFavorite(new Error('database is locked')));
+
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+        expect(mockLiveImages).toBe(otherView);
+        errorSpy.mockRestore();
     });
 
     it('should toggle a viewer pin without a success toast', async () => {
@@ -697,13 +748,14 @@ describe('useAppActions', () => {
         expect(mockToggleImageFavorite).toHaveBeenCalledWith('2', false);
         expect(mockAddToast).toHaveBeenCalledWith('Unfavorited 1 item', 'success');
         first.unmount();
+        mockSetImages.mockClear();
 
         mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const second = renderHook(() => useAppActions(props));
         act(() => second.result.current.handleFavoriteImage('1'));
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
-        expect(mockSetImages).toHaveBeenCalledWith(mockStoreImages);
+        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
         errorSpy.mockRestore();
     });
 
@@ -834,7 +886,7 @@ describe('useAppActions', () => {
 
         expect(mockAddToast).toHaveBeenCalledWith('Failed to update content mask', 'error');
         expect(mockAddToast).not.toHaveBeenCalledWith('2 items Manually Masked', 'info');
-        expect(mockSetImages).toHaveBeenLastCalledWith(mockStoreImages);
+        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
         expect(cachedMasks()).toEqual([undefined, undefined]);
         errorSpy.mockRestore();
         mockUpdateImagesQueryCaches.mockReset();

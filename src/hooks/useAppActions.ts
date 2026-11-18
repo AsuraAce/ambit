@@ -15,7 +15,14 @@ import {
 } from '../services/db/imageRepo';
 import { backfillParameterColumns } from '../services/db/maintenanceRepo';
 import { useLibraryStore } from '../stores/libraryStore';
-import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches, updateImagesQueryCaches } from '../utils/imageQueryCache';
+import {
+    hasSameImageOrder,
+    patchImageFlagsInQueryCaches,
+    pickImages,
+    restoreImagesInList,
+    restoreImagesInQueryCaches,
+    updateImagesQueryCaches,
+} from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import type { ImagesQueryKey } from './useImagesQuery';
 import type { ActiveImageStateAdapter } from './activeImageState';
@@ -145,8 +152,17 @@ export const useAppActions = ({
             } catch (error) {
                 console.error('[Pin] Failed to persist pin state', error);
                 if (restoreGallery) {
-                    setImages(previousImages);
-                    restoreImagesInQueryCaches(queryClient, previousImages, {
+                    // Revert only these images: the user may have opened another view meanwhile (#484).
+                    // A list that moved on since the optimistic write keeps a reverted pin where it was,
+                    // so reload it from the database to put that pin back in its sorted place.
+                    if (!hasSameImageOrder(useSearchStore.getState().images, optimisticImages)) {
+                        void queryClient.invalidateQueries({ queryKey: ['images'] });
+                    }
+                    const touched = pickImages(previousImages, ids);
+                    setImages((current) =>
+                        restoreImagesInList(current, touched, { previousOrder: optimisticImages, nextOrder: previousImages })
+                    );
+                    restoreImagesInQueryCaches(queryClient, touched, {
                         previousOrder: optimisticImages,
                         nextOrder: previousImages,
                         reorderQueryKey: imagesQueryKey,
@@ -189,8 +205,9 @@ export const useAppActions = ({
             } catch (error) {
                 console.error('[Favorite] Failed to persist favorite state', error);
                 if (restoreGallery) {
-                    setImages(previousImages);
-                    restoreImagesInQueryCaches(queryClient, previousImages);
+                    const touched = pickImages(previousImages, ids);
+                    setImages((current) => restoreImagesInList(current, touched));
+                    restoreImagesInQueryCaches(queryClient, touched);
                 } else if (previousActiveImage) {
                     patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
                         isFavorite: previousActiveImage.isFavorite,
@@ -373,8 +390,9 @@ export const useAppActions = ({
             if (masks.length > 0) await setImageMasks(masks);
         } catch (error) {
             console.error('[Mask] Failed to persist content mask', error);
-            setImages(previousImages);
-            restoreImagesInQueryCaches(queryClient, previousImages);
+            const touched = pickImages(previousImages, idsToToggle);
+            setImages((current) => restoreImagesInList(current, touched));
+            restoreImagesInQueryCaches(queryClient, touched);
             // A selection with an image outside the library scope still masks the others.
             void queryClient.invalidateQueries({ queryKey: ['images'] });
             addToast('Failed to update content mask', 'error');

@@ -113,7 +113,8 @@ vi.mock('../../stores/collectionStore', () => ({
         { getState: () => ({ invalidateRetainedThumbnails: mocks.invalidateRetainedThumbnails }) }
     ),
 }));
-vi.mock('../../utils/imageQueryCache', () => ({
+vi.mock('../../utils/imageQueryCache', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../utils/imageQueryCache')>()),
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
     restoreImagesInQueryCaches: mocks.restoreImagesInQueryCaches,
 }));
@@ -777,6 +778,25 @@ describe('SearchProvider', () => {
         });
     });
 
+    it('reports a failed first page, and Retry reloads that view and its counts (#483)', () => {
+        // With no page, a failure must read as a failure, not as an empty library or no matches.
+        const failed = { data: undefined, status: 'error', error: new Error('database is locked'), isLoading: false, isFetching: false };
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), ...failed };
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        renderProvider();
+
+        expect(latest.imagesFailed).toBe(true);
+        expect(errorSpy).toHaveBeenCalledWith('[Library] Failed to load images', failed.error);
+        act(() => latest.retryImages());
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: latest.imagesQueryKey });
+
+        // While the retry runs the view is loading, not failed.
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isFetching: true };
+        renderProvider();
+        expect(latest.imagesFailed).toBe(false);
+        expect(latest.isFiltering).toBe(true);
+    });
+
     it('presents a first page before its counts and reports the counts as loading', () => {
         // The gallery opens as soon as its page is safe; the counts follow on their own.
         mocks.imagesQuery.current = {
@@ -984,6 +1004,47 @@ describe('SearchProvider', () => {
             nextOrder: [original],
             reorderQueryKey: latest.imagesQueryKey,
         });
+    });
+
+    it('keeps the newly opened view when a favorite or pin write from the previous view fails (#484)', async () => {
+        // The rollback may revert only what the write changed; restoring the old view's snapshot would
+        // put images from outside the open collection on screen.
+        const libraryImage = image({ id: 'library' });
+        const holidayImage = image({ id: 'holiday' });
+        const state = mocks.searchState.current as SearchValue;
+        state.images = [libraryImage];
+        mocks.applyOptimisticPinOrder.mockImplementation((images: AIImage[]) => images);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let failFavorite: (error: Error) => void = () => undefined;
+        let failPin: (error: Error) => void = () => undefined;
+        mocks.updateFavorite.mockReturnValueOnce(new Promise((_, reject) => (failFavorite = reject)));
+        mocks.updatePinned.mockReturnValueOnce(new Promise((_, reject) => (failPin = reject)));
+        renderProvider();
+
+        let favoriteWrite: Promise<void> = Promise.resolve();
+        let pinWrite: Promise<void> = Promise.resolve();
+        act(() => {
+            favoriteWrite = latest.toggleFavorite(libraryImage.id);
+            pinWrite = latest.togglePin(libraryImage.id);
+        });
+        state.images = [holidayImage];
+        await act(async () => {
+            failFavorite(new Error('favorite failed'));
+            failPin(new Error('pin failed'));
+            await Promise.all([favoriteWrite, pinWrite]);
+        });
+
+        expect(state.images).toEqual([holidayImage]);
+        // The caches revert only the image each write touched, as it was before that write.
+        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(1, mocks.queryClient, [libraryImage]);
+        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(
+            2,
+            mocks.queryClient,
+            [{ ...libraryImage, isFavorite: true }],
+            expect.objectContaining({ nextOrder: [{ ...libraryImage, isFavorite: true }] })
+        );
+        // The list moved on, so the reverted pin is re-sorted from the database.
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
     });
 
     it('loads and persists recent searches and hidden-content preferences', async () => {

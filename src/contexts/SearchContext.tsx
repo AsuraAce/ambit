@@ -33,7 +33,13 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getEffectiveImageKind, normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
-import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
+import {
+    hasSameImageOrder,
+    patchImageFlagsInQueryCaches,
+    pickImages,
+    restoreImagesInList,
+    restoreImagesInQueryCaches,
+} from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -57,6 +63,10 @@ interface SearchContextType {
     globalTotal: number | null;
     /** The count read failed, so `totalImages` and `globalTotal` stay null until the next refresh. */
     imageCountsFailed: boolean;
+    /** The first page of this view failed to load and no page arrived; nothing says the library is empty. */
+    imagesFailed: boolean;
+    /** Loads this view's first page and counts again after a failure. */
+    retryImages: () => void;
     sourceKindCounts?: SourceKindCounts;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
@@ -290,6 +300,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isFetchingNextPage,
         isLoading: isQueryLoading,
         isPlaceholderData,
+        error: imagesQueryError,
         status: imagesQueryStatus,
         queryKey: imagesQueryKey,
         counts: imageCounts,
@@ -376,6 +387,16 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         queryData,
         setImages,
     ]);
+
+    // A failed first page with nothing cached must not read as an empty library or as no matches (#483).
+    const imagesFailed = !privacyExposureBlocked && imagesQueryStatus === 'error' && !queryData && !isFetching;
+    useEffect(() => {
+        if (imagesFailed) console.error('[Library] Failed to load images', imagesQueryError);
+    }, [imagesFailed, imagesQueryError]);
+    const retryImages = useCallback(() => {
+        // The counts key extends the images key, so this reloads both. Errors land in query state.
+        void queryClient.invalidateQueries({ queryKey: imagesQueryKey });
+    }, [imagesQueryKey, queryClient]);
 
     // Proactive prefetching: Load next page in background after current page loads
     // Only prefetch if we have less than 3 pages and user might scroll soon
@@ -529,8 +550,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle favorite failed', e);
-                setImages(imgs);
-                restoreImagesInQueryCaches(queryClient, imgs);
+                // Revert only this image: the user may have opened another view meanwhile (#484).
+                const touched = pickImages(imgs, [id]);
+                setImages((current) => restoreImagesInList(current, touched));
+                restoreImagesInQueryCaches(queryClient, touched);
             }
         },
         [queryClient, refreshCollectionsAfterImageFlagChange, setImages]
@@ -560,8 +583,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle pin failed', e);
-                setImages(imgs);
-                restoreImagesInQueryCaches(queryClient, imgs, {
+                // As in useAppActions: a list that moved on reloads so the reverted pin is sorted again.
+                if (!hasSameImageOrder(useSearchStore.getState().images, nextImages)) {
+                    void queryClient.invalidateQueries({ queryKey: ['images'] });
+                }
+                const touched = pickImages(imgs, [id]);
+                setImages((current) => restoreImagesInList(current, touched, { previousOrder: nextImages, nextOrder: imgs }));
+                restoreImagesInQueryCaches(queryClient, touched, {
                     previousOrder: nextImages,
                     nextOrder: imgs,
                     reorderQueryKey: imagesQueryKey,
@@ -848,6 +876,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 totalImages: totalImagesCount,
                 globalTotal: globalTotalCount,
                 imageCountsFailed: !privacyExposureBlocked && imageCountsFailed,
+                imagesFailed,
+                retryImages,
                 sourceKindCounts,
                 scopeCounts,
                 scopeAvailability,
