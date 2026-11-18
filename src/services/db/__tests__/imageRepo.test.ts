@@ -1281,14 +1281,22 @@ describe('imageRepo batch removal', () => {
 
         const sqlCalls = db.execute.mock.calls.map(([sql]) => String(sql));
         expect(sqlCalls).toContain('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
-        expect(sqlCalls).toContain('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
-        expect(sqlCalls).toContain('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain(
+            'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
+        );
+        expect(sqlCalls).toContain(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
+        );
         expect(sqlCalls).toContain('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
         expect(sqlCalls).toContain(
             "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)"
         );
-        expect(sqlCalls).toContain('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
-        expect(sqlCalls).toContain('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
+        );
+        expect(sqlCalls).toContain(
+            'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)'
+        );
         expect(sqlCalls.some((sql) => sql.includes('DELETE FROM images'))).toBe(false);
         expect(sqlCalls).toContain(
             'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)'
@@ -1330,12 +1338,12 @@ describe('imageRepo batch removal', () => {
             'motion reference',
             canonicalId,
         ]);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
-            1,
-            canonicalId,
-        ]);
         expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+            [1, canonicalId]
+        );
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
             [1, canonicalId]
         );
         expect(db.execute).toHaveBeenCalledWith(
@@ -2023,26 +2031,26 @@ describe('imageRepo batch removal', () => {
         await updateImageWorkflow('C:/a.png', '{}');
         await updateImageWorkflowHint('C:/a.png', false);
 
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
-            0,
-            'C:/a.png',
-        ]);
         expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+            'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+            [0, 'C:/a.png']
+        );
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
             [1, 'C:/a.png']
         );
         expect(db.execute).toHaveBeenCalledWith(
             "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)",
             [0, 'C:/a.png']
         );
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-            0,
-            'C:/a.png',
-        ]);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-            1,
-            'C:/a.png',
-        ]);
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+            [0, 'C:/a.png']
+        );
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+            [1, 'C:/a.png']
+        );
     });
 
     it('passes null-heavy removal records to native lifecycle handling and deletes pathless tombstones', async () => {

@@ -903,10 +903,18 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
     return image;
 };
 
+// Favorites and pins failed with "database is locked" (#457). `id IN (SELECT id FROM scoped_images)`
+// read the whole library while the write held the lock (20 s cold on a 296k-image library), and the
+// next write waited behind it. The correlated EXISTS reads only the target row.
+const PIN_SQL =
+    'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)';
+const FAVORITE_SQL =
+    'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)';
+
 // The SQL plugin's pool gives every connection but one SQLite's 5 s busy wait (connection.ts sets
-// the 60 s timeout on one pooled connection), so a favorite or pin that meets a longer background
-// write failed with "database is locked" (#457). These idempotent writes retry for the 60 s the app
-// means to wait, and the pool's acquire timeout counts as busy too.
+// the 60 s timeout on one pooled connection), so a flag write can still meet a longer background
+// write. These idempotent writes retry for the 60 s the app means to wait, and the pool's acquire
+// timeout counts as busy too.
 const FLAG_WRITE_BUSY_BUDGET_MS = 60_000;
 const FLAG_WRITE_RETRY_DELAY_MS = 250;
 const isDatabaseBusy = (error: unknown) =>
@@ -940,21 +948,21 @@ const writeImageFlag = (flag: 'favorite' | 'pin', normalizedId: string, write: (
     return current;
 };
 
-const writePinned = (id: string, isPinned: boolean, sql: string) => {
+const writePinned = (id: string, isPinned: boolean) => {
     const normalizedId = normalizePath(id);
     return writeImageFlag('pin', normalizedId, async () => {
         const db = await getDb();
-        const result = await db.execute(sql, [isPinned ? 1 : 0, normalizedId]);
+        const result = await db.execute(PIN_SQL, [isPinned ? 1 : 0, normalizedId]);
         assertMutationMatched(result, normalizedId, 'Updating pin');
         await clearCollectionThumbnailCacheForImages([normalizedId]);
     });
 };
 
-const writeFavorite = (id: string, isFavorite: boolean, sql: string) => {
+const writeFavorite = (id: string, isFavorite: boolean) => {
     const normalizedId = normalizePath(id);
     return writeImageFlag('favorite', normalizedId, async () => {
         const db = await getDb();
-        const result = await db.execute(sql, [isFavorite ? 1 : 0, normalizedId]);
+        const result = await db.execute(FAVORITE_SQL, [isFavorite ? 1 : 0, normalizedId]);
         assertMutationMatched(result, normalizedId, 'Updating favorite');
     });
 };
@@ -965,7 +973,7 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
         return;
     }
 
-    await writePinned(id, isPinned, 'UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+    await writePinned(id, isPinned);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
 
@@ -975,7 +983,7 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
         return;
     }
 
-    await writeFavorite(id, isFavorite, 'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+    await writeFavorite(id, isFavorite);
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
@@ -1200,7 +1208,7 @@ export const updateFavorite = async (id: string, isFavorite: boolean) => {
         return;
     }
 
-    await writeFavorite(id, isFavorite, 'UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+    await writeFavorite(id, isFavorite);
 };
 
 export const updatePinned = async (id: string, isPinned: boolean) => {
@@ -1209,7 +1217,7 @@ export const updatePinned = async (id: string, isPinned: boolean) => {
         return;
     }
 
-    await writePinned(id, isPinned, 'UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+    await writePinned(id, isPinned);
 };
 
 export const checkHiddenContentAvailability = async (): Promise<{
