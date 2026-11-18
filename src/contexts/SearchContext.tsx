@@ -345,15 +345,37 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // For now, let's allow setImages to override, OR sync Query -> Store.
 
     // SYNC PATTERN: When query data changes, update Store. This keeps store as "Source of Truth" for UI.
+    // The collection (or Library, null) whose page the store holds; undefined until a page arrives.
+    const storedViewCollectionIdRef = React.useRef<string | null | undefined>(undefined);
+    const activeCollectionId = filters.collectionId;
     React.useLayoutEffect(() => {
         if (queryData && !privacyIndexBlocked) {
             const allImgs = queryData.pages.flatMap((p) => p.images);
             setImages(allImgs);
             setLastSyncedPrivacyScope(privacyQueryScopeKey);
+            storedViewCollectionIdRef.current = activeCollectionId;
         } else if (privacyExposureBlocked) {
             setImages([]);
+        } else if (
+            !queryData &&
+            databaseQueriesEnabled &&
+            storedViewCollectionIdRef.current !== undefined &&
+            storedViewCollectionIdRef.current !== activeCollectionId
+        ) {
+            // Another view opened and has no page yet: show the loading state, never the stored
+            // page of the previous view (#479). Refreshes of the same view keep their page.
+            setImages([]);
+            storedViewCollectionIdRef.current = activeCollectionId;
         }
-    }, [privacyExposureBlocked, privacyIndexBlocked, privacyQueryScopeKey, queryData, setImages]);
+    }, [
+        activeCollectionId,
+        databaseQueriesEnabled,
+        privacyExposureBlocked,
+        privacyIndexBlocked,
+        privacyQueryScopeKey,
+        queryData,
+        setImages,
+    ]);
 
     // Proactive prefetching: Load next page in background after current page loads
     // Only prefetch if we have less than 3 pages and user might scroll soon

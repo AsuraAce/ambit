@@ -448,6 +448,74 @@ describe('useImagesQuery', () => {
         expect(config().placeholderData(previousData)).toBeUndefined();
     });
 
+    describe('opening another view (#479)', () => {
+        // A collection's grid must never show images from outside it, so the first page of a newly
+        // opened view shows the loading skeleton and "—" instead of the previous view's page and count.
+        const library: Collection[] = [];
+        const holiday: Collection = { id: 'holiday', name: 'Holiday', createdAt: 1, imageIds: ['image-1'] };
+        const portraits: Collection = {
+            id: 'portraits',
+            name: 'Portraits',
+            createdAt: 2,
+            imageIds: [],
+            filters: createDefaultFilters({ searchQuery: 'portrait' }),
+        };
+        const landscapes: Collection = {
+            id: 'landscapes',
+            name: 'Landscapes',
+            createdAt: 3,
+            imageIds: [],
+            filters: createDefaultFilters({ searchQuery: 'landscape' }),
+        };
+        const keysFor = (view: Collection[]) => {
+            renderImagesHook('date_desc', view);
+            return { images: config().queryKey, counts: countsConfig().queryKey };
+        };
+
+        it.each([
+            ['the Library', 'a collection', library, [holiday]],
+            ['the Library', 'a smart collection', library, [portraits]],
+            ['a collection', 'another collection', [holiday], [portraits]],
+            ['a smart collection', 'another smart collection', [portraits], [landscapes]],
+            ['a collection', 'the Library', [holiday], library],
+        ])('drops the page and count of %s when %s opens', (_from, _to, fromView, toView) => {
+            const previous = keysFor(fromView);
+            keysFor(toView);
+            const previousPage = { pages: [{ images: [image()] }] };
+            const previousCounts = { totalCount: 7, globalCount: 20 };
+
+            expect(config().placeholderData(previousPage, { queryKey: previous.images })).toBeUndefined();
+            expect(countsConfig().placeholderData(previousCounts, { queryKey: previous.counts })).toBeUndefined();
+        });
+
+        it('keeps the page and count while a search or sort change inside the same collection loads', () => {
+            renderImagesHook('date_desc', [holiday]);
+            const key = config().queryKey;
+            const countsKey = countsConfig().queryKey;
+            const previousPage = { pages: [{ images: [image()] }] };
+            const previousCounts = { totalCount: 7, globalCount: 20 };
+            const otherSearch = createDefaultFilters({ collectionId: 'holiday', searchQuery: 'beach' });
+
+            expect(config().placeholderData(previousPage, { queryKey: [key[0], otherSearch, ...key.slice(2)] })).toBe(previousPage);
+            expect(config().placeholderData(previousPage, { queryKey: [key[0], key[1], 'name_asc', ...key.slice(3)] })).toBe(previousPage);
+            expect(countsConfig().placeholderData(previousCounts, { queryKey: [countsKey[0], otherSearch, ...countsKey.slice(2)] })).toBe(
+                previousCounts
+            );
+        });
+
+        it('keeps the page and count while an edited rule of the open smart collection loads', () => {
+            // Same view, new rules: like a search change, the grid stays until the new page arrives.
+            const previous = keysFor([portraits]);
+            keysFor([{ ...portraits, filters: createDefaultFilters({ searchQuery: 'portrait studio' }) }]);
+            expect(config().queryKey[6]).not.toBe(previous.images[6]);
+            const previousPage = { pages: [{ images: [image()] }] };
+            const previousCounts = { totalCount: 7, globalCount: 20 };
+
+            expect(config().placeholderData(previousPage, { queryKey: previous.images })).toBe(previousPage);
+            expect(countsConfig().placeholderData(previousCounts, { queryKey: previous.counts })).toBe(previousCounts);
+        });
+    });
+
     it('isolates cached pages when the admitted InvokeAI owner changes', () => {
         const invokeSettings = { ...settings, invokeAiPath: 'C:/Invoke' };
         useInvokeOwnerScopeStore.getState().setOwnerScopeState({

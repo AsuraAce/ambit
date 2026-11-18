@@ -225,7 +225,7 @@ describe('ViewControls', () => {
         expect(screen.queryByText(/TOTAL A Very Long Collection Name/)).toBeNull();
     });
 
-    it('switches fast board counts atomically without flashing a loading placeholder', () => {
+    it('switches fast counts inside one view atomically without flashing a loading placeholder', () => {
         vi.useFakeTimers();
         const { rerender, props } = setup({
             displayedCount: 10,
@@ -299,6 +299,30 @@ describe('ViewControls', () => {
 
         expect(screen.queryByText('150,000')).toBeNull();
         expect(screen.queryByText('0')).toBeNull();
+    });
+
+    it('never shows the count of the previous view while another collection or the Library loads (#479)', () => {
+        // The header must not describe the old view's images next to the new view's skeleton.
+        vi.useFakeTimers();
+        const { rerender, props } = setup({ displayedCount: 150_000, totalCount: 150_000, scopeName: 'Library', isFiltering: false });
+
+        mocks.filters = { ...baseFilters(), collectionId: 'holiday' };
+        rerender(<ViewControls {...props} displayedCount={0} totalCount={null} scopeName="Holiday" isFiltering />);
+        expect(screen.queryByText('150k')).toBeNull();
+        expect(screen.queryByText('Library')).toBeNull();
+
+        act(() => vi.advanceTimersByTime(180));
+        expect(screen.getByText('...')).toBeTruthy();
+        expect(screen.getByText('LOADING Holiday')).toBeTruthy();
+
+        rerender(<ViewControls {...props} displayedCount={12} totalCount={12} scopeName="Holiday" isFiltering={false} />);
+        act(() => vi.advanceTimersByTime(300));
+        expect(screen.getByText('12')).toBeTruthy();
+
+        mocks.filters = baseFilters();
+        rerender(<ViewControls {...props} displayedCount={0} totalCount={null} scopeName="Library" isFiltering />);
+        expect(screen.queryByText('12')).toBeNull();
+        expect(screen.queryByText('Holiday')).toBeNull();
     });
 
     it('shows a stable loading state only for a sustained board query', () => {

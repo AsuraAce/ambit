@@ -333,6 +333,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         ]
     );
 
+    // A newly opened collection, smart collection or Library starts at the top. Without this the
+    // browser keeps the previous view's offset, clamped to the skeleton's height (#479). Search,
+    // filter and sort changes inside one view keep their scroll position.
+    const openedCollectionId = filters.collectionId ?? null;
+    const previousOpenedCollectionIdRef = React.useRef(openedCollectionId);
+    React.useLayoutEffect(() => {
+        if (previousOpenedCollectionIdRef.current === openedCollectionId) return;
+        previousOpenedCollectionIdRef.current = openedCollectionId;
+        if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    }, [openedCollectionId, scrollContainerRef]);
+
     const renderGridItem = React.useCallback(
         (img: AIImage, style: React.CSSProperties, index: number, layout?: GridLayoutPosition) => (
             <GridItem

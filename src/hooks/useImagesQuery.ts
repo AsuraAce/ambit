@@ -46,6 +46,21 @@ const hasMatchingPrivacyScope = (previousKey: readonly unknown[] | undefined, cu
     );
 };
 
+// Each collection, smart collection and the Library is its own view. A newly opened view must never
+// show the previous view's page or count, which would put images from outside it on screen (#479).
+const isSameView = (previousKey: readonly unknown[] | undefined, currentKey: ImagesQueryKey): boolean => {
+    const previousFilters = previousKey?.[1];
+    return (
+        typeof previousFilters === 'object' &&
+        previousFilters !== null &&
+        'collectionId' in previousFilters &&
+        previousFilters.collectionId === currentKey[1].collectionId
+    );
+};
+
+const canKeepPreviousResult = (previousKey: readonly unknown[] | undefined, currentKey: ImagesQueryKey): boolean =>
+    isSameView(previousKey, currentKey) && hasMatchingPrivacyScope(previousKey, currentKey);
+
 export const useImagesQuery = ({
     filters,
     sortOption,
@@ -184,10 +199,10 @@ export const useImagesQuery = ({
         placeholderData: (previousData, previousQuery) => {
             if (!previousData) return undefined;
 
-            // Search, sort, and collection changes can safely retain their prior page,
-            // including an empty one. Privacy changes must fail closed until a page
-            // produced with the new privacy scope is ready.
-            return hasMatchingPrivacyScope(previousQuery?.queryKey, imagesQueryKey) ? previousData : undefined;
+            // Search, filter and sort changes inside one view retain their prior page, including an
+            // empty one, so typing does not flicker. Opening another view, or changing the privacy
+            // scope, fails closed until the new page is ready.
+            return canKeepPreviousResult(previousQuery?.queryKey, imagesQueryKey) ? previousData : undefined;
         },
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
@@ -213,11 +228,11 @@ export const useImagesQuery = ({
             return { totalCount, globalCount };
         },
         // Like the page, a search or sort change keeps the last count until the new one arrives.
-        // A privacy or owner-scope change reads as loading ("—"): the old count would describe
-        // images this scope may not show.
-        // The counts key is the images key plus 'counts', so the scope check compares that prefix.
+        // Opening another view, or a privacy or owner-scope change, reads as loading ("—"): the old
+        // count would describe images this view or scope does not show.
+        // The counts key is the images key plus 'counts', so the check compares that prefix.
         placeholderData: (previousData, previousQuery) =>
-            previousData && hasMatchingPrivacyScope(previousQuery?.queryKey.slice(0, -1), imagesQueryKey) ? previousData : undefined,
+            previousData && canKeepPreviousResult(previousQuery?.queryKey.slice(0, -1), imagesQueryKey) ? previousData : undefined,
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded,
     });
