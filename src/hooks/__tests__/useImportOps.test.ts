@@ -102,7 +102,7 @@ const importResult = (overrides: Partial<ImportResult> = {}): ImportResult => {
     };
 };
 
-const importedImage = (id: string): AIImage => ({ id }) as AIImage;
+const importedImage = (id: string, timestamp = 1000): AIImage => ({ id, timestamp }) as AIImage;
 
 describe('useImportOps', () => {
     const manualCancellationMessage = 'Import cancelled. Imported items were kept; rescan to continue.';
@@ -138,7 +138,7 @@ describe('useImportOps', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        useSearchStore.setState({ filters: createDefaultFilters() });
+        useSearchStore.setState({ filters: createDefaultFilters(), sortOption: 'date_desc' });
         useLibraryStore.setState({
             isImporting: false,
             importProgress: null,
@@ -596,6 +596,52 @@ describe('useImportOps', () => {
         expect(update([importedImage('existing')]).map((image) => image.id)).toEqual(['added', 'existing']);
         expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['images'] });
         invalidateQueries.mockRestore();
+    });
+
+    // #476: the Library sorts by display date, so a small import belongs on top only under the
+    // newest-first sort and when it is not older than the card on top; otherwise it would sit at the
+    // top until the next refetch.
+    it.each([['date_asc'], ['name_asc'], ['name_desc'], ['size_desc'], ['size_asc']] as const)(
+        'refetches the unfiltered Library sorted by %s instead of prepending a small import',
+        async (sortOption) => {
+            useSearchStore.setState({ sortOption });
+            const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+            mocks.processWebFiles.mockResolvedValueOnce(importResult({ images: [importedImage('added', 2000)] }));
+            const { result, setImages, refreshCollections } = renderImportOps({}, [importedImage('existing')]);
+
+            await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+            expect(setImages).not.toHaveBeenCalled();
+            expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+            expect(refreshCollections).toHaveBeenCalledTimes(1);
+            invalidateQueries.mockRestore();
+        }
+    );
+
+    it('refetches the newest-first Library when a small import is older than the card on top', async () => {
+        const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+        mocks.processWebFiles.mockResolvedValueOnce(
+            importResult({ images: [importedImage('new-photo', 2000), importedImage('old-photo', 500)] })
+        );
+        const { result, setImages } = renderImportOps({}, [importedImage('existing', 1000)]);
+
+        await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+        expect(setImages).not.toHaveBeenCalled();
+        expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        invalidateQueries.mockRestore();
+    });
+
+    it('prepends newer small imports newest first in the newest-first Library', async () => {
+        mocks.processWebFiles.mockResolvedValueOnce(
+            importResult({ images: [importedImage('newer', 2000), importedImage('newest', 3000)] })
+        );
+        const { result, setImages } = renderImportOps({}, [importedImage('existing', 1000)]);
+
+        await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+        const update = setImages.mock.calls[0][0] as (value: AIImage[]) => AIImage[];
+        expect(update([importedImage('existing', 1000)]).map((image) => image.id)).toEqual(['newest', 'newer', 'existing']);
     });
 
     it('uses metadata refresh for imported batches reported by the backend', async () => {

@@ -1,7 +1,8 @@
 ﻿import * as React from 'react';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder, getDetectedSourceKind } from '../types';
+import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder, SortOption, getDetectedSourceKind } from '../types';
+import { getEffectiveDisplayTimestamp } from '../utils/imageDates';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSearchStore } from '../stores/searchStore';
@@ -51,6 +52,19 @@ export const formatDetectedImageKindCounts = (images: AIImage[]): string => {
     return `${counts.generated} Generated, ${counts.photograph} Photo${counts.photograph === 1 ? '' : 's'}, ${counts.other} Other`;
 };
 
+const sortNewestFirst = (images: AIImage[]): AIImage[] =>
+    [...images].sort((a, b) => getEffectiveDisplayTimestamp(b) - getEffectiveDisplayTimestamp(a));
+
+// The Library sorts by display date, not import time, so new images belong above the loaded list only
+// under the newest-first sort and when none is older than the image now on top (#476).
+const belongsOnTop = (newImages: AIImage[], loaded: AIImage[], sortOption: SortOption): boolean => {
+    if (sortOption !== 'date_desc') return false;
+    const top = loaded[0];
+    if (!top) return true;
+    const topTimestamp = getEffectiveDisplayTimestamp(top);
+    return newImages.every((image) => getEffectiveDisplayTimestamp(image) >= topTimestamp);
+};
+
 interface UseImportOpsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
@@ -83,7 +97,10 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 if (uniqueNewImages.length > 500 || (result.stats.processed > 0 && result.stats.imported > 0)) {
                     console.log(`[ImportOps] Batch import detected. Triggering full metadata refresh.`);
                     await refreshMetadata();
-                } else if (hasActiveResultFilters(useSearchStore.getState().filters)) {
+                } else if (
+                    hasActiveResultFilters(useSearchStore.getState().filters) ||
+                    !belongsOnTop(uniqueNewImages, images, useSearchStore.getState().sortOption)
+                ) {
                     // New images may not belong in the collection, search or filtered view open now (an import
                     // can outlast a view change), nor ahead of a collection's pinned images (#462), so that view
                     // refetches with its own filters and order. The refetch runs on, so the toast does not
@@ -94,7 +111,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                     setImages((prev) => {
                         const reallyUnique = uniqueNewImages.filter((n) => !prev.some((p) => p.id === n.id));
                         if (reallyUnique.length === 0) return prev;
-                        return [...reallyUnique, ...prev];
+                        return [...sortNewestFirst(reallyUnique), ...prev];
                     });
                     await refreshCollections();
                 }

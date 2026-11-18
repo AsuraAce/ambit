@@ -50,6 +50,7 @@ type AppLayoutProbe = {
         callback: (index: number) => void,
         revealGranted?: boolean
     ) => void;
+    handleRangeSelection: (indexes: number[], isAdditive: boolean) => void;
     searchProps: {
         onFocus: () => void;
         onBlur: () => void;
@@ -1417,6 +1418,52 @@ describe('App orchestration', () => {
         });
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
     });
+
+    // #478: the kept previous view is drawn while selection counts positions in the current list, so a
+    // drag or Shift-click range would pick cards other than the ones on screen. Selection by position
+    // waits until the kept view goes; the switch clears any selection when it ends.
+    it('does not select by position while a kept previous view is drawn', async () => {
+        vi.useFakeTimers();
+        const previousImage = image('previous-owner-image');
+        const nextImage = image('next-owner-image');
+        mocks.settings = createDefaultAppSettings({ hasCompletedOnboarding: true, invokeAiPath: 'D:/Invoke' });
+        mocks.images = [previousImage];
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        const view = render(<App />);
+
+        mocks.images = [nextImage];
+        mocks.invokeOwnerScopeState = {
+            status: 'applying',
+            rootPath: 'D:/Invoke',
+            scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'owner-b' },
+        };
+        view.rerender(<App />);
+        const retained = requireProbe(captured.appLayout, 'AppLayout');
+        expect(retained.images).toEqual([previousImage]);
+
+        const shiftClick = { shiftKey: true, stopPropagation: vi.fn() } as unknown as React.MouseEvent;
+        act(() => {
+            retained.handleRangeSelection([0], false);
+            retained.handleImageClick(shiftClick, previousImage.id, 0, retained.setSelectedImageIndex);
+        });
+        expect(mocks.handleRangeSelection).not.toHaveBeenCalled();
+        expect(mocks.handleImageClick).not.toHaveBeenCalled();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(100);
+        });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        const current = requireProbe(captured.appLayout, 'AppLayout');
+        expect(current.images).toEqual([nextImage]);
+        act(() => {
+            current.handleRangeSelection([0], false);
+            current.handleImageClick(shiftClick, nextImage.id, 0, current.setSelectedImageIndex);
+        });
+        expect(mocks.handleRangeSelection).toHaveBeenCalledWith([0], false);
+        expect(mocks.handleImageClick).toHaveBeenCalledTimes(1);
+    });
+
     it('shows collection catch-up only for startup or foreground InvokeAI board synchronization', () => {
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,
