@@ -87,7 +87,11 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                     <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-500 dark:text-gray-400">
                                         <Folder className="w-4 h-4" />
                                     </div>
-                                    <span className="text-sm text-gray-700 dark:text-gray-300 font-mono truncate">{path}</span>
+                                    <span
+                                        className={`text-sm text-gray-700 dark:text-gray-300 font-mono truncate ${isRemoving ? 'opacity-50' : ''}`}
+                                    >
+                                        {path}
+                                    </span>
                                     {isBroadPath && (
                                         <span
                                             className="flex-shrink-0 text-ember-600 dark:text-ember-300"
@@ -99,15 +103,22 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                         </span>
                                     )}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => onRemove(path)}
-                                    disabled={isDiscoveryBusy}
-                                    aria-label={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
-                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-400"
-                                >
-                                    {isRemoving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                </button>
+                                <div className="flex flex-shrink-0 items-center">
+                                    {isRemoving && (
+                                        <span className="mr-2 text-xs text-gray-500 dark:text-gray-400" role="status">
+                                            Removing…
+                                        </span>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => onRemove(path)}
+                                        disabled={isDiscoveryBusy}
+                                        aria-label={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                                    >
+                                        {isRemoving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                    </button>
+                                </div>
                             </div>
                         );
                     })}
