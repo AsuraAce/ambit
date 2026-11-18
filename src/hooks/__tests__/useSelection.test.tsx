@@ -137,6 +137,28 @@ describe('useSelection', () => {
         expect(result.current.lastSelectedId).toBeNull();
     });
 
+    // #461: a card's position can be counted against another list than the one selection reads (a
+    // placeholder page under the pinned shelf, an import that lands ahead of the pinned images). The
+    // range must end at the card the owner clicked, or a bulk action hits images they never marked.
+    it('ends a Shift-click range at the clicked image even when its position points elsewhere', () => {
+        const { result } = renderHook(() => useSelection(mockImages));
+        const ctrlEvent = { ctrlKey: true, shiftKey: false, stopPropagation: vi.fn() } as unknown as React.MouseEvent;
+        const shiftEvent = { ctrlKey: false, shiftKey: true, stopPropagation: vi.fn() } as unknown as React.MouseEvent;
+
+        act(() => result.current.handleImageClick(ctrlEvent, 'img-2', 2, vi.fn()));
+        act(() => result.current.handleImageClick(shiftEvent, 'img-5', 8, vi.fn()));
+
+        expect([...result.current.selectedIds].sort()).toEqual(['img-2', 'img-3', 'img-4', 'img-5']);
+    });
+
+    it('selects nothing for a Shift-click on an image that is not in the list', () => {
+        const { result } = renderHook(() => useSelection(mockImages));
+        const shiftEvent = { ctrlKey: false, shiftKey: true, stopPropagation: vi.fn() } as unknown as React.MouseEvent;
+        act(() => result.current.setLastSelectedId('img-2'));
+        act(() => result.current.handleImageClick(shiftEvent, 'gone', 5, vi.fn()));
+        expect(result.current.selectedIds.size).toBe(0);
+    });
+
     it('filters invalid range indexes and leaves the anchor unchanged for empty ranges', () => {
         const { result } = renderHook(() => useSelection(mockImages));
         act(() => result.current.setLastSelectedId('img-4'));

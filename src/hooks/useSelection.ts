@@ -20,8 +20,9 @@ export const useSelection = (filteredImages: AIImage[]) => {
             } else if (e.shiftKey && lastSelectedId) {
                 e.stopPropagation();
                 const startIdx = filteredImages.findIndex((img) => img.id === lastSelectedId);
-                const endIdx = index;
-                if (startIdx !== -1) {
+                // The card's position can be counted against another list (#461), so its id ends the range.
+                const endIdx = filteredImages.findIndex((img) => img.id === id);
+                if (startIdx !== -1 && endIdx !== -1) {
                     const low = Math.min(startIdx, endIdx);
                     const high = Math.max(startIdx, endIdx);
                     const rangeIds = filteredImages.slice(low, high + 1).map((img) => img.id);

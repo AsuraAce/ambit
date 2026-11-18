@@ -80,11 +80,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         (selectedIndexes: number[], isAdditive: boolean) => {
             if (!onRangeSelection) return;
 
-            const sourceIndexes = selectedIndexes
-                .map((index) => timelineSourceIndexes[index])
-                .filter((index): index is number => index !== undefined && index >= 0);
-
-            onRangeSelection(sourceIndexes, isAdditive);
+            // Selection reads the images in this drawn order (App, #461), so drawn positions pass through.
+            onRangeSelection(
+                selectedIndexes.filter((index) => index >= 0 && index < timelineSourceIndexes.length),
+                isAdditive
+            );
         },
         [onRangeSelection, timelineSourceIndexes]
     );

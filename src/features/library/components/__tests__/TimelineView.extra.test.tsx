@@ -171,8 +171,11 @@ describe('TimelineView component routing', () => {
         expect(mocks.handleMouseDown).toHaveBeenCalled();
 
         const selection = mocks.selectionArgs?.onRangeSelection as (indexes: number[], additive: boolean) => void;
-        selection([0, 1, 4], true);
-        expect(onRangeSelection).toHaveBeenCalledWith([1, 0], true);
+        // Selection reads the images in the order the timeline draws them (#461), so drag positions
+        // pass through as drawn: position 0 is 'b', drawn first though loaded second. Positions past
+        // the drawn cards are dropped.
+        selection([0, 4], true);
+        expect(onRangeSelection).toHaveBeenCalledWith([0], true);
     });
 
     it('builds drag payloads from selection or the current image and tolerates data-transfer failures', () => {
