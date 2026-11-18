@@ -444,6 +444,25 @@ export default function App() {
         isExplicitPreparation: hasExplicitInvokePreparation && invokeOwnerScopeState.status === 'applying',
         onClearStaleView: clearOwnerScopedView,
     });
+    // A kept previous view is drawn while selection counts positions in the current list, so drag and
+    // Shift-click ranges wait until it goes; the switch clears any selection when it ends (#478).
+    const handleDrawnRangeSelection = useCallback(
+        (selectedIndexes: number[], isAdditive: boolean) => {
+            if (isRetainingPreviousRuntimeView) return;
+            handleRangeSelection(selectedIndexes, isAdditive);
+        },
+        [handleRangeSelection, isRetainingPreviousRuntimeView]
+    );
+    const handleDrawnImageClick = useCallback(
+        (event: React.MouseEvent, id: string, index: number, setViewerIndex: (nextIndex: number) => void, revealGranted = false) => {
+            if (isRetainingPreviousRuntimeView && event.shiftKey) {
+                event.stopPropagation();
+                return;
+            }
+            handleViewerImageClick(event, id, index, setViewerIndex, revealGranted);
+        },
+        [handleViewerImageClick, isRetainingPreviousRuntimeView]
+    );
     const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot && invokeOwnerScopeState.status === 'offline_ready';
     const isInvokeOwnerScopeBusy =
         isInvokeOwnerScopeBlocking &&
@@ -1127,12 +1146,12 @@ export default function App() {
                         actions={actions}
                         availableTags={libraryPresentation.availableTags}
                         selectedIds={selectedIds}
-                        handleImageClick={handleViewerImageClick}
+                        handleImageClick={handleDrawnImageClick}
                         setSelectedImageIndex={setSelectedImageIndex}
                         handleSelectionToggle={handleSelectionToggle}
                         activeCollection={libraryPresentation.activeCollection}
                         activeSmartCollection={libraryPresentation.activeSmartCollection}
-                        handleRangeSelection={handleRangeSelection}
+                        handleRangeSelection={handleDrawnRangeSelection}
                         clearSelection={clearSelection}
                         gridRef={gridRef}
                         loadMoreImages={loadMoreImages}
