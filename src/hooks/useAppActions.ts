@@ -9,8 +9,8 @@ import {
     flagWriteDeadline,
     rebuildThumbnailFacetCache,
     setImageSourceKind,
+    setImageMasks,
     toggleImageFavorite,
-    toggleImageMask,
     toggleImagePin,
 } from '../services/db/imageRepo';
 import { backfillParameterColumns } from '../services/db/maintenanceRepo';
@@ -353,23 +353,33 @@ export const useAppActions = ({
             return image.userMasked === userMasked ? image : { ...image, userMasked };
         };
 
-        setImages((prev) => prev.map(updateMaskedImage));
-        updateImagesQueryCaches(queryClient, updateMaskedImage);
-
-        const promises: Promise<void>[] = [];
-
+        const masks: { id: string; userMasked: boolean | null }[] = [];
         idsToToggle.forEach((id) => {
             if (overrideValue !== undefined) {
-                promises.push(toggleImageMask(id, overrideValue));
+                masks.push({ id, userMasked: overrideValue });
             } else {
                 const img = images.find((i) => i.id === id);
-                if (img) {
-                    promises.push(toggleImageMask(id, !img.userMasked));
-                }
+                if (img) masks.push({ id, userMasked: !img.userMasked });
             }
         });
 
-        await Promise.all(promises);
+        const previousImages = images;
+        setImages((prev) => prev.map(updateMaskedImage));
+        updateImagesQueryCaches(queryClient, updateMaskedImage);
+
+        // One statement for the whole selection: one write per image, all at once, made most of a
+        // bulk mask fail with "database is locked" and the images looked masked until a reload (#463).
+        try {
+            if (masks.length > 0) await setImageMasks(masks);
+        } catch (error) {
+            console.error('[Mask] Failed to persist content mask', error);
+            setImages(previousImages);
+            restoreImagesInQueryCaches(queryClient, previousImages);
+            // A selection with an image outside the library scope still masks the others.
+            void queryClient.invalidateQueries({ queryKey: ['images'] });
+            addToast('Failed to update content mask', 'error');
+            return;
+        }
         await rebuildThumbnailFacetCache();
         useLibraryStore.getState().incrementFacetCacheVersion();
         void refreshCollections(true);

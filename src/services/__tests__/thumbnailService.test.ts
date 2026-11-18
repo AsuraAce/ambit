@@ -370,7 +370,7 @@ describe('thumbnailService', () => {
         expect(mocks.exists).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/legacy.webp');
         expect(mocks.libraryPathsExist).toHaveBeenCalledWith(['C:/thumbs/absolute.webp']);
         expect(execute).toHaveBeenCalledWith(
-            'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (?) AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)',
+            'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (?) AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id AND scoped.invoke_scope_hidden = 0)',
             ['relative']
         );
     });

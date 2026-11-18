@@ -388,7 +388,7 @@ describe('maintenanceRepo', () => {
         expect(db.execute).toHaveBeenCalledTimes(2);
         expect(db.execute.mock.calls[0][1]).toHaveLength(500);
         expect(db.execute.mock.calls[1][1]).toEqual(['id-500']);
-        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+        expect(db.execute.mock.calls[0][0]).toContain('EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)');
     });
 
     it('does not mark IDs hidden by an owner switch after discovery', async () => {
@@ -401,7 +401,7 @@ describe('maintenanceRepo', () => {
         const { pruneMissingLinks } = await import('../maintenanceRepo');
         await expect(pruneMissingLinks(['stale-owner-id'])).resolves.toBe(0);
 
-        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+        expect(db.execute.mock.calls[0][0]).toContain('EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)');
     });
 
     it('skips missing-link writes when there is nothing to prune', async () => {

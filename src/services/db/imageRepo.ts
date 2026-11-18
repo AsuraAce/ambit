@@ -575,7 +575,7 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.model);
         }
 
-        query += ' WHERE id = ? AND id IN (SELECT id FROM scoped_images)';
+        query += ' WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)';
         params.push(normalizedId);
 
         const result = await db.execute(query, params);
@@ -618,7 +618,7 @@ export const revertImageMetadata = async (id: string) => {
                     generation_type = NULL,
                     positive_prompt = NULL,
                     negative_prompt = NULL
-                WHERE id = ? AND id IN (SELECT id FROM scoped_images)
+                WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)
             `,
                 [normalizedId]
             );
@@ -635,7 +635,7 @@ export const revertImageMetadata = async (id: string) => {
         } catch (error) {
             console.error('[DB] Failed to parse original metadata:', error);
             const result = await db.execute(
-                'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+                'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
                 [normalizedId]
             );
             assertMutationMatched(result, normalizedId, 'Reverting metadata');
@@ -659,7 +659,7 @@ export const revertImageMetadata = async (id: string) => {
                     positive_prompt = ?,
                     negative_prompt = ?,
                     generation_type = ?
-                WHERE id = ? AND id IN (SELECT id FROM scoped_images)
+                WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)
             `,
             [
                 img.original_parsed_json, // Use the exact same JSON string!
@@ -690,10 +690,10 @@ export const updateImageNotesCol = async (id: string, notes: string | null) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
-        const result = await db.execute('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-            notes,
-            normalizedId,
-        ]);
+        const result = await db.execute(
+            'UPDATE images SET notes = ? WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+            [notes, normalizedId]
+        );
         assertMutationMatched(result, normalizedId, 'Updating notes');
     });
 };
@@ -1009,24 +1009,31 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean, deadl
     await writeFavorite(id, isFavorite, deadline);
 };
 
-export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
+/**
+ * Sets the manual content mask of every given image in one statement (`null` returns an image to
+ * automatic masking). A bulk mask once ran one write per image, all at once, and most of them
+ * failed with "database is locked" (#463). Throws when an image is outside the library scope.
+ */
+export const setImageMasks = async (updates: { id: string; userMasked: boolean | null }[]) => {
+    if (updates.length === 0) return;
     if (isBrowserMockMode()) {
-        updateBrowserMockImage(id, { userMasked: userMasked ?? undefined });
+        updates.forEach(({ id, userMasked }) => updateBrowserMockImage(id, { userMasked: userMasked ?? undefined }));
         return;
     }
 
+    const masks = new Map(updates.map(({ id, userMasked }) => [normalizePath(id), userMasked === null ? null : userMasked ? 1 : 0]));
     const db = await getDb();
-    const normalizedId = normalizePath(id);
-    let value: number | null = null;
-    if (userMasked === true) value = 1;
-    if (userMasked === false) value = 0;
-
-    const result = await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
-        value,
-        normalizedId,
-    ]);
-    assertMutationMatched(result, normalizedId, 'Updating content mask');
-    await clearCollectionThumbnailCacheForImages([normalizedId]);
+    // json_each keeps any selection size in one statement and one bound value.
+    const result = await db.execute(
+        `UPDATE images SET user_masked = target.value
+         FROM json_each($1) AS target
+         WHERE images.id = target.key AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)`,
+        [JSON.stringify(Object.fromEntries(masks))]
+    );
+    await clearCollectionThumbnailCacheForImages([...masks.keys()]);
+    if (result.rowsAffected !== masks.size) {
+        throw new Error(`Updating content mask failed because ${masks.size - result.rowsAffected} of ${masks.size} assets were not found`);
+    }
 };
 
 export const toggleImageIntermediate = async (id: string, isIntermediate: boolean) => {
@@ -1045,7 +1052,7 @@ export const toggleImageIntermediate = async (id: string, isIntermediate: boolea
     const normalizedId = normalizePath(id);
 
     const result = await db.execute(
-        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)",
+        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)",
         [isIntermediate ? 1 : 0, normalizedId]
     );
     assertMutationMatched(result, normalizedId, 'Updating intermediate status');
@@ -1185,10 +1192,10 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
     metadata.workflowJson = workflowJson;
     metadata.hasWorkflowHint = true;
 
-    const result = await db.execute('UPDATE images SET metadata_json = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-        JSON.stringify(metadata),
-        normalizedId,
-    ]);
+    const result = await db.execute(
+        'UPDATE images SET metadata_json = ? WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+        [JSON.stringify(metadata), normalizedId]
+    );
     assertMutationMatched(result, normalizedId, 'Updating workflow');
 };
 
@@ -1219,10 +1226,10 @@ export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean):
     }
     metadata.hasWorkflowHint = hasWorkflow;
 
-    const result = await db.execute('UPDATE images SET metadata_json = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-        JSON.stringify(metadata),
-        normalizedId,
-    ]);
+    const result = await db.execute(
+        'UPDATE images SET metadata_json = ? WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)',
+        [JSON.stringify(metadata), normalizedId]
+    );
     assertMutationMatched(result, normalizedId, 'Updating workflow hint');
 };
 
@@ -1327,7 +1334,7 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
     const result = await db.execute(
-        `UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = ${CURRENT_THUMBNAIL_VERSION}, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)`,
+        `UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = ${CURRENT_THUMBNAIL_VERSION}, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)`,
         [normalizedThumb, 'ambit', normalizedId]
     );
     assertMutationMatched(result, normalizedId, 'Thumbnail update');
@@ -1380,7 +1387,7 @@ export const updateThumbnailPathsBatch = async (
                          thumbnail_failure_count = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 0 ELSE thumbnail_failure_count END,
                          thumbnail_last_error = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_error END,
                          thumbnail_last_attempt_at = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_attempt_at END
-                     WHERE id = ? AND id IN (SELECT id FROM scoped_images)`,
+                     WHERE id = ? AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)`,
                     [
                         normalizedThumb,
                         microThumbnail || null,
