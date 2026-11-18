@@ -903,36 +903,110 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
     return image;
 };
 
-export const toggleImagePin = async (id: string, isPinned: boolean) => {
+// Favorites and pins failed with "database is locked" (#457). `id IN (SELECT id FROM scoped_images)`
+// read the whole library while the write held the lock (20 s cold on a 296k-image library), and the
+// next write waited behind it. The correlated EXISTS reads only the target row.
+const PIN_SQL =
+    'UPDATE images SET is_pinned = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)';
+const FAVORITE_SQL =
+    'UPDATE images SET is_favorite = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)';
+
+// The SQL plugin's pool gives every connection but one SQLite's 5 s busy wait (connection.ts sets
+// the 60 s timeout on one pooled connection), so a flag write can still meet another write. These
+// idempotent writes retry busy errors, and the pool's acquire timeout counts as busy too. The budget
+// runs from the click, queue wait included: a write that fails late rolls the gallery back to the
+// snapshot taken at its click, so it must give up while that snapshot is still recent.
+const FLAG_WRITE_BUSY_BUDGET_MS = 15_000;
+const FLAG_WRITE_RETRY_DELAY_MS = 250;
+/** One deadline for every write a click makes, so a bulk toggle also gives up about 15 s after the click. */
+export const flagWriteDeadline = () => Date.now() + FLAG_WRITE_BUSY_BUDGET_MS;
+const isDatabaseBusy = (error: unknown) =>
+    /database is locked|pool timed out/i.test(error instanceof Error ? error.message : String(error));
+
+const retryWhileDatabaseBusy = async (write: () => Promise<void>, deadline: number) => {
+    let lastError: unknown = new Error('database is locked: an earlier write to this image used up the retry budget');
+    // No attempt starts after the deadline; one already running may still take the pool's own timeouts.
+    while (Date.now() < deadline) {
+        try {
+            await write();
+            return;
+        } catch (error) {
+            if (!isDatabaseBusy(error)) throw error;
+            lastError = error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, FLAG_WRITE_RETRY_DELAY_MS));
+    }
+    throw lastError;
+};
+
+// Writes to one image's flag run in order, so a retrying older toggle never lands after a newer one.
+const pendingFlagWrites = new Map<string, Promise<void>>();
+
+const writeImageFlag = (
+    flag: 'favorite' | 'pin',
+    normalizedId: string,
+    write: () => Promise<void>,
+    deadline = flagWriteDeadline()
+): Promise<void> => {
+    const key = `${flag}:${normalizedId}`;
+    const previous = pendingFlagWrites.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(() => retryWhileDatabaseBusy(write, deadline));
+    pendingFlagWrites.set(key, current);
+    const forget = () => {
+        if (pendingFlagWrites.get(key) === current) pendingFlagWrites.delete(key);
+    };
+    void current.then(forget, forget);
+    return current;
+};
+
+const writePinned = (id: string, isPinned: boolean, deadline?: number) => {
+    const normalizedId = normalizePath(id);
+    return writeImageFlag(
+        'pin',
+        normalizedId,
+        async () => {
+            const db = await getDb();
+            const result = await db.execute(PIN_SQL, [isPinned ? 1 : 0, normalizedId]);
+            assertMutationMatched(result, normalizedId, 'Updating pin');
+            await clearCollectionThumbnailCacheForImages([normalizedId]);
+        },
+        deadline
+    );
+};
+
+const writeFavorite = (id: string, isFavorite: boolean, deadline?: number) => {
+    const normalizedId = normalizePath(id);
+    return writeImageFlag(
+        'favorite',
+        normalizedId,
+        async () => {
+            const db = await getDb();
+            const result = await db.execute(FAVORITE_SQL, [isFavorite ? 1 : 0, normalizedId]);
+            assertMutationMatched(result, normalizedId, 'Updating favorite');
+        },
+        deadline
+    );
+};
+
+/** `deadline` (from `flagWriteDeadline`) lets every write of a bulk toggle share one retry window from its click. */
+export const toggleImagePin = async (id: string, isPinned: boolean, deadline?: number) => {
     if (isBrowserMockMode()) {
         updateBrowserMockImage(id, { isPinned });
         return;
     }
 
-    const db = await getDb();
-    const normalizedId = normalizePath(id);
-    const result = await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
-        isPinned ? 1 : 0,
-        normalizedId,
-    ]);
-    assertMutationMatched(result, normalizedId, 'Updating pin');
-    await clearCollectionThumbnailCacheForImages([normalizedId]);
+    await writePinned(id, isPinned, deadline);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
 
-export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
+/** `deadline` works as for `toggleImagePin`. */
+export const toggleImageFavorite = async (id: string, isFavorite: boolean, deadline?: number) => {
     if (isBrowserMockMode()) {
         updateBrowserMockImage(id, { isFavorite });
         return;
     }
 
-    const db = await getDb();
-    const normalizedId = normalizePath(id);
-    const result = await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [
-        isFavorite ? 1 : 0,
-        normalizedId,
-    ]);
-    assertMutationMatched(result, normalizedId, 'Updating favorite');
+    await writeFavorite(id, isFavorite, deadline);
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
@@ -981,7 +1055,8 @@ export const updateVideoPlaybackStatus = async (id: string, status: 'unknown' | 
     if (isBrowserMockMode()) return;
     const db = await getDb();
     const result = await db.execute(
-        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+        // Runs on every video play, often right before a pin, so its scope check reads one row (#457).
+        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND EXISTS (SELECT 1 FROM scoped_images AS scoped WHERE scoped.id = images.id)",
         [status, normalizePath(id)]
     );
     assertMutationMatched(result, normalizePath(id), 'Updating video playback status');
@@ -1157,13 +1232,7 @@ export const updateFavorite = async (id: string, isFavorite: boolean) => {
         return;
     }
 
-    const db = await getDb();
-    const normalizedId = normalizePath(id);
-    const result = await db.execute('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-        isFavorite ? 1 : 0,
-        normalizedId,
-    ]);
-    assertMutationMatched(result, normalizedId, 'Updating favorite');
+    await writeFavorite(id, isFavorite);
 };
 
 export const updatePinned = async (id: string, isPinned: boolean) => {
@@ -1172,14 +1241,7 @@ export const updatePinned = async (id: string, isPinned: boolean) => {
         return;
     }
 
-    const db = await getDb();
-    const normalizedId = normalizePath(id);
-    const result = await db.execute('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [
-        isPinned ? 1 : 0,
-        normalizedId,
-    ]);
-    assertMutationMatched(result, normalizedId, 'Updating pin');
-    await clearCollectionThumbnailCacheForImages([normalizedId]);
+    await writePinned(id, isPinned);
 };
 
 export const checkHiddenContentAvailability = async (): Promise<{

@@ -23,6 +23,10 @@ const mockSetImages = vi.fn();
 const mockToggleImageFavorite = vi.fn();
 const mockToggleImagePin = vi.fn();
 const mockToggleImageMask = vi.fn();
+// Each call returns a new value, so writes that share one deadline are easy to tell apart.
+let mockDeadlineCount = 0;
+const mockFlagWriteDeadline = vi.fn(() => (mockDeadlineCount += 1));
+const mockFlagDeadlines: Array<number | undefined> = [];
 const mockSetImageSourceKind = vi.fn();
 const mockRebuildThumbnailFacetCache = vi.fn();
 const mockBackfillParameterColumns = vi.fn();
@@ -63,8 +67,15 @@ let mockPrivacyEnabled = false;
 let mockGeminiApiKey: string | null = null;
 
 vi.mock('../../services/db/imageRepo', () => ({
-    toggleImageFavorite: (id: string, isFavorite: boolean) => mockToggleImageFavorite(id, isFavorite),
-    toggleImagePin: (id: string, isPinned: boolean) => mockToggleImagePin(id, isPinned),
+    flagWriteDeadline: () => mockFlagWriteDeadline(),
+    toggleImageFavorite: (id: string, isFavorite: boolean, deadline?: number) => {
+        mockFlagDeadlines.push(deadline);
+        return mockToggleImageFavorite(id, isFavorite);
+    },
+    toggleImagePin: (id: string, isPinned: boolean, deadline?: number) => {
+        mockFlagDeadlines.push(deadline);
+        return mockToggleImagePin(id, isPinned);
+    },
     toggleImageMask: (id: string, value: boolean | null) => mockToggleImageMask(id, value),
     setImageSourceKind: (ids: string[], value: string | null) => mockSetImageSourceKind(ids, value),
     rebuildThumbnailFacetCache: () => mockRebuildThumbnailFacetCache(),
@@ -152,6 +163,7 @@ describe('useAppActions', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockFlagDeadlines.length = 0;
         mockStoreImages = [
             {
                 id: '1',
@@ -306,6 +318,79 @@ describe('useAppActions', () => {
             markPending: true,
         });
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
+    });
+
+    // Each flag write retries while the library is busy (#457). Run in parallel, a large selection
+    // would hold every pooled connection and stall gallery reads, so bulk writes go one at a time.
+    it.each([
+        ['handleBulkPin', () => mockToggleImagePin],
+        ['handleBulkFavorite', () => mockToggleImageFavorite],
+    ] as const)('%s writes one image at a time', async (handler, getWrite) => {
+        const write = getWrite();
+        let inFlight = 0;
+        let maxInFlight = 0;
+        write.mockImplementation(async () => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            inFlight -= 1;
+        });
+        const { result } = renderHook(() => useAppActions({ ...props, selectedIds: new Set(['1', '2']) }));
+
+        await act(async () => {
+            result.current[handler]();
+            await vi.waitFor(() => expect(mockRefreshCollections).toHaveBeenCalledWith(true));
+        });
+
+        expect(write).toHaveBeenCalledTimes(2);
+        expect(maxInFlight).toBe(1);
+        // One retry window from the click for the whole selection, not a fresh 15 s per image.
+        expect(mockFlagWriteDeadline).toHaveBeenCalledOnce();
+        expect(mockFlagDeadlines).toEqual([mockDeadlineCount, mockDeadlineCount]);
+        write.mockReset();
+    });
+
+    // When a bulk write fails partway, the images before it are already changed in the database
+    // while the rollback reverts all of them on screen, so the gallery must reload from the database.
+    it.each([
+        ['handleBulkPin', () => mockToggleImagePin, 'Failed to update pinned images'],
+        ['handleBulkFavorite', () => mockToggleImageFavorite, 'Failed to update favorite state'],
+    ] as const)('%s stops at the first failure, rolls back and resyncs with the database', async (handler, getWrite, errorToast) => {
+        const write = getWrite();
+        write.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('database is locked'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => ({
+            actions: useAppActions({ ...props, selectedIds: new Set(['1', '2', '3']) }),
+            queryClient: useQueryClient(),
+        }));
+        const invalidateQueries = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        act(() => result.current.actions[handler]());
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(errorToast, 'error'));
+
+        expect(write.mock.calls.map(([id]) => id)).toEqual(['1', '2']);
+        expect(mockSetImages).toHaveBeenLastCalledWith(mockStoreImages);
+        expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        expect(mockRefreshCollections).toHaveBeenCalledWith(true);
+        errorSpy.mockRestore();
+    });
+
+    it('does not reload the gallery when a bulk write fails before any image changed', async () => {
+        mockToggleImagePin.mockRejectedValueOnce(new Error('database is locked'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => ({
+            actions: useAppActions({ ...props, selectedIds: new Set(['1', '2']) }),
+            queryClient: useQueryClient(),
+        }));
+        const invalidateQueries = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        act(() => result.current.actions.handleBulkPin());
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned images', 'error'));
+
+        expect(mockToggleImagePin).toHaveBeenCalledOnce();
+        expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['images'] });
+        expect(mockRefreshCollections).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
     });
 
     it('should keep single-image pin feedback outside the viewer path', async () => {
