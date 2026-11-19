@@ -993,12 +993,37 @@ export async function processFoldersUnified(
     return result;
 }
 
-export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
+/** How long the browser mock mode waits for one dropped image to load before counting it as failed. */
+export const WEB_IMAGE_LOAD_TIMEOUT_MS = 10_000;
+
+// Settles when the image loads, fails, or takes too long. A load that never settles
+// held the import run forever and left the Activity Dock on "Starting work…" (#493).
+const loadWebImage = (img: HTMLImageElement, src: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Image load timed out')), WEB_IMAGE_LOAD_TIMEOUT_MS);
+        img.onload = () => {
+            clearTimeout(timeout);
+            resolve();
+        };
+        img.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Image could not be loaded'));
+        };
+        img.src = src;
+    });
+
+/** The browser mock mode's in-memory import. The desktop app imports by native path instead. */
+export const processWebFiles = async (files: File[], abortSignal?: AbortSignal): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
     const skipped = 0;
     let errors = 0;
+    let wasCancelled = false;
 
     for (let i = 0; i < files.length; i++) {
+        if (abortSignal?.aborted) {
+            wasCancelled = true;
+            break;
+        }
         const file = files[i];
         if (!file.type.startsWith('image/')) continue;
 
@@ -1007,8 +1032,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
             const { metadata: meta, extra } = await parseImageFile(file);
 
             const img = new Image();
-            img.src = objectUrl;
-            await new Promise((r) => (img.onload = r));
+            await loadWebImage(img, objectUrl);
 
             newImages.push({
                 id: `imported_${Date.now()}_${i}`,
@@ -1046,7 +1070,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
         failedPaths: [],
         touchedFacetTypes: [],
         touchedFacetResources: createEmptyTouchedFacetResources(),
-        wasCancelled: false,
+        wasCancelled,
         completedSourcePaths: [],
         cancelledSourcePaths: [],
     };

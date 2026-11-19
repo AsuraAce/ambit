@@ -42,6 +42,7 @@ import { useCollectionOperations } from './hooks/useCollectionOperations';
 import { useTheme } from './hooks/useTheme';
 import { useTimeline } from './hooks/useTimeline';
 import { useDragDrop } from './hooks/useDragDrop';
+import { useDropImport } from './hooks/useDropImport';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppActions } from './hooks/useAppActions';
@@ -379,24 +380,15 @@ export default function App() {
         activeImageState,
     });
 
-    const handleImportFiles = useCallback(
-        (files: FileList) => {
-            fileOps.handleImportFiles(Array.from(files)).catch((error) => console.error('[Import] Dropped-file import failed', error));
-        },
-        [fileOps]
-    );
-
-    const handleImportDroppedPaths = useCallback(
-        (paths: string[]) => {
-            fileOps.handleImportPaths(paths).catch((error) => console.error('[Import] Dropped-path import failed', error));
-        },
-        [fileOps]
-    );
-
-    const { isDraggingExternal } = useDragDrop({
-        onImportPaths: handleImportDroppedPaths,
-        onImportFiles: handleImportFiles,
+    const { handleDropFiles } = useDropImport({
+        importPaths: fileOps.handleImportPaths,
+        importFolders: fileOps.handleImportFolders,
+        importWebFiles: fileOps.handleImportFiles,
+        monitoredFolders: settings.monitoredFolders,
+        setSettings,
     });
+
+    const { isDraggingExternal } = useDragDrop({ onDropFiles: handleDropFiles });
 
     const {
         startInvokeSync,
@@ -541,14 +533,15 @@ export default function App() {
                 if (paths.length > 0) {
                     await fileOps.handleImportPaths(paths, undefined, { mediaKind: 'images' });
                 }
-                return;
             } catch (error) {
-                console.error('[App] Native file picker import failed, falling back to file input.', error);
+                // The hidden file input gives no paths on desktop, so it is no fallback here (#493).
+                addToast(`Image import failed: ${String(error)}`, 'error');
             }
+            return;
         }
 
         fileOps.fileInputRef.current?.click();
-    }, [fileOps]);
+    }, [addToast, fileOps]);
 
     const handleSelectVideosImport = useCallback(async () => {
         try {
