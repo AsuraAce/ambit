@@ -1,5 +1,7 @@
 import type { SyncProgress } from '../stores/libraryStore';
 
+export type ImportMediaKind = 'images' | 'videos' | 'media';
+
 type ImportProgressPhase = 'scanning' | 'importing' | 'finalizing';
 
 interface StableImportProgressOptions {
@@ -8,6 +10,8 @@ interface StableImportProgressOptions {
     sourceCount: number;
     phase: ImportProgressPhase;
     prefix?: string;
+    /** What the import brings in; 'media' when the kind is not known up front or both are imported. */
+    mediaKind?: ImportMediaKind;
     sourceIndex?: number;
     sourcePath?: string;
 }
@@ -22,6 +26,7 @@ export const formatStableImportProgress = ({
     sourceCount,
     phase,
     prefix,
+    mediaKind = 'media',
     sourceIndex,
     sourcePath,
 }: StableImportProgressOptions): SyncProgress => {
@@ -32,7 +37,7 @@ export const formatStableImportProgress = ({
             : phase === 'scanning'
               ? withPrefix(isSingleFolder ? 'Scanning folder...' : `Scanning ${folderLabel(sourceCount)}...`, prefix)
               : withPrefix(
-                    isSingleFolder ? 'Importing images from folder...' : `Importing images from ${folderLabel(sourceCount)}...`,
+                    isSingleFolder ? `Importing ${mediaKind} from folder...` : `Importing ${mediaKind} from ${folderLabel(sourceCount)}...`,
                     prefix
                 );
 

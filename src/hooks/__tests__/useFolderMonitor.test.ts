@@ -647,9 +647,9 @@ describe('useFolderMonitor', () => {
 
             expect(progressMessages).toEqual(
                 expect.arrayContaining([
-                    { message: 'Startup: Importing images from 2 folders...', detail: undefined },
-                    { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
-                    { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 2 of 2' },
+                    { message: 'Startup: Importing media from 2 folders...', detail: undefined },
+                    { message: 'Startup: Importing media from 2 folders...', detail: 'Folder 1 of 2' },
+                    { message: 'Startup: Importing media from 2 folders...', detail: 'Folder 2 of 2' },
                 ])
             );
             expect(progressMessages.some((progress) => progress.message === 'Extracting Metadata')).toBe(false);
@@ -883,9 +883,9 @@ describe('useFolderMonitor', () => {
 
             expect(progressMessages).toEqual(
                 expect.arrayContaining([
-                    { message: 'Catch-up: Importing images from 2 folders...', detail: undefined },
-                    { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
-                    { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 2 of 2' },
+                    { message: 'Catch-up: Importing media from 2 folders...', detail: undefined },
+                    { message: 'Catch-up: Importing media from 2 folders...', detail: 'Folder 1 of 2' },
+                    { message: 'Catch-up: Importing media from 2 folders...', detail: 'Folder 2 of 2' },
                 ])
             );
             expect(progressMessages.some((progress) => progress.message === 'Extracting Metadata')).toBe(false);

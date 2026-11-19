@@ -102,6 +102,7 @@ type ImportModalProbe = {
     onClose: () => void;
     onOpenSettings: (tab: string) => void;
     onImportFiles: () => void;
+    onImportVideos: () => void;
 };
 
 type ViewerProbe = {
@@ -1707,7 +1708,16 @@ describe('App orchestration', () => {
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
         vi.mocked(pickLibraryFiles).mockResolvedValue(['C:/a.png', 'C:/b.webp']);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
-        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/a.png', 'C:/b.webp']);
+        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/a.png', 'C:/b.webp'], undefined, { mediaKind: 'images' });
+    });
+
+    it('imports picked videos as videos so the Activity Dock names them', async () => {
+        render(<App />);
+        vi.mocked(pickLibraryFiles).mockResolvedValue(['C:/clip.mp4']);
+
+        await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportVideos());
+
+        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/clip.mp4'], undefined, { mediaKind: 'videos' });
     });
 
     it('closes an untouched setup-guide replay without rewriting settings', async () => {
@@ -2681,7 +2691,7 @@ describe('App orchestration', () => {
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
         vi.mocked(pickLibraryFiles).mockResolvedValueOnce(['C:/single.png']);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
-        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/single.png']);
+        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/single.png'], undefined, { mediaKind: 'images' });
         vi.mocked(pickLibraryFiles).mockResolvedValueOnce([]);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
 
