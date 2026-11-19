@@ -133,7 +133,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                           const result = await copyImageToClipboard(activeImage.id);
                           if (result.status === 'ok') {
                               addToast('Image copied to clipboard', 'success');
-                          } else {
+                          } else if (result.status === 'error') {
                               addToast(`Couldn't copy the image: ${result.error}`, 'error');
                           }
                       }

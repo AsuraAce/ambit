@@ -365,6 +365,15 @@ describe('AppContextMenu', () => {
         expect(onClose).toHaveBeenCalledOnce();
     });
 
+    it('shows no toast for a repeat click ignored while a copy runs', async () => {
+        imageClipboardMocks.copyImageToClipboard.mockResolvedValue({ status: 'ignored' });
+        renderMenu();
+
+        await requireMenu().onCopyImage?.();
+
+        expect(toastMocks.addToast).not.toHaveBeenCalled();
+    });
+
     it('offers no Copy image for videos', () => {
         renderMenu({ images: [createImage({ mediaType: 'video' } as Partial<AIImage>)] });
 

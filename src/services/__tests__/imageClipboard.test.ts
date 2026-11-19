@@ -37,6 +37,31 @@ describe('copyImageToClipboard', () => {
         await expect(copyImageToClipboard('C:/library/image.png')).resolves.toEqual({ status: 'error', error: 'IPC down' });
     });
 
+    it('ignores repeat requests while a copy runs, so a large image is decoded once', async () => {
+        let finish: (value: { status: 'ok'; data: null }) => void = () => undefined;
+        mocks.copyImageToClipboard.mockReturnValueOnce(
+            new Promise((resolve) => {
+                finish = resolve;
+            })
+        );
+
+        const { copyImageToClipboard } = await import('../imageClipboard');
+        const first = copyImageToClipboard('C:/library/huge.png');
+        await expect(copyImageToClipboard('C:/library/huge.png')).resolves.toEqual({ status: 'ignored' });
+        await expect(copyImageToClipboard('C:/library/other.png')).resolves.toEqual({ status: 'ignored' });
+        expect(mocks.copyImageToClipboard).toHaveBeenCalledOnce();
+
+        finish({ status: 'ok', data: null });
+        await expect(first).resolves.toEqual({ status: 'ok', data: null });
+
+        // The guard is released afterwards, including after a failure.
+        mocks.copyImageToClipboard.mockRejectedValueOnce(new Error('IPC down'));
+        await expect(copyImageToClipboard('C:/library/next.png')).resolves.toEqual({ status: 'error', error: 'IPC down' });
+        mocks.copyImageToClipboard.mockResolvedValueOnce({ status: 'ok', data: null });
+        await expect(copyImageToClipboard('C:/library/next.png')).resolves.toEqual({ status: 'ok', data: null });
+        expect(mocks.copyImageToClipboard).toHaveBeenCalledTimes(3);
+    });
+
     it('reports unavailability in browser mock mode without calling the backend', async () => {
         mocks.isBrowserMockMode.mockReturnValue(true);
 

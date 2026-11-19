@@ -5,7 +5,9 @@
 //! decoded here and written through the clipboard-manager plugin's Rust API.
 //! No clipboard IPC permission is granted to the webview.
 
-use crate::scanner::utils::{open_configured_app_db, resolve_known_media_file_target};
+use crate::scanner::utils::{
+    open_configured_app_db, path_is_known_media_file, resolve_existing_regular_file,
+};
 use image::{DynamicImage, ImageDecoder, ImageReader, RgbaImage};
 use rusqlite::Connection;
 use std::path::Path;
@@ -29,8 +31,17 @@ pub async fn copy_image_to_clipboard(app: tauri::AppHandle, path: String) -> Res
 
 /// Decodes `path` only when it is a file the library tracks, so the webview
 /// cannot make Ambit read an arbitrary file through the clipboard.
+/// Shown after "Couldn't copy the image: " when the scope check refuses a file.
+const NOT_IN_LIBRARY: &str = "it is no longer in your library.";
+
+/// Decodes `path` only when it is a file the library tracks (the same rule as
+/// Open in Default App), so the webview cannot make Ambit read an arbitrary
+/// file through the clipboard.
 fn load_library_image_rgba(conn: &Connection, path: &str) -> Result<RgbaImage, String> {
-    let target = resolve_known_media_file_target(conn, path)?;
+    let target = resolve_existing_regular_file(path)?;
+    if !path_is_known_media_file(conn, path, &target)? {
+        return Err(NOT_IN_LIBRARY.to_string());
+    }
     decode_rgba(&target)
 }
 
@@ -52,7 +63,7 @@ fn decode_rgba(path: &Path) -> Result<RgbaImage, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::load_library_image_rgba;
+    use super::{load_library_image_rgba, NOT_IN_LIBRARY};
     use image::{ImageFormat, Rgba, RgbaImage};
     use rusqlite::Connection;
     use std::fs;
@@ -133,7 +144,11 @@ mod tests {
         let path = dir.join("outside.png");
         sample().save_with_format(&path, ImageFormat::Png).unwrap();
 
-        assert!(load_library_image_rgba(&conn, &path.to_string_lossy()).is_err());
+        assert_eq!(
+            load_library_image_rgba(&conn, &path.to_string_lossy()),
+            Err(NOT_IN_LIBRARY.to_string()),
+            "the scope check, not decoding, must refuse the file"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

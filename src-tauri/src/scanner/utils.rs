@@ -494,10 +494,7 @@ fn show_path_in_folder(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn resolve_known_media_file_target(
-    conn: &Connection,
-    path: &str,
-) -> Result<PathBuf, String> {
+fn resolve_known_media_file_target(conn: &Connection, path: &str) -> Result<PathBuf, String> {
     let canonical_file = resolve_existing_regular_file(path)?;
     if !path_is_known_media_file(conn, path, &canonical_file)? {
         return Err("Refusing to open an untracked file".to_string());
@@ -506,7 +503,7 @@ pub(crate) fn resolve_known_media_file_target(
     Ok(canonical_file)
 }
 
-fn resolve_existing_regular_file(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_existing_regular_file(path: &str) -> Result<PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("Path cannot be empty".to_string());
@@ -537,7 +534,7 @@ pub(crate) fn open_configured_app_db(app: &tauri::AppHandle) -> Result<Connectio
     Ok(conn)
 }
 
-fn path_is_known_media_file(
+pub(crate) fn path_is_known_media_file(
     conn: &Connection,
     requested_path: &str,
     canonical_path: &Path,
