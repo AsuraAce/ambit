@@ -1881,6 +1881,58 @@ fn enhancer_request_stands_in_when_a_switch_offers_it_as_the_plain_prompt() {
     ));
 }
 
+/// `nodes` with node `id` replaced by `node`.
+fn with_node(
+    mut nodes: Vec<(&'static str, Value)>,
+    id: &str,
+    node: Value,
+) -> Vec<(&'static str, Value)> {
+    let slot = nodes
+        .iter_mut()
+        .find(|(node_id, _)| *node_id == id)
+        .expect("node to replace should exist");
+    slot.1 = node;
+    nodes
+}
+
+#[test]
+fn enhancer_request_stands_in_whichever_switch_branch_holds_the_enhancer() {
+    // The rule is about the switch offering the request when the enhancer is
+    // off, not about which branch name the template wires the enhancer to.
+    let nodes = with_node(
+        reference_image_enhancer_nodes(json!(["7", 0]), None),
+        "5",
+        json!({
+            "class_type": "ComfySwitchNode",
+            "inputs": { "switch": false, "on_true": ["7", 0], "on_false": ["6", 0] }
+        }),
+    );
+    let chunks = transform_prompt_chunks(nodes);
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert_eq!(meta.positive_prompt, "a cat");
+    assert!(meta.positive_prompt_before_enhancer);
+    assert!(has_generated_prompt_issue(
+        &build_comfyui_diagnostics_report(&chunks)
+    ));
+}
+
+#[test]
+fn enhancer_request_with_an_image_is_not_shown_for_a_switch_off_the_encoder_path() {
+    // Node "5" still offers the request, but the encoder reads the enhancer
+    // without passing through it, so it says nothing about what the model
+    // was given.
+    let nodes = with_node(
+        reference_image_enhancer_nodes(json!(["7", 0]), None),
+        "3",
+        json!({ "class_type": "PreviewAny", "inputs": { "source": ["6", 0] } }),
+    );
+    assert_enhancer_request_rejected(
+        nodes,
+        "only a switch on the positive encoder's path shows the request is the prompt; one \
+         elsewhere in the graph does not",
+    );
+}
+
 #[test]
 fn enhancer_request_with_an_image_is_not_shown_when_the_switch_offers_other_text() {
     // Node "9" holds the same words in a different node: only the request
