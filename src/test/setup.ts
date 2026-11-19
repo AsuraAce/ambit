@@ -1,4 +1,8 @@
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
+import { resetImageFieldWritesForTests } from '../utils/imageFieldWrites';
+
+// Optimistic image writes a test leaves pending must not decide another test's rollbacks.
+afterEach(() => resetImageFieldWritesForTests());
 
 // Mock Tauri Core
 vi.mock('@tauri-apps/api/core', () => ({

@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppHandlers } from '../useAppHandlers';
 import { AIImage, GeneratorTool } from '../../types';
+import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -455,6 +456,30 @@ describe('useAppHandlers', () => {
         expect(dispatchedImages.map((image) => image.notes)).toEqual(['note', undefined]);
         expect(mockUpdateImageNotesCol).toHaveBeenCalledWith('img1', 'note');
         expect(mockAddToast).toHaveBeenCalledWith('Saved', 'success');
+    });
+
+    // A failed notes write reverts only the notes: a pin that landed meanwhile is in the database (#492).
+    it('keeps a pin that landed while a notes write was pending when the notes write fails', async () => {
+        let failNotes: (error: Error) => void = () => undefined;
+        mockUpdateImageNotesCol.mockReturnValueOnce(new Promise((_, reject) => (failNotes = reject)));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHandlers();
+
+        let notesWrite: Promise<void> = Promise.resolve();
+        act(() => {
+            notesWrite = result.current.handleUpdateNotes('img1', 'note');
+        });
+        dispatchedImages = dispatchedImages.map((image) => (image.id === 'img1' ? { ...image, isPinned: true } : image));
+        await act(async () => {
+            failNotes(new Error('database is locked'));
+            await notesWrite;
+        });
+
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to save notes', 'error');
+        expect(dispatchedImages[0].notes).toBeUndefined();
+        expect(dispatchedImages[0].isPinned).toBe(true);
+        expect(countPendingImageFieldWritesForTests()).toBe(0);
+        error.mockRestore();
     });
 
     it('rolls back notes and reports an error when persistence fails', async () => {

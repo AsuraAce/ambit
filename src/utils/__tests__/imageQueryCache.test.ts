@@ -4,10 +4,9 @@ import { GeneratorTool, type AIImage } from '../../types';
 import {
     getImageCountsQueryKey,
     patchImageFlagsInQueryCaches,
-    pickImages,
     removeImagesFromQueryCaches,
-    restoreImagesInList,
-    restoreImagesInQueryCaches,
+    revertImageFieldsInList,
+    revertImageFieldsInQueryCaches,
     updateImagesQueryCaches,
 } from '../imageQueryCache';
 
@@ -184,22 +183,29 @@ describe('imageQueryCache', () => {
         expect(inactiveData?.pages[0].images[0].isPinned).toBe(true);
     });
 
-    it('restores cached images from a previous optimistic snapshot', () => {
+    // A rollback reverts only the field its write changed: another action's change stays (#492).
+    it('reverts only the given fields of cached images and keeps their other changes', () => {
         const queryClient = new QueryClient();
-        const previous = [image('1')];
 
         queryClient.setQueryData(['images'], {
-            pages: [{ images: [image('1', { isFavorite: true })], totalCount: 1, globalCount: 1 }],
+            pages: [
+                {
+                    images: [image('1', { isFavorite: true, isPinned: true }), image('2', { isFavorite: true })],
+                    totalCount: 2,
+                    globalCount: 2,
+                },
+            ],
             pageParams: [undefined],
         });
 
-        restoreImagesInQueryCaches(queryClient, previous);
+        revertImageFieldsInQueryCaches(queryClient, new Map([['1', { isFavorite: false }]]));
 
         const data = queryClient.getQueryData<{
             pages: Array<{ images: AIImage[] }>;
         }>(['images']);
 
-        expect(data?.pages[0].images[0].isFavorite).toBe(false);
+        expect(data?.pages[0].images[0]).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
+        expect(data?.pages[0].images[1].isFavorite).toBe(true);
     });
 
     it('restores active cached result order after an optimistic reorder fails', () => {
@@ -226,7 +232,7 @@ describe('imageQueryCache', () => {
             pageParams: [undefined],
         });
 
-        restoreImagesInQueryCaches(queryClient, previousOrder, {
+        revertImageFieldsInQueryCaches(queryClient, new Map([['1', { isPinned: false }]]), {
             previousOrder: optimisticOrder,
             nextOrder: previousOrder,
             reorderQueryKey: activeKey,
@@ -315,38 +321,46 @@ describe('imageQueryCache', () => {
 
         expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images).toEqual([absent]);
 
-        restoreImagesInQueryCaches(queryClient, []);
+        revertImageFieldsInQueryCaches(queryClient, new Map());
         expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images).toEqual([absent]);
     });
 
-    describe('restoreImagesInList (#484)', () => {
+    describe('revertImageFieldsInList (#484, #492)', () => {
         // A rollback reverts only what its write changed. The store may hold another view by then,
-        // and that view must keep its own images and order.
+        // and that view must keep its own images and order; the touched image keeps its other fields.
         const first = image('first');
         const second = image('second');
         const snapshot = [first, second];
         const optimistic = [{ ...second, isPinned: true }, first];
+        const unpinSecond = new Map([['second', { isPinned: false }]]);
 
-        it('restores the touched image and the snapshot order while the list is unchanged', () => {
-            const restored = restoreImagesInList(optimistic, pickImages(snapshot, ['second']), {
+        it('reverts the touched image and the snapshot order while the list is unchanged', () => {
+            const reverted = revertImageFieldsInList(optimistic, unpinSecond, {
                 previousOrder: optimistic,
                 nextOrder: snapshot,
             });
-            expect(restored).toEqual(snapshot);
+            expect(reverted).toEqual(snapshot);
         });
 
         it('patches only the touched image, in place, once the list holds another view', () => {
             const otherView = [image('other'), { ...second, isPinned: true }];
-            const restored = restoreImagesInList(otherView, pickImages(snapshot, ['second']), {
+            const reverted = revertImageFieldsInList(otherView, unpinSecond, {
                 previousOrder: optimistic,
                 nextOrder: snapshot,
             });
-            expect(restored).toEqual([otherView[0], second]);
+            expect(reverted).toEqual([otherView[0], second]);
+            expect(reverted[0]).toBe(otherView[0]);
+        });
+
+        it('keeps a change another action made to the touched image meanwhile', () => {
+            const favorited = [{ ...second, isPinned: true, isFavorite: true }, first];
+            const reverted = revertImageFieldsInList(favorited, unpinSecond);
+            expect(reverted[0]).toEqual({ ...second, isFavorite: true });
         });
 
         it('returns the same list when it holds none of the touched images', () => {
             const otherView = [image('other')];
-            expect(restoreImagesInList(otherView, pickImages(snapshot, ['second']))).toBe(otherView);
+            expect(revertImageFieldsInList(otherView, unpinSecond)).toBe(otherView);
         });
     });
 });

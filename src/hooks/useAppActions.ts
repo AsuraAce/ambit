@@ -18,11 +18,11 @@ import { useLibraryStore } from '../stores/libraryStore';
 import {
     hasSameImageOrder,
     patchImageFlagsInQueryCaches,
-    pickImages,
-    restoreImagesInList,
-    restoreImagesInQueryCaches,
+    revertImageFieldsInList,
+    revertImageFieldsInQueryCaches,
     updateImagesQueryCaches,
 } from '../utils/imageQueryCache';
+import { beginImageFieldWrite, type ImageFieldChange } from '../utils/imageFieldWrites';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import type { ImagesQueryKey } from './useImagesQuery';
 import type { ActiveImageStateAdapter } from './activeImageState';
@@ -64,6 +64,22 @@ interface PendingMetadataRecovery {
     targetId: string;
     onRecovered?: (image: AIImage) => void;
 }
+
+/** What a flag write changes: each image's value before it, from the gallery or the opened asset. */
+const flagChanges = <F extends 'isFavorite' | 'isPinned'>(
+    field: F,
+    ids: readonly string[],
+    next: AIImage[F],
+    previousImages: readonly AIImage[],
+    previousActiveImage?: AIImage
+): ImageFieldChange<F>[] => {
+    const previousById = new Map(previousImages.map((image) => [image.id, image]));
+    if (previousActiveImage) previousById.set(previousActiveImage.id, previousActiveImage);
+    return ids.flatMap((id) => {
+        const previous = previousById.get(id);
+        return previous ? [{ id, previous: previous[field], next }] : [];
+    });
+};
 
 export const useAppActions = ({
     viewingImageId,
@@ -139,43 +155,45 @@ export const useAppActions = ({
             // parallel would hold every pooled connection and stall gallery reads. All of them share
             // one deadline from the click, so a bulk toggle fails within about 15 s, not 15 s per image.
             const deadline = flagWriteDeadline();
+            const changes = flagChanges('isPinned', ids, isPinned, previousImages, previousActiveImage);
+            const write = beginImageFieldWrite('isPinned', changes);
             let written = 0;
             try {
                 for (const id of ids) {
                     await toggleImagePin(id, isPinned, deadline);
                     written += 1;
                 }
+                write.settle();
                 if (!restoreGallery) {
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                 }
                 refreshCollectionsAfterImageFlagChange();
             } catch (error) {
                 console.error('[Pin] Failed to persist pin state', error);
-                if (restoreGallery) {
-                    // Revert only these images: the user may have opened another view meanwhile (#484).
-                    // A list that moved on since the optimistic write keeps a reverted pin where it was,
-                    // so reload it from the database to put that pin back in its sorted place.
-                    if (!hasSameImageOrder(useSearchStore.getState().images, optimisticImages)) {
+                // Revert only the pins that did not land, on the images this write touched: the user
+                // may have opened another view (#484) or changed other fields meanwhile (#492).
+                const reverts = write.settle(ids.slice(written));
+                if (restoreGallery && reverts.size > 0) {
+                    // The snapshot order fits only when every image goes back to the pin this write
+                    // found. Otherwise, or once the list has moved on, the reverted pins stay where they
+                    // are, so reload the list from the database to sort them again.
+                    const fullRevert = changes.every(
+                        (change) => reverts.has(change.id) && reverts.get(change.id)?.isPinned === change.previous
+                    );
+                    if (!fullRevert || !hasSameImageOrder(useSearchStore.getState().images, optimisticImages)) {
                         void queryClient.invalidateQueries({ queryKey: ['images'] });
                     }
-                    const touched = pickImages(previousImages, ids);
-                    setImages((current) =>
-                        restoreImagesInList(current, touched, { previousOrder: optimisticImages, nextOrder: previousImages })
-                    );
-                    restoreImagesInQueryCaches(queryClient, touched, {
-                        previousOrder: optimisticImages,
-                        nextOrder: previousImages,
-                        reorderQueryKey: imagesQueryKey,
-                    });
-                } else if (previousActiveImage) {
-                    patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
-                        isPinned: previousActiveImage.isPinned,
-                    });
+                    const order = fullRevert ? { previousOrder: optimisticImages, nextOrder: previousImages } : {};
+                    setImages((current) => revertImageFieldsInList(current, reverts, order));
+                    revertImageFieldsInQueryCaches(queryClient, reverts, { ...order, reorderQueryKey: imagesQueryKey });
+                } else if (!restoreGallery) {
+                    revertImageFieldsInQueryCaches(queryClient, reverts);
                 }
-                if (previousActiveImage && activeImageState) {
-                    activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
+                const activeRevert = previousActiveImage && reverts.get(previousActiveImage.id);
+                if (previousActiveImage && activeRevert && activeImageState) {
+                    activeImageState.updateImage(previousActiveImage.id, (image) => ({ ...image, ...activeRevert }));
                 }
-                // The rollback reverts every image, but the writes before the failure did land.
+                // The images before the failure did change in the database: reload counts and lists.
                 if (written > 0) resyncAfterPartialFlagWrite();
                 addToast(errorMessage, 'error');
             }
@@ -195,26 +213,29 @@ export const useAppActions = ({
         async (ids: string[], isFavorite: boolean, previousImages: typeof images, previousActiveImage?: AIImage, restoreGallery = true) => {
             // One write at a time with one deadline from the click, as for pins above.
             const deadline = flagWriteDeadline();
+            const write = beginImageFieldWrite(
+                'isFavorite',
+                flagChanges('isFavorite', ids, isFavorite, previousImages, previousActiveImage)
+            );
             let written = 0;
             try {
                 for (const id of ids) {
                     await toggleImageFavorite(id, isFavorite, deadline);
                     written += 1;
                 }
+                write.settle();
                 refreshCollectionsAfterImageFlagChange();
             } catch (error) {
                 console.error('[Favorite] Failed to persist favorite state', error);
+                // As for pins: only the favorites that did not land, and only that field (#484, #492).
+                const reverts = write.settle(ids.slice(written));
                 if (restoreGallery) {
-                    const touched = pickImages(previousImages, ids);
-                    setImages((current) => restoreImagesInList(current, touched));
-                    restoreImagesInQueryCaches(queryClient, touched);
-                } else if (previousActiveImage) {
-                    patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
-                        isFavorite: previousActiveImage.isFavorite,
-                    });
+                    setImages((current) => revertImageFieldsInList(current, reverts));
                 }
-                if (previousActiveImage && activeImageState) {
-                    activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
+                revertImageFieldsInQueryCaches(queryClient, reverts);
+                const activeRevert = previousActiveImage && reverts.get(previousActiveImage.id);
+                if (previousActiveImage && activeRevert && activeImageState) {
+                    activeImageState.updateImage(previousActiveImage.id, (image) => ({ ...image, ...activeRevert }));
                 }
                 if (written > 0) resyncAfterPartialFlagWrite();
                 addToast('Failed to update favorite state', 'error');
@@ -380,19 +401,29 @@ export const useAppActions = ({
             }
         });
 
-        const previousImages = images;
+        const previousById = new Map(images.map((image) => [image.id, image]));
         setImages((prev) => prev.map(updateMaskedImage));
         updateImagesQueryCaches(queryClient, updateMaskedImage);
 
+        // Recorded after the optimistic update, so a throw there leaves no unsettled write behind.
+        const write = beginImageFieldWrite(
+            'userMasked',
+            masks.flatMap(({ id, userMasked }) => {
+                const previous = previousById.get(id);
+                return previous ? [{ id, previous: previous.userMasked, next: userMasked ?? undefined }] : [];
+            })
+        );
         // One statement for the whole selection: one write per image, all at once, made most of a
         // bulk mask fail with "database is locked" and the images looked masked until a reload (#463).
         try {
             if (masks.length > 0) await setImageMasks(masks);
+            write.settle();
         } catch (error) {
             console.error('[Mask] Failed to persist content mask', error);
-            const touched = pickImages(previousImages, idsToToggle);
-            setImages((current) => restoreImagesInList(current, touched));
-            restoreImagesInQueryCaches(queryClient, touched);
+            // Revert only the mask, so other actions' changes to these images stay (#492).
+            const reverts = write.settle(masks.map(({ id }) => id));
+            setImages((current) => revertImageFieldsInList(current, reverts));
+            revertImageFieldsInQueryCaches(queryClient, reverts);
             // A selection with an image outside the library scope still masks the others.
             void queryClient.invalidateQueries({ queryKey: ['images'] });
             addToast('Failed to update content mask', 'error');

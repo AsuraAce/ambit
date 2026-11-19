@@ -15,6 +15,7 @@ import {
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { removeImagesFromQueryCaches, updateImagesQueryCaches } from '../utils/imageQueryCache';
+import { beginImageFieldWrite } from '../utils/imageFieldWrites';
 import type { ActiveImageStateAdapter } from './activeImageState';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 import type { DeleteRemovedImagesResult, ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
@@ -351,12 +352,17 @@ export const useAppHandlers = ({
 
         const updatedImg = { ...img, notes };
         updateImage(id, () => updatedImg);
+        // Recorded after the optimistic update, so a throw there leaves no unsettled write behind.
+        const write = beginImageFieldWrite('notes', [{ id, previous: img.notes, next: notes }]);
         try {
             await updateImageNotesCol(id, notes);
+            write.settle();
             addToast('Saved', 'success');
         } catch (error) {
             console.error('[Notes] Failed to persist notes', error);
-            updateImage(id, () => img);
+            // Revert only the notes, so other changes to the image meanwhile stay (#492).
+            const revert = write.settle([id]).get(id);
+            if (revert) updateImage(id, (current) => ({ ...current, ...revert }));
             addToast('Failed to save notes', 'error');
         }
     };
