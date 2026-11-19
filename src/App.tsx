@@ -168,6 +168,7 @@ export default function App() {
         globalTotal,
         isFiltering,
         privacyExposureBlocked,
+        imagesFailed,
         isLibraryReady,
         toggleFavorite,
         clearAllFilters,
@@ -469,7 +470,9 @@ export default function App() {
         (invokeOwnerScopeState.status === 'idle' ||
             invokeOwnerScopeState.status === 'discovering' ||
             invokeOwnerScopeState.status === 'applying');
-    const isInitialPrivacyProtectionBusy = !isInvokeOwnerScopeBlocking && privacyExposureBlocked && privacyMaskIndexStatus !== 'failed';
+    // A first page that failed under privacy protection ends preparation; its load error shows with no images (#491).
+    const isInitialPrivacyProtectionBusy =
+        !isInvokeOwnerScopeBlocking && privacyExposureBlocked && !imagesFailed && privacyMaskIndexStatus !== 'failed';
     const isInitialPrivacyPreparationVisible = useDelayedBusyPresentation(
         isLoaded && isInitialStartupPresentation && isInitialPrivacyProtectionBusy,
         {

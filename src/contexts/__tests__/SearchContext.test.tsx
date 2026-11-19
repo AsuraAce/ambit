@@ -798,6 +798,180 @@ describe('SearchProvider', () => {
         expect(latest.isFiltering).toBe(true);
     });
 
+    describe('a failed first page under privacy protection (#491)', () => {
+        // Privacy protection waits for a page of the current masking rules. When that page fails, the
+        // wait must end in the load error with Retry, yet nothing from another scope may be drawn: the
+        // store can still hold an earlier page, and an import can write into it meanwhile.
+        type Scope = { privacyEnabled: boolean; maskingMode: AppSettings['maskingMode']; maskedKeywords: string[] };
+        const blurFace: Scope = { privacyEnabled: true, maskingMode: 'blur', maskedKeywords: ['face'] };
+        const hideFace: Scope = { ...blurFace, maskingMode: 'hide' };
+        const outside = image({ id: 'outside-scope' });
+        const safe = image({ id: 'safe' });
+        const fetching = { data: undefined, status: 'pending', error: null, isLoading: true, isFetching: true };
+        const failed = {
+            data: undefined,
+            status: 'error',
+            error: new Error('database is locked'),
+            isLoading: false,
+            isFetching: false,
+            // The counts of the new scope and a next page must stay withheld with the page.
+            counts: { totalCount: 4, globalCount: 9 },
+            hasNextPage: true,
+        };
+        // Every images array the provider hands out, which is exactly what the grid draws.
+        let observed: string[][] = [];
+        const Recorder = () => {
+            latest = useSearch();
+            observed.push(latest.images.map((item) => item.id));
+            return null;
+        };
+        const tree = () => (
+            <SearchProvider>
+                <Recorder />
+            </SearchProvider>
+        );
+        const applyScope = (scope: Scope) => {
+            useSettingsStore.setState({ privacyEnabled: scope.privacyEnabled });
+            mocks.settings.current = {
+                settings: settings({ maskingMode: scope.maskingMode, maskedKeywords: scope.maskedKeywords }),
+                setSettings: vi.fn(),
+                privacyEnabled: scope.privacyEnabled,
+                isLoaded: true,
+            };
+        };
+        const keyFor = (scope: Scope): ImagesQueryKey => [
+            'images',
+            baseFilters,
+            'date_desc',
+            scope.privacyEnabled,
+            scope.maskingMode,
+            scope.maskedKeywords,
+            null,
+            'invoke:none',
+        ];
+        const setQuery = (scope: Scope, query: Record<string, unknown>) => {
+            mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), queryKey: keyFor(scope), ...query };
+        };
+        // The mocked store does not re-render on setImages as Zustand does, so render twice.
+        const show = (view: ReturnType<typeof render>) => {
+            for (let pass = 0; pass < 2; pass++) view.rerender(tree());
+        };
+        const expectFailedClosed = () => {
+            expect(latest.imagesFailed).toBe(true);
+            expect(latest.isFiltering).toBe(false);
+            expect(latest.privacyExposureBlocked).toBe(true);
+            expect(latest.isLibraryReady).toBe(false);
+            expect(latest.images).toEqual([]);
+            expect(latest.totalImages).toBe(0);
+            expect(latest.globalTotal).toBe(0);
+            expect(latest.imageCountsFailed).toBe(false);
+            expect(latest.hasMoreImages).toBe(false);
+            expect(latest.facets.checkpoints).toEqual([]);
+        };
+        const openScope = async (scope: Scope) => {
+            applyScope(scope);
+            setQuery(scope, { data: { pages: [{ images: [outside] }] }, status: 'success', isLoading: false, isFetching: false });
+            const view = render(tree());
+            await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
+            await waitFor(() => expect(latest.images).toEqual([outside]));
+            observed = [];
+            return view;
+        };
+        const failAfterChange = async (from: Scope, to: Scope) => {
+            const view = await openScope(from);
+            applyScope(to);
+            setQuery(to, fetching);
+            show(view);
+            await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
+            await waitFor(() => expect(latest.isFiltering).toBe(true));
+            expect(latest.images).toEqual([]);
+
+            // The facet query keeps the previous scope's names as placeholder data.
+            mocks.statsQuery.current = {
+                ...(mocks.statsQuery.current as object),
+                data: { facets: { checkpoints: [{ name: 'masked-model', count: 1 }] } },
+            };
+            setQuery(to, failed);
+            show(view);
+            return view;
+        };
+
+        beforeEach(() => {
+            observed = [];
+            vi.spyOn(console, 'info').mockImplementation(() => undefined);
+            vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        });
+
+        it('ends startup preparation in the load error, never showing a stored image', async () => {
+            applyScope(blurFace);
+            (mocks.searchState.current as SearchValue).images = [outside];
+            setQuery(blurFace, failed);
+            const view = render(tree());
+
+            await waitFor(() => expect(latest.imagesFailed).toBe(true));
+            expectFailedClosed();
+
+            // An import that prepends into the store while the error shows is not drawn either.
+            act(() => (mocks.searchState.current as SearchValue).setImages([outside]));
+            show(view);
+            expectFailedClosed();
+            expect(observed.flat()).not.toContain(outside.id);
+        });
+
+        it.each([
+            ['blur to hide', blurFace, hideFace],
+            ['adding a masked keyword', blurFace, { ...blurFace, maskedKeywords: ['face', 'hand'] }],
+            ['turning privacy on', { ...blurFace, privacyEnabled: false }, blurFace],
+        ])('ends a scope change (%s) in the load error, never showing the previous scope', async (_case, from, to) => {
+            await failAfterChange(from, to);
+
+            expectFailedClosed();
+            expect(observed.flat()).not.toContain(outside.id);
+        });
+
+        it('shows the error again when Retry fails again', async () => {
+            const view = await failAfterChange(blurFace, hideFace);
+            expectFailedClosed();
+
+            act(() => latest.retryImages());
+            expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: keyFor(hideFace) });
+            setQuery(hideFace, fetching);
+            show(view);
+            // While Retry runs the view is loading, as any first page is.
+            expect(latest.imagesFailed).toBe(false);
+            expect(latest.isFiltering).toBe(true);
+            expect(latest.images).toEqual([]);
+
+            setQuery(hideFace, failed);
+            show(view);
+            expectFailedClosed();
+            expect(observed.flat()).not.toContain(outside.id);
+        });
+
+        it('shows only the current scope when Retry succeeds', async () => {
+            const view = await failAfterChange(blurFace, hideFace);
+            expectFailedClosed();
+
+            act(() => latest.retryImages());
+            setQuery(hideFace, fetching);
+            show(view);
+            setQuery(hideFace, {
+                data: { pages: [{ images: [safe] }] },
+                status: 'success',
+                error: null,
+                isFetching: false,
+                isLoading: false,
+                hasNextPage: false,
+            });
+            show(view);
+
+            expect(latest.images).toEqual([safe]);
+            expect(latest.privacyExposureBlocked).toBe(false);
+            expect(latest.imagesFailed).toBe(false);
+            expect(observed.flat()).not.toContain(outside.id);
+        });
+    });
+
     it('presents a first page before its counts and reports the counts as loading', () => {
         // The gallery opens as soon as its page is safe; the counts follow on their own.
         mocks.imagesQuery.current = {

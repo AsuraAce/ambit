@@ -389,7 +389,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     ]);
 
     // A failed first page with nothing cached must not read as an empty library or as no matches (#483).
-    const imagesFailed = !privacyExposureBlocked && imagesQueryStatus === 'error' && !queryData && !isFetching;
+    const firstPageFailed = imagesQueryStatus === 'error' && !queryData && !isFetching;
+    // A failed first page of a new privacy scope ends the wait for it in the load error (#491). No page of
+    // the scope reached the store, so privacyExposureBlocked still withholds every image, count and facet.
+    const privacyScopeFirstPageFailed = privacyScopeTransitionBlocked && databaseQueriesEnabled && firstPageFailed;
+    const imagesFailed = (!privacyExposureBlocked || privacyScopeFirstPageFailed) && firstPageFailed;
     useEffect(() => {
         if (imagesFailed) console.error('[Library] Failed to load images', imagesQueryError);
     }, [imagesFailed, imagesQueryError]);
@@ -898,7 +902,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 },
                 clearAllFilters: clearAllFiltersAndRefresh,
                 isFiltering:
-                    !privacyIndexBlocked && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
+                    !privacyIndexBlocked &&
+                    ((privacyScopeTransitionBlocked && !privacyScopeFirstPageFailed) ||
+                        isQueryLoading ||
+                        isPlaceholderData ||
+                        isFirstPageFetching),
                 privacyExposureBlocked,
                 isLibraryReady,
                 activeSqlWhere,
