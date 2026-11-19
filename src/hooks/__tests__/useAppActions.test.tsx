@@ -1,7 +1,10 @@
+import type React from 'react';
+import { renderHook as renderPlainHook } from '@testing-library/react';
 import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useAppActions } from '../useAppActions';
+import type { ActiveImageStateAdapter } from '../activeImageState';
 import type { ImagesQueryKey } from '../useImagesQuery';
 import type { AIImage, SourceKind } from '../../types';
 
@@ -366,12 +369,14 @@ describe('useAppActions', () => {
         write.mockReset();
     });
 
-    // When a bulk write fails partway, the images before it are already changed in the database
-    // while the rollback reverts all of them on screen, so the gallery must reload from the database.
+    // When a bulk write fails partway, the images before it are already changed in the database:
+    // they keep the change on screen, only the rest roll back, and the gallery and collection
+    // counts reload from the database (#492).
     it.each([
-        ['handleBulkPin', () => mockToggleImagePin, 'Failed to update pinned images'],
-        ['handleBulkFavorite', () => mockToggleImageFavorite, 'Failed to update favorite state'],
-    ] as const)('%s stops at the first failure, rolls back and resyncs with the database', async (handler, getWrite, errorToast) => {
+        ['handleBulkPin', 'isPinned', () => mockToggleImagePin, 'Failed to update pinned images'],
+        ['handleBulkFavorite', 'isFavorite', () => mockToggleImageFavorite, 'Failed to update favorite state'],
+    ] as const)('%s stops at the first failure, rolls back only the rest and resyncs', async (handler, field, getWrite, errorToast) => {
+        mockStoreImages = mockStoreImages.map((image) => ({ ...image, isFavorite: false, isPinned: false }));
         const write = getWrite();
         write.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('database is locked'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -385,7 +390,9 @@ describe('useAppActions', () => {
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(errorToast, 'error'));
 
         expect(write.mock.calls.map(([id]) => id)).toEqual(['1', '2']);
-        expect(replaySetImages(mockStoreImages)).toEqual(mockStoreImages);
+        const onScreen = replaySetImages(mockStoreImages);
+        expect(onScreen.find((image) => image.id === '1')?.[field]).toBe(true);
+        expect(onScreen.find((image) => image.id === '2')?.[field]).toBe(false);
         expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         errorSpy.mockRestore();
@@ -1069,5 +1076,171 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Backfill complete: 3 images updated', 'success');
         await act(async () => result.current.runBackfill());
         expect(mockAddToast).toHaveBeenCalledWith('Backfill complete: No images needed updating', 'success');
+    });
+
+    // A failed write may revert only the field it changed: a change another action made meanwhile is
+    // in the database, so the gallery and the caches must keep showing it (#492).
+    describe('field-scoped rollback (#492)', () => {
+        type CachedImages = { pages: { images: AIImage[] }[] };
+
+        const pendingWrite = () => {
+            let fail: (error: Error) => void = () => undefined;
+            const promise = new Promise<void>((_, reject) => (fail = reject));
+            return { promise, fail: () => fail(new Error('database is locked')) };
+        };
+
+        // A client of our own: the shared test wrapper builds a new one on every render.
+        const renderWithCache = (overrides: { activeImageState?: ActiveImageStateAdapter } = {}) => {
+            const queryClient = new QueryClient();
+            queryClient.setQueryData(mockImagesQueryKey, { pages: [{ images: mockStoreImages }], pageParams: [0] });
+            const view = renderPlainHook(() => useAppActions({ ...props, ...overrides }), {
+                wrapper: ({ children }: { children: React.ReactNode }) => (
+                    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+                ),
+            });
+            // The mocked store does not re-render on setImages as Zustand does: publish the live
+            // list and render again, so the next action starts from what is on screen.
+            const publish = () => {
+                mockStoreImages = mockLiveImages ?? mockStoreImages;
+                view.rerender();
+            };
+            const live = (id: string) => (mockLiveImages ?? mockStoreImages).find((image) => image.id === id);
+            const cached = (id: string) =>
+                queryClient.getQueryData<CachedImages>(mockImagesQueryKey)?.pages[0].images.find((image) => image.id === id);
+            return { result: view.result, publish, live, cached };
+        };
+
+        beforeEach(() => {
+            vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        });
+
+        it('keeps a pin that landed while a favorite write was pending when the favorite fails', async () => {
+            const favorite = pendingWrite();
+            mockToggleImageFavorite.mockReturnValueOnce(favorite.promise);
+            const { result, publish, live, cached } = renderWithCache();
+
+            act(() => result.current.handleFavoriteImage('1'));
+            publish();
+            await act(async () => result.current.handlePinImage('1', true, { showToast: false }));
+            await waitFor(() => expect(mockRefreshCollections).toHaveBeenCalled());
+            publish();
+            await act(async () => favorite.fail());
+            await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+
+            expect(live('1')).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
+            expect(cached('1')).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
+        });
+
+        it('keeps a favorite that landed while a pin write was pending when the pin fails', async () => {
+            const pin = pendingWrite();
+            mockToggleImagePin.mockReturnValueOnce(pin.promise);
+            const { result, publish, live, cached } = renderWithCache();
+
+            act(() => result.current.handlePinImage('1', true, { showToast: false }));
+            publish();
+            await act(async () => result.current.handleFavoriteImage('1'));
+            await waitFor(() => expect(mockRefreshCollections).toHaveBeenCalled());
+            publish();
+            await act(async () => pin.fail());
+            await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error'));
+
+            expect(live('1')).toEqual(expect.objectContaining({ isFavorite: true, isPinned: false }));
+            expect(cached('1')).toEqual(expect.objectContaining({ isFavorite: true, isPinned: false }));
+        });
+
+        it('keeps a pin on a directly opened asset when its earlier favorite write fails', async () => {
+            let directImage = {
+                id: 'direct',
+                isFavorite: false,
+                isPinned: false,
+                filename: 'direct.png',
+                timestamp: 300,
+            } as unknown as AIImage;
+            const activeImageState = {
+                getImage: (id: string) => (id === directImage.id ? directImage : undefined),
+                updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                    if (id === directImage.id) directImage = updater(directImage);
+                },
+                removeImage: vi.fn(),
+            };
+            const favorite = pendingWrite();
+            mockToggleImageFavorite.mockReturnValueOnce(favorite.promise);
+            const { result } = renderWithCache({ activeImageState });
+
+            act(() => result.current.handleFavoriteImage(directImage.id));
+            await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+            await waitFor(() => expect(mockRefreshCollections).toHaveBeenCalled());
+            await act(async () => favorite.fail());
+            await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+
+            expect(directImage).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
+        });
+
+        it('keeps a favorite that landed while a mask write was pending when the mask fails', async () => {
+            const actualCache = await vi.importActual<typeof import('../../utils/imageQueryCache')>('../../utils/imageQueryCache');
+            mockUpdateImagesQueryCaches.mockImplementation(actualCache.updateImagesQueryCaches);
+            const mask = pendingWrite();
+            mockSetImageMasks.mockReturnValueOnce(mask.promise);
+            const { result, publish, live, cached } = renderWithCache();
+
+            let maskWrite: Promise<void> = Promise.resolve();
+            act(() => {
+                maskWrite = result.current.handleBulkMask('1', true);
+            });
+            publish();
+            await act(async () => result.current.handleFavoriteImage('1'));
+            await waitFor(() => expect(mockRefreshCollections).toHaveBeenCalled());
+            publish();
+            await act(async () => {
+                mask.fail();
+                await maskWrite;
+            });
+
+            expect(mockAddToast).toHaveBeenCalledWith('Failed to update content mask', 'error');
+            expect(live('1')?.isFavorite).toBe(true);
+            expect(live('1')?.userMasked).toBeUndefined();
+            expect(cached('1')?.isFavorite).toBe(true);
+            expect(cached('1')?.userMasked).toBeUndefined();
+            mockUpdateImagesQueryCaches.mockReset();
+        });
+
+        // Two writes to the same field: the screen must end on what the database holds once both settle.
+        it('keeps a later favorite that landed when an earlier favorite of the same image fails', async () => {
+            const first = pendingWrite();
+            mockToggleImageFavorite.mockReturnValueOnce(first.promise);
+            const { result, publish, live, cached } = renderWithCache();
+
+            act(() => result.current.handleFavoriteImage('1')); // favorite: pending
+            publish();
+            await act(async () => result.current.handleFavoriteImage('1')); // unfavorite: lands
+            publish();
+            await act(async () => result.current.handleFavoriteImage('1')); // favorite again: lands
+            await waitFor(() => expect(mockRefreshCollections).toHaveBeenCalledTimes(2));
+            publish();
+            await act(async () => first.fail());
+            await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+
+            expect(live('1')?.isFavorite).toBe(true);
+            expect(cached('1')?.isFavorite).toBe(true);
+        });
+
+        it('shows the original favorite state when a favorite and the unfavorite after it both fail', async () => {
+            const favorite = pendingWrite();
+            const unfavorite = pendingWrite();
+            mockToggleImageFavorite.mockReturnValueOnce(favorite.promise).mockReturnValueOnce(unfavorite.promise);
+            const { result, publish, live, cached } = renderWithCache();
+
+            act(() => result.current.handleFavoriteImage('1'));
+            publish();
+            act(() => result.current.handleFavoriteImage('1'));
+            publish();
+            await act(async () => favorite.fail());
+            publish();
+            await act(async () => unfavorite.fail());
+            await waitFor(() => expect(mockAddToast).toHaveBeenCalledTimes(2));
+
+            expect(live('1')?.isFavorite).toBe(false);
+            expect(cached('1')?.isFavorite).toBe(false);
+        });
     });
 });

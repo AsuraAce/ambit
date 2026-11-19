@@ -41,7 +41,7 @@ const mocks = vi.hoisted(() => ({
     updateFavorite: vi.fn(),
     updatePinned: vi.fn(),
     patchImageFlagsInQueryCaches: vi.fn(),
-    restoreImagesInQueryCaches: vi.fn(),
+    revertImageFieldsInQueryCaches: vi.fn(),
     applyOptimisticPinOrder: vi.fn(),
     incrementFacetCacheVersion: vi.fn(),
     incrementScopeCountsVersion: vi.fn(),
@@ -116,7 +116,7 @@ vi.mock('../../stores/collectionStore', () => ({
 vi.mock('../../utils/imageQueryCache', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../utils/imageQueryCache')>()),
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
-    restoreImagesInQueryCaches: mocks.restoreImagesInQueryCaches,
+    revertImageFieldsInQueryCaches: mocks.revertImageFieldsInQueryCaches,
 }));
 vi.mock('../../utils/imageOptimisticUpdates', () => ({
     applyOptimisticPinOrder: mocks.applyOptimisticPinOrder,
@@ -998,12 +998,22 @@ describe('SearchProvider', () => {
         await act(() => latest.toggleFavorite(original.id));
         await act(() => latest.togglePin(original.id));
 
-        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(1, mocks.queryClient, [original]);
-        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(2, mocks.queryClient, [original], {
-            previousOrder: [next],
-            nextOrder: [original],
-            reorderQueryKey: latest.imagesQueryKey,
-        });
+        // Each rollback reverts only the field its write changed (#492).
+        expect(mocks.revertImageFieldsInQueryCaches).toHaveBeenNthCalledWith(
+            1,
+            mocks.queryClient,
+            new Map([[original.id, { isFavorite: false }]])
+        );
+        expect(mocks.revertImageFieldsInQueryCaches).toHaveBeenNthCalledWith(
+            2,
+            mocks.queryClient,
+            new Map([[original.id, { isPinned: true }]]),
+            {
+                previousOrder: [next],
+                nextOrder: [original],
+                reorderQueryKey: latest.imagesQueryKey,
+            }
+        );
     });
 
     it('keeps the newly opened view when a favorite or pin write from the previous view fails (#484)', async () => {
@@ -1035,16 +1045,53 @@ describe('SearchProvider', () => {
         });
 
         expect(state.images).toEqual([holidayImage]);
-        // The caches revert only the image each write touched, as it was before that write.
-        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(1, mocks.queryClient, [libraryImage]);
-        expect(mocks.restoreImagesInQueryCaches).toHaveBeenNthCalledWith(
+        // The caches revert only the image each write touched, and only the field it changed.
+        expect(mocks.revertImageFieldsInQueryCaches).toHaveBeenNthCalledWith(
+            1,
+            mocks.queryClient,
+            new Map([[libraryImage.id, { isFavorite: false }]])
+        );
+        expect(mocks.revertImageFieldsInQueryCaches).toHaveBeenNthCalledWith(
             2,
             mocks.queryClient,
-            [{ ...libraryImage, isFavorite: true }],
+            new Map([[libraryImage.id, { isPinned: false }]]),
             expect.objectContaining({ nextOrder: [{ ...libraryImage, isFavorite: true }] })
         );
         // The list moved on, so the reverted pin is re-sorted from the database.
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+    });
+
+    // A failed write reverts only the field it changed: the other action's change is in the database
+    // and must stay on screen (#492).
+    it.each([
+        ['favorite', 'pin', { isFavorite: false, isPinned: true }],
+        ['pin', 'favorite', { isFavorite: true, isPinned: false }],
+    ] as const)('reverts only the %s when its write fails and a %s landed meanwhile (#492)', async (failing, landing, expected) => {
+        const pictured = image();
+        const state = mocks.searchState.current as SearchValue;
+        state.images = [pictured];
+        mocks.applyOptimisticPinOrder.mockImplementation((images: AIImage[], ids: string[], isPinned: boolean) =>
+            images.map((item) => (ids.includes(item.id) ? { ...item, isPinned } : item))
+        );
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let fail: (error: Error) => void = () => undefined;
+        const failingWrite = failing === 'favorite' ? mocks.updateFavorite : mocks.updatePinned;
+        failingWrite.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+        const toggle = (kind: 'favorite' | 'pin') =>
+            kind === 'favorite' ? latest.toggleFavorite(pictured.id) : latest.togglePin(pictured.id);
+        renderProvider();
+
+        let pendingWrite: Promise<void> = Promise.resolve();
+        act(() => {
+            pendingWrite = toggle(failing);
+        });
+        await act(() => toggle(landing));
+        await act(async () => {
+            fail(new Error('database is locked'));
+            await pendingWrite;
+        });
+
+        expect(state.images).toEqual([expect.objectContaining({ id: pictured.id, ...expected })]);
     });
 
     it('loads and persists recent searches and hidden-content preferences', async () => {

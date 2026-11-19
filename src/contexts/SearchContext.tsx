@@ -36,10 +36,10 @@ import { useLibraryStore } from '../stores/libraryStore';
 import {
     hasSameImageOrder,
     patchImageFlagsInQueryCaches,
-    pickImages,
-    restoreImagesInList,
-    restoreImagesInQueryCaches,
+    revertImageFieldsInList,
+    revertImageFieldsInQueryCaches,
 } from '../utils/imageQueryCache';
+import { beginImageFieldWrite } from '../utils/imageFieldWrites';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -542,18 +542,21 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const img = imgs.find((i) => i.id === id);
             if (!img) return;
             const newVal = !img.isFavorite;
+            const write = beginImageFieldWrite('isFavorite', [{ id, previous: img.isFavorite, next: newVal }]);
 
             try {
                 setImages(imgs.map((i) => (i.id === id ? { ...i, isFavorite: newVal } : i)));
                 patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newVal });
                 await updateFavorite(id, newVal);
+                write.settle();
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle favorite failed', e);
-                // Revert only this image: the user may have opened another view meanwhile (#484).
-                const touched = pickImages(imgs, [id]);
-                setImages((current) => restoreImagesInList(current, touched));
-                restoreImagesInQueryCaches(queryClient, touched);
+                // Revert only this image's favorite: the user may have opened another view (#484) or
+                // changed its other fields meanwhile (#492).
+                const reverts = write.settle([id]);
+                setImages((current) => revertImageFieldsInList(current, reverts));
+                revertImageFieldsInQueryCaches(queryClient, reverts);
             }
         },
         [queryClient, refreshCollectionsAfterImageFlagChange, setImages]
@@ -566,6 +569,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (!img) return;
             const newVal = isPinned !== undefined ? isPinned : !img.isPinned;
             const nextImages = applyOptimisticPinOrder(imgs, [id], newVal, filters.collectionId !== null);
+            const write = beginImageFieldWrite('isPinned', [{ id, previous: img.isPinned, next: newVal }]);
 
             try {
                 setImages(nextImages);
@@ -580,20 +584,21 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     }
                 );
                 await updatePinned(id, newVal);
+                write.settle();
                 refreshCollectionsAfterImageFlagChange();
             } catch (e) {
                 console.error('Toggle pin failed', e);
-                // As in useAppActions: a list that moved on reloads so the reverted pin is sorted again.
-                if (!hasSameImageOrder(useSearchStore.getState().images, nextImages)) {
+                const reverts = write.settle([id]);
+                if (reverts.size === 0) return;
+                // As in useAppActions: the snapshot order fits only when the pin goes back to what this
+                // write found; otherwise, or once the list moved on, reload so the pin is sorted again.
+                const fullRevert = reverts.get(id)?.isPinned === img.isPinned;
+                if (!fullRevert || !hasSameImageOrder(useSearchStore.getState().images, nextImages)) {
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                 }
-                const touched = pickImages(imgs, [id]);
-                setImages((current) => restoreImagesInList(current, touched, { previousOrder: nextImages, nextOrder: imgs }));
-                restoreImagesInQueryCaches(queryClient, touched, {
-                    previousOrder: nextImages,
-                    nextOrder: imgs,
-                    reorderQueryKey: imagesQueryKey,
-                });
+                const order = fullRevert ? { previousOrder: nextImages, nextOrder: imgs } : {};
+                setImages((current) => revertImageFieldsInList(current, reverts, order));
+                revertImageFieldsInQueryCaches(queryClient, reverts, { ...order, reorderQueryKey: imagesQueryKey });
             }
         },
         [filters.collectionId, imagesQueryKey, queryClient, refreshCollectionsAfterImageFlagChange, setImages]

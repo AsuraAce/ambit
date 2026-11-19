@@ -147,33 +147,39 @@ export const patchImageFlagsInQueryCaches = (
 };
 
 /**
- * Reverts an optimistic change in the store's image list the way restoreImagesInQueryCaches does in
- * the caches: each image in `previousImages` replaces the image with its id, and `nextOrder` returns
- * only while the list still has `previousOrder`. Pass only the images the change touched, so a list
- * that now belongs to another view keeps its own images (#484).
+ * The field values a failed optimistic write puts back, by image id. Only the images the write
+ * touched (#484), and only the fields it changed, so other actions' changes stay (#492).
  */
-export const restoreImagesInList = (
+export type ImageFieldReverts = ReadonlyMap<string, Partial<AIImage>>;
+
+const revertImageFields = (image: AIImage, reverts: ImageFieldReverts): AIImage => {
+    const patch = reverts.get(image.id);
+    return patch ? { ...image, ...patch } : image;
+};
+
+/**
+ * Reverts an optimistic change in the store's image list the way revertImageFieldsInQueryCaches does
+ * in the caches: each image in `reverts` gets its reverted fields back, and `nextOrder` returns only
+ * while the list still has `previousOrder`. A list that now belongs to another view keeps its own images.
+ */
+export const revertImageFieldsInList = (
     images: AIImage[],
-    previousImages: readonly AIImage[],
+    reverts: ImageFieldReverts,
     options: Pick<ImageQueryOrderOptions, 'previousOrder' | 'nextOrder'> = {}
 ): AIImage[] => {
-    const previousById = new Map(previousImages.map((image) => [image.id, image]));
-    const restore = (image: AIImage) => previousById.get(image.id) ?? image;
+    const revert = (image: AIImage) => revertImageFields(image, reverts);
     if (options.previousOrder && options.nextOrder && hasSameImageOrder(images, options.previousOrder)) {
         const currentById = new Map(images.map((image) => [image.id, image]));
-        return options.nextOrder.map((image) => restore(currentById.get(image.id) ?? image));
+        return options.nextOrder.map((image) => revert(currentById.get(image.id) ?? image));
     }
-    const restored = images.map(restore);
-    return restored.some((image, index) => image !== images[index]) ? restored : images;
+    const reverted = images.map(revert);
+    return reverted.some((image, index) => image !== images[index]) ? reverted : images;
 };
 
-/** The snapshot images an optimistic change touched: the only ones its rollback may restore. */
-export const pickImages = (images: readonly AIImage[], ids: Iterable<string>): AIImage[] => {
-    const idSet = new Set(ids);
-    return images.filter((image) => idSet.has(image.id));
-};
-
-export const restoreImagesInQueryCaches = (queryClient: QueryClient, previousImages: AIImage[], options?: ImageQueryOrderOptions): void => {
-    const previousById = new Map(previousImages.map((image) => [image.id, image]));
-    updateImagesQueryCaches(queryClient, (image) => previousById.get(image.id) ?? image, options);
+export const revertImageFieldsInQueryCaches = (
+    queryClient: QueryClient,
+    reverts: ImageFieldReverts,
+    options?: ImageQueryOrderOptions
+): void => {
+    updateImagesQueryCaches(queryClient, (image) => revertImageFields(image, reverts), options);
 };
