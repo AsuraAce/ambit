@@ -414,8 +414,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [filters, hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
 
-    const totalImagesCount = privacyExposureBlocked ? 0 : (imageCounts?.totalCount ?? null);
-    const globalTotalCount = privacyExposureBlocked ? 0 : (imageCounts?.globalCount ?? null);
+    // Beside a failed first page the withheld totals read as unknown ("—"), never as an empty library (#491).
+    const withheldCount = privacyScopeFirstPageFailed ? null : 0;
+    const totalImagesCount = privacyExposureBlocked ? withheldCount : (imageCounts?.totalCount ?? null);
+    const globalTotalCount = privacyExposureBlocked ? withheldCount : (imageCounts?.globalCount ?? null);
     const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
     const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
     const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;

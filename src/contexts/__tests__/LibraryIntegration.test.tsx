@@ -27,6 +27,7 @@ import { getInvokeConnectionDraft } from '../../services/invoke/connectionDraft'
 import { useFolderMonitor } from '../../hooks/useFolderMonitor';
 import { createDefaultAppSettings } from '../../constants/defaultSettings';
 import type { AppState } from '../../services/repository';
+import { useSearch } from '../SearchContext';
 
 // --- Extensive Mocks for Integration ---
 
@@ -746,6 +747,54 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => expect(screen.getByTitle('View Options')).toBeTruthy());
         expect(screen.getByRole('button', { name: /Show InvokeAI Image Assets/ })).toBeTruthy();
         expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledTimes(3);
+    });
+
+    it('shows an unknown count, not an empty library, when the first page fails under privacy protection (#491)', async () => {
+        // The withheld totals say nothing about the library; "0" next to the load error would read as empty.
+        const LibraryHeader = () => {
+            const search = useSearch();
+            return (
+                <>
+                    {search.imagesFailed && <div role="alert">Images could not load</div>}
+                    <ViewControls
+                        showLayoutSwitcher={false}
+                        layoutMode="grid"
+                        setLayoutMode={vi.fn()}
+                        showSlideshowButton={false}
+                        onSlideshow={vi.fn()}
+                        sortOption="date_desc"
+                        setSortOption={vi.fn()}
+                        thumbnailSize={200}
+                        setThumbnailSize={vi.fn()}
+                        displayedCount={search.totalImages}
+                        totalCount={search.globalTotal}
+                        scopeName="Library"
+                        isFiltering={search.isFiltering}
+                    />
+                </>
+            );
+        };
+        mocks.searchImages.mockRejectedValue(new Error('database is locked'));
+        mocks.countImages.mockResolvedValue(4);
+        mocks.countGlobalImages.mockResolvedValue(9);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            render(
+                <ToastProvider>
+                    <LibraryProvider>
+                        <LibraryHeader />
+                    </LibraryProvider>
+                </ToastProvider>
+            );
+
+            await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Images could not load'));
+            expect(useSettingsStore.getState().privacyEnabled).toBe(true);
+            expect(screen.getByLabelText('collection total not available in Library').textContent).toBe('—');
+        } finally {
+            mocks.searchImages.mockReset().mockResolvedValue([]);
+            mocks.countImages.mockReset().mockResolvedValue(0);
+            mocks.countGlobalImages.mockReset().mockResolvedValue(0);
+        }
     });
 
     it('does not compute maintenance counts during provider startup', async () => {

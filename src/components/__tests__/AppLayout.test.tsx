@@ -542,8 +542,8 @@ describe('AppLayout', () => {
         // failure is reported. The grid must get no images and the user must get Retry.
         Object.assign(searchState.value, {
             images: [],
-            totalImages: 0,
-            globalTotal: 0,
+            totalImages: null,
+            globalTotal: null,
             isFiltering: false,
             privacyExposureBlocked: true,
             imagesFailed: true,

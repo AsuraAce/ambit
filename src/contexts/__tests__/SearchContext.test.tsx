@@ -862,8 +862,9 @@ describe('SearchProvider', () => {
             expect(latest.privacyExposureBlocked).toBe(true);
             expect(latest.isLibraryReady).toBe(false);
             expect(latest.images).toEqual([]);
-            expect(latest.totalImages).toBe(0);
-            expect(latest.globalTotal).toBe(0);
+            // The new scope's counts stay withheld and read as unknown, not as an empty library.
+            expect(latest.totalImages).toBeNull();
+            expect(latest.globalTotal).toBeNull();
             expect(latest.imageCountsFailed).toBe(false);
             expect(latest.hasMoreImages).toBe(false);
             expect(latest.facets.checkpoints).toEqual([]);
