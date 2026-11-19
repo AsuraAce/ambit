@@ -14,6 +14,7 @@ import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
 import { isOsOpenUnavailable, openFileInDefaultApp } from '../../../services/osOpen';
+import { copyImageToClipboard } from '../../../services/imageClipboard';
 import { getEffectiveAiModel, getEffectiveAiThinkingMode, getEffectiveSystemPrompts } from '../../../utils/settingsUtils';
 import { MaskedViewerGate } from './MaskedViewerGate';
 import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
@@ -411,12 +412,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const isSidebarVisible = isSidebarOpen && !isTheaterMode;
 
     const handleCopyImage = async () => {
-        try {
-            const response = await fetch(displayImage.url);
-            const blob = await response.blob();
-            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        } catch (e) {
-            console.error('Copy failed', e);
+        const result = await copyImageToClipboard(displayImage.id);
+        if (result.status === 'ok') {
+            addToast('Image copied to clipboard', 'success');
+        } else {
+            addToast(`Couldn't copy the image: ${result.error}`, 'error');
         }
     };
 
