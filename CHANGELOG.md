@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.15.0](https://github.com/AsuraAce/ambit/compare/v0.14.2...v0.15.0) (2026-11-19)
+
+
+### Features
+
+* **ui:** show resource folder removal in the Activity Dock ([#481](https://github.com/AsuraAce/ambit/issues/481)) ([707a25f](https://github.com/AsuraAce/ambit/commit/707a25f32462074f3ff643de070f9bbd74934f9f))
+
+
+### Bug Fixes
+
+* **comfyui:** show the typed request when a MOSS reference image feeds the enhancer ([#505](https://github.com/AsuraAce/ambit/issues/505)) ([e5c6358](https://github.com/AsuraAce/ambit/commit/e5c63580576079e322eb7c3f37510469e4e27275))
+* **import:** name videos in the video import activity message ([#499](https://github.com/AsuraAce/ambit/issues/499)) ([d24dadd](https://github.com/AsuraAce/ambit/commit/d24daddd8d15cb4b7421d0d0bfd51605c68a7b15)), closes [#429](https://github.com/AsuraAce/ambit/issues/429)
+* **library:** roll back only the field a failed action changed ([#500](https://github.com/AsuraAce/ambit/issues/500)) ([1a6fd8b](https://github.com/AsuraAce/ambit/commit/1a6fd8b3393533e1cff2168acc9829c4df96e5af))
+* **library:** select the cards as drawn and keep small imports out of other views ([#475](https://github.com/AsuraAce/ambit/issues/475)) ([b7e88dd](https://github.com/AsuraAce/ambit/commit/b7e88dd489ab1dd0cd73b47be5d4e750291a17c6))
+* **library:** show a load error for a failed first page and roll back only touched images ([#490](https://github.com/AsuraAce/ambit/issues/490)) ([c112d73](https://github.com/AsuraAce/ambit/commit/c112d7327e9a44ae81bc7dc3b4829478cacd395b))
+* **library:** show the skeleton, not the previous view, when a collection opens ([#482](https://github.com/AsuraAce/ambit/issues/482)) ([3506248](https://github.com/AsuraAce/ambit/commit/3506248266eb6f536a53951944b5d9e5e5dd6d3e))
+* **library:** sort-aware import prepend and no selection against a kept previous view ([#489](https://github.com/AsuraAce/ambit/issues/489)) ([653d292](https://github.com/AsuraAce/ambit/commit/653d2921a9b89f3e5446293e6bc0611e3756608c))
+* **privacy:** end the privacy gate with a load error when the first page fails ([#502](https://github.com/AsuraAce/ambit/issues/502)) ([0e14d98](https://github.com/AsuraAce/ambit/commit/0e14d9869e3857bb6b0d906b4be6389935320b77))
+* **settings:** show folder removal progress and backend errors ([#473](https://github.com/AsuraAce/ambit/issues/473)) ([0155d40](https://github.com/AsuraAce/ambit/commit/0155d40f47dec858a8e77ae3d1e57fc6e7eab470))
+* **viewer:** read record-shaped models through readModelName ([#495](https://github.com/AsuraAce/ambit/issues/495)) ([ef9dc9d](https://github.com/AsuraAce/ambit/commit/ef9dc9dfdb9ef7b3cf41d4cd4fe84ffb6bcc5b27))
+
 ## [0.14.2](https://github.com/AsuraAce/ambit/compare/v0.14.1...v0.14.2) (2026-11-18)
 
 
