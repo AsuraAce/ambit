@@ -18,6 +18,7 @@ import { AIImage, GeneratorTool, isVideoAsset } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
 import { commands, type ComfyParserDiagnosticsReport, type ComfyWorkflowGraphReport } from '../../../bindings';
+import { readModelName } from '../../../utils/formatUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -352,7 +353,9 @@ const ComfyDiagnosticsPanel: React.FC<{
                                         <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
                                             Model
                                         </div>
-                                        <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.model)}</div>
+                                        <div className="font-mono break-all">
+                                            {formatDiagnosticValue(readModelName(diagnostics.metadata.model))}
+                                        </div>
                                     </div>
                                     <div>
                                         <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">

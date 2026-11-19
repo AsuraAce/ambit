@@ -98,6 +98,15 @@ describe('CompareModal', () => {
         }
     });
 
+    it('shows the name of a record-shaped model instead of crashing', () => {
+        const record = { name: 'Record model', key: 'k', hash: 'h', base: 'sdxl', type: 'main' };
+        const imageA = createImage('a');
+        renderModal({ imageA: { ...imageA, metadata: { ...imageA.metadata, model: record as unknown as string } } });
+
+        expect(screen.getByText('Record model')).toBeTruthy();
+        expect(screen.getByText('Model B')).toBeTruthy();
+    });
+
     it('renders metadata and prompt differences and forwards image actions', () => {
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
