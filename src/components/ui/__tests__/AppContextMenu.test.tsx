@@ -527,6 +527,18 @@ describe('AppContextMenu', () => {
         expect(menu.modelsForThumbnail).toEqual([]);
     });
 
+    it('copies the name of a record-shaped model, never [object Object]', () => {
+        const record = { name: 'Record model', key: 'k', hash: 'h', base: 'sdxl', type: 'main' };
+        const image = createImage({}, { model: record as unknown as string });
+        renderMenu({ images: [image] });
+
+        requireMenu().onCopyGenerationInfo();
+
+        const copied = String(clipboardWriteText.mock.calls.at(-1)?.[0]);
+        expect(copied).toContain('Model: Record model');
+        expect(copied).not.toContain('[object Object]');
+    });
+
     it('does not dispatch id-dependent actions for a blank menu image id', async () => {
         renderMenu({
             contextMenu: { x: 1, y: 2, imageId: '' },
