@@ -670,6 +670,21 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getAllByText('None').length).toBeGreaterThan(1);
     });
 
+    it('shows the name of a record-shaped diagnostics model instead of [object Object]', async () => {
+        const record = { name: 'Record model', key: 'k', hash: 'h', base: 'sdxl', type: 'main' };
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                metadata: { ...diagnosticsReport.metadata, model: record as unknown as string },
+            },
+        });
+        renderWithOpenParserDiagnostics();
+
+        expect(await screen.findByText('Record model')).toBeTruthy();
+        expect(screen.queryByText('[object Object]')).toBeNull();
+    });
+
     it('shows that raw chunks are unavailable without invoking diagnostics', () => {
         render(<WorkflowInspector image={{ ...makeImage(), originalChunks: undefined }} />);
         openParserDiagnostics();

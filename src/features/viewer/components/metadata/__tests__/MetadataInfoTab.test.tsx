@@ -271,6 +271,25 @@ describe('MetadataInfoTab', () => {
         );
     });
 
+    it('copies the name of a record-shaped model, never [object Object]', () => {
+        const record = { name: 'Record model', key: 'k', hash: 'h', base: 'sdxl', type: 'main' };
+        renderTab(
+            image(
+                metadata({
+                    positivePrompt: 'A castle',
+                    model: record as unknown as string,
+                    tool: GeneratorTool.COMFYUI,
+                }),
+                metadata()
+            )
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Copy generation data' }));
+
+        const copied = vi.mocked(navigator.clipboard.writeText).mock.calls.at(-1)?.[0] ?? '';
+        expect(copied).toContain('Model: Record model');
+        expect(copied).not.toContain('[object Object]');
+    });
+
     it('copies prompt text and clears feedback after two seconds', () => {
         vi.useFakeTimers();
         renderTab(image(metadata(), metadata()));

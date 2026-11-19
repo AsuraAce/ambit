@@ -6,6 +6,7 @@ import { MetadataRawInspector } from './MetadataRawInspector';
 import { HighlightedPromptText } from './HighlightedPromptText';
 import type { PromptHighlightSpec } from '../../utils/searchHighlights';
 import { TooltipButton } from '../../../../components/ui/InfoTooltip';
+import { readModelName } from '../../../../utils/formatUtils';
 import { formatInvokeImageCategory, isKnownInvokeImageAsset } from '../../../../utils/invokeImageSource';
 import { InvokeReferenceLinks } from './InvokeReferenceLinks';
 import { MetadataTextAreaField } from './MetadataTextAreaField';
@@ -278,7 +279,8 @@ export const MetadataInfoTab = ({
             if (md.seed !== undefined) params.push(`Seed: ${md.seed}`);
             params.push(`Size: ${image.width}x${image.height}`);
             if (md.modelHash) params.push(`Model hash: ${md.modelHash}`);
-            if (md.model && md.model !== 'Unknown') params.push(`Model: ${md.model}`);
+            const modelName = readModelName(md.model);
+            if (modelName && modelName !== 'Unknown') params.push(`Model: ${modelName}`);
 
             const neg = negativePromptValue ? `\nNegative prompt: ${negativePromptValue}` : '';
             text = `${md.positivePrompt || ''}${neg}\n${params.join(', ')}`;

@@ -95,6 +95,17 @@ describe('SlideshowModal', () => {
         expect(imageMocks.preloadedSources).toEqual(['asset://image-2.png']);
     });
 
+    it('shows the name of a record-shaped model instead of crashing', () => {
+        const record = { name: 'Record model', key: 'k', hash: 'h', base: 'sdxl', type: 'main' };
+        const recordImage: AIImage = {
+            ...createImage(0),
+            metadata: { ...createImage(0).metadata, model: record as unknown as string },
+        };
+        render(<SlideshowModal isOpen images={[recordImage]} initialIndex={0} onClose={onClose} />);
+
+        expect(screen.getByText('Record model')).toBeTruthy();
+    });
+
     it('navigates forward, backward, and wraps at the first image', () => {
         const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />);
 

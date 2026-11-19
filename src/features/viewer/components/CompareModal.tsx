@@ -4,6 +4,7 @@ import { X, ZoomIn, ZoomOut, RotateCcw, ArrowRightLeft, Sidebar, Heart, GitCompa
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
 import { getFilename } from '../../../utils/pathUtils';
+import { readModelName } from '../../../utils/formatUtils';
 import { CENTER_ANCHOR, Point, ViewportRect, getAnchorPoint, getZoomTransform } from '../../../utils/zoomMath';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -759,7 +760,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({ imageA, imageB, onCl
                             </div>
                         </div>
 
-                        <DiffRow label="Model" valA={imageA.metadata.model} valB={imageB.metadata.model} />
+                        <DiffRow label="Model" valA={readModelName(imageA.metadata.model)} valB={readModelName(imageB.metadata.model)} />
                         <DiffRow label="Seed" valA={imageA.metadata.seed ?? 'Unknown'} valB={imageB.metadata.seed ?? 'Unknown'} />
                         <DiffRow label="Steps" valA={imageA.metadata.steps} valB={imageB.metadata.steps} />
                         <DiffRow label="CFG" valA={imageA.metadata.cfg} valB={imageB.metadata.cfg} />

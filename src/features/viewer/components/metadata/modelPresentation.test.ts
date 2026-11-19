@@ -49,4 +49,21 @@ describe('getModelPresentation', () => {
             isOverride: false,
         });
     });
+
+    it('reads the name of a record-shaped model instead of throwing', () => {
+        const record = { name: 'Record model', key: 'k', hash: 'h', base: 'sdxl', type: 'main' };
+        expect(getModelPresentation(metadata({ model: record as unknown as string }))).toEqual({
+            value: 'Record model',
+            isHashFallback: false,
+            isOverride: false,
+        });
+    });
+
+    it('treats a record model without a string name as unknown and falls back to the hash', () => {
+        expect(getModelPresentation(metadata({ model: { key: 'k' } as unknown as string, modelHash: 'abc123' }))).toEqual({
+            value: 'abc123',
+            isHashFallback: true,
+            isOverride: false,
+        });
+    });
 });
