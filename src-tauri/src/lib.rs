@@ -10,6 +10,7 @@
 )]
 
 mod app_data_migration;
+mod clipboard;
 mod comfy_support_replay;
 mod db;
 mod fs_commands;
@@ -136,6 +137,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             scanner::scan_directory_recursive,
             scanner::open_file,
             scanner::show_in_folder,
+            clipboard::copy_image_to_clipboard,
             scanner::scan_directory_with_stats,
             scanner::scan_directory_since,
             scanner::a1111::discover_a1111_folders,
@@ -275,6 +277,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(WatcherState::default())
         .manage(ModelResolutionState::default())

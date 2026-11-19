@@ -453,6 +453,13 @@ const commandCases: CommandCase[] = [
     { name: 'openFile', invokeName: 'open_file', args: ['C:/image.png'], payload: { path: 'C:/image.png' }, returnsResult: true },
     { name: 'showInFolder', invokeName: 'show_in_folder', args: ['C:/image.png'], payload: { path: 'C:/image.png' }, returnsResult: true },
     {
+        name: 'copyImageToClipboard',
+        invokeName: 'copy_image_to_clipboard',
+        args: ['C:/image.png'],
+        payload: { path: 'C:/image.png' },
+        returnsResult: true,
+    },
+    {
         name: 'scanDirectoryWithStats',
         invokeName: 'scan_directory_with_stats',
         args: ['C:/library'],
