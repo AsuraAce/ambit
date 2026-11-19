@@ -927,6 +927,59 @@ describe('useFoldersTabLogic', () => {
         expect(partialUpdate(settings).monitoredFolders[1]).toBe(unrelated);
     });
 
+    // Pins what adding a folder does, so moving the add-and-scan steps into a helper
+    // that a dropped folder also uses (#493) cannot change the Folders tab.
+    it('adds a granted folder as an active pending folder, scans it once, then refreshes counts', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-11-19T10:00:00Z'));
+            const addedAt = Date.now();
+            const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({ completedSourcePaths: ['D:/Gen/ComfyUI/output'] }));
+            const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
+            act(() => result.current.setNewFolderPath('D:\\Gen\\ComfyUI\\output'));
+
+            await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+
+            expect(setSettings).toHaveBeenCalledTimes(1);
+            const added = (setSettings.mock.calls[0][0] as (value: AppSettings) => AppSettings)(baseSettings);
+            expect(added.monitoredFolders).toEqual([
+                {
+                    id: `folder_${addedAt}`,
+                    path: 'D:/Gen/ComfyUI/output',
+                    isActive: true,
+                    imageCount: 0,
+                    variant: GeneratorTool.COMFYUI,
+                    initialScanPending: true,
+                },
+            ]);
+            expect(result.current.newFolderPath).toBe('');
+            expect(addToastMock).toHaveBeenCalledWith('Added folder: D:/Gen/ComfyUI/output', 'success');
+            expect(onScanFolder).not.toHaveBeenCalled();
+
+            vi.mocked(commands.getImageCountForPathPrefix).mockClear();
+            await act(async () => vi.advanceTimersByTimeAsync(500));
+
+            expect(onScanFolder).toHaveBeenCalledTimes(1);
+            expect(onScanFolder).toHaveBeenCalledWith([{ path: 'D:/Gen/ComfyUI/output', variant: GeneratorTool.COMFYUI }]);
+            const finalized = (setSettings.mock.calls[1][0] as (value: AppSettings) => AppSettings)(added);
+            expect(finalized.monitoredFolders).toEqual([
+                {
+                    id: `folder_${addedAt}`,
+                    path: 'D:/Gen/ComfyUI/output',
+                    isActive: true,
+                    imageCount: 0,
+                    variant: GeneratorTool.COMFYUI,
+                    initialScanPending: false,
+                    initialScanCancelled: false,
+                    lastScanned: Date.now(),
+                },
+            ]);
+            expect(addToastMock).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('preserves unrelated folders across every automatic scan finalizer', async () => {
         vi.useFakeTimers();
         const unrelated = { id: 'other', path: 'C:/Other', isActive: true, imageCount: 0, variant: GeneratorTool.UNKNOWN };
