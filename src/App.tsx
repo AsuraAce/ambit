@@ -536,7 +536,7 @@ export default function App() {
                 const paths = await pickLibraryFiles('Images', ['png', 'jpg', 'jpeg', 'webp']);
 
                 if (paths.length > 0) {
-                    await fileOps.handleImportPaths(paths);
+                    await fileOps.handleImportPaths(paths, undefined, { mediaKind: 'images' });
                 }
                 return;
             } catch (error) {
@@ -551,7 +551,7 @@ export default function App() {
         try {
             const paths = await pickVideoPaths();
             if (paths.length === 0) return;
-            await fileOps.handleImportPaths(paths);
+            await fileOps.handleImportPaths(paths, undefined, { mediaKind: 'videos' });
         } catch (error) {
             addToast(`Video import failed: ${String(error)}`, 'error');
         }

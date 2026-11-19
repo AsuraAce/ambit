@@ -42,7 +42,7 @@ describe('formatStableImportProgress', () => {
         ).toEqual({
             current: 5,
             total: 10,
-            message: 'Importing images from folder...',
+            message: 'Importing media from folder...',
             detail: 'C:/watch',
         });
     });
@@ -59,7 +59,7 @@ describe('formatStableImportProgress', () => {
         ).toEqual({
             current: 50,
             total: 100,
-            message: 'Importing images from 3 folders...',
+            message: 'Importing media from 3 folders...',
             detail: 'Folder 2 of 3',
         });
     });
