@@ -4479,6 +4479,10 @@ mod tests {
         static PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
         let starts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let first_starts = starts.clone();
+        // The first worker stays stalled until the test releases it, so no
+        // assertion depends on how long a sleep outlasts the main thread.
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
 
         let first = run_cancellable_probe(
             &PROBE_REGISTRY,
@@ -4487,7 +4491,8 @@ mod tests {
             Duration::from_millis(20),
             move || {
                 first_starts.fetch_add(1, Ordering::SeqCst);
-                std::thread::sleep(Duration::from_millis(200));
+                let _ = started_tx.send(());
+                let _ = release_rx.recv();
                 true
             },
         );
@@ -4505,6 +4510,9 @@ mod tests {
 
         assert_eq!(first, SourceRootProbeResult::Unavailable);
         assert_eq!(second, SourceRootProbeResult::Busy);
+        started_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("first probe worker should start");
         assert_eq!(starts.load(Ordering::SeqCst), 1);
 
         // A healthy root must still get a worker. Its timeout is generous so the
@@ -4517,6 +4525,7 @@ mod tests {
             || true,
         );
         assert_eq!(healthy, SourceRootProbeResult::Available);
+        let _ = release_tx.send(());
     }
 
     #[test]
