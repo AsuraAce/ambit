@@ -89,6 +89,14 @@ Initial fixture sources:
   Source: https://github.com/chrisgoringe/cg-use-everywhere/blob/main/docs/UE_example.json
   Plugin commit recorded by the workflow:
   `98286cadb33486c27d87759f24b4813bbbda8799`.
+- `moss_image_reference_image_enhancer.chunks.json`: the `prompt` chunk of a
+  user-provided PNG made with the official MOSS-Image text-to-image template
+  with a reference image wired into the `TextGenerate` prompt enhancer. The
+  graph and the template's system prompt are exact; the typed request is
+  replaced with a neutral prompt and the `LoadImage` filename with
+  `example.png`. The `workflow` chunk is left out because the regression needs
+  only the `prompt` graph. Covers the reference-image enhancer whose switch
+  offers the typed request as the plain prompt (issue #504).
 
 Extraction dates:
 
@@ -97,3 +105,4 @@ Extraction dates:
 - 2026-07-30: additional in-repo user/repro fixture batch.
 - 2026-07-30: connected GGUF saved-output fixture.
 - 2026-07-30: upstream cg-use-everywhere 7.0.1 resolved-link fixture.
+- 2026-11-19: MOSS-Image reference-image enhancer fixture.
