@@ -8,25 +8,14 @@ import { commands } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
 import { ensureFolderAccessible, pickLibraryFolder, requestLibraryFolderGrant } from '../../../services/assetScope';
 import { unwrap } from '../../../utils/spectaUtils';
-import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
+import { isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { formatStableImportProgress } from '../../../utils/importProgress';
 import { processNativePaths, type ImportResult } from '../../../services/importService';
 import { isBrowserMockMode } from '../../../services/runtime';
 import { getThumbnailDir } from '../../../services/thumbnailService';
+import { createMonitoredFolder, detectGeneratorVariant, isCompleteImport, scanAddedFolders } from '../utils/addedFolderScan';
 
 const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported images were kept; rescan to continue.';
-
-// Helper to detect generator from path
-const detectGeneratorVariant = (path: string): GeneratorTool => {
-    const lower = path.toLowerCase();
-    if (lower.includes('invokeai')) return GeneratorTool.INVOKEAI;
-    if (lower.includes('comfyui') || lower.includes('comfy')) return GeneratorTool.COMFYUI;
-    if (lower.includes('webui') || lower.includes('stable-diffusion-webui') || lower.includes('a1111')) return GeneratorTool.AUTOMATIC1111;
-    if (lower.includes('sdnext') || lower.includes('sd.next')) return GeneratorTool.SDNEXT;
-    if (lower.includes('forge')) return GeneratorTool.FORGE;
-    if (lower.includes('anapnoe')) return GeneratorTool.ANAPNOE;
-    return GeneratorTool.UNKNOWN;
-};
 
 // Helper to get InvokeAI root path (strip /databases suffix if present)
 const getInvokeRootPath = (path: string): string => {
@@ -52,8 +41,6 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
     const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const updateFolderLastScanned = useSettingsStore((s) => s.updateFolderLastScanned);
-
-    const isCompleteImport = (result: ImportResult | void): boolean => !!result && !result.wasCancelled && result.failedPaths.length === 0;
 
     const fetchCounts = useCallback(async () => {
         if (!settings.monitoredFolders.length && !settings.invokeAiPath) return;
@@ -330,16 +317,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
     );
 
     const addMonitoredFolder = (normalizedNew: string) => {
-        const variant = detectGeneratorVariant(normalizedNew);
-        const queuedAt = Date.now();
-        const newFolder: MonitoredFolder = {
-            id: `folder_${queuedAt}`,
-            path: normalizedNew,
-            isActive: true,
-            imageCount: 0,
-            variant: variant,
-            initialScanPending: true,
-        };
+        const newFolder = createMonitoredFolder(normalizedNew);
+        const { variant } = newFolder;
 
         setSettings((prev) => ({
             ...prev,
@@ -358,68 +337,7 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
                     if (pendingScansRef.current.length === 0 || !onScanFolder) return;
                     const foldersToScan = [...pendingScansRef.current];
                     pendingScansRef.current = [];
-                    try {
-                        const result = await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
-                        if (isCompleteImport(result)) {
-                            const completedAt = Date.now();
-                            setSettings((prev) => ({
-                                ...prev,
-                                monitoredFolders: prev.monitoredFolders.map((folder) =>
-                                    foldersToScan.some((pending) => pending.id === folder.id)
-                                        ? {
-                                              ...folder,
-                                              lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
-                                              initialScanPending: false,
-                                              initialScanCancelled: isImportSourceCancelled(result, folder.path),
-                                          }
-                                        : folder
-                                ),
-                            }));
-                        } else if (result && result.wasCancelled) {
-                            const completedAt = Date.now();
-                            setSettings((prev) => ({
-                                ...prev,
-                                monitoredFolders: prev.monitoredFolders.map((folder) =>
-                                    foldersToScan.some((pending) => pending.id === folder.id)
-                                        ? {
-                                              ...folder,
-                                              lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
-                                              initialScanPending: false,
-                                              initialScanCancelled: isImportSourceCancelled(result, folder.path),
-                                          }
-                                        : folder
-                                ),
-                            }));
-                        } else {
-                            const completedAt = Date.now();
-                            setSettings((prev) => ({
-                                ...prev,
-                                monitoredFolders: prev.monitoredFolders.map((folder) =>
-                                    foldersToScan.some((pending) => pending.id === folder.id)
-                                        ? {
-                                              ...folder,
-                                              lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
-                                              initialScanPending: false,
-                                              initialScanCancelled: false,
-                                          }
-                                        : folder
-                                ),
-                            }));
-                            addToast('Folder scan completed with import errors', 'warning');
-                        }
-                        await fetchCounts();
-                    } catch (e) {
-                        console.error('Auto-scan failed:', e);
-                        setSettings((prev) => ({
-                            ...prev,
-                            monitoredFolders: prev.monitoredFolders.map((folder) =>
-                                foldersToScan.some((pending) => pending.id === folder.id)
-                                    ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
-                                    : folder
-                            ),
-                        }));
-                        addToast('Folder scan failed', 'error');
-                    }
+                    await scanAddedFolders(foldersToScan, { onScanFolder, setSettings, addToast, afterScan: fetchCounts });
                 })(),
             500
         );
