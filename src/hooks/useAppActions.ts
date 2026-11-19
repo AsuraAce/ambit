@@ -402,6 +402,10 @@ export const useAppActions = ({
         });
 
         const previousById = new Map(images.map((image) => [image.id, image]));
+        setImages((prev) => prev.map(updateMaskedImage));
+        updateImagesQueryCaches(queryClient, updateMaskedImage);
+
+        // Recorded after the optimistic update, so a throw there leaves no unsettled write behind.
         const write = beginImageFieldWrite(
             'userMasked',
             masks.flatMap(({ id, userMasked }) => {
@@ -409,9 +413,6 @@ export const useAppActions = ({
                 return previous ? [{ id, previous: previous.userMasked, next: userMasked ?? undefined }] : [];
             })
         );
-        setImages((prev) => prev.map(updateMaskedImage));
-        updateImagesQueryCaches(queryClient, updateMaskedImage);
-
         // One statement for the whole selection: one write per image, all at once, made most of a
         // bulk mask fail with "database is locked" and the images looked masked until a reload (#463).
         try {

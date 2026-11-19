@@ -351,8 +351,9 @@ export const useAppHandlers = ({
         if ((img.notes ?? '') === notes) return;
 
         const updatedImg = { ...img, notes };
-        const write = beginImageFieldWrite('notes', [{ id, previous: img.notes, next: notes }]);
         updateImage(id, () => updatedImg);
+        // Recorded after the optimistic update, so a throw there leaves no unsettled write behind.
+        const write = beginImageFieldWrite('notes', [{ id, previous: img.notes, next: notes }]);
         try {
             await updateImageNotesCol(id, notes);
             write.settle();

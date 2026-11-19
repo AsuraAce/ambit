@@ -7,6 +7,7 @@ import { SearchProvider, useSearch } from '../SearchContext';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { privacyMaskRefreshCoordinator } from '../../utils/privacyMaskRefreshCoordinator';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
 
 type SearchValue = ReturnType<typeof useSearch>;
 
@@ -1092,6 +1093,58 @@ describe('SearchProvider', () => {
         });
 
         expect(state.images).toEqual([expect.objectContaining({ id: pictured.id, ...expected })]);
+        expect(countPendingImageFieldWritesForTests()).toBe(0);
+    });
+
+    // When a failed pin falls back to an earlier write's value rather than its own starting value, the
+    // snapshot order belongs to neither; the list must reload so the pin is sorted again (#492).
+    it('reloads instead of restoring the snapshot order when a failed pin falls back to an earlier write', async () => {
+        const pictured = image();
+        const state = mocks.searchState.current as SearchValue;
+        state.images = [pictured];
+        mocks.applyOptimisticPinOrder.mockImplementation((images: AIImage[], ids: string[], isPinned: boolean) =>
+            images.map((item) => (ids.includes(item.id) ? { ...item, isPinned } : item))
+        );
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const fails: Array<(error: Error) => void> = [];
+        for (let i = 0; i < 3; i += 1) {
+            mocks.updatePinned.mockReturnValueOnce(new Promise((_, reject) => fails.push(reject)));
+        }
+        renderProvider();
+
+        // Pin, unpin, pin again: all three writes are still pending.
+        const writes: Promise<void>[] = [];
+        act(() => {
+            writes.push(latest.togglePin(pictured.id));
+        });
+        act(() => {
+            writes.push(latest.togglePin(pictured.id));
+        });
+        act(() => {
+            writes.push(latest.togglePin(pictured.id));
+        });
+        mocks.queryClient.invalidateQueries.mockClear();
+        mocks.revertImageFieldsInQueryCaches.mockClear();
+
+        // The unpin fails while the later pin is pending: nothing to revert. Then the last pin fails:
+        // the first pin is still pending, so the image shows pinned, which is not what the last write found.
+        await act(async () => {
+            fails[1](new Error('database is locked'));
+            fails[2](new Error('database is locked'));
+            await Promise.all([writes[1], writes[2]]);
+        });
+
+        expect(state.images).toEqual([expect.objectContaining({ id: pictured.id, isPinned: true })]);
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        expect(mocks.revertImageFieldsInQueryCaches).toHaveBeenCalledWith(mocks.queryClient, new Map([[pictured.id, { isPinned: true }]]), {
+            reorderQueryKey: latest.imagesQueryKey,
+        });
+
+        await act(async () => {
+            fails[0](new Error('database is locked'));
+            await writes[0];
+        });
+        expect(countPendingImageFieldWritesForTests()).toBe(0);
     });
 
     it('loads and persists recent searches and hidden-content preferences', async () => {

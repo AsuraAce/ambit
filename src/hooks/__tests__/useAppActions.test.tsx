@@ -7,6 +7,7 @@ import { useAppActions } from '../useAppActions';
 import type { ActiveImageStateAdapter } from '../activeImageState';
 import type { ImagesQueryKey } from '../useImagesQuery';
 import type { AIImage, SourceKind } from '../../types';
+import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
 
 type MockImage = Pick<AIImage, 'id' | 'filename' | 'timestamp'> &
     Partial<AIImage> & {
@@ -393,6 +394,7 @@ describe('useAppActions', () => {
         const onScreen = replaySetImages(mockStoreImages);
         expect(onScreen.find((image) => image.id === '1')?.[field]).toBe(true);
         expect(onScreen.find((image) => image.id === '2')?.[field]).toBe(false);
+        expect(countPendingImageFieldWritesForTests()).toBe(0);
         expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         errorSpy.mockRestore();
@@ -1090,7 +1092,7 @@ describe('useAppActions', () => {
         };
 
         // A client of our own: the shared test wrapper builds a new one on every render.
-        const renderWithCache = (overrides: { activeImageState?: ActiveImageStateAdapter } = {}) => {
+        const renderWithCache = (overrides: { activeImageState?: ActiveImageStateAdapter; selectedIds?: Set<string> } = {}) => {
             const queryClient = new QueryClient();
             queryClient.setQueryData(mockImagesQueryKey, { pages: [{ images: mockStoreImages }], pageParams: [0] });
             const view = renderPlainHook(() => useAppActions({ ...props, ...overrides }), {
@@ -1107,7 +1109,7 @@ describe('useAppActions', () => {
             const live = (id: string) => (mockLiveImages ?? mockStoreImages).find((image) => image.id === id);
             const cached = (id: string) =>
                 queryClient.getQueryData<CachedImages>(mockImagesQueryKey)?.pages[0].images.find((image) => image.id === id);
-            return { result: view.result, publish, live, cached };
+            return { result: view.result, publish, live, cached, queryClient };
         };
 
         beforeEach(() => {
@@ -1129,6 +1131,7 @@ describe('useAppActions', () => {
 
             expect(live('1')).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
             expect(cached('1')).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
         });
 
         it('keeps a favorite that landed while a pin write was pending when the pin fails', async () => {
@@ -1146,6 +1149,7 @@ describe('useAppActions', () => {
 
             expect(live('1')).toEqual(expect.objectContaining({ isFavorite: true, isPinned: false }));
             expect(cached('1')).toEqual(expect.objectContaining({ isFavorite: true, isPinned: false }));
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
         });
 
         it('keeps a pin on a directly opened asset when its earlier favorite write fails', async () => {
@@ -1174,6 +1178,7 @@ describe('useAppActions', () => {
             await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
 
             expect(directImage).toEqual(expect.objectContaining({ isFavorite: false, isPinned: true }));
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
         });
 
         it('keeps a favorite that landed while a mask write was pending when the mask fails', async () => {
@@ -1201,6 +1206,7 @@ describe('useAppActions', () => {
             expect(live('1')?.userMasked).toBeUndefined();
             expect(cached('1')?.isFavorite).toBe(true);
             expect(cached('1')?.userMasked).toBeUndefined();
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
             mockUpdateImagesQueryCaches.mockReset();
         });
 
@@ -1222,6 +1228,7 @@ describe('useAppActions', () => {
 
             expect(live('1')?.isFavorite).toBe(true);
             expect(cached('1')?.isFavorite).toBe(true);
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
         });
 
         it('shows the original favorite state when a favorite and the unfavorite after it both fail', async () => {
@@ -1241,6 +1248,35 @@ describe('useAppActions', () => {
 
             expect(live('1')?.isFavorite).toBe(false);
             expect(cached('1')?.isFavorite).toBe(false);
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
+        });
+
+        // Bulk-pin 1 and 2, unpin 1 while the bulk write is pending, then the bulk write fails at 1.
+        // Only 2 reverts, so the snapshot order from before the bulk pin no longer fits even though
+        // the list kept its order: the list must stay as it is and reload to sort the pins again.
+        it('reloads instead of restoring the snapshot order when a pin rollback reverts only some images', async () => {
+            mockStoreImages = mockStoreImages.map((image) => ({ ...image, isPinned: false }));
+            const bulk = pendingWrite();
+            mockToggleImagePin.mockReturnValueOnce(bulk.promise);
+            const { result, publish, live, queryClient } = renderWithCache({ selectedIds: new Set(['1', '2']) });
+
+            act(() => result.current.handleBulkPin());
+            publish();
+            const optimisticOrder = (mockLiveImages ?? []).map((image) => image.id);
+            await act(async () => result.current.handlePinImage('1', false, { showToast: false }));
+            await waitFor(() => expect(mockRefreshCollections).toHaveBeenCalled());
+            publish();
+            expect((mockLiveImages ?? []).map((image) => image.id)).toEqual(optimisticOrder);
+            const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+            await act(async () => bulk.fail());
+            await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned images', 'error'));
+
+            expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+            expect((mockLiveImages ?? []).map((image) => image.id)).toEqual(optimisticOrder);
+            expect(optimisticOrder).not.toEqual(['1', '2']);
+            expect(live('1')?.isPinned).toBe(false);
+            expect(live('2')?.isPinned).toBe(false);
+            expect(countPendingImageFieldWritesForTests()).toBe(0);
         });
     });
 });

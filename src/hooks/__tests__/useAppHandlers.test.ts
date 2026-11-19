@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppHandlers } from '../useAppHandlers';
 import { AIImage, GeneratorTool } from '../../types';
+import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -477,6 +478,7 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Failed to save notes', 'error');
         expect(dispatchedImages[0].notes).toBeUndefined();
         expect(dispatchedImages[0].isPinned).toBe(true);
+        expect(countPendingImageFieldWritesForTests()).toBe(0);
         error.mockRestore();
     });
 
