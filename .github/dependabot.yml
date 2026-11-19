@@ -1,11 +1,13 @@
 version: 2
 
+# Monthly: one batch of update PRs to clear together. Security advisories are
+# still caught weekly by the dependency-security audit workflow.
+
 updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "09:00"
       timezone: "Europe/Berlin"
     open-pull-requests-limit: 3
@@ -35,8 +37,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "09:15"
       timezone: "Europe/Berlin"
     open-pull-requests-limit: 3
@@ -75,8 +76,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "09:30"
       timezone: "Europe/Berlin"
     open-pull-requests-limit: 3
