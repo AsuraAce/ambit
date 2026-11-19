@@ -88,6 +88,19 @@ fn drop_id_from_message(source: &str, app_origin: &str, message_json: &str) -> O
     (message.kind == DROP_MESSAGE_TYPE && id_is_valid).then_some(message.id)
 }
 
+/// A drop accepted from one web message: its id and the native paths of the
+/// posted objects. `native_paths` is read only for a drop message from Ambit's
+/// own page, and the paths come only from it, never from the message.
+fn drop_from_message(
+    source: &str,
+    app_origin: &str,
+    message_json: &str,
+    native_paths: impl FnOnce() -> Vec<Option<String>>,
+) -> Option<(String, Vec<Option<String>>)> {
+    let drop_id = drop_id_from_message(source, app_origin, message_json)?;
+    Some((drop_id, native_paths()))
+}
+
 /// The dropped paths sorted by what Ambit does with them.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct SortedDrop {
@@ -124,7 +137,7 @@ fn sort_dropped(paths: &[Option<String>]) -> SortedDrop {
 
 /// Grants and records the dropped image and video files, as the file picker
 /// does, and moves any file that cannot be granted to `unreadable`.
-async fn grant_dropped_files<R: Runtime>(
+fn grant_dropped_files<R: Runtime>(
     app: &tauri::AppHandle<R>,
     sorted: SortedDrop,
     drop_id: String,
@@ -136,15 +149,7 @@ async fn grant_dropped_files<R: Runtime>(
         mut unreadable,
         without_path,
     } = sorted;
-    let grant_app = app.clone();
-    let to_grant = files.clone();
-    let failed = tauri::async_runtime::spawn_blocking(move || {
-        crate::library_grants::record_dropped_files(&grant_app, &to_grant)
-    })
-    .await
-    .map_err(|error| error.to_string())
-    .and_then(|result| result)
-    .unwrap_or_else(|error| {
+    let failed = crate::library_grants::record_dropped_files(app, &files).unwrap_or_else(|error| {
         log::warn!("[DropImport] Could not record dropped files: {error}");
         files.clone()
     });
@@ -164,27 +169,46 @@ async fn grant_dropped_files<R: Runtime>(
     }
 }
 
+/// Sorts the dropped paths and grants the files, off the async runtime: both
+/// touch the disk once per dropped item.
+async fn sort_and_grant<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    (drop_id, paths): (String, Vec<Option<String>>),
+) -> LibraryDropResult {
+    let grant_app = app.clone();
+    let fallback_id = drop_id.clone();
+    let fallback_paths: Vec<String> = paths.iter().flatten().cloned().collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        let sorted = sort_dropped(&paths);
+        log::info!(
+            "[DropImport] Drop of {} item(s): {} media file(s), {} folder(s), {} unsupported, {} unreadable, {} without a path",
+            paths.len(),
+            sorted.files.len(),
+            sorted.folders.len(),
+            sorted.unsupported.len(),
+            sorted.unreadable.len(),
+            sorted.without_path.len()
+        );
+        grant_dropped_files(&grant_app, sorted, drop_id)
+    })
+    .await
+    .unwrap_or_else(|error| {
+        log::warn!("[DropImport] Could not sort or grant a drop: {error}");
+        LibraryDropResult {
+            drop_id: fallback_id,
+            unreadable: fallback_paths,
+            ..Default::default()
+        }
+    })
+}
+
 /// Handles one drop: grants the files, asks about each folder, then tells the
 /// webview what happened.
-async fn process_drop(
-    app: tauri::AppHandle<tauri::Wry>,
-    drop_id: String,
-    paths: Vec<Option<String>>,
-) {
+async fn process_drop(app: tauri::AppHandle<tauri::Wry>, drop: (String, Vec<Option<String>>)) {
     use tauri::Manager;
     use tauri_specta::Event;
 
-    let sorted = sort_dropped(&paths);
-    log::info!(
-        "[DropImport] Drop of {} item(s): {} media file(s), {} folder(s), {} unsupported, {} unreadable, {} without a path",
-        paths.len(),
-        sorted.files.len(),
-        sorted.folders.len(),
-        sorted.unsupported.len(),
-        sorted.unreadable.len(),
-        sorted.without_path.len()
-    );
-    let mut result = grant_dropped_files(&app, sorted, drop_id).await;
+    let mut result = sort_and_grant(&app, drop).await;
     let folders = std::mem::take(&mut result.folders);
     let window = app
         .get_webview_window("main")
@@ -259,11 +283,11 @@ pub fn register(window: &tauri::WebviewWindow<tauri::Wry>) {
             else {
                 return Ok(());
             };
-            let Some(drop_id) = drop_id_from_message(&source, &origin, &message) else {
+            let Some(drop) = drop_from_message(&source, &origin, &message, || native_paths(&args))
+            else {
                 return Ok(());
             };
-            let paths = native_paths(&args);
-            tauri::async_runtime::spawn(process_drop(app.clone(), drop_id, paths));
+            tauri::async_runtime::spawn(process_drop(app.clone(), drop));
             Ok(())
         }));
         let mut token = 0i64;
@@ -423,30 +447,39 @@ mod tests {
     }
 
     // #493: a compromised page must not grant itself files by naming paths. Paths
-    // come only from the objects WebView2 resolves, so a message that lists
-    // paths, with no dropped objects, grants nothing.
+    // come only from the objects WebView2 resolves, so a drop message that names
+    // a file and a folder, with no dropped objects, grants nothing. The message
+    // goes through the entry `register` uses.
     #[test]
     fn paths_named_in_the_message_are_never_granted() {
         let dir = temp_dir("message-paths");
         let named = dir.join("secret.png");
+        let folder = dir.join("secret-folder");
         fs::write(&named, b"x").unwrap();
-        let message = format!(
-            r#"{{"type":"ambit-drop","id":"drop-1","paths":[{:?}],"files":[{:?}]}}"#,
-            named.to_string_lossy(),
-            named.to_string_lossy()
-        );
-        let drop_id = drop_id_from_message("http://tauri.localhost/", ORIGIN, &message)
-            .expect("a well-formed drop message");
+        fs::create_dir_all(&folder).unwrap();
+        let (file, folder) = (named.to_string_lossy(), folder.to_string_lossy());
+        let message = serde_json::json!({
+            "type": "ambit-drop",
+            "id": "drop-1",
+            "paths": [file, folder],
+            "files": [{ "path": file }],
+            "folders": [folder],
+        })
+        .to_string();
 
-        let app = crate::library_grants::test_app("com.ambit.drop-test-message");
-        let result = tauri::async_runtime::block_on(grant_dropped_files(
-            app.handle(),
-            sort_dropped(&[]),
-            drop_id,
-        ));
+        let drop = drop_from_message("http://tauri.localhost/", ORIGIN, &message, Vec::new)
+            .expect("a well-formed drop message is accepted");
+        let app = crate::library_grants::test_app(&dir.join("app"));
+        let result = tauri::async_runtime::block_on(sort_and_grant(app.handle(), drop));
 
-        assert!(result.files.is_empty());
+        assert_eq!(result.drop_id, "drop-1");
+        assert!(result.files.is_empty() && result.folders.is_empty());
+        assert!(result.unsupported.is_empty() && result.unreadable.is_empty());
         assert!(crate::library_grants::recorded_files(app.handle()).is_empty());
+        assert_eq!(
+            crate::library_grants::recorded_folder_count(app.handle()),
+            0
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -461,16 +494,18 @@ mod tests {
         fs::create_dir_all(&folder).unwrap();
         let text_of = |path: &PathBuf| path.to_string_lossy().into_owned();
 
-        let app = crate::library_grants::test_app("com.ambit.drop-test-grant");
-        let result = tauri::async_runtime::block_on(grant_dropped_files(
+        let app = crate::library_grants::test_app(&dir.join("app"));
+        let result = tauri::async_runtime::block_on(sort_and_grant(
             app.handle(),
-            sort_dropped(&[
-                Some(text_of(&image)),
-                Some(text_of(&text)),
-                Some(text_of(&folder)),
-                None,
-            ]),
-            "drop-2".to_string(),
+            (
+                "drop-2".to_string(),
+                vec![
+                    Some(text_of(&image)),
+                    Some(text_of(&text)),
+                    Some(text_of(&folder)),
+                    None,
+                ],
+            ),
         ));
 
         assert_eq!(result.files, vec![text_of(&image)]);

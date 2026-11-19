@@ -61,7 +61,11 @@ export const describeDropProblems = (result: LibraryDropResult, droppedNames: st
 };
 
 interface UseDropImportProps {
-    importPaths: (paths: string[], defaultTool?: GeneratorTool, options?: { mediaKind?: ImportMediaKind }) => Promise<unknown>;
+    importPaths: (
+        paths: string[],
+        defaultTool?: GeneratorTool,
+        options?: { mediaKind?: ImportMediaKind }
+    ) => Promise<ImportResult | undefined>;
     importFolders: (folders: { path: string; variant?: string }[]) => Promise<ImportResult | void>;
     /** The browser mock mode's in-memory import; the desktop app never uses it. */
     importWebFiles: (files: File[]) => Promise<void>;
@@ -113,8 +117,16 @@ export const useDropImport = ({ importPaths, importFolders, importWebFiles, moni
             const problems = describeDropProblems(result, droppedNames);
             if (problems) toast(problems, 'warning');
 
+            // Another import may have started while Rust granted the drop: say so plainly
+            // rather than letting the import guard turn it away or add an unscanned folder.
+            if ((result.files.length > 0 || result.folders.length > 0) && useLibraryStore.getState().isImporting) {
+                toast(DROP_BUSY_MESSAGE, 'info');
+                return;
+            }
             if (result.files.length > 0) {
-                await importFiles(result.files, undefined, { mediaKind: mediaKindOf(result.files) });
+                const imported = await importFiles(result.files, undefined, { mediaKind: mediaKindOf(result.files) });
+                // A cancelled or failed file import has told the user; it also stops the folders.
+                if (!imported || imported.wasCancelled) return;
             }
             if (result.folders.length > 0) {
                 await addDroppedFolders(result.folders);
@@ -141,7 +153,9 @@ export const useDropImport = ({ importPaths, importFolders, importWebFiles, moni
             importInMemory(files).catch((error: unknown) => console.error('[DropImport] Dropped-file import failed', error));
             return;
         }
-        if (useLibraryStore.getState().isImporting) {
+        // One drop at a time: a drop Rust is still granting (or asking about) counts as busy,
+        // so a second drop is never granted only to be turned away.
+        if (useLibraryStore.getState().isImporting || pendingDropsRef.current.size > 0) {
             toast(DROP_BUSY_MESSAGE, 'info');
             return;
         }

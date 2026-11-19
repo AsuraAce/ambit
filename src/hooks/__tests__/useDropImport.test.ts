@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryDropResult } from '../../bindings';
 import type { AppSettings, MonitoredFolder } from '../../types';
+import type { ImportResult } from '../../services/importService';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { DROP_BUSY_MESSAGE, DROP_UNAVAILABLE_MESSAGE, useDropImport } from '../useDropImport';
 
@@ -70,6 +71,44 @@ describe('useDropImport', () => {
 
         expect(mocks.addToast).toHaveBeenCalledWith(DROP_BUSY_MESSAGE, 'info');
         expect(mocks.postDroppedFiles).not.toHaveBeenCalled();
+    });
+
+    it('turns a second drop away as busy while Rust is still granting the first, so it is never granted', () => {
+        const { result } = renderDropImport();
+
+        act(() => result.current.handleDropFiles([file('a.png')]));
+        act(() => result.current.handleDropFiles([file('b.png')]));
+
+        expect(mocks.postDroppedFiles).toHaveBeenCalledTimes(1);
+        expect(mocks.addToast).toHaveBeenCalledWith(DROP_BUSY_MESSAGE, 'info');
+    });
+
+    it('says busy, and imports and adds nothing, when another import started while Rust granted the drop', async () => {
+        const { result } = renderDropImport();
+        act(() => result.current.handleDropFiles([file('a.png'), file('art')]));
+        useLibraryStore.setState({ isImporting: true });
+
+        await act(async () =>
+            listeners.get('library-drop-result')?.({ payload: dropResult({ files: ['C:/in/a.png'], folders: ['C:/art'] }) })
+        );
+
+        expect(mocks.addToast).toHaveBeenCalledWith(DROP_BUSY_MESSAGE, 'info');
+        expect(importPaths).not.toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(importFolders).not.toHaveBeenCalled();
+    });
+
+    it('adds the dropped folders of a mixed drop only when the file import was not cancelled', async () => {
+        const mixed = dropResult({ files: ['C:/in/a.png'], folders: ['C:/art'] });
+
+        importPaths.mockResolvedValueOnce({ wasCancelled: true } as ImportResult);
+        await dropAndAnswer([file('a.png'), file('art')], mixed);
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(importFolders).not.toHaveBeenCalled();
+
+        importPaths.mockResolvedValueOnce({ wasCancelled: false } as ImportResult);
+        await dropAndAnswer([file('a.png'), file('art')], mixed);
+        expect(importFolders).toHaveBeenCalledWith([{ path: 'C:/art', variant: expect.any(String) }]);
     });
 
     it('says so when the webview cannot hand the drop to Ambit', () => {

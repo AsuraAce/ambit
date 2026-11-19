@@ -832,11 +832,15 @@ pub(crate) fn record_dropped_files<R: Runtime>(
     Ok(failed)
 }
 
-/// A mock app with an empty registry already loaded, saving under `identifier`.
+/// A mock app with an empty registry already loaded, saving inside `directory`.
 #[cfg(test)]
-pub(crate) fn test_app(identifier: &str) -> tauri::App<tauri::test::MockRuntime> {
+pub(crate) fn test_app(directory: &Path) -> tauri::App<tauri::test::MockRuntime> {
     let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-    context.config_mut().identifier = identifier.to_string();
+    // An absolute identifier puts the app's data folders in the test's own directory.
+    let identifier = directory.to_str().unwrap();
+    #[cfg(windows)]
+    let identifier = identifier.strip_prefix(r"\\?\").unwrap_or(identifier);
+    context.config_mut().identifier = identifier.to_owned();
     let app = tauri::test::mock_builder().build(context).unwrap();
     let state = LibraryGrantState::default();
     *state.registry.lock().unwrap() = Some(GrantRegistry::default());
