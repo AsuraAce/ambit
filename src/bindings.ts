@@ -594,6 +594,14 @@ async showInFolder(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async copyImageToClipboard(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_image_to_clipboard", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scanDirectoryWithStats(path: string) : Promise<Result<FileEntry[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_directory_with_stats", { path }) };

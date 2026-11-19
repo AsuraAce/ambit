@@ -503,7 +503,7 @@ fn resolve_known_media_file_target(conn: &Connection, path: &str) -> Result<Path
     Ok(canonical_file)
 }
 
-fn resolve_existing_regular_file(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_existing_regular_file(path: &str) -> Result<PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("Path cannot be empty".to_string());
@@ -527,14 +527,14 @@ fn is_filesystem_root(path: &Path) -> bool {
     path.parent().is_none()
 }
 
-fn open_configured_app_db(app: &tauri::AppHandle) -> Result<Connection, String> {
+pub(crate) fn open_configured_app_db(app: &tauri::AppHandle) -> Result<Connection, String> {
     let db_path = resolve_db_path(app)?;
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     configure_connection(&conn).map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
-fn path_is_known_media_file(
+pub(crate) fn path_is_known_media_file(
     conn: &Connection,
     requested_path: &str,
     canonical_path: &Path,

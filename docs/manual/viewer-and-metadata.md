@@ -33,6 +33,8 @@ The top toolbar shows the filename and, when available, a Version indicator. Too
 - Hide Sidebar or Show Sidebar
 - Close
 
+Copy Image to Clipboard puts the picture itself on the clipboard, so you can paste it into another app such as Paint, a chat app or a browser. It works for PNG, JPEG and WebP images in your library, and shows a message if the copy fails. The same action is available as Copy Image when you right-click an image; Copy File Path in that menu copies the file's location as text instead. Videos have no Copy Image action.
+
 Remove from Library removes the image record from Ambit's active library. It does not delete the source image file from disk. Use Maintenance > Removed > Delete File only when you intentionally want source-file deletion through the OS trash flow.
 
 ## Metadata Sidebar

@@ -28,7 +28,7 @@ interface CapturedMenuProps extends Record<string, unknown> {
     onCopyPrompt: () => void;
     onCopySeed?: () => void;
     onCopyGenerationInfo: () => void;
-    onCopyImage: () => Promise<void>;
+    onCopyImage?: () => Promise<void>;
     onCopyFilePath: () => void;
     onAddToCollection: () => void;
     onMoveToCollection: () => void;
@@ -62,6 +62,7 @@ const osMocks = vi.hoisted(() => ({
     isOsOpenUnavailable: vi.fn(),
 }));
 const imageRepoMocks = vi.hoisted(() => ({ toggleImageIntermediate: vi.fn() }));
+const imageClipboardMocks = vi.hoisted(() => ({ copyImageToClipboard: vi.fn() }));
 const tauriMocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 const queryMocks = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
 
@@ -96,6 +97,7 @@ vi.mock('../../../services/runtime', () => ({
 vi.mock('../../../services/osOpen', () => osMocks);
 
 vi.mock('../../../services/db/imageRepo', () => imageRepoMocks);
+vi.mock('../../../services/imageClipboard', () => imageClipboardMocks);
 
 vi.mock('@tauri-apps/api/core', () => tauriMocks);
 
@@ -327,9 +329,8 @@ describe('AppContextMenu', () => {
         expect(requireMenu().modelsForThumbnail).toEqual([{ name: 'Object Model', hash: 'name:Object Model', type: 'checkpoint' }]);
     });
 
-    it('copies prompts, seeds, generation details, file paths, and image blobs', async () => {
-        const blob = new Blob(['image'], { type: 'image/png' });
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ blob: vi.fn().mockResolvedValue(blob) }));
+    it('copies prompts, seeds, generation details, file paths, and the image itself', async () => {
+        imageClipboardMocks.copyImageToClipboard.mockResolvedValue({ status: 'ok', data: null });
         renderMenu();
         const menu = requireMenu();
 
@@ -337,27 +338,46 @@ describe('AppContextMenu', () => {
         menu.onCopySeed?.();
         menu.onCopyGenerationInfo();
         menu.onCopyFilePath();
-        await menu.onCopyImage();
+        await menu.onCopyImage?.();
 
         expect(clipboardWriteText).toHaveBeenNthCalledWith(1, 'a secret castle');
         expect(clipboardWriteText).toHaveBeenNthCalledWith(2, '42');
         expect(clipboardWriteText).toHaveBeenNthCalledWith(3, expect.stringContaining('Negative Prompt: blurry'));
         expect(clipboardWriteText).toHaveBeenNthCalledWith(3, expect.stringContaining('Raw Parameters:\nraw generation data'));
         expect(clipboardWriteText).toHaveBeenNthCalledWith(4, 'C:/library/image.png');
-        expect(clipboardWrite).toHaveBeenCalledOnce();
+        expect(clipboardWriteText).toHaveBeenCalledTimes(4);
+        expect(imageClipboardMocks.copyImageToClipboard).toHaveBeenCalledWith('C:/library/image.png');
+        expect(clipboardWrite).not.toHaveBeenCalled();
         expect(toastMocks.addToast).toHaveBeenCalledWith('Image copied to clipboard', 'success');
         expect(onClose).toHaveBeenCalledTimes(5);
     });
 
-    it('falls back to the image URL when clipboard blob copying fails', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('blocked')));
+    it('reports a failed image copy instead of silently copying a path', async () => {
+        // Users paste expecting pixels; a path on the clipboard looks like success
+        // in the toast but pastes as text, which is the bug in #494.
+        imageClipboardMocks.copyImageToClipboard.mockResolvedValue({ status: 'error', error: 'Failed to decode image' });
         renderMenu();
 
-        await requireMenu().onCopyImage();
+        await requireMenu().onCopyImage?.();
 
-        expect(clipboardWriteText).toHaveBeenCalledWith('asset://image.png');
-        expect(toastMocks.addToast).toHaveBeenCalledWith('Image path copied (fallback)', 'info');
+        expect(clipboardWriteText).not.toHaveBeenCalled();
+        expect(toastMocks.addToast).toHaveBeenCalledWith("Couldn't copy the image: Failed to decode image", 'error');
         expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it('shows no toast for a repeat click ignored while a copy runs', async () => {
+        imageClipboardMocks.copyImageToClipboard.mockResolvedValue({ status: 'ignored' });
+        renderMenu();
+
+        await requireMenu().onCopyImage?.();
+
+        expect(toastMocks.addToast).not.toHaveBeenCalled();
+    });
+
+    it('offers no Copy image for videos', () => {
+        renderMenu({ images: [createImage({ mediaType: 'video' } as Partial<AIImage>)] });
+
+        expect(requireMenu().onCopyImage).toBeUndefined();
     });
 
     it('routes collection and image mutations to their owning hooks', async () => {
@@ -475,7 +495,6 @@ describe('AppContextMenu', () => {
 
         menu.onCopyPrompt?.();
         menu.onCopyGenerationInfo?.();
-        await menu.onCopyImage();
         menu.onCopyFilePath();
         menu.onTogglePin();
         await menu.onToggleIntermediate?.();
@@ -485,6 +504,7 @@ describe('AppContextMenu', () => {
         await menu.onSetModelThumbnail({ name: 'Missing', hash: 'none', type: 'checkpoint' });
 
         expect(menu.onCopySeed).toBeUndefined();
+        expect(menu.onCopyImage).toBeUndefined();
         expect(menu.onSetThumbnail).toBeUndefined();
         expect(menu.onUnsetThumbnail).toBeUndefined();
         expect(menu.modelsForThumbnail).toEqual([]);

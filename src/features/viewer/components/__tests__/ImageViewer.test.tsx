@@ -21,6 +21,7 @@ const captures = vi.hoisted(() => ({
 const zoomMocks = vi.hoisted(() => ({ resetZoom: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn() }));
 const toastMock = vi.hoisted(() => vi.fn());
 const openFileMock = vi.hoisted(() => vi.fn());
+const copyImageMock = vi.hoisted(() => vi.fn());
 const assetAccessMock = vi.hoisted(() => vi.fn());
 const aiState = vi.hoisted(() => ({
     value: {
@@ -143,6 +144,10 @@ vi.mock('../../../../hooks/useToast', () => ({
 vi.mock('../../../../services/osOpen', () => ({
     openFileInDefaultApp: (...args: unknown[]) => openFileMock(...args),
     isOsOpenUnavailable: (message: string) => message.includes('unavailable'),
+}));
+
+vi.mock('../../../../services/imageClipboard', () => ({
+    copyImageToClipboard: (...args: unknown[]) => copyImageMock(...args),
 }));
 
 const metadata = (positivePrompt: string) => ({
@@ -624,15 +629,9 @@ describe('ImageViewer full metadata loading', () => {
             value: { write: clipboardWrite, writeText: clipboardWriteText },
         });
         Object.defineProperty(navigator, 'share', { configurable: true, value: share });
-        vi.stubGlobal(
-            'ClipboardItem',
-            class ClipboardItem {
-                constructor(public value: Record<string, Blob>) {}
-            }
-        );
-        const blob = new Blob(['image'], { type: 'image/png' });
-        const fetchMock = vi.fn().mockResolvedValue({ blob: vi.fn().mockResolvedValue(blob) });
-        vi.stubGlobal('fetch', fetchMock);
+        copyImageMock
+            .mockResolvedValueOnce({ status: 'ok', data: null })
+            .mockResolvedValueOnce({ status: 'error', error: 'decode failed' });
         openFileMock
             .mockResolvedValueOnce({ status: 'error', error: 'open unavailable' })
             .mockResolvedValueOnce({ status: 'error', error: 'permission denied' })
@@ -652,19 +651,21 @@ describe('ImageViewer full metadata loading', () => {
             onDelete: () => void;
         };
 
+        // Copy goes through the native command with the image's library path, and
+        // both outcomes are visible to the user (the old path failed silently).
         await toolbar.onCopy();
-        expect(clipboardWrite).toHaveBeenCalled();
-        fetchMock.mockRejectedValueOnce(new Error('copy failed'));
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        expect(copyImageMock).toHaveBeenCalledWith(lightImage.id);
+        expect(toastMock).toHaveBeenNthCalledWith(1, 'Image copied to clipboard', 'success');
         await toolbar.onCopy();
-        expect(errorSpy).toHaveBeenCalledWith('Copy failed', expect.any(Error));
-        errorSpy.mockRestore();
+        expect(toastMock).toHaveBeenNthCalledWith(2, "Couldn't copy the image: decode failed", 'error');
+        expect(clipboardWrite).not.toHaveBeenCalled();
+        expect(clipboardWriteText).not.toHaveBeenCalled();
 
         await toolbar.onOpenExternal();
         await toolbar.onOpenExternal();
         await toolbar.onOpenExternal();
-        expect(toastMock).toHaveBeenNthCalledWith(1, 'open unavailable', 'info');
-        expect(toastMock).toHaveBeenNthCalledWith(2, 'permission denied', 'error');
+        expect(toastMock).toHaveBeenNthCalledWith(3, 'open unavailable', 'info');
+        expect(toastMock).toHaveBeenNthCalledWith(4, 'permission denied', 'error');
         toolbar.onShare();
         expect(share).toHaveBeenCalledWith({ title: lightImage.filename, url: lightImage.url });
         act(() => {

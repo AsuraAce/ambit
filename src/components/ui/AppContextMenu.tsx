@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
 import { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder } from '../../services/osOpen';
 import { toggleImageIntermediate } from '../../services/db/imageRepo';
+import { copyImageToClipboard } from '../../services/imageClipboard';
 import { invoke } from '@tauri-apps/api/core';
 import type { useAppActions } from '../../hooks/useAppActions';
 import type { useCollectionOperations } from '../../hooks/useCollectionOperations';
@@ -125,21 +126,19 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                       }
                     : undefined
             }
-            onCopyImage={async () => {
-                if (activeImage?.url) {
-                    try {
-                        const response = await fetch(activeImage.url);
-                        const blob = await response.blob();
-                        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-                        addToast('Image copied to clipboard', 'success');
-                    } catch {
-                        // Fallback to path if blob copy fails (e.g. browser security)
-                        navigator.clipboard.writeText(activeImage.url).catch((error) => console.error('[Clipboard] Copy failed', error));
-                        addToast('Image path copied (fallback)', 'info');
-                    }
-                }
-                onClose();
-            }}
+            onCopyImage={
+                activeImage && !isVideoAsset(activeImage)
+                    ? async () => {
+                          onClose();
+                          const result = await copyImageToClipboard(activeImage.id);
+                          if (result.status === 'ok') {
+                              addToast('Image copied to clipboard', 'success');
+                          } else if (result.status === 'error') {
+                              addToast(`Couldn't copy the image: ${result.error}`, 'error');
+                          }
+                      }
+                    : undefined
+            }
             onCopyFilePath={() => {
                 if (activeImage?.id) {
                     navigator.clipboard.writeText(activeImage.id).catch((error) => console.error('[Clipboard] Copy failed', error));
