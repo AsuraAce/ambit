@@ -980,10 +980,12 @@ async selectInvokeSource(rootPath: string, sql: string, params: (InvokeSourceVal
 
 export const events = __makeEvents__<{
 folderChangeEvent: FolderChangeEvent,
+libraryDropResult: LibraryDropResult,
 thumbnailOptimizationComplete: ThumbnailOptimizationComplete,
 thumbnailOptimizationProgress: ThumbnailOptimizationProgress
 }>({
 folderChangeEvent: "folder-change-event",
+libraryDropResult: "library-drop-result",
 thumbnailOptimizationComplete: "thumbnail-optimization-complete",
 thumbnailOptimizationProgress: "thumbnail-optimization-progress"
 })
@@ -1076,6 +1078,39 @@ export type InvokeSourceValue = number | string
 export type LegacyCollectionMigrationInput = { importKey: string; collections: LegacyCollectionMigrationItem[] }
 export type LegacyCollectionMigrationItem = { id: string; name: string; color: string | null; isArchived: boolean; isPinned: boolean; createdAt: number; updatedAt: number | null; filterState: string | null; manualExclusions: string | null; customThumbnail: string | null; imageIds: string[] }
 export type LegacyCollectionMigrationResult = { alreadyApplied: boolean; collectionsUpserted: number; membershipsInserted: number }
+/**
+ * What a drop did, sent to the webview once Rust has granted what it could.
+ */
+export type LibraryDropResult = { 
+/**
+ * The id the webview sent with the drop.
+ */
+dropId: string; 
+/**
+ * Image and video files, granted and recorded, as WebView2 spells them.
+ */
+files: string[]; 
+/**
+ * Folders the user allowed, or that a grant already covered.
+ */
+folders: string[]; 
+/**
+ * Folders the user did not allow.
+ */
+declinedFolders: string[]; 
+/**
+ * Files of a type Ambit does not import.
+ */
+unsupported: string[]; 
+/**
+ * Files and folders Ambit could not read or grant.
+ */
+unreadable: string[]; 
+/**
+ * Positions, in the dropped list, of items with no file on disk, such as a
+ * file dragged from a browser.
+ */
+withoutPath: number[] }
 export type LibraryGrantKind = "monitoredFolder" | "resourceFolder" | "invokeAiRoot" | "a1111Root" | 
 /**
  * The folder of an image or video imported on its own, before this registry.

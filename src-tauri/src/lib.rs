@@ -12,6 +12,7 @@
 mod app_data_migration;
 mod comfy_support_replay;
 mod db;
+mod drop_import;
 mod fs_commands;
 mod invoke_source;
 mod library_grants;
@@ -188,7 +189,8 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         .events(tauri_specta::collect_events![
             watcher::FolderChangeEvent,
             thumb::optimizer::ThumbnailOptimizationProgress,
-            thumb::optimizer::ThumbnailOptimizationComplete
+            thumb::optimizer::ThumbnailOptimizationComplete,
+            drop_import::LibraryDropResult
         ])
 }
 
@@ -315,6 +317,7 @@ pub fn run() {
                 );
                 if let Some(window) = app.get_webview_window("main") {
                     observer.register(&window);
+                    drop_import::register(&window);
                 } else {
                     observer.registration_unavailable();
                 }
