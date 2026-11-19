@@ -16,7 +16,7 @@ import {
 } from '../services/importService';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
-import { formatStableImportProgress } from '../utils/importProgress';
+import { formatStableImportProgress, type ImportMediaKind } from '../utils/importProgress';
 import { formatUnscannableRootsWarning } from '../utils/importSourceStatus';
 import { getThumbnailDir } from '../services/thumbnailService';
 import { ensureFolderAccessible } from '../services/assetScope';
@@ -31,6 +31,8 @@ interface ImportOptions {
     waitForStableFiles?: boolean;
     deferFacetCacheRefresh?: boolean;
     abortSignal?: AbortSignal;
+    /** The user's import choice; names the Activity Dock message from the start. Left unset when unknown. */
+    mediaKind?: ImportMediaKind;
 }
 
 type CommitToastMode = 'detailed' | 'compact' | 'none';
@@ -267,6 +269,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 waitForStableFiles,
                 deferFacetCacheRefresh = false,
                 abortSignal: externalAbortSignal,
+                mediaKind,
             } = options;
             const isStartup = mode === 'startup';
             const isManual = mode === 'manual';
@@ -284,6 +287,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 : beginImportRun({
                       owner: 'path-import',
                       abortController: localAbortCtrl,
+                      progress: mediaKind ? { current: 0, total: paths.length, message: `Importing ${mediaKind}...` } : undefined,
                   });
             if (!skipStateManagement && !importRunId) {
                 console.info('[ImportOps] Path import skipped because another import is active.', {

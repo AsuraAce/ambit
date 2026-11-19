@@ -165,6 +165,40 @@ describe('useImportOps', () => {
         expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
     });
 
+    it.each([
+        ['videos', 'Importing videos...'],
+        ['images', 'Importing images...'],
+    ] as const)('names %s in the Activity Dock from the start of a picked-file import', async (mediaKind, expected) => {
+        const messages: Array<string | undefined> = [];
+        mocks.processNativePaths.mockImplementationOnce(async () => {
+            messages.push(useLibraryStore.getState().importProgress?.message);
+            return emptyImportResult();
+        });
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportPaths(['C:/picked/file'], undefined, { mediaKind });
+        });
+
+        expect(messages).toEqual([expected]);
+    });
+
+    it('uses a neutral noun for folder imports because the media kind is not known up front', async () => {
+        const messages: Array<string | undefined> = [];
+        mocks.processFoldersUnified.mockImplementationOnce(async (_folders, options) => {
+            options.onProgress(5, 10, 'Extracting metadata...', { phase: 'importing', sourceCount: 1 });
+            messages.push(useLibraryStore.getState().importProgress?.message);
+            return emptyImportResult();
+        });
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportFolders([{ path: 'C:/watch-a' }]);
+        });
+
+        expect(messages).toEqual(['Importing media from folder...']);
+    });
+
     it('keeps background path cancellation quiet', async () => {
         mocks.processNativePaths.mockResolvedValueOnce(emptyImportResult(true));
         const { result } = renderImportOps();
@@ -373,7 +407,7 @@ describe('useImportOps', () => {
             await result.current.handleImportFolders([{ path: 'C:/watch-a' }, { path: 'C:/watch-b' }]);
         });
 
-        expect(messages).toEqual(['Scanning 2 folders...', 'Importing images from 2 folders...']);
+        expect(messages).toEqual(['Scanning 2 folders...', 'Importing media from 2 folders...']);
         expect(messages).not.toContain('Extracting metadata...');
     });
 
@@ -443,7 +477,7 @@ describe('useImportOps', () => {
         expect(progressStates).toEqual(
             expect.arrayContaining([
                 { message: 'Scanning folder...', detail: 'C:/watch-a' },
-                { message: 'Importing images from folder...', detail: 'C:/watch-a' },
+                { message: 'Importing media from folder...', detail: 'C:/watch-a' },
                 { message: 'Finalizing import...', detail: 'C:/watch-a' },
             ])
         );
