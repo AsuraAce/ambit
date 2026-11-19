@@ -4507,11 +4507,13 @@ mod tests {
         assert_eq!(second, SourceRootProbeResult::Busy);
         assert_eq!(starts.load(Ordering::SeqCst), 1);
 
+        // A healthy root must still get a worker. Its timeout is generous so the
+        // result does not depend on how quickly the scheduler runs the worker.
         let healthy = run_cancellable_probe(
             &PROBE_REGISTRY,
             "healthy".to_string(),
             &AtomicBool::new(false),
-            Duration::from_millis(20),
+            Duration::from_secs(10),
             || true,
         );
         assert_eq!(healthy, SourceRootProbeResult::Available);
