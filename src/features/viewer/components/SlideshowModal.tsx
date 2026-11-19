@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { X, Play, Pause, ChevronLeft, ChevronRight, Shuffle, Clock } from 'lucide-react';
 import { AIImage } from '../../../types';
+import { readModelName } from '../../../utils/formatUtils';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
@@ -210,7 +211,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({ isOpen, images, 
                             {currentImage.metadata.positivePrompt}
                         </p>
                         <div className="flex items-center justify-center gap-6 mt-6 text-sm font-bold text-gray-400 uppercase tracking-widest opacity-80">
-                            <span>{currentImage.metadata.model}</span>
+                            <span>{readModelName(currentImage.metadata.model)}</span>
                             <span className="w-1 h-1 bg-gray-500 rounded-full" />
                             <span>{new Date(currentImage.timestamp).toLocaleDateString()}</span>
                         </div>
