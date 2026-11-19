@@ -184,6 +184,7 @@ const mocks = vi.hoisted(() => ({
     setOrdinaryCountsReady: vi.fn(),
     images: [] as AIImage[],
     privacyExposureBlocked: false,
+    imagesFailed: false,
     filters: null as unknown as FilterState,
     setImages: vi.fn(),
     setFilters: vi.fn(),
@@ -392,6 +393,7 @@ vi.mock('./contexts/SearchContext', () => ({
         globalTotal: mocks.images.length + 5,
         isFiltering: false,
         privacyExposureBlocked: mocks.privacyExposureBlocked,
+        imagesFailed: mocks.imagesFailed,
         isLibraryReady: !mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
         clearAllFilters: mocks.churnClearAllFiltersIdentity ? () => mocks.clearAllFilters() : mocks.clearAllFilters,
@@ -616,6 +618,7 @@ describe('App orchestration', () => {
         mocks.collectionsLoaded = true;
         mocks.collections = [];
         mocks.privacyExposureBlocked = false;
+        mocks.imagesFailed = false;
         mocks.images = [image('one'), image('two')];
         mocks.invokeOwnerScopeState = { status: 'ready' };
         mocks.isInvokeSyncActive = false;
@@ -1163,6 +1166,58 @@ describe('App orchestration', () => {
         await act(async () => {
             await vi.advanceTimersByTimeAsync(1);
         });
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('ends sustained startup privacy preparation when the first page fails, and Retry does not bring it back (#491)', async () => {
+        // Privacy preparation waits for a safe first page; a failed one would otherwise hold it forever
+        // and hide the load error with its Retry. The mask index is ready: only the page is missing.
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.privacyEnabled = true;
+        mocks.privacyExposureBlocked = true;
+
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(true);
+
+        // SearchContext still withholds every image and count, and reports the load error.
+        mocks.imagesFailed = true;
+        view.rerender(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(expect.any(Function), false);
+
+        // While Retry runs, the grid shows its loading state, not the startup gate again.
+        mocks.imagesFailed = false;
+        view.rerender(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('dismisses the splash without a privacy gate when the first page fails quickly (#491)', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.privacyEnabled = true;
+        mocks.privacyExposureBlocked = true;
+        mocks.imagesFailed = true;
+
+        render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+
+        expect(staticLoader.style.opacity).toBe('0');
         expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
     });
 

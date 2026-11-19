@@ -537,6 +537,27 @@ describe('AppLayout', () => {
         expect(retryImages).toHaveBeenCalledOnce();
     });
 
+    it('shows the load error, not the privacy gate or skeleton, when a privacy scope first page fails (#491)', () => {
+        // SearchContext's state for that case: the mask index is ready, everything stays withheld, and the
+        // failure is reported. The grid must get no images and the user must get Retry.
+        Object.assign(searchState.value, {
+            images: [],
+            totalImages: null,
+            globalTotal: null,
+            isFiltering: false,
+            privacyExposureBlocked: true,
+            imagesFailed: true,
+            retryImages: vi.fn(),
+        });
+        render(<AppLayout {...defaultProps} viewMode="grid" />);
+
+        expect(screen.getByRole('alert').textContent).toContain('Images could not load');
+        expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+        expect(screen.queryByTestId('privacy-protection-gate')).toBeNull();
+        expect(screen.queryByTestId('grid-skeleton')).toBeNull();
+        expect(screen.queryByTestId('virtual-grid')).toBeNull();
+    });
+
     it('opens import from an empty library', async () => {
         const onOpenImportModal = vi.fn();
         searchState.value.images = [];
