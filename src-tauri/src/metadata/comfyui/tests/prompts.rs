@@ -1825,6 +1825,87 @@ fn enhancer_request_is_not_shown_when_the_enhancer_reads_media() {
     }
 }
 
+/// The MOSS-Image reference-image shape: the enhancer reads an image, and a
+/// switch picks between the enhancer output and `off_branch` for the encoder.
+/// Node "7" is the typed request feeding the enhancer's `prompt`.
+fn reference_image_enhancer_nodes(
+    off_branch: Value,
+    extra_media: Option<&str>,
+) -> Vec<(&'static str, Value)> {
+    let mut enhancer_inputs = json!({ "prompt": ["7", 0], "image": ["8", 0] });
+    if let Some(media) = extra_media {
+        enhancer_inputs[media] = json!(["8", 0]);
+    }
+    vec![
+        (
+            "3",
+            json!({ "class_type": "PreviewAny", "inputs": { "source": ["5", 0] } }),
+        ),
+        (
+            "5",
+            json!({
+                "class_type": "ComfySwitchNode",
+                "inputs": { "switch": true, "on_true": ["6", 0], "on_false": off_branch }
+            }),
+        ),
+        (
+            "6",
+            json!({ "class_type": "TextGenerate", "inputs": enhancer_inputs }),
+        ),
+        (
+            "7",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "a cat" } }),
+        ),
+        (
+            "8",
+            json!({ "class_type": "LoadImage", "inputs": { "image": "example.png" } }),
+        ),
+        (
+            "9",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "a cat" } }),
+        ),
+    ]
+}
+
+#[test]
+fn enhancer_request_stands_in_when_a_switch_offers_it_as_the_plain_prompt() {
+    // A captioner never offers its request as the prompt when it is off. A
+    // switch whose other branch is the same request makes it the user's
+    // prompt even though the enhancer also reads a reference image.
+    let chunks = transform_prompt_chunks(reference_image_enhancer_nodes(json!(["7", 0]), None));
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert_eq!(meta.positive_prompt, "a cat");
+    assert!(meta.positive_prompt_before_enhancer);
+    assert!(has_generated_prompt_issue(
+        &build_comfyui_diagnostics_report(&chunks)
+    ));
+}
+
+#[test]
+fn enhancer_request_with_an_image_is_not_shown_when_the_switch_offers_other_text() {
+    // Node "9" holds the same words in a different node: only the request
+    // itself, offered as the plain prompt, shows the enhancer is a prompt
+    // enhancer rather than a captioner.
+    assert_enhancer_request_rejected(
+        reference_image_enhancer_nodes(json!(["9", 0]), None),
+        "the switch's other branch is not the enhancer's request, so nothing shows the request \
+         is the prompt rather than an instruction about the image",
+    );
+}
+
+#[test]
+fn enhancer_request_with_a_linked_video_is_not_shown_even_behind_a_switch() {
+    for media in ["video", "audio"] {
+        assert_enhancer_request_rejected(
+            reference_image_enhancer_nodes(json!(["7", 0]), Some(media)),
+            &format!(
+                "only a reference image is accepted behind the switch; a linked {media} input \
+                 still makes the enhancer a captioner"
+            ),
+        );
+    }
+}
+
 #[test]
 fn enhancer_request_is_not_shown_when_its_output_is_concatenated() {
     assert_enhancer_request_rejected(

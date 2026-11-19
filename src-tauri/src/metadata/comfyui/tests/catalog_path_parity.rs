@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 const OFFICIAL_CATALOG_FIXTURE_COUNT: usize = 115;
-const REAL_WORLD_FIXTURE_COUNT: usize = 21;
+const REAL_WORLD_FIXTURE_COUNT: usize = 22;
 
 #[test]
 fn official_catalog_entry_points_remain_in_parity() {

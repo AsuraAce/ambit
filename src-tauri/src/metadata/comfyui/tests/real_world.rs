@@ -1,5 +1,8 @@
 use super::super::diagnostics::{ComfyMetadataField, ComfyParseDiagnostics, ComfyParseLayer};
-use crate::metadata::comfyui::{extract_comfyui_metadata_with_diagnostics, merge_comfyui_metadata};
+use crate::metadata::comfyui::{
+    build_comfyui_diagnostics_report, extract_comfyui_metadata_with_diagnostics,
+    merge_comfyui_metadata,
+};
 use crate::metadata::{extract_a1111_metadata, ImageMetadata};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -102,6 +105,12 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
         name: "use_everywhere_v7_resolved_links",
         chunks_json: include_str!(
             "fixtures/real_world/use_everywhere_v7_resolved_links.chunks.json"
+        ),
+    },
+    RealWorldFixture {
+        name: "moss_image_reference_image_enhancer",
+        chunks_json: include_str!(
+            "fixtures/real_world/moss_image_reference_image_enhancer.chunks.json"
         ),
     },
 ];
@@ -899,6 +908,52 @@ fn test_krea2_regular_saveimage_remains_sampler_traversal() {
             "regular Krea SaveImage should record {field:?} from {layer:?}"
         );
     }
+}
+
+/// MOSS-Image with a reference image: the image feeds the prompt enhancer,
+/// and the template's switch offers the typed request as the plain prompt
+/// when the enhancer is off. The request is the user's prompt, not a
+/// captioning instruction, so it stands in for the unsaved rewrite, marked,
+/// with the generated-value blocker kept.
+#[test]
+fn test_moss_reference_image_enhancer_shows_the_request() {
+    let name = "moss_image_reference_image_enhancer";
+    let chunks = load_chunks(get_fixture(name));
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_metadata(
+        name,
+        &meta,
+        ExpectedMetadata {
+            model: "moss_image_sft_bf16",
+            seed: Some(625_008_744_861_891),
+            steps: 25,
+            cfg: 2.5,
+            sampler: "er_sde (simple)",
+            positive_prompt: "a stone wall, isometric view",
+            negative_prompt: "worst quality, bad anatomy, watermark, jpeg artifact",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+    );
+    assert!(
+        meta.positive_prompt_before_enhancer,
+        "{name} request marker"
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal),
+        "{name} positive prompt provenance"
+    );
+    let report = build_comfyui_diagnostics_report(&chunks);
+    assert_eq!(report.traversal_issues.len(), 1, "{name} blockers");
+    let issue = &report.traversal_issues[0];
+    assert_eq!(issue.field, "positive_prompt");
+    assert_eq!(issue.node_type, "TextGenerate");
+    assert_eq!(issue.reason, "generated_value_unavailable");
 }
 
 struct ExpectedMetadata<'a> {

@@ -1524,23 +1524,42 @@ pub(crate) fn direct_enhancer_request(
     if get_node_type(encoder) != "CLIPTextEncode" {
         return None;
     }
-    let enhancer = enhancer_feeding_input(graph, encoder, "text", 0)?;
-    let has_media_input = ENHANCER_MEDIA_INPUTS
+    let mut unselected_branches = Vec::new();
+    let enhancer = enhancer_feeding_input(graph, encoder, "text", 0, &mut unselected_branches)?;
+    let is_linked =
+        |input: &str| get_input_source(enhancer, input) != InputSourceConnection::Unconnected;
+    if ENHANCER_MEDIA_INPUTS
         .iter()
-        .any(|input| get_input_source(enhancer, input) != InputSourceConnection::Unconnected);
-    if has_media_input {
+        .any(|input| *input != "image" && is_linked(input))
+    {
         return None;
+    }
+    // A linked image usually means a captioner, whose request is an
+    // instruction about the image. A switch on the way that offers the same
+    // request as the plain prompt when the enhancer is off (MOSS-Image with a
+    // reference image) shows the request is the user's prompt instead.
+    if is_linked("image") {
+        let request = plain_request_origin(graph, enhancer, "prompt", 0)?;
+        let switch_offers_request = unselected_branches.iter().any(|(switch, branch)| {
+            plain_request_origin(graph, switch, branch, 0).as_ref() == Some(&request)
+        });
+        if !switch_offers_request {
+            return None;
+        }
     }
     plain_request_value(graph, enhancer, "prompt", 0)
         .filter(|request| !is_missing_prompt_value(request))
 }
 
 /// The prompt enhancer whose generated text reaches `input_name` unchanged.
+/// Every switch on the way records its unselected branch in
+/// `unselected_branches`.
 fn enhancer_feeding_input<'a>(
     graph: &'a ComfyGraph,
     node: &Value,
     input_name: &str,
     depth: usize,
+    unselected_branches: &mut Vec<(&'a Value, &'static str)>,
 ) -> Option<&'a Value> {
     if depth > MAX_ENHANCER_PATH_DEPTH {
         return None;
@@ -1552,10 +1571,54 @@ fn enhancer_feeding_input<'a>(
     match get_node_type(source_node) {
         // Slot 0 is the generated text; slot 1 is the model's reasoning.
         PROMPT_ENHANCER_NODE_TYPE if source.output_slot.unwrap_or(0) == 0 => Some(source_node),
-        "PreviewAny" => enhancer_feeding_input(graph, source_node, "source", depth + 1),
+        "PreviewAny" => {
+            enhancer_feeding_input(graph, source_node, "source", depth + 1, unselected_branches)
+        }
         "ComfySwitchNode" => {
             let branch = get_switch_branch_input_strict(graph, source_node)?;
-            enhancer_feeding_input(graph, source_node, branch, depth + 1)
+            let other = if branch == "on_true" {
+                "on_false"
+            } else {
+                "on_true"
+            };
+            unselected_branches.push((source_node, other));
+            enhancer_feeding_input(graph, source_node, branch, depth + 1, unselected_branches)
+        }
+        _ => None,
+    }
+}
+
+/// The node output holding the typed text that `input_name` receives, found
+/// along the same previews, primitives and switches as `plain_request_value`.
+/// `None` when the text is a literal on `node` itself or is built by other
+/// nodes.
+fn plain_request_origin(
+    graph: &ComfyGraph,
+    node: &Value,
+    input_name: &str,
+    depth: usize,
+) -> Option<InputSource> {
+    if depth > MAX_ENHANCER_PATH_DEPTH {
+        return None;
+    }
+    let InputSourceConnection::Connected(source) = get_input_source(node, input_name) else {
+        return None;
+    };
+    let source_node = graph.get_node(&source.node_id)?;
+    match get_node_type(source_node) {
+        "PrimitiveNode" | "PrimitiveString" | "PrimitiveStringMultiline" => {
+            match get_input_source(source_node, "value") {
+                InputSourceConnection::Unconnected => Some(InputSource {
+                    node_id: source.node_id,
+                    output_slot: Some(source.output_slot.unwrap_or(0)),
+                }),
+                _ => plain_request_origin(graph, source_node, "value", depth + 1),
+            }
+        }
+        "PreviewAny" => plain_request_origin(graph, source_node, "source", depth + 1),
+        "ComfySwitchNode" => {
+            let branch = get_switch_branch_input_strict(graph, source_node)?;
+            plain_request_origin(graph, source_node, branch, depth + 1)
         }
         _ => None,
     }
