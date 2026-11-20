@@ -1179,3 +1179,92 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         });
     });
 });
+
+// #407: these resets happen during render, so no committed frame shows the previous state.
+describe('WorkflowInspector first committed frame after a change', () => {
+    /** Renders the inspector in a Profiler and records `probe()` after every commit. */
+    const renderWithCommitLog = <T,>(image: AIImage, probe: () => T) => {
+        const commits: T[] = [];
+        const ui = (next: AIImage) => (
+            <React.Profiler id="workflow-inspector" onRender={() => commits.push(probe())}>
+                <WorkflowInspector image={next} />
+            </React.Profiler>
+        );
+        const view = render(ui(image));
+        return { ...view, commits, rerenderWith: (next: AIImage) => view.rerender(ui(next)) };
+    };
+    const nodeShown = (id: string) => document.querySelector(`[data-workflow-node-id="${id}"]`) !== null;
+
+    beforeEach(() => {
+        mockSettings.devMode = true;
+        mockInspectComfyuiMetadataChunks.mockReset();
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({ status: 'ok', data: diagnosticsReport });
+        mockInspectComfyuiWorkflowGraph.mockReset();
+        mockInspectComfyuiWorkflowGraph.mockResolvedValue({ status: 'ok', data: workflowGraphReport });
+        mockScrollIntoView.mockReset();
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { value: mockScrollIntoView, configurable: true });
+    });
+
+    it('shows the diagnostics loading state in every frame from the expanding click to the report', async () => {
+        let resolveReport!: (value: unknown) => void;
+        mockInspectComfyuiMetadataChunks.mockReturnValue(
+            new Promise((resolve) => {
+                resolveReport = resolve;
+            })
+        );
+        const view = renderWithCommitLog(makeImage(), () => ({
+            expanded: screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded'),
+            loading: screen.queryByText('Loading diagnostics...') !== null,
+        }));
+        await screen.findByText('API Prompt');
+        view.commits.length = 0;
+
+        openParserDiagnostics();
+
+        expect(view.commits.length).toBeGreaterThan(0);
+        expect(view.commits).toEqual(view.commits.map(() => ({ expanded: 'true', loading: true })));
+        await act(async () => resolveReport({ status: 'ok', data: diagnosticsReport }));
+        expect(await screen.findByText('diagnostic_model')).toBeTruthy();
+    });
+
+    it('does not scroll back to a followed node when the graph source changes', async () => {
+        const image = makeImage();
+        const view = renderWithCommitLog(image, () => null);
+        await screen.findByText('API Prompt');
+        fireEvent.click(screen.getByTitle('KSampler').closest('button')!);
+        fireEvent.click(screen.getByLabelText('Open outgoing connected node SaveImage (9)'));
+        await waitFor(() => expect(mockScrollIntoView).toHaveBeenCalled());
+        mockScrollIntoView.mockClear();
+
+        const changedWorkflow = JSON.stringify({ nodes: [{ id: 9, type: 'SaveImage', inputs: [] }] });
+        view.rerenderWith({ ...image, originalChunks: { ...image.originalChunks, workflow: changedWorkflow } });
+        await screen.findByText('API Prompt');
+
+        expect(mockScrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('drops the backend graph in the first frame after the tool changes', async () => {
+        const image = makeImage();
+        const view = renderWithCommitLog(image, () => nodeShown('3'));
+        await screen.findByText('API Prompt');
+        expect(nodeShown('3')).toBe(true);
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...image, metadata: { ...image.metadata, tool: GeneratorTool.UNKNOWN } });
+
+        expect(view.commits.length).toBeGreaterThan(0);
+        expect(view.commits).not.toContain(true);
+    });
+
+    it('shows a changed stored workflow in the first frame', () => {
+        const image: AIImage = { ...makeImage(GeneratorTool.UNKNOWN), originalChunks: undefined };
+        const view = renderWithCommitLog(image, () => ({ old: nodeShown('9'), next: nodeShown('5') }));
+        expect(nodeShown('9')).toBe(true);
+        view.commits.length = 0;
+
+        const nextWorkflow = JSON.stringify({ nodes: [{ id: 5, type: 'LoadImage', inputs: [] }] });
+        view.rerenderWith({ ...image, metadata: { ...image.metadata, workflowJson: nextWorkflow } });
+
+        expect(view.commits[0]).toEqual({ old: false, next: true });
+    });
+});
