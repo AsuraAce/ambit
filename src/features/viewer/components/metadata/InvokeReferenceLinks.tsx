@@ -8,6 +8,7 @@ import {
     type InvokeReferenceGroup,
 } from '../../../../services/db/invokeReferenceRepo';
 import { MetadataSectionHeader } from './MetadataSectionHeader';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../../stores/invokeOwnerScopeStore';
 
 interface InvokeReferenceLinksProps {
     imageId: string;
@@ -86,9 +87,12 @@ const ReferenceList = ({ currentImageId, groups, pendingImageId, title, onOpen }
 
 export const InvokeReferenceLinks = ({ imageId, onOpenImage }: InvokeReferenceLinksProps) => {
     const [pendingImageId, setPendingImageId] = useState<string | null>(null);
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
     const query = useQuery({
         queryKey: [...INVOKE_REFERENCE_QUERY_KEY, imageId],
         queryFn: () => getInvokeReferenceGraph(imageId),
+        // The reference graph reads the owner-scoped views, which follow the target owner during a switch (#527).
+        enabled: !ownerSwitchPending,
     });
 
     useEffect(() => setPendingImageId(null), [imageId]);

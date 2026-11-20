@@ -51,6 +51,8 @@ export interface RetainedOwnerScope {
     scope: InvokeSyncScope;
     label: string;
     targetLabel: string;
+    /** Set by "Switch now": swap to the target once it is admitted, even with the viewer or a modal open. */
+    swapRequested?: boolean;
 }
 
 interface InvokeOwnerScopeStore {
@@ -60,6 +62,7 @@ interface InvokeOwnerScopeStore {
     retainOwnerScope: (retained: RetainedOwnerScope) => void;
     /** Releases only the given operation's retained scope, so a stale operation cannot release a newer one. */
     releaseRetainedOwnerScope: (operationId: symbol) => void;
+    requestOwnerSwitchSwap: (operationId: symbol) => void;
     setOperation: (update: InvokeOperationState | null | ((previous: InvokeOperationState | null) => InvokeOperationState | null)) => void;
     setOwnerScopeState: (update: InvokeOwnerScopeStateUpdate) => void;
     resetOwnerScopeState: () => void;
@@ -90,6 +93,12 @@ export const useInvokeOwnerScopeStore = create<InvokeOwnerScopeStore>((set) => (
     retainOwnerScope: (retained) => set({ retainedOwnerScope: retained }),
     releaseRetainedOwnerScope: (operationId) =>
         set((current) => (current.retainedOwnerScope?.operationId === operationId ? { retainedOwnerScope: null } : {})),
+    requestOwnerSwitchSwap: (operationId) =>
+        set((current) =>
+            current.retainedOwnerScope?.operationId === operationId
+                ? { retainedOwnerScope: { ...current.retainedOwnerScope, swapRequested: true } }
+                : {}
+        ),
     setOperation: (update) =>
         set((current) => ({
             operation: typeof update === 'function' ? update(current.operation) : update,

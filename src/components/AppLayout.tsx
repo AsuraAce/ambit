@@ -148,6 +148,14 @@ interface AppLayoutProps {
     onEditCollection: (colId: string) => void;
 }
 
+/** Browse only during a user owner switch (#527): what would read the target owner's library waits. */
+const OwnerSwitchPausedNote: React.FC<{ detail: string }> = ({ detail }) => (
+    <div role="status" className="w-full py-8 text-center text-xs text-gray-500 dark:text-zinc-400">
+        <p className="font-semibold text-gray-700 dark:text-zinc-200">Paused while switching</p>
+        <p className="mt-1">{detail}</p>
+    </div>
+);
+
 export const AppLayout: React.FC<AppLayoutProps> = ({
     isInvokeCollectionCatchupPending = false,
     forcePrivacyProtectionGate = false,
@@ -209,9 +217,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const settings = useSettingsStore((s) => s.settings);
     const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore((s) => s.privacyMaskIndexStatus);
-    const privacyExposureBlocked = forcePrivacyProtectionGate || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
     // Every selection action changes the library, so the bar waits while an owner switch is pending.
     const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
+    const { privacyExposureBlocked: retainedViewPrivacyBlocked } = useSearch();
+    // The mask index is rebuilt for the target owner during a switch; the kept view follows its own rule (#527).
+    const privacyExposureBlocked =
+        forcePrivacyProtectionGate ||
+        (ownerSwitchPending ? retainedViewPrivacyBlocked : privacyEnabled && privacyMaskIndexStatus !== 'ready');
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const _allCollections = useCollectionStore((s) => s.collections);
@@ -472,34 +484,37 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     />
                 )}
 
-                <AppHeader
-                    viewMode={viewMode}
-                    filters={filters}
-                    setFilters={setFilters}
-                    searchProps={searchProps}
-                    layoutMode={layoutMode}
-                    setLayoutMode={setLayoutMode}
-                    sortOption={sortOption}
-                    setSortOption={setSortOption}
-                    displayedCount={displayedCount}
-                    totalCount={scopeTotal}
-                    scopeName={scopeName}
-                    sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
-                    scopeCounts={scopeCounts}
-                    scopeAvailability={scopeAvailability}
-                    scopeResultCount={scopeResultCount}
-                    scopeCountsLoading={scopeCountsLoading}
-                    scopeCountsError={scopeCountsError}
-                    retryScopeCounts={retryScopeCounts}
-                    isFiltering={isSearchPending}
-                    onSearchDraftPendingChange={setIsSearchDraftPending}
-                    onImport={onOpenImportModal}
-                    onSlideshow={() => {
-                        modals.setSlideshowShuffle(false);
-                        modals.openModal('slideshow');
-                    }}
-                    clearAllFilters={clearAllFilters}
-                />
+                {/* Browse only during a user owner switch (#527): search, sort, scope and import wait for the swap. */}
+                <div inert={ownerSwitchPending ? true : undefined} className={ownerSwitchPending ? 'opacity-60' : undefined}>
+                    <AppHeader
+                        viewMode={viewMode}
+                        filters={filters}
+                        setFilters={setFilters}
+                        searchProps={searchProps}
+                        layoutMode={layoutMode}
+                        setLayoutMode={setLayoutMode}
+                        sortOption={sortOption}
+                        setSortOption={setSortOption}
+                        displayedCount={displayedCount}
+                        totalCount={scopeTotal}
+                        scopeName={scopeName}
+                        sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
+                        scopeCounts={scopeCounts}
+                        scopeAvailability={scopeAvailability}
+                        scopeResultCount={scopeResultCount}
+                        scopeCountsLoading={scopeCountsLoading}
+                        scopeCountsError={scopeCountsError}
+                        retryScopeCounts={retryScopeCounts}
+                        isFiltering={isSearchPending}
+                        onSearchDraftPendingChange={setIsSearchDraftPending}
+                        onImport={onOpenImportModal}
+                        onSlideshow={() => {
+                            modals.setSlideshowShuffle(false);
+                            modals.openModal('slideshow');
+                        }}
+                        clearAllFilters={clearAllFilters}
+                    />
+                </div>
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
                     <div
@@ -515,7 +530,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                             />
                         ) : (
                             <ErrorBoundary>
-                                {viewMode === 'dashboard' ? (
+                                {ownerSwitchPending && (viewMode === 'dashboard' || viewMode === 'maintenance') ? (
+                                    <OwnerSwitchPausedNote detail="This view returns after the switch." />
+                                ) : viewMode === 'dashboard' ? (
                                     <React.Suspense fallback={<ViewLoadingFallback />}>
                                         <StatsDashboard
                                             images={images}
@@ -663,6 +680,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     <div className="w-full py-8 flex justify-center items-center">
                                                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-500"></div>
                                                     </div>
+                                                )}
+                                                {ownerSwitchPending && images.length < (displayedCount ?? 0) && (
+                                                    <OwnerSwitchPausedNote detail="More images load after the switch." />
                                                 )}
                                             </>
                                         )}

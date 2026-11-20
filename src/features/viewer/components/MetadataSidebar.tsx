@@ -43,6 +43,8 @@ interface MetadataSidebarProps {
     palette: string[];
     isPaletteLoading: boolean;
     isLoading?: boolean;
+    /** A quiet line above the sections, such as why full details are missing. */
+    detailsNotice?: string;
     searchHighlights?: PromptHighlightSpec;
     onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
 }
@@ -79,6 +81,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     palette,
     isPaletteLoading,
     isLoading,
+    detailsNotice,
     searchHighlights,
     onOpenReferencedImage,
 }) => {
@@ -88,6 +91,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 
     return (
         <ViewerSidebarShell tabs={tabs} activeTab={effectiveActiveTab} onTabChange={setActiveTab} ariaLabel="Image viewer sections">
+            {detailsNotice ? <p className="mb-3 text-xs text-gray-500 dark:text-zinc-400">{detailsNotice}</p> : null}
             {!isGenerated && effectiveActiveTab === 'metadata' ? (
                 <PhotoDetailsTab key={image.id} image={image} isLoading={isLoading} />
             ) : null}

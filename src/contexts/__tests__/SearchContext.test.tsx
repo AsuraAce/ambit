@@ -9,7 +9,7 @@ import { privacyMaskRefreshCoordinator } from '../../utils/privacyMaskRefreshCoo
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
 import { ToastContext } from '../ToastContext';
-import { OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
+import { OWNER_SWITCH_TOAST, endOwnerSwitchForTest, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 type SearchValue = ReturnType<typeof useSearch>;
 
@@ -798,6 +798,93 @@ describe('SearchProvider', () => {
         renderProvider();
         expect(latest.imagesFailed).toBe(false);
         expect(latest.isFiltering).toBe(true);
+    });
+
+    // #527: during a user owner switch the queries already follow the target owner, while every reader of
+    // the store and the context keeps the owner on screen until the swap.
+    describe('a user owner switch (#527)', () => {
+        const freyaImage = image({ id: 'freya-image' });
+        const odinImage = image({ id: 'odin-image' });
+        const facetsOf = (model: string) => ({
+            checkpoints: [{ name: model, count: 1 }],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: [],
+        });
+        const statsOf = (totalImages: number) => ({
+            totalImages,
+            totalGenerations: totalImages,
+            avgSteps: 20,
+            estSizeMB: '1',
+            modelStats: [],
+            keywordStats: [],
+        });
+        const showOwner = (owner: string, images: AIImage[], total: number) => {
+            mocks.imagesQuery.current = {
+                ...(mocks.imagesQuery.current as object),
+                queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null, `invoke:owner:${owner}`] as ImagesQueryKey,
+                data: { pages: [{ images }] },
+                status: 'success',
+                counts: { totalCount: total, globalCount: total },
+            };
+            mocks.statsQuery.current = {
+                ...(mocks.statsQuery.current as object),
+                data: { facets: facetsOf(`${owner}-model`), stats: statsOf(total), validNames: null },
+            };
+        };
+        // The mocked store does not re-render on setImages as Zustand does, so render twice.
+        const show = (view: ReturnType<typeof render>) => {
+            for (let pass = 0; pass < 2; pass++)
+                view.rerender(
+                    <SearchProvider>
+                        <Consumer />
+                    </SearchProvider>
+                );
+        };
+        const storedIds = () => (mocks.searchState.current as SearchValue).images.map((item) => item.id);
+
+        it("keeps Freya's images, counts, facets and stats in the store and the context after Odin's first page is cached", () => {
+            showOwner('freya', [freyaImage], 10);
+            const view = renderProvider();
+            show(view);
+            expect(storedIds()).toEqual([freyaImage.id]);
+
+            act(() => startOwnerSwitchForTest());
+            showOwner('odin', [odinImage], 3);
+            show(view);
+
+            expect(storedIds()).toEqual([freyaImage.id]);
+            expect(latest.images.map((item) => item.id)).toEqual([freyaImage.id]);
+            expect(latest.totalImages).toBe(10);
+            expect(latest.facets.checkpoints).toEqual([{ name: 'freya-model', count: 1 }]);
+            expect(latest.stats.totalImages).toBe(10);
+            expect(latest.hasMoreImages).toBe(false);
+
+            act(() => endOwnerSwitchForTest());
+            show(view);
+
+            expect(storedIds()).toEqual([odinImage.id]);
+            expect(latest.totalImages).toBe(3);
+            expect(latest.facets.checkpoints).toEqual([{ name: 'odin-model', count: 1 }]);
+        });
+
+        // Privacy: the kept page was loaded under the old settings, so any privacy change withholds it.
+        it('withholds the kept view when the privacy settings change during the switch', () => {
+            showOwner('freya', [freyaImage], 10);
+            const view = renderProvider();
+            show(view);
+            act(() => startOwnerSwitchForTest());
+            expect(latest.privacyExposureBlocked).toBe(false);
+
+            mocks.settings.current = { ...(mocks.settings.current as object), settings: settings({ maskingMode: 'hide' }) };
+            show(view);
+
+            expect(latest.privacyExposureBlocked).toBe(true);
+            expect(latest.images).toEqual([]);
+        });
     });
 
     describe('a failed first page under privacy protection (#491)', () => {

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { ImageViewer } from '../ImageViewer';
+import { endOwnerSwitchForTest, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 
 const mockGetImageWithFullMetadata = vi.fn();
 const mockMetadataSidebar = vi.fn();
@@ -258,6 +259,21 @@ describe('ImageViewer full metadata loading', () => {
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
         // #392: Rust grants library folders at start; viewing never asks it to widen the scope.
         expect(assetAccessMock).not.toHaveBeenCalled();
+    });
+
+    // #527: during an owner switch the scoped views already follow the target owner, so the viewer shows the
+    // gallery row with a note instead of reading the full record.
+    it('does not read the full record during an owner switch and says when details return', async () => {
+        startOwnerSwitchForTest();
+        try {
+            renderViewer();
+
+            await waitFor(() => expect(captures.sidebar?.isLoading).toBe(false));
+            expect(mockGetImageWithFullMetadata).not.toHaveBeenCalled();
+            expect(captures.sidebar?.detailsNotice).toBe('Full details return after the switch.');
+        } finally {
+            endOwnerSwitchForTest();
+        }
     });
 
     it('uses a card reveal grant without showing a second image gate', async () => {

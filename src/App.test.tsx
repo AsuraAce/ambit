@@ -22,6 +22,7 @@ import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoord
 import { useLibraryStore } from './stores/libraryStore';
 import { useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
 import { ActivityDock } from './components/ui/ActivityDock';
+import { endOwnerSwitchForTest, startOwnerSwitchForTest } from './test/ownerSwitch';
 
 type AppLayoutProbe = {
     modals: { openModal: (name: 'settings') => void; setInitialSettingsTab: (tab: 'invokeai') => void };
@@ -1518,6 +1519,128 @@ describe('App orchestration', () => {
         });
         expect(mocks.handleRangeSelection).toHaveBeenCalledWith([0], false);
         expect(mocks.handleImageClick).toHaveBeenCalledTimes(1);
+    });
+
+    // #527: a user switch between owners of the admitted root keeps the previous owner browsable.
+    describe('user owner switch', () => {
+        const ownerScope = (ownerId: string) => ({
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke/outputs/images',
+            mode: 'owner' as const,
+            ownerId,
+        });
+        const freyaImage = image('freya-image');
+        const odinImage = image('odin-image');
+
+        const renderFreya = () => {
+            mocks.settings = createDefaultAppSettings({ hasCompletedOnboarding: true, invokeAiPath: 'D:/Invoke' });
+            mocks.images = [freyaImage];
+            mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke', scope: ownerScope('freya') };
+            return render(<App />);
+        };
+
+        const startSwitch = (view: ReturnType<typeof render>) => {
+            act(() => startOwnerSwitchForTest());
+            mocks.images = [];
+            mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke', scope: ownerScope('odin') };
+            view.rerender(<App />);
+        };
+
+        const admitOdin = (view: ReturnType<typeof render>) => {
+            mocks.images = [odinImage];
+            mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke', scope: ownerScope('odin') };
+            view.rerender(<App />);
+        };
+
+        afterEach(() => endOwnerSwitchForTest());
+
+        it('keeps the previous owner on screen and browsable instead of the gate for the whole preparation', async () => {
+            vi.useFakeTimers();
+            const view = renderFreya();
+            startSwitch(view);
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1000);
+            });
+
+            expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+            expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+            expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(false);
+            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([freyaImage]);
+        });
+
+        // Q2: the swap never pulls an open image out from under the user; closing the viewer swaps.
+        it('holds the previous owner while the viewer is open after admission, and swaps when it closes', async () => {
+            const view = renderFreya();
+            act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+            await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
+            const clearFiltersCalls = mocks.clearAllFilters.mock.calls.length;
+            startSwitch(view);
+            admitOdin(view);
+
+            expect(captured.viewer?.image.id).toBe(freyaImage.id);
+            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([freyaImage]);
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).not.toBeNull();
+            expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCalls);
+
+            act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+
+            await waitFor(() => expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull());
+            expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCalls + 1);
+            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([odinImage]);
+        });
+
+        it('swaps on "Switch now" even with the viewer open, and closes the viewer', async () => {
+            const view = renderFreya();
+            act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+            await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
+            startSwitch(view);
+            admitOdin(view);
+            const retained = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
+            if (!retained) throw new Error('expected a retained owner');
+
+            act(() => useInvokeOwnerScopeStore.getState().requestOwnerSwitchSwap(retained.operationId));
+
+            await waitFor(() => expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull());
+            expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
+            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([odinImage]);
+        });
+
+        // A cancelled or failed switch returns to where the user was: viewer, selection and filters stay.
+        it('keeps the viewer, selection and filters when the switch returns to the previous owner', async () => {
+            const view = renderFreya();
+            act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+            await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
+            const clearFiltersCalls = mocks.clearAllFilters.mock.calls.length;
+            const clearSelectionCalls = mocks.clearSelection.mock.calls.length;
+            startSwitch(view);
+            const retained = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
+            if (!retained) throw new Error('expected a retained owner');
+
+            mocks.images = [freyaImage];
+            mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke', scope: ownerScope('freya') };
+            view.rerender(<App />);
+            act(() => useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(retained.operationId));
+
+            expect(captured.viewer?.image.id).toBe(freyaImage.id);
+            expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCalls);
+            expect(mocks.clearSelection).toHaveBeenCalledTimes(clearSelectionCalls);
+        });
+
+        // The full record and references come from owner-scoped views that already follow the target owner.
+        it('refuses to open a referenced image during the switch without reading it', async () => {
+            const view = renderFreya();
+            act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+            await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
+            startSwitch(view);
+
+            await act(async () => {
+                expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('elsewhere')).toBe(false);
+            });
+
+            expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
+            expect(mocks.addToast).toHaveBeenCalledWith('Full details return after the switch.', 'info');
+            expect(captured.viewer?.image.id).toBe(freyaImage.id);
+        });
     });
 
     it('shows collection catch-up only for startup or foreground InvokeAI board synchronization', () => {

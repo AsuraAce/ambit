@@ -30,6 +30,7 @@ import { useAppVersion } from '../../../hooks/useAppVersion';
 import { openExternalUrl } from '../../../utils/externalLinks';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { hasNonCollectionResultFilters, normalizeCollectionScope } from '../../../utils/filterState';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
 
 interface FilterPanelProps {
     isInvokeCollectionCatchupPending?: boolean;
@@ -79,6 +80,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     className,
 }) => {
     const appVersion = useAppVersion();
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
 
     const {
         filters: storeFilters,
@@ -309,7 +311,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {showUpdateButton && (
+                    {showUpdateButton && !ownerSwitchPending && (
                         <TooltipButton
                             label="Update"
                             content={
@@ -325,7 +327,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             Update
                         </TooltipButton>
                     )}
-                    {isDirty && !showUpdateButton && (
+                    {isDirty && !showUpdateButton && !ownerSwitchPending && (
                         <button
                             onClick={clearAllFilters}
                             className="text-[10px] font-bold text-sage-600 dark:text-sage-300 hover:text-sage-600 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
@@ -336,250 +338,262 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 </div>
             </div>
 
-            {/* Tab Toolbar */}
-            <div className="px-2 pt-2 border-b border-gray-100 dark:border-white/5 min-w-[18rem]">
-                <div className="flex items-center gap-1 bg-gray-100/50 dark:bg-black/20 p-1 rounded-xl">
-                    <button
-                        onClick={() => setActiveTab('organize')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
-                            activeTab === 'organize'
-                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                        }`}
-                    >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                        Organize
-                        {isOrganizeDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('resources')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
-                            activeTab === 'resources'
-                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                        }`}
-                    >
-                        <Puzzle className="w-3.5 h-3.5" />
-                        Assets
-                        {isResourcesDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('generate')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
-                            activeTab === 'generate'
-                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                        }`}
-                    >
-                        <Sliders className="w-3.5 h-3.5" />
-                        Filters
-                        {isGenerateDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
-                    </button>
+            {ownerSwitchPending ? (
+                // Browse only during a user owner switch (#527): collections, counts and facets would come from
+                // the target owner's scoped views, and a new filter would search the target owner's library.
+                <div role="status" className="flex-1 p-6 min-w-[18rem] text-center text-xs text-gray-500 dark:text-zinc-400">
+                    <p className="font-semibold text-gray-700 dark:text-zinc-200">Paused while switching</p>
+                    <p className="mt-1">Collections and filters return after the switch.</p>
                 </div>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 flex flex-col min-w-[18rem]">
-                <div className="space-y-6">
-                    {/* ORGANIZE TAB */}
-                    {activeTab === 'organize' && (
-                        <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300 ease-spring">
-                            <CollectionsSection
-                                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
-                                collections={[...collections, ...smartCollections]}
-                                filters={filters}
-                                setFilters={setFilters}
-                                isOpen={expanded.collections}
-                                onToggle={() => toggleSection('collections')}
-                                onCreateCollection={onCreateCollection}
-                                onDropOnCollection={onDropOnCollection}
-                                onRenameCollection={onRenameCollection}
-                                onDeleteCollection={onDeleteCollection}
-                                onToggleArchiveCollection={onToggleArchiveCollection}
-                                onTogglePinCollection={onTogglePinCollection}
-                                onSetCollectionColor={onSetCollectionColor}
-                                onPlayCollection={onPlayCollection}
-                                onExportCollection={onExportCollection}
-                                onResetCollectionThumbnail={onResetCollectionThumbnail}
-                                isDirty={isDirty}
-                                onEditCollection={onEditCollection}
-                            />
+            ) : (
+                <>
+                    {/* Tab Toolbar */}
+                    <div className="px-2 pt-2 border-b border-gray-100 dark:border-white/5 min-w-[18rem]">
+                        <div className="flex items-center gap-1 bg-gray-100/50 dark:bg-black/20 p-1 rounded-xl">
+                            <button
+                                onClick={() => setActiveTab('organize')}
+                                className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
+                                    activeTab === 'organize'
+                                        ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                                        : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                                }`}
+                            >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                                Organize
+                                {isOrganizeDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('resources')}
+                                className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
+                                    activeTab === 'resources'
+                                        ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                                        : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                                }`}
+                            >
+                                <Puzzle className="w-3.5 h-3.5" />
+                                Assets
+                                {isResourcesDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('generate')}
+                                className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${
+                                    activeTab === 'generate'
+                                        ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                                        : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                                }`}
+                            >
+                                <Sliders className="w-3.5 h-3.5" />
+                                Filters
+                                {isGenerateDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
+                            </button>
                         </div>
-                    )}
+                    </div>
 
-                    {/* RESOURCES TAB */}
-                    {activeTab === 'resources' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
-                            <div className="space-y-3">
-                                <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100/60 dark:bg-black/20 p-1">
-                                    {assetScopeOptions.map((option) => {
-                                        const ScopeIcon = option.icon;
-                                        const isSelected = assetScope === option.id;
-
-                                        return (
-                                            <TooltipButton
-                                                key={option.id}
-                                                label={option.label}
-                                                content={option.label}
-                                                onClick={() => setAssetScope(option.id)}
-                                                aria-pressed={isSelected}
-                                                className={`flex h-9 items-center justify-center rounded-lg transition-all ${
-                                                    isSelected
-                                                        ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
-                                                        : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
-                                                }`}
-                                            >
-                                                <ScopeIcon className="h-4 w-4" aria-hidden="true" />
-                                            </TooltipButton>
-                                        );
-                                    })}
+                    {/* Content Area */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-4 flex flex-col min-w-[18rem]">
+                        <div className="space-y-6">
+                            {/* ORGANIZE TAB */}
+                            {activeTab === 'organize' && (
+                                <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300 ease-spring">
+                                    <CollectionsSection
+                                        isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
+                                        collections={[...collections, ...smartCollections]}
+                                        filters={filters}
+                                        setFilters={setFilters}
+                                        isOpen={expanded.collections}
+                                        onToggle={() => toggleSection('collections')}
+                                        onCreateCollection={onCreateCollection}
+                                        onDropOnCollection={onDropOnCollection}
+                                        onRenameCollection={onRenameCollection}
+                                        onDeleteCollection={onDeleteCollection}
+                                        onToggleArchiveCollection={onToggleArchiveCollection}
+                                        onTogglePinCollection={onTogglePinCollection}
+                                        onSetCollectionColor={onSetCollectionColor}
+                                        onPlayCollection={onPlayCollection}
+                                        onExportCollection={onExportCollection}
+                                        onResetCollectionThumbnail={onResetCollectionThumbnail}
+                                        isDirty={isDirty}
+                                        onEditCollection={onEditCollection}
+                                    />
                                 </div>
+                            )}
 
-                                {showLocalEmptyState && (
-                                    <div className="rounded-xl border border-dashed border-harbor-200 bg-harbor-50/70 p-4 text-center dark:border-harbor-500/30 dark:bg-harbor-500/10">
-                                        <FolderSearch className="mx-auto mb-2 h-5 w-5 text-harbor-600 dark:text-harbor-300" />
-                                        <p className="text-xs font-semibold text-harbor-600 dark:text-harbor-300">
-                                            No local resource folders scanned yet.
-                                        </p>
-                                        <p className="mt-1 text-[11px] leading-relaxed text-harbor-600 dark:text-harbor-300">
-                                            Add model, LoRA, embedding, ControlNet, or IP-Adapter folders to build a local asset inventory.
-                                        </p>
-                                        {onOpenResourceFolders && (
-                                            <button
-                                                type="button"
-                                                onClick={onOpenResourceFolders}
-                                                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-sage-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-sage-500"
-                                            >
-                                                <FolderSearch className="h-3.5 w-3.5" />
-                                                Add Resource Folder
-                                            </button>
+                            {/* RESOURCES TAB */}
+                            {activeTab === 'resources' && (
+                                <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100/60 dark:bg-black/20 p-1">
+                                            {assetScopeOptions.map((option) => {
+                                                const ScopeIcon = option.icon;
+                                                const isSelected = assetScope === option.id;
+
+                                                return (
+                                                    <TooltipButton
+                                                        key={option.id}
+                                                        label={option.label}
+                                                        content={option.label}
+                                                        onClick={() => setAssetScope(option.id)}
+                                                        aria-pressed={isSelected}
+                                                        className={`flex h-9 items-center justify-center rounded-lg transition-all ${
+                                                            isSelected
+                                                                ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
+                                                                : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
+                                                        }`}
+                                                    >
+                                                        <ScopeIcon className="h-4 w-4" aria-hidden="true" />
+                                                    </TooltipButton>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {showLocalEmptyState && (
+                                            <div className="rounded-xl border border-dashed border-harbor-200 bg-harbor-50/70 p-4 text-center dark:border-harbor-500/30 dark:bg-harbor-500/10">
+                                                <FolderSearch className="mx-auto mb-2 h-5 w-5 text-harbor-600 dark:text-harbor-300" />
+                                                <p className="text-xs font-semibold text-harbor-600 dark:text-harbor-300">
+                                                    No local resource folders scanned yet.
+                                                </p>
+                                                <p className="mt-1 text-[11px] leading-relaxed text-harbor-600 dark:text-harbor-300">
+                                                    Add model, LoRA, embedding, ControlNet, or IP-Adapter folders to build a local asset
+                                                    inventory.
+                                                </p>
+                                                {onOpenResourceFolders && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={onOpenResourceFolders}
+                                                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-sage-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-sage-500"
+                                                    >
+                                                        <FolderSearch className="h-3.5 w-3.5" />
+                                                        Add Resource Folder
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
-                                )}
-                            </div>
 
-                            {showResourceLists && (
-                                <>
-                                    <ResourceSection
-                                        title="Checkpoints"
-                                        type="checkpoints"
+                                    {showResourceLists && (
+                                        <>
+                                            <ResourceSection
+                                                title="Checkpoints"
+                                                type="checkpoints"
+                                                filters={filters}
+                                                setFilters={setFilters}
+                                                data={facets.checkpoints}
+                                                isOpen={expanded.checkpoints}
+                                                onToggle={() => toggleSection('checkpoints')}
+                                                isLoading={isFacetsLoading}
+                                                validNames={validNamesForScope(validFacetNames?.checkpoints)}
+                                                assetScope={assetScope}
+                                            />
+                                            <ResourceSection
+                                                title="Resources (LoRA)"
+                                                type="loras"
+                                                filters={filters}
+                                                setFilters={setFilters}
+                                                data={facets.loras}
+                                                isOpen={expanded.resources}
+                                                onToggle={() => toggleSection('resources')}
+                                                isLoading={isFacetsLoading}
+                                                validNames={validNamesForScope(validFacetNames?.loras)}
+                                                assetScope={assetScope}
+                                            />
+                                            {hasScopedResourceItems(facets.embeddings) && (
+                                                <ResourceSection
+                                                    title="Resources (Embedding)"
+                                                    type="embeddings"
+                                                    filters={filters}
+                                                    setFilters={setFilters}
+                                                    data={facets.embeddings}
+                                                    isOpen={expanded.embeddings}
+                                                    onToggle={() => toggleSection('embeddings')}
+                                                    isLoading={isFacetsLoading}
+                                                    validNames={validNamesForScope(validFacetNames?.embeddings)}
+                                                    assetScope={assetScope}
+                                                />
+                                            )}
+                                            {hasScopedResourceItems(facets.hypernetworks) && (
+                                                <ResourceSection
+                                                    title="Resources (Hypernet)"
+                                                    type="hypernetworks"
+                                                    filters={filters}
+                                                    setFilters={setFilters}
+                                                    data={facets.hypernetworks}
+                                                    isOpen={expanded.hypernetworks}
+                                                    onToggle={() => toggleSection('hypernetworks')}
+                                                    isLoading={isFacetsLoading}
+                                                    validNames={validNamesForScope(validFacetNames?.hypernetworks)}
+                                                    assetScope={assetScope}
+                                                />
+                                            )}
+                                            {hasScopedResourceItems(facets.controlNets) && (
+                                                <ResourceSection
+                                                    title="Resources (ControlNet)"
+                                                    type="controlNets"
+                                                    filters={filters}
+                                                    setFilters={setFilters}
+                                                    data={facets.controlNets}
+                                                    isOpen={expanded.controlNets}
+                                                    onToggle={() => toggleSection('controlNets')}
+                                                    isLoading={isFacetsLoading}
+                                                    validNames={validNamesForScope(validFacetNames?.controlNets)}
+                                                    assetScope={assetScope}
+                                                />
+                                            )}
+                                            {hasScopedResourceItems(facets.ipAdapters) && (
+                                                <ResourceSection
+                                                    title="Resources (IP-Adapter)"
+                                                    type="ipAdapters"
+                                                    filters={filters}
+                                                    setFilters={setFilters}
+                                                    data={facets.ipAdapters}
+                                                    isOpen={expanded.ipAdapters}
+                                                    onToggle={() => toggleSection('ipAdapters')}
+                                                    isLoading={isFacetsLoading}
+                                                    validNames={validNamesForScope(validFacetNames?.ipAdapters)}
+                                                    assetScope={assetScope}
+                                                />
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* GENERATE TAB */}
+                            {activeTab === 'generate' && (
+                                <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
+                                    <GeneratorSection
                                         filters={filters}
                                         setFilters={setFilters}
-                                        data={facets.checkpoints}
-                                        isOpen={expanded.checkpoints}
-                                        onToggle={() => toggleSection('checkpoints')}
+                                        tools={facets.tools}
+                                        isOpen={expanded.generator}
+                                        onToggle={() => toggleSection('generator')}
                                         isLoading={isFacetsLoading}
-                                        validNames={validNamesForScope(validFacetNames?.checkpoints)}
-                                        assetScope={assetScope}
+                                        validNames={validFacetNames?.tools}
                                     />
-                                    <ResourceSection
-                                        title="Resources (LoRA)"
-                                        type="loras"
+
+                                    <ParameterSection
                                         filters={filters}
                                         setFilters={setFilters}
-                                        data={facets.loras}
-                                        isOpen={expanded.resources}
-                                        onToggle={() => toggleSection('resources')}
-                                        isLoading={isFacetsLoading}
-                                        validNames={validNamesForScope(validFacetNames?.loras)}
-                                        assetScope={assetScope}
+                                        isOpen={expanded.params}
+                                        onToggle={() => toggleSection('params')}
                                     />
-                                    {hasScopedResourceItems(facets.embeddings) && (
-                                        <ResourceSection
-                                            title="Resources (Embedding)"
-                                            type="embeddings"
-                                            filters={filters}
-                                            setFilters={setFilters}
-                                            data={facets.embeddings}
-                                            isOpen={expanded.embeddings}
-                                            onToggle={() => toggleSection('embeddings')}
-                                            isLoading={isFacetsLoading}
-                                            validNames={validNamesForScope(validFacetNames?.embeddings)}
-                                            assetScope={assetScope}
-                                        />
-                                    )}
-                                    {hasScopedResourceItems(facets.hypernetworks) && (
-                                        <ResourceSection
-                                            title="Resources (Hypernet)"
-                                            type="hypernetworks"
-                                            filters={filters}
-                                            setFilters={setFilters}
-                                            data={facets.hypernetworks}
-                                            isOpen={expanded.hypernetworks}
-                                            onToggle={() => toggleSection('hypernetworks')}
-                                            isLoading={isFacetsLoading}
-                                            validNames={validNamesForScope(validFacetNames?.hypernetworks)}
-                                            assetScope={assetScope}
-                                        />
-                                    )}
-                                    {hasScopedResourceItems(facets.controlNets) && (
-                                        <ResourceSection
-                                            title="Resources (ControlNet)"
-                                            type="controlNets"
-                                            filters={filters}
-                                            setFilters={setFilters}
-                                            data={facets.controlNets}
-                                            isOpen={expanded.controlNets}
-                                            onToggle={() => toggleSection('controlNets')}
-                                            isLoading={isFacetsLoading}
-                                            validNames={validNamesForScope(validFacetNames?.controlNets)}
-                                            assetScope={assetScope}
-                                        />
-                                    )}
-                                    {hasScopedResourceItems(facets.ipAdapters) && (
-                                        <ResourceSection
-                                            title="Resources (IP-Adapter)"
-                                            type="ipAdapters"
-                                            filters={filters}
-                                            setFilters={setFilters}
-                                            data={facets.ipAdapters}
-                                            isOpen={expanded.ipAdapters}
-                                            onToggle={() => toggleSection('ipAdapters')}
-                                            isLoading={isFacetsLoading}
-                                            validNames={validNamesForScope(validFacetNames?.ipAdapters)}
-                                            assetScope={assetScope}
-                                        />
-                                    )}
-                                </>
+
+                                    <GuidanceSection
+                                        filters={filters}
+                                        setFilters={setFilters}
+                                        isOpen={expanded.guidance}
+                                        onToggle={() => toggleSection('guidance')}
+                                    />
+                                </div>
                             )}
                         </div>
-                    )}
+                    </div>
 
-                    {/* GENERATE TAB */}
-                    {activeTab === 'generate' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
-                            <GeneratorSection
-                                filters={filters}
-                                setFilters={setFilters}
-                                tools={facets.tools}
-                                isOpen={expanded.generator}
-                                onToggle={() => toggleSection('generator')}
-                                isLoading={isFacetsLoading}
-                                validNames={validFacetNames?.tools}
-                            />
-
-                            <ParameterSection
-                                filters={filters}
-                                setFilters={setFilters}
-                                isOpen={expanded.params}
-                                onToggle={() => toggleSection('params')}
-                            />
-
-                            <GuidanceSection
-                                filters={filters}
-                                setFilters={setFilters}
-                                isOpen={expanded.guidance}
-                                onToggle={() => toggleSection('guidance')}
-                            />
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Global Date Range */}
-            <div className="p-4 pt-2 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10 min-w-[18rem]">
-                <DateRangeSection filters={filters} setFilters={setFilters} />
-            </div>
+                    {/* Global Date Range */}
+                    <div className="p-4 pt-2 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10 min-w-[18rem]">
+                        <DateRangeSection filters={filters} setFilters={setFilters} />
+                    </div>
+                </>
+            )}
 
             {/* Footer / Status */}
             <div className="p-4 border-t border-gray-200 dark:border-white/5 text-[10px] text-gray-600 dark:text-zinc-400 flex items-center justify-between min-w-[18rem]">

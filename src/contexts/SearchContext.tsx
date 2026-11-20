@@ -45,7 +45,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
 import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
-import { isInvokeOwnerScopeAdmitted, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { isInvokeOwnerScopeAdmitted, isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 import { ToastContext } from './ToastContext';
 
@@ -120,6 +120,36 @@ const applyRecentSearchMutation = (current: string[], mutation: React.SetStateAc
     return next.filter((search, index, searches) => searches.indexOf(search) === index).slice(0, RECENT_SEARCH_LIMIT);
 };
 
+const OWNER_SWITCH_BROWSE_ONLY_MESSAGE = 'Search and filters are paused while switching owners.';
+const EMPTY_FACETS: Facets = {
+    checkpoints: [],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    tools: [],
+    controlNets: [],
+    ipAdapters: [],
+};
+const EMPTY_STATS: LibraryStats = {
+    totalImages: 0,
+    totalGenerations: 0,
+    avgSteps: 0,
+    estSizeMB: '0',
+    modelStats: [],
+    keywordStats: [],
+};
+
+/**
+ * Returns the last value seen while `hold` was false, for as long as `hold` is true. During a user owner
+ * switch (#527) the gallery keeps the previous owner's counts and facets while the queries already
+ * follow the target owner. `value` must keep its identity between renders while it does not change.
+ */
+const useHeldWhile = <T,>(hold: boolean, value: T): T => {
+    const [held, setHeld] = useState(value);
+    if (!hold && !Object.is(held, value)) setHeld(value);
+    return hold ? held : value;
+};
+
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, setSettings, privacyEnabled, isLoaded: settingsLoaded } = useSettings();
     const { collections, smartCollections, refreshCollections, isLoaded: collectionsLoaded } = useCollections();
@@ -160,6 +190,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const invokeQueriesAdmitted = useInvokeOwnerScopeStore((state) =>
         isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
     );
+    // A user owner switch keeps the previous owner's library on screen until the swap (#527). Queries keep
+    // following the backend owner; only what this context shows is held.
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
     const [sourceKindHydrated, setSourceKindHydrated] = useState(false);
@@ -167,10 +200,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const setSortOptionDispatch = useCallback(
         (value: React.SetStateAction<SortOption>) => {
+            if (useInvokeOwnerScopeStore.getState().retainedOwnerScope) {
+                notifyToast?.(OWNER_SWITCH_BROWSE_ONLY_MESSAGE, 'info');
+                return;
+            }
             const nextSortOption = typeof value === 'function' ? value(sortOption) : value;
             setSortOption(nextSortOption);
         },
-        [setSortOption, sortOption]
+        [notifyToast, setSortOption, sortOption]
     );
 
     React.useLayoutEffect(() => {
@@ -320,7 +357,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
     const privacyScopeTransitionBlocked = privacyEnabled && lastSyncedPrivacyScope !== privacyQueryScopeKey;
     const privacyIndexBlocked = requiresPrivacyMaskIndex && (!settingsLoaded || privacyMaskIndexStatus !== 'ready');
-    const privacyExposureBlocked = !invokeQueriesAdmitted || privacyIndexBlocked || privacyScopeTransitionBlocked;
+    // The retained view of an owner switch is shown only under the privacy settings its page was loaded
+    // with: any privacy change withholds it until the swap. The mask index is ignored for it, because that
+    // page was produced under a ready index for the same settings, and the index refresh waits for admission.
+    const privacyExposureBlocked = ownerSwitchPending
+        ? lastSyncedPrivacyScope !== privacyQueryScopeKey
+        : !invokeQueriesAdmitted || privacyIndexBlocked || privacyScopeTransitionBlocked;
     const isFirstPageFetching = isFetching && !isFetchingNextPage;
     const librarySafetyScope = JSON.stringify([imagesQueryKey[imagesQueryKey.length - 1], privacyQueryScopeKey]);
     const [preparedLibrarySafetyScope, setPreparedLibrarySafetyScope] = useState<string | null>(null);
@@ -362,15 +404,25 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // SYNC PATTERN: When query data changes, update Store. This keeps store as "Source of Truth" for UI.
     // The collection (or Library, null) whose page the store holds; undefined until a page arrives.
     const storedViewCollectionIdRef = React.useRef<string | null | undefined>(undefined);
+    // The InvokeAI owner whose page the store holds; null until a page arrives.
+    const storedViewOwnerKeyRef = React.useRef<unknown>(null);
     const activeCollectionId = filters.collectionId;
+    const ownerQueryScopeKey: unknown = imagesQueryKey[imagesQueryKey.length - 1];
     React.useLayoutEffect(() => {
+        // The store keeps the previous owner's pages for every reader until the swap (#527).
+        if (ownerSwitchPending) return;
         if (queryData && !privacyIndexBlocked) {
             const allImgs = queryData.pages.flatMap((p) => p.images);
             setImages(allImgs);
             setLastSyncedPrivacyScope(privacyQueryScopeKey);
             storedViewCollectionIdRef.current = activeCollectionId;
+            storedViewOwnerKeyRef.current = ownerQueryScopeKey;
         } else if (privacyExposureBlocked) {
             setImages([]);
+        } else if (!queryData && storedViewOwnerKeyRef.current !== null && storedViewOwnerKeyRef.current !== ownerQueryScopeKey) {
+            // Swapped to another owner whose first page has not arrived: never show the previous owner's page.
+            setImages([]);
+            storedViewOwnerKeyRef.current = null;
         } else if (
             !queryData &&
             databaseQueriesEnabled &&
@@ -385,6 +437,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [
         activeCollectionId,
         databaseQueriesEnabled,
+        ownerQueryScopeKey,
+        ownerSwitchPending,
         privacyExposureBlocked,
         privacyIndexBlocked,
         privacyQueryScopeKey,
@@ -397,7 +451,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // A failed first page of a new privacy scope ends the wait for it in the load error (#491). No page of
     // the scope reached the store, so privacyExposureBlocked still withholds every image, count and facet.
     const privacyScopeFirstPageFailed = privacyScopeTransitionBlocked && databaseQueriesEnabled && firstPageFailed;
-    const imagesFailed = (!privacyExposureBlocked || privacyScopeFirstPageFailed) && firstPageFailed;
+    const imagesFailed = !ownerSwitchPending && (!privacyExposureBlocked || privacyScopeFirstPageFailed) && firstPageFailed;
     useEffect(() => {
         if (imagesFailed) console.error('[Library] Failed to load images', imagesQueryError);
     }, [imagesFailed, imagesQueryError]);
@@ -420,15 +474,21 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // Beside a failed first page the withheld totals read as unknown ("—"), never as an empty library (#491).
     const withheldCount = privacyScopeFirstPageFailed ? null : 0;
-    const totalImagesCount = privacyExposureBlocked ? withheldCount : (imageCounts?.totalCount ?? null);
-    const globalTotalCount = privacyExposureBlocked ? withheldCount : (imageCounts?.globalCount ?? null);
+    const totalImagesCount = useHeldWhile(ownerSwitchPending, privacyExposureBlocked ? withheldCount : (imageCounts?.totalCount ?? null));
+    const globalTotalCount = useHeldWhile(ownerSwitchPending, privacyExposureBlocked ? withheldCount : (imageCounts?.globalCount ?? null));
     const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
     const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
-    const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
+    const scopeCounts = useHeldWhile(ownerSwitchPending, hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined);
     const sourceKindCounts = scopeCounts?.imageKinds;
-    const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
+    const scopeAvailability = useHeldWhile(
+        ownerSwitchPending,
+        hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined
+    );
     // The scope dropdown counts this page's own results, never the previous search's kept total.
-    const scopeResultCount = hasCurrentSafePage && !imageCountsArePlaceholder ? imageCounts?.totalCount : undefined;
+    const scopeResultCount = useHeldWhile(
+        ownerSwitchPending,
+        hasCurrentSafePage && !imageCountsArePlaceholder ? imageCounts?.totalCount : undefined
+    );
     // While an owner-cache repair holds the scope counts, missing counts read as loading and no
     // earlier error or retry is offered; the held queries run again when the repair ends.
     const isOwnerCacheRepairing = useLibraryStore((state) => state.isOwnerCacheRepairing);
@@ -473,24 +533,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         keywordStatsEnabled,
     });
 
-    const activeFacets = (!privacyExposureBlocked && statsData?.facets) || {
-        checkpoints: [],
-        loras: [],
-        embeddings: [],
-        hypernetworks: [],
-        tools: [],
-        controlNets: [],
-        ipAdapters: [],
-    };
-    const activeStats = (!privacyExposureBlocked && statsData?.stats) || {
-        totalImages: 0,
-        totalGenerations: 0,
-        avgSteps: 0,
-        estSizeMB: '0',
-        modelStats: [],
-        keywordStats: [],
-    };
-    const activeValidNames = !privacyExposureBlocked && facetDrilldownActive ? statsData?.validNames || null : null;
+    const activeFacets = useHeldWhile(ownerSwitchPending, (!privacyExposureBlocked && statsData?.facets) || EMPTY_FACETS);
+    const activeStats = useHeldWhile(ownerSwitchPending, (!privacyExposureBlocked && statsData?.stats) || EMPTY_STATS);
+    const activeValidNames = useHeldWhile(
+        ownerSwitchPending,
+        !privacyExposureBlocked && facetDrilldownActive ? statsData?.validNames || null : null
+    );
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
@@ -855,7 +903,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(
         async (isLoadMore: boolean, _isSilent: boolean = false) => {
-            if (privacyExposureBlocked) return;
+            if (privacyExposureBlocked || ownerSwitchPending) return;
             if (isLoadMore) {
                 await fetchNextPage();
             } else {
@@ -867,7 +915,19 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 await queryClient.invalidateQueries({ queryKey: ['images'] });
             }
         },
-        [fetchNextPage, privacyExposureBlocked, queryClient]
+        [fetchNextPage, ownerSwitchPending, privacyExposureBlocked, queryClient]
+    );
+
+    // Browse only during a user owner switch (#527): a new search would read the target owner's rows.
+    const setFiltersWhileBrowsable = useCallback<SearchContextType['setFilters']>(
+        (value) => {
+            if (useInvokeOwnerScopeStore.getState().retainedOwnerScope) {
+                notifyToast?.(OWNER_SWITCH_BROWSE_ONLY_MESSAGE, 'info');
+                return;
+            }
+            setFilters(value);
+        },
+        [notifyToast, setFilters]
     );
 
     const clearAllFiltersAndRefresh = useCallback(() => {
@@ -885,31 +945,33 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 imagesQueryKey,
                 setImages,
                 filters,
-                setFilters,
+                setFilters: setFiltersWhileBrowsable,
                 sortOption,
                 setSortOption: setSortOptionDispatch,
                 facets: activeFacets,
                 stats: activeStats,
                 totalImages: totalImagesCount,
                 globalTotal: globalTotalCount,
-                imageCountsFailed: !privacyExposureBlocked && imageCountsFailed,
+                imageCountsFailed: !privacyExposureBlocked && !ownerSwitchPending && imageCountsFailed,
                 imagesFailed,
                 retryImages,
                 sourceKindCounts,
                 scopeCounts,
                 scopeAvailability,
                 scopeResultCount,
-                scopeCountsLoading,
-                scopeCountsError,
+                scopeCountsLoading: !ownerSwitchPending && scopeCountsLoading,
+                scopeCountsError: !ownerSwitchPending && scopeCountsError,
                 retryScopeCounts,
-                hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
+                // Browsing stops at the pages already loaded while a switch is pending (#527).
+                hasMoreImages: !privacyExposureBlocked && !ownerSwitchPending && !!hasNextPage,
                 loadMoreImages: async () => {
-                    if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {
+                    if (!privacyExposureBlocked && !ownerSwitchPending && hasNextPage && !isFetchingNextPage) {
                         await fetchNextPage();
                     }
                 },
                 clearAllFilters: clearAllFiltersAndRefresh,
                 isFiltering:
+                    !ownerSwitchPending &&
                     !privacyIndexBlocked &&
                     ((privacyScopeTransitionBlocked && !privacyScopeFirstPageFailed) ||
                         isQueryLoading ||
@@ -928,7 +990,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 availableHiddenContent,
                 refreshHiddenAvailability,
                 isFacetsLoading: isFacetsFetching,
-                isLoadingMore: isFetchingNextPage,
+                isLoadingMore: !ownerSwitchPending && isFetchingNextPage,
                 isStatsSummaryLoading,
                 isKeywordStatsLoading,
                 validFacetNames: activeValidNames,

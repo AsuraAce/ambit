@@ -7290,7 +7290,9 @@ describe('Library Integration (Provider Stack)', () => {
             };
 
             // While the target prepares, the screen still belongs to the owner the user was browsing.
-            it('keeps the shown owner while another owner on the same root prepares, until the target is admitted', async () => {
+            // After admission the shown owner stays until the presentation swaps (useOwnerScopeTransitionPresentation),
+            // so a viewer left open is not replaced under the user (Q2 of #527).
+            it('keeps the shown owner while another owner on the same root prepares, and past admission until the swap', async () => {
                 const hook = await setup(true);
                 const { pending, application } = await startPendingSwitch(hook);
                 expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toMatchObject({
@@ -7319,9 +7321,15 @@ describe('Library Integration (Provider Stack)', () => {
                 } finally {
                     unsubscribe();
                 }
-                // Once the target is admitted, writes land in its scope, so they are allowed again.
-                expect(atCatchUp).toEqual([{ owner: expect.objectContaining({ ownerId: 'owner-b' }), writesAllowed: true }]);
-                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+                // Admission does not release the shown owner: writes keep waiting until the presentation swaps.
+                expect(atCatchUp).toEqual([{ owner: expect.objectContaining({ ownerId: 'owner-b' }), writesAllowed: false }]);
+                expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toMatchObject({
+                    status: 'ready',
+                    scope: expect.objectContaining({ ownerId: 'owner-b' }),
+                });
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toMatchObject({
+                    scope: expect.objectContaining({ ownerId: 'owner-a' }),
+                });
             });
 
             it.each(['cancelled', 'failed'] as const)('returns to the shown owner when the switch is %s', async (failure) => {

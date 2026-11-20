@@ -76,6 +76,7 @@ const VideoViewer = React.lazy(() =>
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then((module) => ({ default: module.UpdateDialog })));
 const STARTUP_PREPARATION_REVEAL_DELAY_MS = 700;
 const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
+const OWNER_SWITCH_DETAILS_MESSAGE = 'Full details return after the switch.';
 
 interface RetainedLibraryPresentation {
     images: AIImage[];
@@ -417,6 +418,7 @@ export default function App() {
         clearAllFilters();
         clearSelection();
     }, [clearAllFilters, clearSelection, setSelectedImageIndex, setViewingImageId]);
+    const retainedOwnerScope = useInvokeOwnerScopeStore((state) => state.retainedOwnerScope);
     const hasExplicitInvokePreparation = useInvokeOwnerScopeStore(
         (state) =>
             state.operation?.origin === 'user' &&
@@ -429,6 +431,7 @@ export default function App() {
         isRuntimeTransition: isRuntimeOwnerScopeTransition,
         isGateVisible: isRuntimeOwnerScopeGateVisible,
         isRetainingPreviousView: isRetainingPreviousRuntimeView,
+        isRetainingOwnerSwitchView,
         selectPresentation: selectOwnerScopePresentation,
     } = useOwnerScopeTransitionPresentation<RetainedLibraryPresentation>({
         configuredRoot: settings.invokeAiPath,
@@ -436,6 +439,9 @@ export default function App() {
         isInitialStartupPresentation,
         isExplicitPreparation: hasExplicitInvokePreparation && invokeOwnerScopeState.status === 'applying',
         onClearStaleView: clearOwnerScopedView,
+        retainedOwnerScope,
+        // Q2 of #527: the swap waits while the viewer or any modal (Settings, every confirm dialog) is open.
+        canSwapOwnerView: viewingImageId === null && selectedImageIndex === null && !isMaintenanceViewerOpen && !modals.isAnyModalOpen,
     });
     // A kept previous view is drawn while selection counts positions in the current list, so drag and
     // Shift-click ranges wait until it goes; the switch clears any selection when it ends (#478).
@@ -782,6 +788,11 @@ export default function App() {
                 return true;
             }
 
+            // During an owner switch the scoped views already belong to the target owner (#527).
+            if (useInvokeOwnerScopeStore.getState().retainedOwnerScope) {
+                addToast(OWNER_SWITCH_DETAILS_MESSAGE, 'info');
+                return false;
+            }
             try {
                 const image = await getImageWithFullMetadata(imageId);
                 if (referenceNavigationRequestRef.current !== requestId) return false;
@@ -1081,7 +1092,7 @@ export default function App() {
             className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30"
             aria-busy={isRuntimeOwnerScopeTransition || undefined}
             data-owner-scope-transition={isRuntimeOwnerScopeTransition ? 'retained' : undefined}
-            inert={isRetainingPreviousRuntimeView ? true : undefined}
+            inert={isRetainingPreviousRuntimeView && !isRetainingOwnerSwitchView ? true : undefined}
         >
             <TitleBar />
 

@@ -58,6 +58,7 @@ interface ImageViewerProps {
 import { AIResultModal } from './AIResultModal';
 import { ViewerToolbar } from './ViewerToolbar';
 import { VersionSelector } from './VersionSelector';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
 
 interface ViewerStatusHudProps {
     isFavorite: boolean;
@@ -150,6 +151,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
     const [settledMetadataId, setSettledMetadataId] = useState<string | null>(null);
+    // During an owner switch the scoped views follow the target owner, so no full record is read (#527).
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
 
     // --- Stack / Version Logic ---
     const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
@@ -168,6 +171,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             return;
         }
         const targetId = activeVersionId || image.id;
+        if (ownerSwitchPending) {
+            // A full record already loaded for this image stays; the panel shows the gallery row otherwise.
+            setSettledMetadataId(targetId);
+            setIsLoadingFull(false);
+            return;
+        }
         let cancelled = false;
         // Optimization: Only clear if it's a completely different image,
         // keep old one as placeholder if it's just a version switch?
@@ -191,7 +200,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [image.id, activeVersionId, mediaExposureBlocked]);
+    }, [image.id, activeVersionId, mediaExposureBlocked, ownerSwitchPending]);
 
     const versions = useMemo(() => {
         if (!image.stack || image.stack.length === 0) return [];
@@ -544,6 +553,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     palette={palette}
                     isPaletteLoading={isPaletteLoading}
                     isLoading={isReallyLoading}
+                    detailsNotice={
+                        ownerSwitchPending && fullImage?.id !== (activeVersionId || image.id)
+                            ? 'Full details return after the switch.'
+                            : undefined
+                    }
                     searchHighlights={searchHighlights}
                     onOpenReferencedImage={onOpenReferencedImage}
                 />

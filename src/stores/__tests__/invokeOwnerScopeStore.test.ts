@@ -80,6 +80,18 @@ describe('InvokeAI owner admission state', () => {
             expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).not.toBeNull();
         });
 
+        // "Switch now" belongs to one switch: a stale request must not swap a newer one early.
+        it('lets only the retaining operation request the swap', () => {
+            const current = Symbol('current');
+            useInvokeOwnerScopeStore.getState().retainOwnerScope(retained(current));
+
+            useInvokeOwnerScopeStore.getState().requestOwnerSwitchSwap(Symbol('stale'));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBeFalsy();
+
+            useInvokeOwnerScopeStore.getState().requestOwnerSwitchSwap(current);
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
         it('clears the retained owner on reset', () => {
             useInvokeOwnerScopeStore.getState().retainOwnerScope(retained(Symbol('switch')));
             useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
