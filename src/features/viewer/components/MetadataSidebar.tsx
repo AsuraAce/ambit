@@ -91,7 +91,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 
     return (
         <ViewerSidebarShell tabs={tabs} activeTab={effectiveActiveTab} onTabChange={setActiveTab} ariaLabel="Image viewer sections">
-            {detailsNotice ? <p className="mb-3 text-xs text-gray-500 dark:text-zinc-400">{detailsNotice}</p> : null}
+            {detailsNotice ? <p className="shrink-0 px-5 pt-4 text-xs text-gray-500 dark:text-zinc-400">{detailsNotice}</p> : null}
             {!isGenerated && effectiveActiveTab === 'metadata' ? (
                 <PhotoDetailsTab key={image.id} image={image} isLoading={isLoading} />
             ) : null}

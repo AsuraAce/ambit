@@ -1149,6 +1149,7 @@ export default function App() {
                         onOpenReferencedImage={handleOpenReferencedImage}
                         onViewerSearch={handleViewerSearch}
                         isViewerShortcutBlocked={isViewerShortcutBlocked}
+                        isViewerOpen={displayedViewerImage !== null}
                         onSetImageKind={(id, sourceKindOverride) => actions.handleSetImageSourceKind([id], sourceKindOverride)}
 
                         toggleFavorite={toggleFavorite}

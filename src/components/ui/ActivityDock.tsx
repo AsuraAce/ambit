@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search, CheckCircle2, AlertTriangle, RotateCw } from 'lucide-react';
 import { useLibraryStore, type LiveWatchSessionSource, type LiveWatchSessionState, type SyncProgress } from '../../stores/libraryStore';
@@ -15,6 +16,8 @@ import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
+// Above both viewers (z-[100]); placed clear of their own controls.
+const OVER_VIEWER_PLACEMENT = 'bottom-28 right-11 z-[110]';
 const LIVE_WATCH_DOCK_REVEAL_MS = 2500;
 const LIVE_WATCH_DOCK_MIN_VISIBLE_MS = 2200;
 const LIVE_WATCH_DOCK_CLOSE_GRACE_MS = 1500;
@@ -166,7 +169,12 @@ const useLiveWatchPresentation = (
     };
 };
 
-export const ActivityDock: React.FC = () => {
+interface ActivityDockProps {
+    /** An image or video viewer covers the app. */
+    isViewerOpen?: boolean;
+}
+
+export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false }) => {
     const {
         isImporting,
         importProgress,
@@ -257,6 +265,18 @@ export const ActivityDock: React.FC = () => {
     const isOwnerSwitchHeldEntry = isOwnerSwitchHeldShown && !isInvokePresentation;
     const active =
         isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult || isOwnerSwitchHeldEntry;
+    // S8 of #527: an owner switch's progress, Cancel and "Switch now" stay reachable while a viewer is open.
+    // Over the viewer the entry starts compact, clear of the viewer's own controls, and expands on click.
+    const isOwnerSwitchEntryShown =
+        isOwnerSwitchHeldShown || (!isImporting && isManualSyncing && invokePresentation.isOwnerSwitchPreparing);
+    const isOverViewer = isViewerOpen && isOwnerSwitchEntryShown;
+    const [isExpandedOverViewer, setIsExpandedOverViewer] = React.useState(false);
+    const [wasOverViewer, setWasOverViewer] = React.useState(isOverViewer);
+    if (wasOverViewer !== isOverViewer) {
+        setWasOverViewer(isOverViewer);
+        setIsExpandedOverViewer(false);
+    }
+    const isCompact = isOverViewer ? !isExpandedOverViewer : isActivityDockMinimized;
 
     let progress: SyncProgress | null = null;
     let label = '';
@@ -495,14 +515,14 @@ export const ActivityDock: React.FC = () => {
         // Observe a committed display on a paint opportunity, independently of
         // the coordinator callback. Tracing never changes focus or presentation.
         const frame = window.requestAnimationFrame(() =>
-            invokeSyncTrace.dockCommitted(invokeOperation, isInvokePresentation && shouldShow && !isActivityDockMinimized)
+            invokeSyncTrace.dockCommitted(invokeOperation, isInvokePresentation && shouldShow && !isCompact)
         );
         return () => window.cancelAnimationFrame(frame);
-    }, [invokeOperation, isInvokePresentation, shouldShow, isActivityDockMinimized]);
+    }, [invokeOperation, isInvokePresentation, shouldShow, isCompact]);
     const invokeResultInteractions = useInvokeResultDismissal(
         invokeOperation,
         // A held switch keeps its result, and with it "Switch now", until the swap.
-        isInvokeResult && shouldShow && !isActivityDockMinimized && !isOwnerSwitchHeldShown,
+        isInvokeResult && shouldShow && !isCompact && !isOwnerSwitchHeldShown,
         shouldShow,
         invokePresentation.isDocumentVisible
     );
@@ -516,7 +536,9 @@ export const ActivityDock: React.FC = () => {
         )
     ) : null;
 
-    return (
+    // The dock lives in document.body: the library workspace's backdrop blur would otherwise trap its z-index
+    // under every viewer and dialog. Ordinary activities stay below context menus, dialogs and viewers (S8).
+    return createPortal(
         <AnimatePresence>
             {shouldShow && (
                 <motion.div
@@ -526,15 +548,18 @@ export const ActivityDock: React.FC = () => {
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    // The viewer covers the gallery at the same layer; a held switch keeps "Switch now" above it.
-                    className={`fixed bottom-8 right-8 ${isOwnerSwitchHeldShown ? 'z-[110]' : 'z-[100]'}`}
+                    data-testid="activity-dock"
+                    className={`fixed ${isOverViewer ? OVER_VIEWER_PLACEMENT : 'bottom-11 right-11 z-[40]'}`}
                 >
-                    {isActivityDockMinimized ? (
+                    {isCompact ? (
                         <motion.div layoutId="dock-content">
                             <TooltipButton
                                 label="Expand Activity Details"
                                 content="Expand Activity Details"
-                                onClick={() => setIsActivityDockMinimized(false)}
+                                onClick={() => {
+                                    if (isOverViewer) setIsExpandedOverViewer(true);
+                                    else setIsActivityDockMinimized(false);
+                                }}
                                 className={`group bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/20 dark:border-white/10 p-2.5 rounded-full shadow-xl flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform ${accentClasses.pillHover}`}
                             >
                                 <motion.div layout="position" className={accentClasses.iconText}>
@@ -605,7 +630,10 @@ export const ActivityDock: React.FC = () => {
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                                     <button
                                         type="button"
-                                        onClick={() => setIsActivityDockMinimized(true)}
+                                        onClick={() => {
+                                            if (isOverViewer) setIsExpandedOverViewer(false);
+                                            else setIsActivityDockMinimized(true);
+                                        }}
                                         aria-label="Minimize Activity Details"
                                         className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:scale-105 active:scale-95"
                                     >
@@ -743,6 +771,7 @@ export const ActivityDock: React.FC = () => {
                     )}
                 </motion.div>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 };

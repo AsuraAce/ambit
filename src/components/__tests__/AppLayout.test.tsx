@@ -598,6 +598,19 @@ describe('AppLayout', () => {
         expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
     });
 
+    // S8 of #527: the workspace's backdrop blur makes it a stacking context and the containing block of fixed
+    // children, so a dock inside it sits under every viewer whatever its z-index. jsdom computes no stacking,
+    // so this pins where the dock renders; the browser check is in the #529 description.
+    it('renders the activity dock outside the workspace and any blurred, filtered or transformed ancestor', () => {
+        useLibraryStore.setState({ isImporting: true, importProgress: { current: 2, total: 10, message: 'Importing' } });
+        render(<AppLayout {...defaultProps} isViewerOpen={false} />);
+
+        const dock = screen.getByTestId('activity-dock');
+        expect(dock.closest('main')).toBeNull();
+        // A direct child of body has no ancestor that could trap its z-index.
+        expect(dock.parentElement).toBe(document.body);
+    });
+
     it('falls back to first-import guidance and restores the empty CTA when importing ends', async () => {
         searchState.value.images = [];
         searchState.value.totalImages = 0;

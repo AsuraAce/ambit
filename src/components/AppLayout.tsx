@@ -124,6 +124,8 @@ interface AppLayoutProps {
     onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     onViewerSearch: (term: string) => void;
     isViewerShortcutBlocked: boolean;
+    /** An image or video viewer covers the app; an owner switch keeps its dock entry above it. */
+    isViewerOpen: boolean;
     onSetImageKind: (id: string, sourceKindOverride: SourceKind | null) => Promise<void>;
     toggleFavorite: (id: string) => void | Promise<void>;
     actions: ReturnType<typeof useAppActions>;
@@ -188,6 +190,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     onOpenReferencedImage,
     onViewerSearch,
     isViewerShortcutBlocked,
+    isViewerOpen,
     onSetImageKind,
     modelOptions = [],
     actions,
@@ -740,7 +743,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     />
                 )}
 
-                <ActivityDock />
+                <ActivityDock isViewerOpen={isViewerOpen} />
             </main>
         </div>
     );

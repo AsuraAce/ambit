@@ -700,6 +700,62 @@ describe('ActivityDock', () => {
             act(() => vi.advanceTimersByTime(5000));
             expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
         });
+
+        // S8: a viewer can stay open for the whole switch, so its progress, Cancel and "Switch now" stay
+        // reachable above it: compact first, clear of the viewer's own controls, and expanding on click.
+        const dock = () => screen.getByTestId('activity-dock');
+
+        it('raises the preparation above an open viewer in compact form, and expands it with Cancel', () => {
+            const operation = startSwitch();
+            render(<ActivityDock isViewerOpen />);
+            act(() => vi.advanceTimersByTime(600));
+
+            expect(dock().className).toContain('z-[110]');
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
+            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(operation.cancel).toHaveBeenCalledOnce();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
+            expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();
+            // Collapsing it over the viewer leaves the dock's own minimized choice for the gallery alone.
+            expect(useLibraryStore.getState().isActivityDockMinimized).toBe(false);
+        });
+
+        it('raises "Switch now" above an open viewer during the hold', () => {
+            startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock isViewerOpen />);
+
+            expect(dock().className).toContain('z-[110]');
+            fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
+        it('returns the switch to its full form in the gallery layer once the viewer closes', () => {
+            startSwitch();
+            const view = render(<ActivityDock isViewerOpen />);
+            act(() => vi.advanceTimersByTime(600));
+            view.rerender(<ActivityDock isViewerOpen={false} />);
+
+            expect(dock().className).toContain('z-[40]');
+            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+        });
+    });
+
+    // S8: only an owner switch rises above a viewer; other activities stay under viewers and dialogs.
+    it('leaves ordinary activities under an open viewer', () => {
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: { current: 1, total: 4, message: 'Healing' },
+        });
+        render(<ActivityDock isViewerOpen />);
+
+        expect(screen.getByTestId('activity-dock').className).toContain('z-[40]');
+        expect(screen.getByTestId('activity-dock').className).not.toContain('z-[110]');
     });
 
     it('identifies startup synchronization as InvokeAI catch-up', () => {
@@ -940,7 +996,8 @@ describe('ActivityDock', () => {
             },
         });
 
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
 
         expect(screen.getByText('Discovery Scan')).toBeTruthy();
         expect(screen.getByText('Updating local asset index...')).toBeTruthy();
@@ -1157,7 +1214,8 @@ describe('ActivityDock', () => {
             progress: { current: 0, total: 0, message: undefined },
         });
 
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
 
         act(() => {
             vi.advanceTimersByTime(2499);
@@ -1194,7 +1252,8 @@ describe('ActivityDock', () => {
     it('reveals sustained folder Live Watch import and keeps source context stable', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
@@ -1530,7 +1589,8 @@ describe('ActivityDock', () => {
             backgroundHealingProgress: { current: 1, total: 4, message: 'Healing' },
             isActivityDockMinimized: true,
         });
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
         expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
     });
 
@@ -1619,7 +1679,8 @@ describe('ActivityDock', () => {
     it('minimizes visible Live Watch without the low-priority pulse class', () => {
         vi.useFakeTimers();
         useLibraryStore.getState().startLiveWatchSession('invoke', { phase: 'syncing' });
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
         act(() => vi.advanceTimersByTime(2500));
         fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
         expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();
