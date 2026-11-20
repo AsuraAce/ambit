@@ -113,6 +113,36 @@ describe('OwnerSwitchPill', () => {
         expect(screen.queryByText(text)).toBeNull();
     });
 
+    // P4 of the #529 owner smoke: a cancel can take a while, and the pill must not keep promising the target.
+    it('says the switch is being cancelled until the cancel finishes', () => {
+        render(<OwnerSwitchPill />);
+        const operationId = startSwitch();
+        act(() => vi.advanceTimersByTime(600));
+        act(() =>
+            useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling', cancel: undefined })
+        );
+
+        const cancelling = "Showing Freya's images · cancelling switch to Odin";
+        expect(screen.getByRole('button', { name: cancelling })).toBeTruthy();
+        expect(screen.queryByText(PENDING)).toBeNull();
+        endSwitch(operationId, 'freya', 'cancelled');
+        expect(screen.queryByText(cancelling)).toBeNull();
+        expect(screen.getByText("Switch cancelled · still showing Freya's images")).toBeTruthy();
+    });
+
+    it('keeps "switching" while a held swap only cancels the catch-up of an admitted owner', () => {
+        render(<OwnerSwitchPill />);
+        startSwitch();
+        act(() => vi.advanceTimersByTime(600));
+        act(() => {
+            const store = useInvokeOwnerScopeStore.getState();
+            store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('odin') });
+            store.setOperation((current) => current && { ...current, phase: 'cancelling', viewCommitted: true });
+        });
+
+        expect(screen.getByRole('button', { name: PENDING })).toBeTruthy();
+    });
+
     // R1: once Odin is admitted the switch is done. Cancelling or failing its catch-up during the held swap
     // stops only the catch-up, so the swap shows Odin and the note must not claim Freya is still shown.
     it.each(['cancelled', 'failed'] as const)('names the target after a held swap whose catch-up was %s', (phase) => {

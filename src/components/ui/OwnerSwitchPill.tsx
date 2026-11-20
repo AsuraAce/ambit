@@ -34,6 +34,14 @@ const scopeOwnerKey = (scope: RetainedOwnerScope['scope'] | undefined): string =
  */
 export const OwnerSwitchPill: React.FC = () => {
     const retained = useInvokeOwnerScopeStore((state) => state.retainedOwnerScope);
+    // Cancelling the switch itself, before the target is admitted; after admission a cancel stops only the catch-up.
+    const isCancelling = useInvokeOwnerScopeStore(
+        (state) =>
+            state.retainedOwnerScope !== null &&
+            state.operation?.id === state.retainedOwnerScope.operationId &&
+            state.operation.phase === 'cancelling' &&
+            !state.operation.viewCommitted
+    );
     const reduceMotion = useReducedMotion();
     const isPendingVisible = useDelayedBusyPresentation(retained !== null, {
         revealDelayMs: OWNER_SWITCH_REVEAL_DELAY_MS,
@@ -86,7 +94,7 @@ export const OwnerSwitchPill: React.FC = () => {
         retained && isPendingVisible
             ? {
                   operationId: retained.operationId,
-                  text: `Showing ${retained.label}'s images · switching to ${retained.targetLabel}`,
+                  text: `Showing ${retained.label}'s images · ${isCancelling ? 'cancelling switch' : 'switching'} to ${retained.targetLabel}`,
                   tone: 'switching',
                   pending: true,
               }
