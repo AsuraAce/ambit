@@ -91,6 +91,18 @@ describe('BackupSettings', () => {
         );
     });
 
+    it('clears the loading state when the first load rejects', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getBackups.mockRejectedValueOnce(new Error('ipc down'));
+        render(<BackupSettings />);
+
+        await waitFor(() =>
+            expect((screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement).disabled).toBe(false)
+        );
+        expect(consoleError).toHaveBeenCalledWith('[Backups] Failed to load backups', expect.any(Error));
+        consoleError.mockRestore();
+    });
+
     it('does not show a loading spinner in browser mock mode', () => {
         runtime.browser = true;
         render(<BackupSettings />);

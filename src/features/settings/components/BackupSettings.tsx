@@ -43,7 +43,10 @@ export const BackupSettings: React.FC = () => {
         commands
             .getBackups()
             .then((result) => applyBackupsResult(result))
-            .catch((error) => console.error('[Backups] Failed to load backups', error));
+            .catch((error) => {
+                console.error('[Backups] Failed to load backups', error);
+                setIsLoading(false);
+            });
     }, [applyBackupsResult, browserMockMode]);
 
     const handleCreateBackup = async () => {
