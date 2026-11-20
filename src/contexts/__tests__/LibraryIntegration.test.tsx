@@ -396,6 +396,7 @@ const defaultInvokeSnapshotImplementation = mocks.getInvokeDbSnapshot.getMockImp
 const defaultSetCollections = useCollectionStore.getInitialState().setCollections;
 const defaultRefreshCollections = useCollectionStore.getInitialState().refreshCollections;
 const defaultRefreshCollectionThumbnails = useCollectionStore.getInitialState().refreshCollectionThumbnails;
+const defaultRefreshSmartCounts = useCollectionStore.getInitialState().refreshSmartCounts;
 
 // --- Test Consumer ---
 const TestConsumer = ({ onHook }: { onHook: (hook: any) => void }) => {
@@ -3234,8 +3235,17 @@ describe('Library Integration (Provider Stack)', () => {
                 membershipMaxRowId: null,
             });
         });
+        // Nothing unmounts a view between tests, so a provider left mounted would keep reacting to the
+        // next test's settings and race its startup (a repair still recounting collides on the shared
+        // collection generation).
+        const mountedViews: Array<() => void> = [];
         afterEach(() => {
+            for (const unmount of mountedViews.splice(0)) unmount();
             vi.useRealTimers();
+            useCollectionStore.setState({
+                refreshSmartCounts: defaultRefreshSmartCounts,
+                refreshCollectionThumbnails: defaultRefreshCollectionThumbnails,
+            });
         });
 
         const discovery: InvokeOwnerDiscovery = {
@@ -3335,6 +3345,7 @@ describe('Library Integration (Provider Stack)', () => {
                 })
             );
             if (waitUntilReady) await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+            mountedViews.push(view.unmount);
             return { getSync: () => syncHook!, getLibrary: () => libraryHook!, unmount: view.unmount };
         };
 
@@ -3435,6 +3446,75 @@ describe('Library Integration (Provider Stack)', () => {
             expect(isRepairing()).toBe(false);
         });
 
+        // Both recounts of a repair run side by side. The thumbnail recount stops at once on abort;
+        // the count recount is stuck inside its query until released and then writes late.
+        // Only the first recount that carries a signal is the repair's; the others are not held.
+        const installStuckRecount = () => {
+            const events: string[] = [];
+            const queryDone = createDeferred<void>();
+            let countsHeld = false;
+            let thumbnailsHeld = false;
+            const refreshSmartCounts = vi.fn(async (input?: Parameters<typeof defaultRefreshSmartCounts>[0]) => {
+                const options = Array.isArray(input) ? undefined : input;
+                if (!options?.signal || countsHeld) return;
+                countsHeld = true;
+                await queryDone.promise;
+                events.push('A-count-write');
+            });
+            const refreshCollectionThumbnails = vi.fn(
+                (_debounced?: boolean, _force?: boolean, options?: { signal?: AbortSignal }) =>
+                    new Promise<void>((resolve, reject) => {
+                        if (!options?.signal || thumbnailsHeld) {
+                            resolve();
+                            return;
+                        }
+                        thumbnailsHeld = true;
+                        options.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+                    })
+            );
+            useCollectionStore.setState({ refreshSmartCounts, refreshCollectionThumbnails });
+            return { events, refreshSmartCounts, releaseQuery: () => queryDone.resolve() };
+        };
+
+        // A switch started while a repair's recounts run must wait for both of them: a recount still
+        // inside its query writes owner A's counts and cover after B's snapshot was restored.
+        const expectSwitchWaitsForRecounts = async (sync: SyncHook, stuck: ReturnType<typeof installStuckRecount>) => {
+            await waitFor(() => expect(stuck.refreshSmartCounts).toHaveBeenCalled());
+            mocks.applyInvokeOwnerScope.mockClear();
+            // A switch can apply the scope more than once; every later apply gets the same restored view.
+            mocks.applyInvokeOwnerScope.mockImplementation(async () => {
+                if (!stuck.events.includes('apply-B')) stuck.events.push('apply-B');
+                return switchedApplyResult;
+            });
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(sync);
+            });
+            await act(async () => {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            });
+            expect(stuck.events).toEqual([]);
+
+            await act(async () => {
+                stuck.releaseQuery();
+                await switching;
+            });
+
+            expect(stuck.events).toEqual(['A-count-write', 'apply-B']);
+            await waitFor(() => expect(sync.invokeOwnerScopeState.status).toBe('ready'));
+        };
+
+        it('waits for a startup recount that is still running before it applies the switched owner scope', async () => {
+            const stuck = installStuckRecount();
+            const gate = holdNextClaim();
+            const { getSync } = await startView({ cacheRepair: planOf('selective', true) });
+            await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+            await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 3)));
+
+            await expectSwitchWaitsForRecounts(getSync(), stuck);
+        });
+
         // Starts a restored owner view and lets one live import schedule the idle repair.
         const startViewWithIdleRepairScheduled = async () => {
             const view = await startView({ cacheRepair: planOf('restored') });
@@ -3502,7 +3582,8 @@ describe('Library Integration (Provider Stack)', () => {
             });
             vi.useRealTimers();
             expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
-            expect(isRepairing()).toBe(true);
+            // The repair has only asked for its claim: nothing is known to be dirty, so nothing is held.
+            expect(isRepairing()).toBe(false);
             return { ...view, gate };
         };
 
@@ -3546,6 +3627,56 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(
                 expect.objectContaining({ selection: expect.objectContaining({ ownerId: 'owner-b' }) })
             );
+        });
+
+        it('waits for an idle recount that is still running before it applies the switched owner scope', async () => {
+            const stuck = installStuckRecount();
+            const { getSync, gate } = await startIdleRepairHoldingClaim();
+            await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 7)));
+
+            await expectSwitchWaitsForRecounts(getSync(), stuck);
+        });
+
+        // Records every value isOwnerCacheRepairing takes while `run` runs.
+        const recordRepairingDuring = async (run: () => Promise<void>) => {
+            const seen: boolean[] = [];
+            const unsubscribe = useLibraryStore.subscribe((state, previous) => {
+                if (state.isOwnerCacheRepairing !== previous.isOwnerCacheRepairing) seen.push(state.isOwnerCacheRepairing);
+            });
+            try {
+                await run();
+            } finally {
+                unsubscribe();
+            }
+            return seen;
+        };
+
+        it('does not hold the library back when an idle repair finds the cache already committed', async () => {
+            // A live sync that committed its own claim leaves nothing to repair; the held state would
+            // only pause thumbnails and the sidebar for no reason.
+            const { gate } = await startIdleRepairHoldingClaim();
+
+            const seen = await recordRepairingDuring(async () => {
+                await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('restored'), 7)));
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            });
+
+            expect(seen).toEqual([]);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
+        });
+
+        it('holds the library back for an idle repair only while it has a build to do', async () => {
+            const { gate } = await startIdleRepairHoldingClaim();
+
+            const seen = await recordRepairingDuring(async () => {
+                await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective'), 7)));
+                await waitFor(() =>
+                    expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 })
+                );
+                await waitFor(() => expect(isRepairing()).toBe(false));
+            });
+
+            expect(seen).toEqual([true, false]);
         });
     });
 

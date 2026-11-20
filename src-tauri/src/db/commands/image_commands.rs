@@ -5413,11 +5413,12 @@ mod tests {
             super::save_images_batch_inner(&conn, &[image]).expect("insert owner row");
         }
         conn.execute(
-            "INSERT INTO collections (id, name, created_at, source)
-             VALUES ('known', 'Known', 1, 'ambit')",
+            "INSERT INTO collections (id, name, created_at, source, filter_state)
+             VALUES ('known', 'Known', 1, 'ambit', NULL),
+                    ('smart-known', 'Smart known', 1, 'ambit', '{}')",
             [],
         )
-        .expect("insert collection");
+        .expect("insert collections");
 
         super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
             .expect("activate owner a");
@@ -5432,7 +5433,7 @@ mod tests {
         conn.execute(
             "UPDATE collections
              SET dynamic_count = 11, dynamic_thumbnail_path = 'C:/thumbs/owner-a.webp'
-             WHERE id = 'known'",
+             WHERE id IN ('known', 'smart-known')",
             [],
         )
         .unwrap();
@@ -5440,11 +5441,12 @@ mod tests {
 
         // A collection created after the snapshot and a new LoRA make the plan selective.
         conn.execute(
-            "INSERT INTO collections (id, name, created_at, source)
-             VALUES ('late', 'Late', 2, 'ambit')",
+            "INSERT INTO collections (id, name, created_at, source, filter_state)
+             VALUES ('late', 'Late', 2, 'ambit', NULL),
+                    ('smart-late', 'Smart late', 2, 'ambit', '{}')",
             [],
         )
-        .expect("insert collection after the snapshot");
+        .expect("insert collections after the snapshot");
         conn.execute(
             "INSERT INTO image_loras (image_id, lora_name) VALUES ('owner-a', 'NewDetailer')",
             [],
@@ -5462,7 +5464,7 @@ mod tests {
         conn.execute(
             "UPDATE collections
              SET dynamic_count = 22, dynamic_thumbnail_path = 'C:/thumbs/owner-b.webp'
-             WHERE id IN ('known', 'late')",
+             WHERE id IN ('known', 'late', 'smart-known', 'smart-late')",
             [],
         )
         .unwrap();
@@ -5495,7 +5497,12 @@ mod tests {
             collection("known"),
             (Some(11), Some("C:/thumbs/owner-a.webp".to_string()))
         );
+        assert_eq!(
+            collection("smart-known"),
+            (Some(11), Some("C:/thumbs/owner-a.webp".to_string()))
+        );
         assert_eq!(collection("late"), (None, None));
+        assert_eq!(collection("smart-late"), (None, None));
     }
 
     #[test]

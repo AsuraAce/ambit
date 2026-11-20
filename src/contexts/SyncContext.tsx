@@ -338,23 +338,33 @@ export const SyncProvider: React.FC<{
     // thumbnail healing pauses while any repair after the library is shown runs. Counted because
     // repairs can overlap; always released in `finally`, and reset on unmount.
     const ownerCacheRepairCountRef = useRef(0);
+    // Returns the release, which is safe to call more than once.
+    const holdThumbnailsForRepair = useCallback((): (() => void) => {
+        ownerCacheRepairCountRef.current += 1;
+        useLibraryStore.getState().setOwnerCacheRepairing(true);
+        // The sidebar's statistics and count scans are held until the repair ends. Cancelling any
+        // already in flight keeps their last values and stops a failure from being cached as an error.
+        void queryClient.cancelQueries({ queryKey: ['libraryStats'] });
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            ownerCacheRepairCountRef.current = Math.max(0, ownerCacheRepairCountRef.current - 1);
+            if (ownerCacheRepairCountRef.current === 0) {
+                useLibraryStore.getState().setOwnerCacheRepairing(false);
+            }
+        };
+    }, [queryClient]);
     const withThumbnailsPausedForRepair = useCallback(
         async <T,>(repair: () => Promise<T>): Promise<T> => {
-            ownerCacheRepairCountRef.current += 1;
-            useLibraryStore.getState().setOwnerCacheRepairing(true);
-            // The sidebar's statistics and count scans are held until the repair ends. Cancelling any
-            // already in flight keeps their last values and stops a failure from being cached as an error.
-            void queryClient.cancelQueries({ queryKey: ['libraryStats'] });
+            const release = holdThumbnailsForRepair();
             try {
                 return await repair();
             } finally {
-                ownerCacheRepairCountRef.current = Math.max(0, ownerCacheRepairCountRef.current - 1);
-                if (ownerCacheRepairCountRef.current === 0) {
-                    useLibraryStore.getState().setOwnerCacheRepairing(false);
-                }
+                release();
             }
         },
-        [queryClient]
+        [holdThumbnailsForRepair]
     );
     useEffect(
         () => () => {
@@ -470,7 +480,14 @@ export const SyncProvider: React.FC<{
     );
 
     const refreshAfterOwnerScopeChange = useCallback(
-        async (maxAttempts: 1 | 2 = 2, signal?: AbortSignal, isBackgroundRepair = false): Promise<InvokeScopeCacheRepairPlan> => {
+        async (
+            maxAttempts: 1 | 2 = 2,
+            signal?: AbortSignal,
+            isBackgroundRepair = false,
+            // Called once the claim is known to need a build, for a repair that did not hold the
+            // library back while it only looked.
+            onBuildStart?: () => void
+        ): Promise<InvokeScopeCacheRepairPlan> => {
             if (!isBackgroundRepair && backgroundOwnerCacheRepairRef.current) {
                 // A background repair holds the cache claim; stop it so this refresh can claim.
                 backgroundOwnerCacheRepairRef.current.controller.abort();
@@ -500,6 +517,7 @@ export const SyncProvider: React.FC<{
                     ownerCacheRepairFailedRef.current = false;
                     return cacheRepair;
                 }
+                onBuildStart?.();
                 try {
                     assertCurrentCollections();
                     clearLibraryStatsCache();
@@ -541,8 +559,11 @@ export const SyncProvider: React.FC<{
                     await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId, isBackgroundRepair);
                     if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
                         await invokeSyncTrace.measure(traceOperationId, 'previews', () =>
-                            measureStartupPhase('collections', () =>
-                                Promise.all([
+                            measureStartupPhase('collections', async () => {
+                                // Both loops must have stopped before this settles: a loop still inside a
+                                // query when the other rejects would otherwise write after the caller has
+                                // moved on to another scope.
+                                const results = await Promise.allSettled([
                                     refreshSmartCounts({
                                         includeArchived: true,
                                         includePromptSearch: true,
@@ -553,8 +574,11 @@ export const SyncProvider: React.FC<{
                                         consistency: 'authoritative',
                                         signal,
                                     }),
-                                ])
-                            )
+                                ]);
+                                for (const result of results) {
+                                    if (result.status === 'rejected') throw result.reason;
+                                }
+                            })
                         );
                     }
                     assertCurrentCollections();
@@ -622,10 +646,13 @@ export const SyncProvider: React.FC<{
     const startBackgroundOwnerCacheRepair = useCallback(
         (repair?: (signal: AbortSignal) => Promise<unknown>, kind: 'startup' | 'idle' = 'startup') => {
             const controller = new AbortController();
+            // An idle repair starts by checking whether anything is dirty and holds the library back
+            // only once it has a build to do (it takes its own hold); startup repairs hold from the start.
+            const hold = kind === 'idle' ? async <T,>(run: () => Promise<T>) => run() : withThumbnailsPausedForRepair;
             // Run after a repair already in progress rather than competing with it for the claim;
             // the newer one then sees whether that repair failed.
             const previous = backgroundOwnerCacheRepairRef.current;
-            const promise = withThumbnailsPausedForRepair(async () => {
+            const promise = hold(async () => {
                 try {
                     await previous?.promise;
                     throwIfInvokeAborted(controller.signal);
@@ -681,9 +708,18 @@ export const SyncProvider: React.FC<{
                 return;
             }
             // One attempt: a commit rejected by a newer write is followed by that write's own schedule.
-            startBackgroundOwnerCacheRepair((signal) => refreshAfterOwnerScopeChange(1, signal, true), 'idle');
+            startBackgroundOwnerCacheRepair(async (signal) => {
+                let release: (() => void) | undefined;
+                try {
+                    await refreshAfterOwnerScopeChange(1, signal, true, () => {
+                        release ??= holdThumbnailsForRepair();
+                    });
+                } finally {
+                    release?.();
+                }
+            }, 'idle');
         }, OWNER_CACHE_IDLE_REPAIR_DELAY_MS);
-    }, [refreshAfterOwnerScopeChange, startBackgroundOwnerCacheRepair]);
+    }, [holdThumbnailsForRepair, refreshAfterOwnerScopeChange, startBackgroundOwnerCacheRepair]);
     useLayoutEffect(() => {
         scheduleOwnerCacheIdleRepairRef.current = scheduleOwnerCacheIdleRepair;
     }, [scheduleOwnerCacheIdleRepair]);

@@ -538,7 +538,10 @@ export const useCollectionStore = create<CollectionState>()(
                                 break;
                             }
 
-                            const summaries = await getCollectionThumbnailSummaries(collectionBatch);
+                            // Existing callers pass no signal; only a stoppable refresh passes one down to the repo writes.
+                            const summaries = options.signal
+                                ? await getCollectionThumbnailSummaries(collectionBatch, { signal: options.signal })
+                                : await getCollectionThumbnailSummaries(collectionBatch);
                             throwIfInvokeAborted(options.signal);
                             if (isSuperseded()) {
                                 wasSuperseded = true;
@@ -706,7 +709,7 @@ export const useCollectionStore = create<CollectionState>()(
                             continue;
                         }
 
-                        const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
+                        const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails, signal: options.signal });
                         throwIfInvokeAborted(options.signal);
                         if (
                             refreshGeneration !== initializationGeneration ||
@@ -718,7 +721,13 @@ export const useCollectionStore = create<CollectionState>()(
                         const summary = summaries[smartCol.id];
 
                         if (summary) {
-                            await cacheSmartCollectionCount(smartCol.id, summary.count, smartCol.updatedAt ?? smartCol.createdAt);
+                            const countUpdatedAt = smartCol.updatedAt ?? smartCol.createdAt;
+                            if (options.signal) {
+                                await cacheSmartCollectionCount(smartCol.id, summary.count, countUpdatedAt, options.signal);
+                            } else {
+                                await cacheSmartCollectionCount(smartCol.id, summary.count, countUpdatedAt);
+                            }
+                            throwIfInvokeAborted(options.signal);
                             if (
                                 refreshGeneration !== initializationGeneration ||
                                 smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
