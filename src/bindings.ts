@@ -476,6 +476,13 @@ async recordStartupDiagnostic(event: StartupDiagnosticEvent) : Promise<Result<nu
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Writes one webview-reported failure (an unhandled promise rejection) to the app log file.
+ * The text is capped so the webview cannot write unbounded data.
+ */
+async logFrontendError(message: string) : Promise<void> {
+    await TAURI_INVOKE("log_frontend_error", { message });
+},
 async recordStartupHeartbeat(launchId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("record_startup_heartbeat", { launchId }) };

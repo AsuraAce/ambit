@@ -1,3 +1,4 @@
+import { commands } from '../bindings';
 import { useSettingsStore } from '../stores/settingsStore';
 import { LogLevel } from '../types';
 
@@ -18,18 +19,35 @@ let originalConsole: {
 } | null = null;
 
 const describeRejectionReason = (reason: unknown): string => {
-    if (reason instanceof Error) return reason.stack ?? `${reason.name}: ${reason.message}`;
+    if (reason instanceof Error) {
+        const header = `${reason.name}: ${reason.message}`;
+        // WebKit stacks omit the message, so prefix it when the stack lacks it.
+        if (!reason.stack) return header;
+        return reason.stack.includes(reason.message) ? reason.stack : `${header}\n${reason.stack}`;
+    }
     if (typeof reason === 'string') return reason;
     try {
         return JSON.stringify(reason) ?? String(reason);
     } catch {
-        return String(reason);
+        try {
+            return String(reason);
+        } catch {
+            return '[unserializable rejection reason]';
+        }
     }
 };
 
 // A rejected promise nobody caught (e.g. an async JSX handler) would otherwise vanish.
 const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-    console.error('Unhandled promise rejection:', describeRejectionReason(event.reason));
+    const text = describeRejectionReason(event.reason);
+    console.error('Unhandled promise rejection:', text);
+    // Bridge to the Rust log file. Must never reject or throw: it runs inside the rejection handler,
+    // and outside Tauri (plain web dev) the invoke fails.
+    try {
+        commands.logFrontendError(text).catch(() => undefined);
+    } catch {
+        // ignore
+    }
 };
 
 export const setupGlobalLogging = () => {

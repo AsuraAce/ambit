@@ -121,6 +121,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::backup::check_and_run_autobackup,
             // startup readiness commands
             startup::record_startup_diagnostic,
+            startup::log_frontend_error,
             startup::record_startup_heartbeat,
             startup::record_startup_lifecycle,
             startup::get_startup_launch,
