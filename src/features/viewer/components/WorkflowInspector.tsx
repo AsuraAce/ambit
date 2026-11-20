@@ -179,23 +179,32 @@ const ComfyDiagnosticsPanel: React.FC<{
     const [showAllTraversalIssues, setShowAllTraversalIssues] = useState(false);
     const chunkCount = chunks ? Object.keys(chunks).length : 0;
 
-    React.useEffect(() => {
+    // Reset the panel during render when its inputs change; the effect below fetches the report.
+    const [handledRequest, setHandledRequest] = useState({ chunks, chunkCount, expanded, imageId: image.id });
+    if (
+        handledRequest.chunks !== chunks ||
+        handledRequest.chunkCount !== chunkCount ||
+        handledRequest.expanded !== expanded ||
+        handledRequest.imageId !== image.id
+    ) {
+        setHandledRequest({ chunks, chunkCount, expanded, imageId: image.id });
         setShowAllTraversalIssues(false);
-
-        if (!expanded) {
-            return;
+        if (expanded) {
+            if (!chunks || chunkCount === 0) {
+                setDiagnosticsResult(null);
+                setError(null);
+                setIsLoading(false);
+            } else {
+                setIsLoading(true);
+                setError(null);
+            }
         }
+    }
 
-        if (!chunks || chunkCount === 0) {
-            setDiagnosticsResult(null);
-            setError(null);
-            setIsLoading(false);
-            return;
-        }
+    React.useEffect(() => {
+        if (!expanded || !chunks || chunkCount === 0) return;
 
         let cancelled = false;
-        setIsLoading(true);
-        setError(null);
 
         commands
             .inspectComfyuiMetadataChunks(chunks)
@@ -605,6 +614,7 @@ const WorkflowNode: React.FC<{
     const hasContent = hasInputs || hasConnections;
 
     React.useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- expands after the parent's scroll so the followed node's header stays centred
         if (isFocused && focusRequestId !== null && hasContent) setIsExpanded(true);
     }, [focusRequestId, hasContent, isFocused]);
 
@@ -813,6 +823,14 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     } | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
+
+    // Follow the stored workflow during render when it or the image changes
+    const [handledWorkflow, setHandledWorkflow] = useState({ imageId: image.id, workflowJson: image.metadata.workflowJson });
+    if (handledWorkflow.imageId !== image.id || handledWorkflow.workflowJson !== image.metadata.workflowJson) {
+        setHandledWorkflow({ imageId: image.id, workflowJson: image.metadata.workflowJson });
+        setLocalWorkflow(image.metadata.workflowJson);
+    }
+
     const isDeveloperMode = useSettingsStore((state) => state.settings.devMode === true);
     const showParserDiagnostics = !isVideoAsset(image) && isDeveloperMode && image.metadata.tool === GeneratorTool.COMFYUI;
     const originalWorkflow = image.originalChunks?.workflow;
@@ -905,25 +923,43 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         [nodeMode, selectedBranchNodeIdSet]
     );
 
-    React.useEffect(() => {
+    const [handledGraphSource, setHandledGraphSource] = useState({
+        imageId: image.id,
+        json: workflowGraphSource?.json,
+        normalizedByBackend: workflowGraphSource?.normalizedByBackend,
+        source: workflowGraphSource?.source,
+    });
+    if (
+        handledGraphSource.imageId !== image.id ||
+        handledGraphSource.json !== workflowGraphSource?.json ||
+        handledGraphSource.normalizedByBackend !== workflowGraphSource?.normalizedByBackend ||
+        handledGraphSource.source !== workflowGraphSource?.source
+    ) {
+        setHandledGraphSource({
+            imageId: image.id,
+            json: workflowGraphSource?.json,
+            normalizedByBackend: workflowGraphSource?.normalizedByBackend,
+            source: workflowGraphSource?.source,
+        });
         setFocusedConnection(null);
         setNodeMode('all');
-    }, [image.id, workflowGraphSource?.json, workflowGraphSource?.normalizedByBackend, workflowGraphSource?.source]);
+    }
+
+    // Leaving selected-branch mode sticks, even if the branch becomes available again.
+    if (nodeMode === 'selected' && !selectedBranchAvailable) {
+        setNodeMode('all');
+    }
+
+    const [handledBackendGraphInput, setHandledBackendGraphInput] = useState({ tool: image.metadata.tool, originalChunks });
+    if (handledBackendGraphInput.tool !== image.metadata.tool || handledBackendGraphInput.originalChunks !== originalChunks) {
+        setHandledBackendGraphInput({ tool: image.metadata.tool, originalChunks });
+        setBackendWorkflowGraph(null);
+    }
 
     React.useEffect(() => {
-        if (nodeMode === 'selected' && !selectedBranchAvailable) {
-            setNodeMode('all');
-        }
-    }, [nodeMode, selectedBranchAvailable]);
-
-    React.useEffect(() => {
-        if (image.metadata.tool !== GeneratorTool.COMFYUI || Object.keys(originalChunks).length === 0) {
-            setBackendWorkflowGraph(null);
-            return;
-        }
+        if (image.metadata.tool !== GeneratorTool.COMFYUI || Object.keys(originalChunks).length === 0) return;
 
         let cancelled = false;
-        setBackendWorkflowGraph(null);
 
         commands
             .inspectComfyuiWorkflowGraph(originalChunks)
@@ -988,11 +1024,6 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on image.id and the workflow fields; a new image object or parent callback must not restart the load
     }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading, workflowJsonForActions]);
-
-    // Sync local state if prop changes OR if image changes
-    React.useEffect(() => {
-        setLocalWorkflow(image.metadata.workflowJson);
-    }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
         navigator.clipboard.writeText(workflowJsonForActions!).catch((error) => console.error('[Clipboard] Copy failed', error));

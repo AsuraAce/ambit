@@ -150,43 +150,65 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const privacyIndexPending = useSettingsStore((state) => state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready');
     const privacyExposureBlocked = privacyIndexPending && !ownerSwitchPending;
     const [revealedImageId, setRevealedImageId] = useState<string | null>(initiallyRevealed ? image.id : null);
+    const [handledReveal, setHandledReveal] = useState({ imageId: image.id, initiallyRevealed });
+    if (handledReveal.imageId !== image.id || handledReveal.initiallyRevealed !== initiallyRevealed) {
+        setHandledReveal({ imageId: image.id, initiallyRevealed });
+        setRevealedImageId(initiallyRevealed ? image.id : null);
+    }
     const itemExposureBlocked = isMasked && !initiallyRevealed && revealedImageId !== image.id;
     const mediaExposureBlocked = privacyExposureBlocked || itemExposureBlocked;
     const collections = useCollectionStore((s) => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
-    const [isLoadingFull, setIsLoadingFull] = useState(false);
-    const [settledMetadataId, setSettledMetadataId] = useState<string | null>(null);
+    // On mount the metadata state starts where the reset below would put it.
+    const [isLoadingFull, setIsLoadingFull] = useState(() => !mediaExposureBlocked && !ownerSwitchPending);
+    const [settledMetadataId, setSettledMetadataId] = useState<string | null>(() =>
+        !mediaExposureBlocked && ownerSwitchPending ? image.id : null
+    );
 
     // --- Stack / Version Logic ---
     const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
 
     // Reset local version when navigating to a new parent image
-    useEffect(() => {
+    const [handledImageId, setHandledImageId] = useState(image.id);
+    if (handledImageId !== image.id) {
+        setHandledImageId(image.id);
         setActiveVersionId(null);
-    }, [image.id]);
+    }
 
-    // Reset local version and/or fetch full metadata when image or version changes
-    useEffect(() => {
+    // Reset the full metadata when the image, version, exposure or owner switch changes; the effect below fetches it.
+    const [handledMetadataRequest, setHandledMetadataRequest] = useState({
+        imageId: image.id,
+        activeVersionId,
+        mediaExposureBlocked,
+        ownerSwitchPending,
+    });
+    if (
+        handledMetadataRequest.imageId !== image.id ||
+        handledMetadataRequest.activeVersionId !== activeVersionId ||
+        handledMetadataRequest.mediaExposureBlocked !== mediaExposureBlocked ||
+        handledMetadataRequest.ownerSwitchPending !== ownerSwitchPending
+    ) {
+        setHandledMetadataRequest({ imageId: image.id, activeVersionId, mediaExposureBlocked, ownerSwitchPending });
         if (mediaExposureBlocked) {
             setFullImage(null);
             setSettledMetadataId(null);
             setIsLoadingFull(false);
-            return;
-        }
-        const targetId = activeVersionId || image.id;
-        if (ownerSwitchPending) {
+        } else if (ownerSwitchPending) {
             // A full record already loaded for this image stays; the panel shows the gallery row otherwise.
-            setSettledMetadataId(targetId);
+            setSettledMetadataId(activeVersionId || image.id);
             setIsLoadingFull(false);
-            return;
+        } else {
+            // Clear to avoid confusing metadata flicker.
+            setFullImage(null);
+            setSettledMetadataId(null);
+            setIsLoadingFull(true);
         }
+    }
+
+    useEffect(() => {
+        if (mediaExposureBlocked || ownerSwitchPending) return;
+        const targetId = activeVersionId || image.id;
         let cancelled = false;
-        // Optimization: Only clear if it's a completely different image,
-        // keep old one as placeholder if it's just a version switch?
-        // No, let's clear to avoid confusing metadata flicker.
-        setFullImage(null);
-        setSettledMetadataId(null);
-        setIsLoadingFull(true);
 
         getImageWithFullMetadata(targetId)
             .then((res) => {
@@ -277,11 +299,35 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const [promptValue, setPromptValue] = useState(displayImage.metadata.positivePrompt || '');
     const [negativePromptValue, setNegativePromptValue] = useState(displayImage.metadata.negativePrompt || '');
 
-    // Sync state when display image changes (version switch or nav)
-    useEffect(() => {
+    // Sync the buffers during render when the display image changes (version switch or nav)
+    const [handledBuffers, setHandledBuffers] = useState({
+        id: displayImage.id,
+        notes: displayImage.notes,
+        positivePrompt: displayImage.metadata.positivePrompt,
+        negativePrompt: displayImage.metadata.negativePrompt,
+        originalMetadata: displayImage.originalMetadata,
+    });
+    if (
+        handledBuffers.id !== displayImage.id ||
+        handledBuffers.notes !== displayImage.notes ||
+        handledBuffers.positivePrompt !== displayImage.metadata.positivePrompt ||
+        handledBuffers.negativePrompt !== displayImage.metadata.negativePrompt ||
+        handledBuffers.originalMetadata !== displayImage.originalMetadata
+    ) {
+        setHandledBuffers({
+            id: displayImage.id,
+            notes: displayImage.notes,
+            positivePrompt: displayImage.metadata.positivePrompt,
+            negativePrompt: displayImage.metadata.negativePrompt,
+            originalMetadata: displayImage.originalMetadata,
+        });
         setNotes(displayImage.notes || '');
         setPromptValue(displayImage.metadata.positivePrompt || '');
         setNegativePromptValue(displayImage.metadata.negativePrompt || '');
+    }
+
+    // Reset zoom and the AI result when the display image changes
+    useEffect(() => {
         resetZoom();
         ai.closeModal();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- resets the viewer only when the displayed image changes; the ai object is new every render
@@ -294,22 +340,32 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         resetZoom,
     ]);
 
-    useEffect(() => {
-        setRevealedImageId(initiallyRevealed ? image.id : null);
-    }, [image.id, initiallyRevealed]);
-
-    const revealStatusHud = useCallback((duration = 1600) => {
-        setShowStatusHud(true);
+    const armStatusHudTimeout = useCallback((duration = 1600) => {
         if (statusHudTimeoutRef.current) clearTimeout(statusHudTimeoutRef.current);
         statusHudTimeoutRef.current = setTimeout(() => setShowStatusHud(false), duration);
     }, []);
 
+    const revealStatusHud = useCallback(
+        (duration = 1600) => {
+            setShowStatusHud(true);
+            armStatusHudTimeout(duration);
+        },
+        [armStatusHudTimeout]
+    );
+
+    // A new display image shows the HUD during render; the effect below starts the hide timer.
+    const [handledHudImageId, setHandledHudImageId] = useState(displayImage.id);
+    if (handledHudImageId !== displayImage.id) {
+        setHandledHudImageId(displayImage.id);
+        setShowStatusHud(true);
+    }
+
     useEffect(() => {
-        revealStatusHud();
+        armStatusHudTimeout();
         return () => {
             clearTimeout(statusHudTimeoutRef.current as ReturnType<typeof setTimeout>);
         };
-    }, [displayImage.id, revealStatusHud]);
+    }, [displayImage.id, armStatusHudTimeout]);
 
     const handleToggleFavorite = useCallback(() => {
         if (!onToggleFavorite) return;
@@ -322,10 +378,19 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         revealStatusHud(2000);
     }, [displayImage.id, displayImage.isPinned, onTogglePin, revealStatusHud]);
 
-    // Theater Mode Controls Auto-Hide
+    // Theater Mode Controls Auto-Hide: show the controls during render, keep the timer in the effect
+    const [handledControls, setHandledControls] = useState({ isSidebarOpen, isTheaterMode, scale });
+    if (
+        handledControls.isSidebarOpen !== isSidebarOpen ||
+        handledControls.isTheaterMode !== isTheaterMode ||
+        handledControls.scale !== scale
+    ) {
+        setHandledControls({ isSidebarOpen, isTheaterMode, scale });
+        if (isSidebarOpen && !isTheaterMode) setShowControls(true);
+    }
+
     useEffect(() => {
         if (isSidebarOpen && !isTheaterMode) {
-            setShowControls(true);
             if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         } else {
             controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);

@@ -46,13 +46,7 @@ export default tseslint.config(
     },
     {
         // These files still set state in effects; they are fixed one by one under #407.
-        files: [
-            'src/contexts/SearchContext.tsx',
-            'src/App.tsx',
-            'src/features/viewer/components/ImageViewer.tsx',
-            'src/features/viewer/components/WorkflowInspector.tsx',
-            'src/features/viewer/components/VideoViewer.tsx',
-        ],
+        files: ['src/contexts/SearchContext.tsx', 'src/App.tsx'],
         rules: {
             'react-hooks/set-state-in-effect': 'off',
         },

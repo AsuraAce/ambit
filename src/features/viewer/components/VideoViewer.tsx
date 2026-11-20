@@ -111,29 +111,39 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     const positivePrompt = positivePromptState.videoId === video.id ? positivePromptState.value : video.metadata.positivePrompt;
     const negativePrompt = negativePromptState.videoId === video.id ? negativePromptState.value : video.metadata.negativePrompt;
 
-    React.useEffect(() => {
+    const [handledReveal, setHandledReveal] = React.useState({ videoId: video.id, initiallyRevealed });
+    if (handledReveal.videoId !== video.id || handledReveal.initiallyRevealed !== initiallyRevealed) {
+        setHandledReveal({ videoId: video.id, initiallyRevealed });
         setRevealedVideoId(initiallyRevealed ? video.id : null);
-    }, [video.id, initiallyRevealed]);
+    }
 
-    React.useEffect(() => {
+    const [handledPlayback, setHandledPlayback] = React.useState({ videoId: video.id, status: video.playbackStatus });
+    if (handledPlayback.videoId !== video.id || handledPlayback.status !== video.playbackStatus) {
+        setHandledPlayback({ videoId: video.id, status: video.playbackStatus });
         setPlaybackState((current) => ({
             videoId: video.id,
             status: video.playbackStatus,
             url: current.videoId === video.id ? current.url : null,
         }));
-    }, [video.id, video.playbackStatus]);
+    }
 
-    React.useEffect(() => {
+    const [handledDrafts, setHandledDrafts] = React.useState({ videoId: video.id, notes: video.notes, metadata: video.metadata });
+    if (handledDrafts.videoId !== video.id || handledDrafts.notes !== video.notes || handledDrafts.metadata !== video.metadata) {
+        setHandledDrafts({ videoId: video.id, notes: video.notes, metadata: video.metadata });
         setNotesState({ videoId: video.id, value: video.notes ?? '' });
         setPositivePromptState({ videoId: video.id, value: video.metadata.positivePrompt });
         setNegativePromptState({ videoId: video.id, value: video.metadata.negativePrompt });
-    }, [video.id, video.notes, video.metadata]);
+    }
+
+    const fullVideoBlocked = !revealed || video.isMissing === true;
+    const [handledFullVideoBlocked, setHandledFullVideoBlocked] = React.useState(fullVideoBlocked);
+    if (handledFullVideoBlocked !== fullVideoBlocked) {
+        setHandledFullVideoBlocked(fullVideoBlocked);
+        if (fullVideoBlocked) setFullVideo(null);
+    }
 
     React.useEffect(() => {
-        if (!revealed || video.isMissing) {
-            setFullVideo(null);
-            return;
-        }
+        if (fullVideoBlocked) return;
         // During an owner switch the scoped views follow the target owner (#527); a loaded record stays.
         if (ownerSwitchPending) return;
 
@@ -148,7 +158,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [ownerSwitchPending, revealed, video.id, video.isMissing]);
+    }, [fullVideoBlocked, ownerSwitchPending, video.id]);
 
     const metadataVideo = React.useMemo<VideoAsset>(() => {
         if (fullVideo?.id !== video.id) return video;
