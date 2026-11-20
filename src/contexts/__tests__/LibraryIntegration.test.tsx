@@ -3220,6 +3220,335 @@ describe('Library Integration (Provider Stack)', () => {
         });
     });
 
+    describe('background repair of an unchanged owner view (#539)', () => {
+        beforeEach(() => {
+            mocks.getInvokeDbSnapshot.mockReset().mockImplementation(defaultInvokeSnapshotImplementation);
+            // An owner view reconciles a source whose fingerprint drifted; an earlier test leaves one behind.
+            mocks.readInvokeSourceFingerprint.mockReset().mockResolvedValue({
+                schemaVersion: 1,
+                imageCount: 0,
+                imageUpdatedAt: null,
+                boardCount: 0,
+                boardUpdatedAt: null,
+                membershipCount: 0,
+                membershipMaxRowId: null,
+            });
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        const resources = {
+            checkpoints: [],
+            loras: ['ImportedLora'],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: [],
+        };
+        const planOf = (action: 'restored' | 'selective' | 'full', collectionsDirty = false) => ({
+            action,
+            resources,
+            facetTypes: [],
+            collectionsDirty,
+        });
+        const isRepairing = () => useLibraryStore.getState().isOwnerCacheRepairing;
+        const holdNextClaim = () => {
+            const gate = createDeferred<ReturnType<typeof createInvokeScopeCacheClaim>>();
+            mocks.beginActiveInvokeScopeCacheBuild.mockImplementationOnce(() => gate.promise);
+            return gate;
+        };
+
+        // Starts an unchanged view of owner A (or All users) whose startup plan is `cacheRepair`.
+        const startView = async ({
+            cacheRepair,
+            changed = false,
+            mode = 'owner',
+            waitUntilReady = true,
+        }: {
+            cacheRepair: ReturnType<typeof planOf>;
+            changed?: boolean;
+            mode?: 'owner' | 'all';
+            waitUntilReady?: boolean;
+        }) => {
+            let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+            let syncHook: SyncHook | undefined;
+            mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+            mocks.applyInvokeOwnerScope.mockResolvedValueOnce({
+                changed,
+                sourceFactsUpdated: 0,
+                activeVisibilityUpdated: changed ? 1 : 0,
+                removedVisibilityUpdated: 0,
+                boardCollectionsUpdated: 0,
+                mode,
+                cacheRepair,
+                cacheStatus:
+                    cacheRepair.action === 'restored'
+                        ? { state: 'ready', generation: 3, builtGeneration: 3, facetCount: 10, collectionCount: 2 }
+                        : { state: 'dirty', generation: 3, builtGeneration: 2, facetCount: 10, collectionCount: 2 },
+            });
+            const view = renderSyncStack(
+                (h) => (libraryHook = h),
+                (h) => (syncHook = h)
+            );
+            await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+            const dbPath = discovery.dbPath.toLowerCase();
+            const selection = mode === 'owner' ? { dbPath, mode: 'owner' as const, ownerId: 'owner-a' } : { dbPath, mode: 'all' as const };
+            await act(async () =>
+                libraryHook?.setSettings({
+                    invokeAiPath: 'D:/Invoke',
+                    lastSyncedAt: 100,
+                    invokeSyncBoards: false,
+                    invokeOwnerSelection: selection,
+                    invokeDbSnapshot: {
+                        dbPath,
+                        lastSyncedAt: 100,
+                        importIntermediates: false,
+                        importOrphans: false,
+                        syncBoardsToCollections: false,
+                        scopeMode: mode,
+                        scopeOwnerId: mode === 'owner' ? 'owner-a' : null,
+                        pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                        importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                        files: [],
+                        sourceFingerprint: {
+                            schemaVersion: 1,
+                            imageCount: 0,
+                            imageUpdatedAt: null,
+                            boardCount: 0,
+                            boardUpdatedAt: null,
+                            membershipCount: 0,
+                            membershipMaxRowId: null,
+                        },
+                    },
+                })
+            );
+            if (waitUntilReady) await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+            return { getSync: () => syncHook!, getLibrary: () => libraryHook!, unmount: view.unmount };
+        };
+
+        it('shows a selective owner view before its repair finishes, then commits the repair', async () => {
+            // The plan was restored from this owner's own snapshot, so only counts can lag (#539).
+            const gate = holdNextClaim();
+            await startView({ cacheRepair: planOf('selective') });
+            await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+            expect(isRepairing()).toBe(true);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+
+            await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective'), 3)));
+
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 }));
+            await waitFor(() => expect(isRepairing()).toBe(false));
+        });
+
+        it('keeps the saved collection counts while a selective owner repair recounts them', async () => {
+            // A background repair does not clear the saved counts: they came from this owner's snapshot.
+            const gate = holdNextClaim();
+            await startView({ cacheRepair: planOf('selective', true) });
+            await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 3)));
+            await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalled());
+
+            expect(mocks.clearCollectionOwnerScopeCaches).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['a full plan', { cacheRepair: planOf('full', true), changed: false }],
+            ['a changed visibility', { cacheRepair: planOf('selective'), changed: true }],
+        ])('still waits for the owner repair when the plan is %s', async (_name, options) => {
+            // A full plan restores nothing, and a visibility change leaves counts that are wrong, not late.
+            const gate = holdNextClaim();
+            const { getSync } = await startView({ ...options, waitUntilReady: false });
+            await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalled());
+            expect(getSync().invokeOwnerScopeState.status).not.toBe('ready');
+
+            await act(async () => gate.resolve(createInvokeScopeCacheClaim(options.cacheRepair, 3)));
+
+            await waitFor(() => expect(getSync().invokeOwnerScopeState.status).toBe('ready'));
+            expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalled();
+        });
+
+        it('leaves the cache dirty when a write lands during the repair and rejects its commit', async () => {
+            const gate = holdNextClaim();
+            await startView({ cacheRepair: planOf('selective') });
+            const rejected = () => new Error('Invoke owner cache changed while it was being prepared (state: Dirty, generation: 4).');
+            mocks.commitActiveInvokeScopeCache.mockRejectedValueOnce(rejected()).mockRejectedValueOnce(rejected());
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 4));
+
+            await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective'), 3)));
+
+            await waitFor(() => expect(isRepairing()).toBe(false));
+            // Both attempts were rejected, so nothing was promoted and the claims were released.
+            expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+            expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledTimes(2);
+        });
+
+        const selectOwnerB = (sync: SyncHook) =>
+            sync.selectInvokeOwnerScope({ dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-b' });
+        const switchedApplyResult = {
+            changed: false,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 0,
+            removedVisibilityUpdated: 0,
+            boardCollectionsUpdated: 0,
+            mode: 'owner',
+            cacheRepair: planOf('restored'),
+            cacheStatus: { state: 'ready', generation: 5, builtGeneration: 5, facetCount: 3, collectionCount: 1 },
+        };
+
+        it('stops a startup repair before it applies the switched owner scope', async () => {
+            // Applying owner B restores B's snapshot; owner A's late count writes must not follow it.
+            const gate = holdNextClaim();
+            const { getSync } = await startView({ cacheRepair: planOf('selective') });
+            await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+            mocks.applyInvokeOwnerScope.mockClear();
+            mocks.applyInvokeOwnerScope.mockResolvedValue(switchedApplyResult);
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+            await act(async () => {
+                await Promise.resolve();
+            });
+            expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+
+            await act(async () => {
+                gate.resolve(createInvokeScopeCacheClaim(planOf('selective'), 3));
+                await switching;
+            });
+
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+            expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(
+                expect.objectContaining({ selection: expect.objectContaining({ ownerId: 'owner-b' }) })
+            );
+            expect(isRepairing()).toBe(false);
+        });
+
+        // Starts a restored owner view and lets one live import schedule the idle repair.
+        const startViewWithIdleRepairScheduled = async () => {
+            const view = await startView({ cacheRepair: planOf('restored') });
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            await act(async () => {
+                await view.getSync().startTargetedLiveSync(['C:/watch/one.png']);
+            });
+            return view;
+        };
+
+        it('repairs the owner cache once after a burst of imports has been quiet', async () => {
+            const { getSync } = await startViewWithIdleRepairScheduled();
+            mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 7));
+
+            for (const name of ['two', 'three']) {
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(20_000);
+                });
+                await act(async () => {
+                    await getSync().startTargetedLiveSync([`C:/watch/${name}.png`]);
+                });
+            }
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(29_000);
+            });
+            expect(mocks.beginActiveInvokeScopeCacheBuild).not.toHaveBeenCalled();
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+
+            expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
+            expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
+        });
+
+        it('waits while an import is running and repairs after it ends', async () => {
+            await startViewWithIdleRepairScheduled();
+            mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 7));
+            act(() => useLibraryStore.setState({ isImporting: true }));
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(60_000);
+            });
+            expect(mocks.beginActiveInvokeScopeCacheBuild).not.toHaveBeenCalled();
+
+            act(() => useLibraryStore.setState({ isImporting: false }));
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(31_000);
+            });
+
+            expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
+        });
+
+        // Runs an idle repair up to its claim, which stays pending until the returned gate resolves.
+        const startIdleRepairHoldingClaim = async () => {
+            const view = await startViewWithIdleRepairScheduled();
+            mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+            mocks.commitActiveInvokeScopeCache.mockClear();
+            mocks.abortActiveInvokeScopeCacheBuild.mockClear();
+            const gate = holdNextClaim();
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(31_000);
+            });
+            vi.useRealTimers();
+            expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
+            expect(isRepairing()).toBe(true);
+            return { ...view, gate };
+        };
+
+        it('stops an idle repair for a new import instead of making it wait', async () => {
+            const { getSync, gate } = await startIdleRepairHoldingClaim();
+            mocks.processTargetedFiles.mockClear();
+
+            await act(async () => {
+                const batch = getSync().startTargetedLiveSync(['C:/watch/during-repair.png']);
+                // The import has asked the repair to stop before the repair gets its claim.
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                gate.resolve(createInvokeScopeCacheClaim(planOf('selective'), 7));
+                await batch;
+            });
+
+            expect(mocks.processTargetedFiles).toHaveBeenCalledWith(['C:/watch/during-repair.png'], expect.anything());
+            expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
+        });
+
+        it('stops an idle repair before it applies the switched owner scope', async () => {
+            const { getSync, gate } = await startIdleRepairHoldingClaim();
+            mocks.applyInvokeOwnerScope.mockClear();
+            mocks.applyInvokeOwnerScope.mockResolvedValue(switchedApplyResult);
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+            await act(async () => {
+                await Promise.resolve();
+            });
+            expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+
+            await act(async () => {
+                gate.resolve(createInvokeScopeCacheClaim(planOf('selective'), 7));
+                await switching;
+            });
+
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
+            expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(
+                expect.objectContaining({ selection: expect.objectContaining({ ownerId: 'owner-b' }) })
+            );
+        });
+    });
+
     it('runs the board-owner repair when canonical board synchronization is enabled later', async () => {
         let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
         let syncHook: SyncHook | undefined;
@@ -4750,6 +5079,7 @@ describe('Library Integration (Provider Stack)', () => {
         );
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(false, true, {
             consistency: 'authoritative',
+            signal: expect.any(AbortSignal),
         });
         expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledOnce();
 
