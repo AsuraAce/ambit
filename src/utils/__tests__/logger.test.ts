@@ -129,4 +129,43 @@ describe('setupGlobalLogging', () => {
         expect(consoleSpies.error).toHaveBeenCalledTimes(1);
         expect(consoleSpies.error).toHaveBeenCalledWith('[startup] failure');
     });
+
+    describe('unhandled promise rejections', () => {
+        // jsdom has no PromiseRejectionEvent, so build the event the browser would dispatch.
+        const rejectWith = (reason: unknown) => {
+            const event = new Event('unhandledrejection');
+            Object.defineProperty(event, 'reason', { value: reason });
+            window.dispatchEvent(event);
+        };
+
+        it('writes a rejection nobody caught through the logger so it reaches the log file', () => {
+            setupGlobalLogging();
+
+            rejectWith(new Error('save failed'));
+
+            expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+            const [label, detail] = consoleSpies.error.mock.calls[0] as [string, string];
+            expect(label).toBe('Unhandled promise rejection:');
+            expect(detail).toContain('save failed');
+        });
+
+        it('serializes string and non-Error reasons', () => {
+            setupGlobalLogging();
+
+            rejectWith('plain string');
+            rejectWith({ code: 7 });
+            rejectWith(undefined);
+
+            expect(consoleSpies.error.mock.calls.map((call) => call[1])).toEqual(['plain string', '{"code":7}', 'undefined']);
+        });
+
+        it('logs once per rejection even when setup runs repeatedly', () => {
+            setupGlobalLogging();
+            setupGlobalLogging();
+
+            rejectWith('once');
+
+            expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+        });
+    });
 });

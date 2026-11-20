@@ -17,6 +17,21 @@ let originalConsole: {
     error: typeof console.error;
 } | null = null;
 
+const describeRejectionReason = (reason: unknown): string => {
+    if (reason instanceof Error) return reason.stack ?? `${reason.name}: ${reason.message}`;
+    if (typeof reason === 'string') return reason;
+    try {
+        return JSON.stringify(reason) ?? String(reason);
+    } catch {
+        return String(reason);
+    }
+};
+
+// A rejected promise nobody caught (e.g. an async JSX handler) would otherwise vanish.
+const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    console.error('Unhandled promise rejection:', describeRejectionReason(event.reason));
+};
+
 export const setupGlobalLogging = () => {
     if (originalConsole) return; // already set up
 
@@ -53,11 +68,14 @@ export const setupGlobalLogging = () => {
     console.error = (...args: unknown[]) => {
         if (getLevelValue() <= LOG_LEVELS.error) originalConsole!.error(...args);
     };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
 };
 
 export const resetGlobalLoggingForTests = () => {
     if (!originalConsole) return;
 
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     console.log = originalConsole.log;
     console.debug = originalConsole.debug;
     console.info = originalConsole.info;
