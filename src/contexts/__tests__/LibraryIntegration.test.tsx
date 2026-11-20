@@ -7270,6 +7270,91 @@ describe('Library Integration (Provider Stack)', () => {
             expect(useInvokeOwnerScopeStore.getState().ownerScopeState.status).toBe('ready');
         });
 
+        describe('retained owner during a user switch (#527)', () => {
+            const ownerScopeResult = {
+                changed: false,
+                sourceFactsUpdated: 0,
+                activeVisibilityUpdated: 0,
+                removedVisibilityUpdated: 0,
+                mode: 'owner',
+            };
+            const startPendingSwitch = async (hook: SyncHook, draft = draftFor('owner-b')) => {
+                const pending = createDeferred<Awaited<ReturnType<typeof mocks.applyInvokeOwnerScope>>>();
+                mocks.applyInvokeOwnerScope.mockReturnValueOnce(pending.promise);
+                let application!: ReturnType<SyncHook['applyInvokeConnection']>;
+                act(() => {
+                    application = hook.applyInvokeConnection(draft);
+                });
+                await waitFor(() => expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledOnce());
+                return { pending, application: () => application };
+            };
+
+            // While the target prepares, the screen still belongs to the owner the user was browsing.
+            it('keeps the shown owner while another owner on the same root prepares, until the target is admitted', async () => {
+                const hook = await setup(true);
+                const { pending, application } = await startPendingSwitch(hook);
+                expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toMatchObject({
+                    status: 'applying',
+                    scope: expect.objectContaining({ ownerId: 'owner-b' }),
+                });
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toMatchObject({
+                    rootPath: 'D:/Invoke',
+                    scope: expect.objectContaining({ ownerId: 'owner-a' }),
+                    label: 'owner-a',
+                    targetLabel: 'owner-b',
+                });
+
+                await act(async () => {
+                    pending.resolve(ownerScopeResult);
+                    expect(await application()).toMatchObject({ status: 'completed', viewCommitted: true });
+                });
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+            });
+
+            it.each(['cancelled', 'failed'] as const)('returns to the shown owner when the switch is %s', async (failure) => {
+                const hook = await setup(true);
+                const { pending, application } = await startPendingSwitch(hook);
+                if (failure === 'cancelled') act(() => hook.cancelSync());
+                await act(async () => {
+                    if (failure === 'cancelled') pending.resolve(ownerScopeResult);
+                    else pending.reject(new Error('Preparation failed'));
+                    await application();
+                });
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+                expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toMatchObject({
+                    status: 'ready',
+                    scope: expect.objectContaining({ ownerId: 'owner-a' }),
+                });
+                expect(useSettingsStore.getState().settings.invokeOwnerSelection).toMatchObject({ ownerId: 'owner-a' });
+            });
+
+            // Fail closed: if the previous owner cannot be restored, nothing keeps showing it.
+            it('drops the shown owner when the previous view cannot be restored', async () => {
+                const hook = await setup(true);
+                const { pending, application } = await startPendingSwitch(hook);
+                mocks.refreshInvokeOwnerVisibility.mockRejectedValueOnce(new Error('Rollback failed'));
+                await act(async () => {
+                    pending.reject(new Error('Preparation failed'));
+                    await application();
+                });
+                expect(useInvokeOwnerScopeStore.getState().ownerScopeState.status).toBe('error');
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+            });
+
+            it.each([
+                { label: 'a first connection', configured: false, root: 'D:/Invoke' },
+                { label: 'a root change', configured: true, root: 'D:/Other' },
+            ])('keeps nothing on screen for $label', async ({ configured, root }) => {
+                const hook = await setup(configured);
+                const { pending, application } = await startPendingSwitch(hook, draftFor('owner-b', root));
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+                await act(async () => {
+                    pending.resolve(ownerScopeResult);
+                    await application();
+                });
+            });
+        });
+
         it.each([
             { root: 'D:/Invoke', failure: 'cancelled' },
             { root: 'D:/Other', failure: 'cancelled' },
