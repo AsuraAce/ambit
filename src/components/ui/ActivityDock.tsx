@@ -496,7 +496,7 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
           ].filter((item): item is string => Boolean(item));
     const hasMultipleSecondaryDetails = secondaryDetails.length > 1;
     const shouldUseSparkles = isLiveWatchTone || isLowPriority;
-    const shouldPulseSparkles = isLowPriority && !isLiveWatchTone;
+    const shouldPulseSparkles = isLowPriority && !isLiveWatchTone && !isBackgroundPausedShown;
     const accentClasses = isLiveWatchTone
         ? {
               iconText: 'text-sage-600 dark:text-sage-300',

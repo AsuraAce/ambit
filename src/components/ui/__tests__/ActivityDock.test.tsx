@@ -958,9 +958,13 @@ describe('ActivityDock', () => {
             expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
             expect(screen.getByText('Paused while other work finishes.')).toBeTruthy();
             expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+            // Nothing runs while paused, so the icon holds still.
+            const sparkles = () => screen.getByTestId('activity-dock').querySelector('svg.lucide-sparkles');
+            expect(sparkles()?.getAttribute('class')).not.toContain('animate-pulse');
 
             act(() => useLibraryStore.setState({ backgroundHealingPaused: false }));
             expect(screen.getByText('Optimized 3 thumbnails')).toBeTruthy();
+            expect(sparkles()?.getAttribute('class')).toContain('animate-pulse');
             check('resumed');
             expect(empty).toEqual([]);
         } finally {
