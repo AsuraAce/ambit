@@ -129,13 +129,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             scanner::scan_image,
             scanner::scan_images_bulk,
             scanner::scan_image_workflow,
-            scanner::read_image_metadata,
             scanner::get_file_sizes_bulk,
             scanner::probe_file_metadata_bulk,
             scanner::verify_image_paths,
             scanner::audit_invokeai_folder,
             scanner::list_invokeai_images,
-            scanner::scan_directory_recursive,
             scanner::open_file,
             scanner::show_in_folder,
             clipboard::copy_image_to_clipboard,
@@ -153,7 +151,6 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             // watcher commands
             watcher::start_native_folder_watcher,
             // metadata commands
-            metadata::civitai::import_a1111_cache,
             metadata::civitai::resolve_hashes_online,
             metadata::comfyui::inspect_comfyui_metadata_chunks,
             metadata::comfyui::workflow_inspector::inspect_comfyui_workflow_graph,

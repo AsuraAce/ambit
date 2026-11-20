@@ -522,14 +522,6 @@ async scanImageWorkflow(path: string) : Promise<Result<string | null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async readImageMetadata(path: string, defaultTool: string | null) : Promise<Result<ImageMetadata, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("read_image_metadata", { path, defaultTool }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getFileSizesBulk(paths: string[]) : Promise<Result<number[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_file_sizes_bulk", { paths }) };
@@ -565,14 +557,6 @@ async auditInvokeaiFolder(path: string) : Promise<Result<FolderStats, string>> {
 async listInvokeaiImages(path: string) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_invokeai_images", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async scanDirectoryRecursive(path: string) : Promise<Result<string[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("scan_directory_recursive", { path }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -683,14 +667,6 @@ async retryFailedThumbnailOptimizations() : Promise<Result<number, string>> {
 async startNativeFolderWatcher(paths: string[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_native_folder_watcher", { paths }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async importA1111Cache(cachePath: string) : Promise<Result<ImportResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("import_a1111_cache", { cachePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1054,7 +1030,6 @@ microThumbnail: string | null;
  */
 thumbnailSource: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; sourceKindOverride: SourceKind | null; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null; invokeImageName: string | null; invokeImageCategory: string | null; invokeImageOrigin: string | null; invokeOwnerId: string | null }
 export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
-export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 export type InvokeBoardSnapshotBoard = { id: string; name: string; createdAt: number; ownerId: string | null }
 export type InvokeBoardSnapshotInput = { dbPath: string; mode: InvokeOwnerScopeMode; ownerId: string | null; boards: InvokeBoardSnapshotBoard[]; memberships: InvokeBoardSnapshotMembership[]; reconcileMemberships: boolean; deleteMissingCollections: boolean; ownershipOnly?: boolean }

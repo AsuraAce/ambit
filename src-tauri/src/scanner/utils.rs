@@ -277,20 +277,6 @@ where
     super::core::scan_image_workflow(path)
 }
 
-pub fn read_image_metadata_in_scope<F, K>(
-    path: String,
-    default_tool: Option<String>,
-    is_allowed: F,
-    is_known_media: K,
-) -> Result<crate::metadata::ImageMetadata, String>
-where
-    F: FnMut(&Path) -> bool,
-    K: FnMut(&str) -> Result<bool, String>,
-{
-    validate_library_file_paths(std::slice::from_ref(&path), is_allowed, is_known_media)?;
-    super::core::read_image_metadata(path, default_tool)
-}
-
 pub fn get_file_sizes_in_scope<F, K>(
     paths: Vec<String>,
     is_allowed: F,
@@ -333,22 +319,6 @@ where
         super::traversal::scan_dir_recursive(path.as_ref(), &images_path, &mut stats);
     }
     Ok(stats)
-}
-
-pub fn scan_directory_recursive_in_scope<F>(
-    path: &str,
-    is_allowed: F,
-) -> Result<Vec<String>, String>
-where
-    F: FnMut(&Path) -> bool,
-{
-    validate_scoped_roots(&[path.to_string()], is_allowed, "Folder")?;
-    let mut files = Vec::new();
-    let root = Path::new(path);
-    if root.exists() {
-        super::traversal::collect_images_recursive_absolute(root, root, &mut files);
-    }
-    Ok(files)
 }
 
 pub fn scan_directory_with_stats_in_scope<F>(
@@ -641,9 +611,8 @@ fn normalize_path_string(path: &str) -> String {
 mod tests {
     use super::{
         audit_invokeai_folder_in_scope, get_file_sizes_in_scope, list_invokeai_images_in_scope,
-        probe_file_metadata_bulk_impl, read_image_metadata_in_scope, resolve_existing_regular_file,
-        resolve_existing_show_target, resolve_known_media_file_target,
-        resolve_show_in_folder_target, scan_directory_recursive_in_scope,
+        probe_file_metadata_bulk_impl, resolve_existing_regular_file, resolve_existing_show_target,
+        resolve_known_media_file_target, resolve_show_in_folder_target,
         scan_directory_since_in_scope, scan_directory_with_stats_in_scope, scan_image_in_scope,
         scan_image_workflow_in_scope, scope_check_path, validate_bulk_scan_request,
         validate_library_file_paths, validate_metadata_probe_paths, validate_scoped_roots,
@@ -931,9 +900,6 @@ mod tests {
             |_| Ok(false),
         ));
         outside(scan_image_workflow_in_scope(path.clone(), |_| false, |_| Ok(false)).map(|_| ()));
-        outside(
-            read_image_metadata_in_scope(path.clone(), None, |_| false, |_| Ok(false)).map(|_| ()),
-        );
         outside(get_file_sizes_in_scope(paths.clone(), |_| false, |_| Ok(false)).map(|_| ()));
         // A refused path is an error, never reported back as "missing".
         outside(verify_image_paths_in_scope(paths.clone(), |_| false, |_| Ok(false)).map(|_| ()));
@@ -1078,7 +1044,6 @@ mod tests {
 
         outside(scan_directory_with_stats_in_scope(&root, |_| false).map(|_| ()));
         outside(scan_directory_since_in_scope(&root, 0, |_| false).map(|_| ()));
-        outside(scan_directory_recursive_in_scope(&root, |_| false).map(|_| ()));
         outside(audit_invokeai_folder_in_scope(&root, |_| false).map(|_| ()));
 
         assert_eq!(
@@ -1089,12 +1054,6 @@ mod tests {
         );
         assert_eq!(
             scan_directory_since_in_scope(&root, 0, |_| true)
-                .unwrap()
-                .len(),
-            1
-        );
-        assert_eq!(
-            scan_directory_recursive_in_scope(&root, |_| true)
                 .unwrap()
                 .len(),
             1

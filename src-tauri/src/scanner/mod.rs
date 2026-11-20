@@ -161,22 +161,6 @@ pub async fn scan_image_workflow(
     )
 }
 
-#[tauri::command(rename_all = "camelCase")]
-#[specta::specta]
-pub async fn read_image_metadata(
-    app: tauri::AppHandle,
-    path: String,
-    default_tool: Option<String>,
-) -> Result<metadata::ImageMetadata, String> {
-    let mut known_media = utils::KnownMediaLookup::new(&app);
-    utils::read_image_metadata_in_scope(
-        path,
-        default_tool,
-        crate::library_grants::LibraryAccess::checker(&app),
-        |candidate| known_media.contains(candidate),
-    )
-}
-
 #[tauri::command]
 #[specta::specta]
 pub async fn get_file_sizes_bulk(
@@ -262,22 +246,6 @@ pub async fn list_invokeai_images(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_directory_recursive(
-    app: tauri::AppHandle,
-    path: String,
-) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        utils::scan_directory_recursive_in_scope(
-            &path,
-            crate::library_grants::LibraryAccess::checker(&app),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || utils::open_file_impl(&app, path))
         .await
@@ -335,7 +303,6 @@ mod scope_source_tests {
     const SCANNER: &str = include_str!("mod.rs");
     const FS_COMMANDS: &str = include_str!("../fs_commands.rs");
     const A1111: &str = include_str!("a1111.rs");
-    const CIVITAI: &str = include_str!("../metadata/civitai.rs");
     const THUMBS_SCAN: &str = include_str!("../metadata/thumbs_scan.rs");
     const WATCHER: &str = include_str!("../watcher.rs");
     const INVOKE_SOURCE: &str = include_str!("../invoke_source.rs");
@@ -383,11 +350,6 @@ mod scope_source_tests {
             ),
             (
                 SCANNER,
-                "read_image_metadata",
-                "utils::read_image_metadata_in_scope(",
-            ),
-            (
-                SCANNER,
                 "get_file_sizes_bulk",
                 "utils::get_file_sizes_in_scope(",
             ),
@@ -400,11 +362,6 @@ mod scope_source_tests {
                 SCANNER,
                 "audit_invokeai_folder",
                 "utils::audit_invokeai_folder_in_scope(",
-            ),
-            (
-                SCANNER,
-                "scan_directory_recursive",
-                "utils::scan_directory_recursive_in_scope(",
             ),
             (
                 SCANNER,
@@ -426,7 +383,6 @@ mod scope_source_tests {
                 "discover_a1111_folders",
                 "discover_a1111_folders_in_scope(",
             ),
-            (CIVITAI, "import_a1111_cache", "read_a1111_cache_in_scope("),
         ];
         for (source, name, check) in routed {
             assert!(

@@ -2,7 +2,7 @@ use crate::db::facets::FacetResourceTouches;
 use crate::db::resolve_db_path;
 use crate::metadata::guidance::GuidanceClassifier;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -28,18 +28,6 @@ impl Default for ModelDiscoveryState {
             is_cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ModelCacheEntry {
-    pub hash: String,
-    pub name: String,
-    pub filename: Option<String>,
-    pub lookup_source: String,
-    pub scanned_at: u64,
-    pub thumbnail_path: Option<String>,
-    pub preview_url: Option<String>,
-    pub resource_type: Option<String>,
 }
 
 #[derive(Serialize, specta::Type, Clone)]
