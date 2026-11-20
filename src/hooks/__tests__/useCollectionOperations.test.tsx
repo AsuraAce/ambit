@@ -503,6 +503,28 @@ describe('useCollectionOperations', () => {
             expect(removeImagesFromCollection).toHaveBeenCalledWith('smart1', ['img1']);
         });
 
+        // The grid must follow the collection that is open now, not the one open when the hook mounted.
+        it('prunes the grid only for the collection that is active after re-renders', async () => {
+            const { result, rerender } = renderHook(
+                (activeCollectionId: string | null) => useCollectionOperations({ ...props, activeCollectionId }),
+                {
+                    initialProps: null as string | null,
+                }
+            );
+
+            rerender('col1');
+            await act(async () => {
+                await result.current.removeImagesFromCollection(['img1'], 'col1');
+            });
+            expect(mockSetImages).toHaveBeenCalledTimes(1);
+
+            rerender(null);
+            await act(async () => {
+                await result.current.removeImagesFromCollection(['img1'], 'col1');
+            });
+            expect(mockSetImages).toHaveBeenCalledTimes(1);
+        });
+
         it('keeps active collection images visible when the DB update fails', async () => {
             const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
             vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('remove failed'));

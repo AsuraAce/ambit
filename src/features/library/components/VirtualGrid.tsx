@@ -67,6 +67,7 @@ const VirtualGridInternal = <T extends { id: string }>(
     const [resizeMotionVersion, setResizeMotionVersion] = useState(0);
     const [scrollTop, setScrollTop] = useState(0);
     const [gridOffset, setGridOffset] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
     const [isScrolling, setIsScrolling] = useState(false);
 
     // --- Visual State for Selection Box ---
@@ -88,7 +89,20 @@ const VirtualGridInternal = <T extends { id: string }>(
     const suspendResizeLayoutRef = useRef(suspendResizeLayout);
     const wasResizeLayoutSuspendedRef = useRef(suspendResizeLayout);
 
-    suspendResizeLayoutRef.current = suspendResizeLayout;
+    // Declared before the resize observer effect so its callbacks never see a stale flag.
+    useLayoutEffect(() => {
+        suspendResizeLayoutRef.current = suspendResizeLayout;
+    }, [suspendResizeLayout]);
+
+    // Measured on mount (before paint), on each scroll frame and on width changes, in the same
+    // batch as those updates, so the virtualized window never costs an extra render while scrolling.
+    const measureViewportHeight = useCallback(() => {
+        setViewportHeight(scrollContainerRef.current?.clientHeight ?? window.innerHeight);
+    }, [scrollContainerRef]);
+
+    useLayoutEffect(() => {
+        measureViewportHeight();
+    }, [measureViewportHeight]);
 
     const measureGridOffset = useCallback(() => {
         const off = containerRef.current!.offsetTop;
@@ -121,6 +135,7 @@ const VirtualGridInternal = <T extends { id: string }>(
 
             containerWidthRef.current = newWidth;
             setContainerWidth(newWidth);
+            measureViewportHeight();
             scheduleGridOffsetMeasure();
 
             if (shouldAnimateLayout) {
@@ -129,7 +144,7 @@ const VirtualGridInternal = <T extends { id: string }>(
 
             return true;
         },
-        [scheduleGridOffsetMeasure]
+        [measureViewportHeight, scheduleGridOffsetMeasure]
     );
 
     const markScrolling = useCallback(() => {
@@ -237,6 +252,7 @@ const VirtualGridInternal = <T extends { id: string }>(
                     markScrolling();
                 }
                 setScrollTop(scrollContainer.scrollTop);
+                measureViewportHeight();
                 scheduleGridOffsetMeasure();
 
                 // Infinite Scroll Trigger
@@ -265,7 +281,7 @@ const VirtualGridInternal = <T extends { id: string }>(
             scrollContainer.removeEventListener('scroll', handleScrollEvent);
             cancelAnimationFrame(rafId);
         };
-    }, [scrollContainerRef, scheduleGridOffsetMeasure, markScrolling]);
+    }, [scrollContainerRef, measureViewportHeight, scheduleGridOffsetMeasure, markScrolling]);
 
     // --- Layout Engine Integration ---
     const { positions, totalHeight, columns, rowHeight } = useMemo(() => {
@@ -499,8 +515,8 @@ const VirtualGridInternal = <T extends { id: string }>(
     // --- Virtualization Rendering ---
     const visibleItemDescriptors: VisibleGridItem<T>[] = [];
 
-    // Use container height if possible, fallback to window
-    const visibleHeight = scrollContainerRef.current?.clientHeight ?? window.innerHeight;
+    // Container height if possible, fallback to window (see measureViewportHeight)
+    const visibleHeight = viewportHeight;
     const buffer = 1500; // Reduced buffer to avoid texture thrashing
 
     // Relative Scroll Position: Subtract the grid's top offset from container scrollTop

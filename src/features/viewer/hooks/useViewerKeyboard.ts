@@ -8,7 +8,9 @@ interface UseViewerKeyboardOptions {
 
 export const useViewerKeyboard = ({ enabled = true, blocked = false, onKeyDown }: UseViewerKeyboardOptions): void => {
     const handlerRef = React.useRef(onKeyDown);
-    handlerRef.current = onKeyDown;
+    React.useLayoutEffect(() => {
+        handlerRef.current = onKeyDown;
+    }, [onKeyDown]);
 
     React.useEffect(() => {
         if (!enabled) return;

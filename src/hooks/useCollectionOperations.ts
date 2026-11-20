@@ -50,7 +50,9 @@ export const useCollectionOperations = ({
     const invokeOwnerScope = useInvokeOwnerScopeStore((s) => s.ownerScopeState.scope);
     const activeCollectionIdRef = React.useRef(activeCollectionId);
     const membershipMutationTailsRef = React.useRef(new Map<string, Promise<void>>());
-    activeCollectionIdRef.current = activeCollectionId;
+    React.useLayoutEffect(() => {
+        activeCollectionIdRef.current = activeCollectionId;
+    }, [activeCollectionId]);
 
     const serializeCollectionMembershipMutation = useCallback(<T>(collectionId: string, mutation: () => Promise<T>): Promise<T> => {
         const previous = membershipMutationTailsRef.current.get(collectionId) ?? Promise.resolve();

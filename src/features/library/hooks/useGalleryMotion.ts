@@ -56,9 +56,19 @@ export const useGalleryMotion = ({
     const layoutTimerRef = useRef<number | null>(null);
     const gridTimerRef = useRef<number | null>(null);
 
-    const keyChangedThisRender = mountedRef.current && transitionKey !== previousKeyRef.current;
+    const [renderedKey, setRenderedKey] = useState(transitionKey);
     const motionAllowed = !prefersReducedMotion;
     const withinLayoutCap = visibleItemCount > 0 && visibleItemCount <= maxLayoutItems;
+
+    // Open the motion windows during render, so the first commit after a key change already
+    // animates. React re-runs this render before committing; the layout effect starts the timers.
+    if (transitionKey !== renderedKey) {
+        setRenderedKey(transitionKey);
+        if (motionAllowed) {
+            setLayoutWindowActive(true);
+            setGridWindowActive(true);
+        }
+    }
 
     useEffect(() => {
         if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -105,9 +115,6 @@ export const useGalleryMotion = ({
         clearWindowTimer(layoutTimerRef);
         clearWindowTimer(gridTimerRef);
 
-        setLayoutWindowActive(true);
-        setGridWindowActive(true);
-
         layoutTimerRef.current = window.setTimeout(() => {
             layoutTimerRef.current = null;
             setLayoutWindowActive(false);
@@ -127,8 +134,8 @@ export const useGalleryMotion = ({
     }, []);
 
     return {
-        shouldAnimateLayout: motionAllowed && !isScrolling && withinLayoutCap && (keyChangedThisRender || layoutWindowActive),
-        shouldAnimateGrid: motionAllowed && (keyChangedThisRender || gridWindowActive),
+        shouldAnimateLayout: motionAllowed && !isScrolling && withinLayoutCap && layoutWindowActive,
+        shouldAnimateGrid: motionAllowed && gridWindowActive,
         motionAllowed,
         layoutTransition: [
             `transform ${layoutDurationMs}ms cubic-bezier(0.2, 1.12, 0.22, 1)`,
