@@ -516,6 +516,31 @@ describe('ImageViewer full metadata loading', () => {
         input.remove();
     });
 
+    it('leaves Space to a focused button, such as Cancel on the owner-switch dock above the viewer', async () => {
+        const onClose = vi.fn();
+        renderViewer({ onClose });
+        await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
+
+        // The dock is portalled to document.body, outside the viewer, while a switch prepares.
+        const cancel = document.createElement('button');
+        cancel.textContent = 'Cancel';
+        const inner = document.createElement('span');
+        cancel.appendChild(inner);
+        document.body.appendChild(cancel);
+        cancel.focus();
+
+        const onButton = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        act(() => cancel.dispatchEvent(onButton));
+        const onButtonChild = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        act(() => inner.dispatchEvent(onButtonChild));
+
+        // Not prevented, so the browser activates the button; the viewer stays open.
+        expect(onButton.defaultPrevented).toBe(false);
+        expect(onButtonChild.defaultPrevented).toBe(false);
+        expect(onClose).not.toHaveBeenCalled();
+        cancel.remove();
+    });
+
     it('lets the AI modal own shortcuts and closes it before the viewer on Escape', () => {
         aiState.value.modalOpen = true;
         const onClose = vi.fn();

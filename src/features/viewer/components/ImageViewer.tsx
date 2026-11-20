@@ -348,6 +348,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             const key = e.key.toLowerCase();
 
             if (e.key === ' ') {
+                // A focused button, such as Cancel on the owner-switch dock above the viewer, owns Space.
+                if (e.target instanceof Element && e.target.closest('button')) return;
                 e.preventDefault();
                 onClose();
                 return;
