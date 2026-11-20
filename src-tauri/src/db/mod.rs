@@ -200,7 +200,9 @@ pub fn main_database_migration_urls() -> Vec<String> {
     vec![LEGACY_MAIN_DB_URL.to_string()]
 }
 
-pub fn resolve_db_path_info(app: &tauri::AppHandle) -> Result<DbPathInfo, String> {
+pub fn resolve_db_path_info<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<DbPathInfo, String> {
     let roaming_path = app
         .path()
         .app_config_dir()
@@ -237,7 +239,7 @@ pub fn resolve_main_database_url(app: &tauri::AppHandle) -> Result<String, Strin
 }
 
 // Helper to resolve the correct DB path used by native rusqlite maintenance commands.
-pub fn resolve_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub fn resolve_db_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
     Ok(resolve_db_path_info(app)?.active_path)
 }
 

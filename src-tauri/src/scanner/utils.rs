@@ -189,7 +189,7 @@ fn normalize_dir_spelling(path: &Path) -> String {
 }
 
 /// Ambit's own thumbnail folder, resolved as `delete_thumbnail` resolves it.
-pub fn app_thumbnail_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub fn app_thumbnail_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
     use tauri::Manager;
     Ok(app
         .path()
