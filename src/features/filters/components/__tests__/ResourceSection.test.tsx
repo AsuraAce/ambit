@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { ResourceSection, type AssetScope } from '../ResourceSection';
 import type { FilterState, SidebarSortOption } from '../../../../types';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 
 const commandMocks = vi.hoisted(() => ({
     setResourceThumbnailSensitivity: vi.fn(),
@@ -15,6 +16,9 @@ const settingsContextMocks = vi.hoisted(() => ({
     resourceViewModes: { loras: 'list' } as Record<string, 'list' | 'grid'>,
     setSettings: vi.fn(),
 }));
+
+const addToast = vi.hoisted(() => vi.fn());
+vi.mock('../../../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
 
 vi.mock('../../../../bindings', () => ({
     commands: commandMocks,
@@ -145,6 +149,25 @@ describe('ResourceSection thumbnail privacy menu', () => {
 
         await waitFor(() => {
             expect(commandMocks.clearAllThumbnails).toHaveBeenCalledWith('lora_Alpha', 'Alpha', 'loras');
+        });
+    });
+
+    // #527: model-thumbnail choices are user writes, so they wait for an owner switch.
+    describe('while an InvokeAI owner switch is pending', () => {
+        afterEach(endOwnerSwitchForTest);
+
+        it.each(['Use Preview', 'Use Dynamic', 'Mask Thumbnail'])('refuses %s and closes the menu', (action) => {
+            renderSection();
+            fireEvent.contextMenu(screen.getByText('Alpha'));
+            startOwnerSwitchForTest();
+
+            fireEvent.click(screen.getByText(action));
+
+            expect(addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(commandMocks.unsetModelThumbnail).not.toHaveBeenCalled();
+            expect(commandMocks.clearAllThumbnails).not.toHaveBeenCalled();
+            expect(commandMocks.setResourceThumbnailSensitivity).not.toHaveBeenCalled();
+            expect(screen.queryByText(action)).toBeNull();
         });
     });
 });

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type VideoAsset } from '../../../../types';
 import { VideoViewer } from '../VideoViewer';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 
 const mocks = vi.hoisted(() => ({
     updateVideoPlaybackStatus: vi.fn().mockResolvedValue(undefined),
@@ -411,6 +412,20 @@ describe('VideoViewer', () => {
 
         await waitFor(() => expect(mocks.exportAssetOriginal).toHaveBeenCalledWith(video.id, 'C:/exports'));
         expect(mocks.addToast).toHaveBeenCalledWith('Exported C:/exports/clip.mp4', 'success');
+    });
+
+    // #527: export reads the owner-scoped view, which already follows the target owner during a switch.
+    it('refuses Export Original while an InvokeAI owner switch is pending, before asking for a folder', () => {
+        setup();
+        startOwnerSwitchForTest();
+        try {
+            fireEvent.click(screen.getByRole('button', { name: 'Export Original' }));
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.open).not.toHaveBeenCalled();
+            expect(mocks.exportAssetOriginal).not.toHaveBeenCalled();
+        } finally {
+            endOwnerSwitchForTest();
+        }
     });
 
     it('persists notes and collection membership through generic asset actions', async () => {

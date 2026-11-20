@@ -27,6 +27,7 @@ import { MetadataModelField } from './metadata/MetadataModelField';
 import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
 import { useViewerPreferredTab } from '../hooks/useViewerPreferredTab';
 import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 type VideoViewerTab = 'details' | 'metadata' | 'workflow';
 
@@ -250,6 +251,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     };
 
     const handleExport = async () => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         try {
             const { open } = await import('@tauri-apps/plugin-dialog');
             const destination = await open({ directory: true, multiple: false });

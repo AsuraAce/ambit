@@ -32,6 +32,8 @@ import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { commands } from '../../../bindings';
 import { uniqueAssetAliases } from '../../../utils/assetIdentity';
 import type { ResourceThumbnailSource } from '../../../services/db/searchRepo';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
+import { useToast } from '../../../hooks/useToast';
 
 export type { AssetScope };
 
@@ -283,6 +285,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ResourceItem } | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const queryClient = useQueryClient();
+    const { addToast } = useToast();
 
     const getBackendResourceType = useCallback(
         () =>
@@ -329,6 +332,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     // "Use Sidecar / Reset" - clears user override, falls back to sidecar > dynamic
     const handleResetToSidecar = async (item: ResourceItem) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) {
+            setContextMenu(null);
+            return;
+        }
         try {
             const result = await commands.unsetModelThumbnail(getFallbackHash(item), item.name, getBackendResourceType());
             if (result.status === 'error') throw new Error(result.error);
@@ -341,6 +348,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     // "Use Dynamic" - clears BOTH override and sidecar, forces dynamic selection
     const handleUseDynamic = async (item: ResourceItem) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) {
+            setContextMenu(null);
+            return;
+        }
         try {
             const result = await commands.clearAllThumbnails(getFallbackHash(item), item.name, getBackendResourceType());
             if (result.status === 'error') throw new Error(result.error);
@@ -352,6 +363,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const handleThumbnailSensitivity = async (item: ResourceItem, sensitivity: boolean | null) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) {
+            setContextMenu(null);
+            return;
+        }
         try {
             const result = await commands.setResourceThumbnailSensitivity(
                 getFallbackHash(item),
