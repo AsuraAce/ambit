@@ -130,15 +130,17 @@ export const useLibraryStatsQuery = ({
     const activeCollectionId = sideQueryFilters.collectionId;
     const activeCollection = useMemo(() => allCollections.find((c) => c.id === activeCollectionId), [allCollections, activeCollectionId]);
 
+    const activeCollectionFilters = activeCollection?.filters;
+    const activeCollectionManualExclusions = activeCollection?.manualExclusions;
     const smartFilterHash = useMemo(
         () =>
-            activeCollection?.filters
+            activeCollectionFilters
                 ? JSON.stringify({
-                      filters: activeCollection.filters,
-                      manualExclusions: activeCollection.manualExclusions ?? [],
+                      filters: activeCollectionFilters,
+                      manualExclusions: activeCollectionManualExclusions ?? [],
                   })
                 : null,
-        [activeCollection?.filters, activeCollection?.manualExclusions]
+        [activeCollectionFilters, activeCollectionManualExclusions]
     );
 
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];

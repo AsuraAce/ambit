@@ -303,6 +303,10 @@ export const SyncProvider: React.FC<{
     } | null>(null);
     const ownerTransitionRef = useRef<InvokeOwnerTransition | null>(null);
     const ownerScopeAdmissionRef = useRef<InvokeOwnerAdmission | null>(null);
+    // Admissions whose preparation changes a sync has already reported. The same admission object
+    // is cached in ownerScopeAdmissionRef and may be captured as previousAdmission for a restore,
+    // so "consumed" must stay per object; a WeakSet records it without mutating the admission.
+    const consumedPreparationAdmissionsRef = useRef(new WeakSet<InvokeOwnerAdmission>());
     const sourceConnectionRootRef = useRef<string | undefined>(undefined);
     const activeInvokeSyncScopeRef = useRef<InvokeSyncScope | null>(null);
     const pendingInvokeViewReadyAnnouncementRootRef = useRef<string | null>(null);
@@ -1737,7 +1741,8 @@ export const SyncProvider: React.FC<{
             const syncStartedAt = liveWatchNow();
             const livePerfContext = options.mode === 'live' ? options.perfContext : undefined;
             let liveTotalProcessed = 0;
-            const preparationHadChanges = ownerAdmission.hasPreparationChanges === true;
+            const preparationHadChanges =
+                ownerAdmission.hasPreparationChanges === true && !consumedPreparationAdmissionsRef.current.has(ownerAdmission);
             let liveHadChanges = preparationHadChanges;
             let liveOutcome: 'completed' | 'errored' | 'aborted' = 'completed';
             const effectiveTimestamp = options.afterTimestamp !== undefined ? options.afterTimestamp : settingsRef.current.lastSyncedAt;
@@ -1808,8 +1813,8 @@ export const SyncProvider: React.FC<{
                 message: 'InvokeAI synchronization ended without a result.',
             };
             let activeRunFinished = false;
+            // Callers set syncOutcome before calling: the compiler rejects reassigning it from this closure.
             const finishActiveRun = (outcome: InvokeSyncOutcome) => {
-                syncOutcome = outcome;
                 if (activeRunFinished) return;
                 activeRunFinished = true;
                 resolveActiveRun(outcome);
@@ -1911,6 +1916,7 @@ export const SyncProvider: React.FC<{
                                 },
                             });
                         if (!options.controller && useLibraryStore.getState().syncAbortController === ctrl) setSyncAbortController(null);
+                        syncOutcome = outcome;
                         finishActiveRun(outcome);
                         return outcome;
                     }
@@ -1933,9 +1939,10 @@ export const SyncProvider: React.FC<{
                                   }
                                 : {}),
                         });
-                        ownerAdmission.hasPreparationChanges = false;
+                        consumedPreparationAdmissionsRef.current.add(ownerAdmission);
                         if (!options.controller && useLibraryStore.getState().syncAbortController === ctrl) setSyncAbortController(null);
                         const outcome: InvokeSyncOutcome = { status: 'completed' };
+                        syncOutcome = outcome;
                         finishActiveRun(outcome);
                         return outcome;
                     }
@@ -2540,7 +2547,7 @@ export const SyncProvider: React.FC<{
                     if (!options.controller) useLibraryStore.getState().markInvokeSyncCancelled();
                 }
                 if (syncOutcome.status === 'completed') {
-                    ownerAdmission.hasPreparationChanges = false;
+                    consumedPreparationAdmissionsRef.current.add(ownerAdmission);
                     if (options.mode !== 'live') updateInvokeOperation(operationId, { hasChanges: liveHadChanges });
                 }
                 if (ownsOperation) {

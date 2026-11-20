@@ -11,26 +11,27 @@ interface SkeletonSize {
     flexGrow?: number;
 }
 
+const SKELETON_ITEM_COUNT = 24;
+
+const generateSizes = (layout: 'masonry' | 'justified'): SkeletonSize[] =>
+    Array.from({ length: SKELETON_ITEM_COUNT }, () =>
+        layout === 'masonry'
+            ? // Random height between 200px and 400px for masonry
+              { height: Math.floor(Math.random() * 200) + 200 + 'px' }
+            : // Random width for flex rows
+              { width: Math.floor(Math.random() * 200) + 200 + 'px', flexGrow: Math.random() + 0.5 }
+    );
+
 export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }) => {
     // Generate a fixed number of skeleton items
-    const items = Array.from({ length: 24 });
+    const items = Array.from({ length: SKELETON_ITEM_COUNT });
 
-    // Memoize randomized heights/widths to prevent flicker on re-renders
-    const randomSizes = React.useMemo<SkeletonSize[]>(
-        () =>
-            items.map(() => {
-                if (layout === 'masonry') {
-                    // Random height between 200px and 400px for masonry
-                    return { height: Math.floor(Math.random() * 200) + 200 + 'px' };
-                } else if (layout === 'justified') {
-                    // Random width for flex rows
-                    return { width: Math.floor(Math.random() * 200) + 200 + 'px', flexGrow: Math.random() + 0.5 };
-                }
-                return {}; // Grid uses aspect-square
-            }),
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- items is a new array every render; adding it would re-randomise the sizes this memo keeps stable
-        [layout]
-    );
+    // Randomize once per mount so sizes do not flicker on re-renders. Grid uses aspect-square.
+    const [sizesByLayout] = React.useState(() => ({
+        masonry: generateSizes('masonry'),
+        justified: generateSizes('justified'),
+    }));
+    const randomSizes: SkeletonSize[] = layout === 'masonry' || layout === 'justified' ? sizesByLayout[layout] : [];
 
     if (layout === 'masonry') {
         return (
