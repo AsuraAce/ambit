@@ -8,7 +8,7 @@ import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
-import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { QueryClient } from '@tanstack/react-query';
 import type { AppSettings, Collection, FilterState, InvokeDbSnapshotState, InvokeOwnerDiscovery } from '../../types';
 import type { InvokeSyncOptions } from '../../services/invoke/syncService';
@@ -7304,10 +7304,23 @@ describe('Library Integration (Provider Stack)', () => {
                     targetLabel: 'owner-b',
                 });
 
-                await act(async () => {
-                    pending.resolve(ownerScopeResult);
-                    expect(await application()).toMatchObject({ status: 'completed', viewCommitted: true });
+                // Observe the moment the target's catch-up starts, before the release in `finally` could run.
+                const atCatchUp: { owner: unknown; writesAllowed: boolean }[] = [];
+                const unsubscribe = useInvokeOwnerScopeStore.subscribe((state, previous) => {
+                    if (state.operation?.phase === 'syncing' && previous.operation?.phase !== 'syncing') {
+                        atCatchUp.push({ owner: state.ownerScopeState.scope, writesAllowed: !isOwnerSwitchPending(state) });
+                    }
                 });
+                try {
+                    await act(async () => {
+                        pending.resolve(ownerScopeResult);
+                        expect(await application()).toMatchObject({ status: 'completed', viewCommitted: true });
+                    });
+                } finally {
+                    unsubscribe();
+                }
+                // Once the target is admitted, writes land in its scope, so they are allowed again.
+                expect(atCatchUp).toEqual([{ owner: expect.objectContaining({ ownerId: 'owner-b' }), writesAllowed: true }]);
                 expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
             });
 
