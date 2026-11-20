@@ -6,6 +6,7 @@ import { LibraryProvider, useLibraryContext } from '../LibraryContext';
 import { useSync, type InvokeSyncOutcome } from '../SyncContext';
 import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
@@ -7330,6 +7331,45 @@ describe('Library Integration (Provider Stack)', () => {
                 expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toMatchObject({
                     scope: expect.objectContaining({ ownerId: 'owner-a' }),
                 });
+            });
+
+            // B5 of the #528 review: automatic work keeps running during a switch. A watcher import that lands after
+            // the target is admitted refetches the gallery query with the target's rows; none may reach the store
+            // (and so the screen) while the previous owner is still shown.
+            it('keeps a watcher import from putting the target owner rows on screen before the swap', async () => {
+                const freyaRow = { id: 'freya-row', path: 'D:/Invoke/outputs/images/freya.png' };
+                const odinRow = { id: 'odin-row', path: 'D:/Invoke/outputs/images/odin.png' };
+                mocks.searchImages.mockResolvedValue([freyaRow]);
+                const hook = await setup(true);
+                await waitFor(() => expect(useSearchStore.getState().images.map((row) => row.id)).toEqual(['freya-row']));
+
+                const { pending, application } = await startPendingSwitch(hook);
+                await act(async () => {
+                    pending.resolve(ownerScopeResult);
+                    await application();
+                });
+                expect(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())).toBe(true);
+
+                mocks.searchImages.mockClear().mockResolvedValue([odinRow, freyaRow]);
+                mocks.processTargetedFiles.mockResolvedValueOnce({
+                    handledPaths: ['D:/Invoke/outputs/images/odin.png'],
+                    failedPaths: [],
+                    stats: { imported: 1 },
+                    touchedFacetTypes: [],
+                    touchedFacetResources: undefined,
+                });
+                await act(async () => {
+                    await hook.startTargetedLiveSync(['D:/Invoke/outputs/images/odin.png']);
+                });
+
+                // The drain ran and the query refetched the target owner's rows...
+                expect(mocks.processTargetedFiles).toHaveBeenCalled();
+                await waitFor(() => expect(mocks.searchImages).toHaveBeenCalled());
+                await act(async () => {
+                    await Promise.resolve();
+                });
+                // ...but the store still holds only what was on screen.
+                expect(useSearchStore.getState().images.map((row) => row.id)).toEqual(['freya-row']);
             });
 
             it.each(['cancelled', 'failed'] as const)('returns to the shown owner when the switch is %s', async (failure) => {
