@@ -33,7 +33,8 @@ After validating the source and owner, **Connect & Import** and **Switch view** 
 While **Switch view** prepares another owner, the gallery keeps showing the previous owner's images. A note at the top of the gallery says whose images are on screen, and the Activity Dock shows the progress with **Cancel**. You can scroll the pages already loaded and open images in the viewer. Until the switch ends:
 
 - Changes to the library wait. Favorites, pins, collections, imports, exports, edits and deletions show a short message instead.
-- Search, sort, filters and the collections list pause with "Paused while switching". Browsing stops at the loaded pages; more images load after the switch. Statistics and Maintenance return after the switch.
+- Search, sort, filters and the collections list pause with "Paused while switching". Browsing stops at the loaded pages; more images load after the switch. Statistics and Maintenance return after the switch. Layout, thumbnail size and the slideshow keep working.
+- A folder added just before the switch started is scanned when the switch ends.
 - The viewer shows the gallery details of an image; full details and references return after the switch.
 - Changing privacy settings during a switch hides the gallery until the switch ends.
 

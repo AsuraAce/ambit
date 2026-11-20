@@ -53,6 +53,12 @@ interface AppHeaderProps {
     clearAllFilters: () => void;
     isFiltering?: boolean;
     onSearchDraftPendingChange: (isPending: boolean) => void;
+    /**
+     * During a user owner switch (#527) search, scope, active filters, Import and Live Watch wait for the swap.
+     * Layout, thumbnail size and slideshow stay usable: they only present the loaded pages.
+     * Sort stays reachable and refuses with a notice (SearchContext).
+     */
+    browseOnly?: boolean;
 }
 
 type ToolbarDensity = 'normal' | 'actionsOverflow' | 'compact';
@@ -102,6 +108,7 @@ export const AppHeader = React.memo(
         clearAllFilters,
         isFiltering,
         onSearchDraftPendingChange,
+        browseOnly = false,
     }: AppHeaderProps) => {
         const headerRef = React.useRef<HTMLElement>(null);
         const actionsMenuRef = React.useRef<HTMLDivElement>(null);
@@ -204,7 +211,8 @@ export const AppHeader = React.memo(
                     label="Import Images"
                     content="Import images. For automatic sync with favorites and boards, set up an Integration in Settings."
                     onClick={onImport}
-                    className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                    inert={browseOnly ? true : undefined}
+                    className={`p-2 rounded-xl transition-all border relative group ${browseOnly ? 'opacity-60 ' : ''}${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                 >
                     <Import className="w-4 h-4" />
                 </TooltipButton>
@@ -217,7 +225,8 @@ export const AppHeader = React.memo(
                     }
                     aria-pressed={isLiveWatching}
                     onClick={toggleLiveWatch}
-                    className={`p-2 rounded-xl transition-all border relative group ${liveWatchButtonClass}`}
+                    inert={browseOnly ? true : undefined}
+                    className={`p-2 rounded-xl transition-all border relative group ${browseOnly ? 'opacity-60 ' : ''}${liveWatchButtonClass}`}
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -259,7 +268,10 @@ export const AppHeader = React.memo(
                         )}
                     </div>
 
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div
+                        className={`flex min-w-0 flex-1 items-center gap-3${browseOnly ? ' opacity-60' : ''}`}
+                        inert={browseOnly ? true : undefined}
+                    >
                         <div className="min-w-0 max-w-lg flex-1">
                             <React.Suspense fallback={<SearchBarFallback />}>
                                 <SearchBar
@@ -376,7 +388,9 @@ export const AppHeader = React.memo(
                     </div>
                 </div>
 
-                <ActiveFilters filters={filters} setFilters={setFilters} clearAllFilters={clearAllFilters} />
+                <div inert={browseOnly ? true : undefined} className={browseOnly ? 'opacity-60' : undefined}>
+                    <ActiveFilters filters={filters} setFilters={setFilters} clearAllFilters={clearAllFilters} />
+                </div>
             </header>
         );
     }

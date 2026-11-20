@@ -485,37 +485,36 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     />
                 )}
 
-                {/* Browse only during a user owner switch (#527): search, sort, scope and import wait for the swap. */}
-                <div inert={ownerSwitchPending ? true : undefined} className={ownerSwitchPending ? 'opacity-60' : undefined}>
-                    <AppHeader
-                        viewMode={viewMode}
-                        filters={filters}
-                        setFilters={setFilters}
-                        searchProps={searchProps}
-                        layoutMode={layoutMode}
-                        setLayoutMode={setLayoutMode}
-                        sortOption={sortOption}
-                        setSortOption={setSortOption}
-                        displayedCount={displayedCount}
-                        totalCount={scopeTotal}
-                        scopeName={scopeName}
-                        sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
-                        scopeCounts={scopeCounts}
-                        scopeAvailability={scopeAvailability}
-                        scopeResultCount={scopeResultCount}
-                        scopeCountsLoading={scopeCountsLoading}
-                        scopeCountsError={scopeCountsError}
-                        retryScopeCounts={retryScopeCounts}
-                        isFiltering={isSearchPending}
-                        onSearchDraftPendingChange={setIsSearchDraftPending}
-                        onImport={onOpenImportModal}
-                        onSlideshow={() => {
-                            modals.setSlideshowShuffle(false);
-                            modals.openModal('slideshow');
-                        }}
-                        clearAllFilters={clearAllFilters}
-                    />
-                </div>
+                {/* Browse only during a user owner switch (#527): the header pauses what would query the target owner. */}
+                <AppHeader
+                    viewMode={viewMode}
+                    filters={filters}
+                    setFilters={setFilters}
+                    searchProps={searchProps}
+                    layoutMode={layoutMode}
+                    setLayoutMode={setLayoutMode}
+                    sortOption={sortOption}
+                    setSortOption={setSortOption}
+                    displayedCount={displayedCount}
+                    totalCount={scopeTotal}
+                    scopeName={scopeName}
+                    sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
+                    scopeCounts={scopeCounts}
+                    scopeAvailability={scopeAvailability}
+                    scopeResultCount={scopeResultCount}
+                    scopeCountsLoading={scopeCountsLoading}
+                    scopeCountsError={scopeCountsError}
+                    retryScopeCounts={retryScopeCounts}
+                    isFiltering={isSearchPending}
+                    onSearchDraftPendingChange={setIsSearchDraftPending}
+                    onImport={onOpenImportModal}
+                    onSlideshow={() => {
+                        modals.setSlideshowShuffle(false);
+                        modals.openModal('slideshow');
+                    }}
+                    clearAllFilters={clearAllFilters}
+                    browseOnly={ownerSwitchPending}
+                />
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
                     <OwnerSwitchPill />

@@ -379,6 +379,25 @@ describe('AppHeader', () => {
         expect(onSlideshow).toHaveBeenCalledTimes(1);
     });
 
+    // #527: during a user owner switch only what would query the target owner pauses; layout, thumbnail size
+    // and slideshow only present the loaded pages, so they stay usable.
+    it('pauses search, scope, filters, Import and Live Watch while browse-only, but not the view controls', () => {
+        render(<AppHeader {...defaultProps} browseOnly />);
+        const isInert = (element: Element) => element.closest('[inert]') !== null;
+
+        expect(isInert(screen.getByTestId('search-bar'))).toBe(true);
+        expect(isInert(screen.getByTestId('active-filters'))).toBe(true);
+        expect(isInert(screen.getByRole('button', { name: 'Import Images' }))).toBe(true);
+        expect(isInert(screen.getByRole('button', { name: 'Enable Live Watch' }))).toBe(true);
+        expect(isInert(screen.getByTestId('view-controls'))).toBe(false);
+        expect(isInert(screen.getByText('Set Layout'))).toBe(false);
+    });
+
+    it('pauses nothing outside a switch', () => {
+        const { container } = render(<AppHeader {...defaultProps} />);
+        expect(container.querySelector('[inert]')).toBeNull();
+    });
+
     it('blocks Live Watch in browser mode and shows the mock-mode indicator', () => {
         mocks.browserMode = true;
         const addToast = vi.fn();

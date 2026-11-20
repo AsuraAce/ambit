@@ -4,6 +4,7 @@ import { AppLayout } from '../AppLayout';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AIImage } from '../../types';
+import { endOwnerSwitchForTest, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const searchState = vi.hoisted(() => ({
     value: {
@@ -247,6 +248,18 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('app-header')).toBeTruthy();
         expect(screen.getByTestId('error-boundary')).toBeTruthy();
     });
+    // #527: the header itself decides what pauses during a switch; view controls stay usable (no inert wrapper).
+    it('passes browse-only to the header during an owner switch instead of making the whole header inert', () => {
+        startOwnerSwitchForTest();
+        try {
+            render(<AppLayout {...defaultProps} />);
+            expect(capturedProps.header?.browseOnly).toBe(true);
+            expect(screen.getByTestId('app-header').closest('[inert]')).toBeNull();
+        } finally {
+            endOwnerSwitchForTest();
+        }
+    });
+
     it('suppresses the native focus outline on the programmatically focused workspace', () => {
         render(<AppLayout {...defaultProps} />);
 
