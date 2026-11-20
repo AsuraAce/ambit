@@ -930,13 +930,19 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         [notifyToast, setFilters]
     );
 
+    // Also browse only (#527). The swap releases the retained owner before it clears the stale view, so its
+    // own clear still runs.
     const clearAllFiltersAndRefresh = useCallback(() => {
+        if (useInvokeOwnerScopeStore.getState().retainedOwnerScope) {
+            notifyToast?.(OWNER_SWITCH_BROWSE_ONLY_MESSAGE, 'info');
+            return;
+        }
         clearAllFilters();
         // Explicitly invalidate to ensure fresh data if cache was stale
         // Refetch errors land in query state; invalidateQueries does not reject by default.
         void queryClient.invalidateQueries({ queryKey: ['images'] });
         void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
-    }, [clearAllFilters, queryClient]);
+    }, [clearAllFilters, notifyToast, queryClient]);
 
     return (
         <SearchContext.Provider

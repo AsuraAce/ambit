@@ -1276,6 +1276,29 @@ describe('SearchProvider', () => {
         expect(mocks.patchImageFlagsInQueryCaches).not.toHaveBeenCalled();
     });
 
+    // #527 R3: clearing filters starts a new search, which would read the target owner's rows while Freya's
+    // kept pages are shown ("No Matches Found → Clear filters" reaches it outside the header).
+    it('refuses Clear filters while an owner switch is pending, and clears once it ends', () => {
+        const addToast = vi.fn();
+        render(
+            <ToastContext.Provider value={{ addToast, removeToast: vi.fn() }}>
+                <SearchProvider>
+                    <Consumer />
+                </SearchProvider>
+            </ToastContext.Provider>
+        );
+        const { clearAllFilters } = mocks.searchState.current as SearchValue;
+        startOwnerSwitchForTest();
+
+        act(() => latest.clearAllFilters());
+        expect(clearAllFilters).not.toHaveBeenCalled();
+        expect(addToast).toHaveBeenCalledWith('Search and filters are paused while switching owners.', 'info');
+
+        endOwnerSwitchForTest();
+        act(() => latest.clearAllFilters());
+        expect(clearAllFilters).toHaveBeenCalledOnce();
+    });
+
     it('rolls optimistic favorite and pin updates back after persistence failures', async () => {
         const original = image({ isPinned: true });
         const next = image({ isPinned: false });
