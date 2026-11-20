@@ -30,6 +30,15 @@ For an existing connection, choose another owner and click **Switch view** to ap
 
 After validating the source and owner, **Connect & Import** and **Switch view** close Settings. Validation failures stay in Settings for correction. **Sync now** keeps Settings open; you can close it and continue browsing once the current view is ready.
 
+While **Switch view** prepares another owner, the gallery keeps showing the previous owner's images. A note at the top of the gallery says whose images are on screen, and the Activity Dock shows the progress with **Cancel**. You can scroll the pages already loaded and open images in the viewer. Until the switch ends:
+
+- Changes to the library wait. Favorites, pins, collections, imports, exports, edits and deletions show a short message instead.
+- Search, sort, filters and the collections list pause with "Paused while switching". Browsing stops at the loaded pages; more images load after the switch. Statistics and Maintenance return after the switch.
+- The viewer shows the gallery details of an image; full details and references return after the switch.
+- Changing privacy settings during a switch hides the gallery until the switch ends.
+
+When the new owner is ready, the gallery changes over. If the viewer, Settings or a dialog is open at that moment, the gallery waits until you close it, and the Activity Dock offers **Switch now**. Cancelling the switch, or a failed switch, leaves the previous owner on screen where you were. To choose another owner during a switch, cancel it first in the Activity Dock or in Settings.
+
 Enabling intermediates scans historical rows that the selected owner previously excluded. Favorite and board mapping options use the existing synchronization rules as images are processed, preserving local overrides; changing a mapping does not request a bulk remap of every previously imported image.
 
 If the InvokeAI database contains exactly one represented owner and no unassigned images or boards, Ambit preselects that owner and shows a summary instead of a redundant All users choice; first import still waits for Connect & Import. If the database contains multiple owners or unassigned images or boards, choose one owner or explicitly choose All users. InvokeAI's reserved `System` owner normally contains pre-account or system-created rows and behaves like any other single owner in Ambit; it is not the aggregate view. `All users` is the explicit aggregate view. A single-owner scope limits images, favorites, directly owned boards, board collections, startup catch-up, and Live Watch to that owner. An owned board remains listed with a zero visible count when all of its members belong to other owners; those member images and thumbnails remain hidden. Other and unassigned records stay stored locally and reappear when their owner or All users is selected; changing scope does not delete them.
