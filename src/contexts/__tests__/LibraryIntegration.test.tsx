@@ -6847,7 +6847,7 @@ describe('Library Integration (Provider Stack)', () => {
                 await hook.startInvokeSync({ mode: 'startup' });
             });
             expect(screen.getByText('Synchronization complete.')).toBeTruthy();
-            expect(screen.getByText('0 added')).toBeTruthy();
+            expect(screen.queryByText('0 added')).toBeNull();
             await waitFor(() => expect(screen.queryByText('Synchronization complete.')).toBeNull(), { timeout: 6500 });
         }, 10000);
 

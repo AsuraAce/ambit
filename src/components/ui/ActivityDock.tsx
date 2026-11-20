@@ -16,8 +16,6 @@ import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
-// Above both viewers (z-[100]); placed clear of their own controls.
-const OVER_VIEWER_PLACEMENT = 'bottom-28 right-11 z-[110]';
 const LIVE_WATCH_DOCK_REVEAL_MS = 2500;
 const LIVE_WATCH_DOCK_MIN_VISIBLE_MS = 2200;
 const LIVE_WATCH_DOCK_CLOSE_GRACE_MS = 1500;
@@ -266,7 +264,7 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
     const active =
         isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult || isOwnerSwitchHeldEntry;
     // S8 of #527: an owner switch's progress, Cancel and "Switch now" stay reachable while a viewer is open.
-    // Over the viewer the entry starts compact, clear of the viewer's own controls, and expands on click.
+    // Over the viewer the entry starts compact, in the dock's usual spot, and expands on click.
     const isOwnerSwitchEntryShown =
         isOwnerSwitchHeldShown || (!isImporting && isManualSyncing && invokePresentation.isOwnerSwitchPreparing);
     const isOverViewer = isViewerOpen && isOwnerSwitchEntryShown;
@@ -451,10 +449,11 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
         ? []
         : [
               ...splitDetailItems(progress?.detail),
-              ...(isInvokePresentation && typeof invokeOperation?.imported === 'number'
+              // A zero count says nothing the message does not already say, so only non-zero counts show.
+              ...(isInvokePresentation && typeof invokeOperation?.imported === 'number' && invokeOperation.imported > 0
                   ? [`${formatProgressNumber(invokeOperation.imported)} added`]
                   : []),
-              ...(isInvokePresentation && typeof invokeOperation?.updated === 'number'
+              ...(isInvokePresentation && typeof invokeOperation?.updated === 'number' && invokeOperation.updated > 0
                   ? [`${formatProgressNumber(invokeOperation.updated)} updated`]
                   : []),
               ...(isInvokePresentation && typeof invokeOperation?.pathsRepaired === 'number' && invokeOperation.pathsRepaired > 0
@@ -549,7 +548,7 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     data-testid="activity-dock"
-                    className={`fixed ${isOverViewer ? OVER_VIEWER_PLACEMENT : 'bottom-11 right-11 z-[40]'}`}
+                    className={`fixed bottom-11 right-11 ${isOverViewer ? 'z-[110]' : 'z-[40]'}`}
                 >
                     {isCompact ? (
                         <motion.div layoutId="dock-content">

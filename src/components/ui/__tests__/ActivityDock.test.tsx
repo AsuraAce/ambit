@@ -122,7 +122,8 @@ describe('ActivityDock', () => {
         expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
         expect(screen.getByRole('status').textContent).toBe('Processing images: 2/5');
         expect(screen.getByText('1 added')).toBeTruthy();
-        expect(screen.getByText('0 updated')).toBeTruthy();
+        // P3 of the #529 owner smoke: a zero count is left out, the non-zero one stays.
+        expect(screen.queryByText('0 updated')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(cancel).toHaveBeenCalledTimes(1);
         act(() => useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling' }));
@@ -315,8 +316,9 @@ describe('ActivityDock', () => {
             act(() => vi.advanceTimersByTime(100));
             act(() => completeInvokeOperation({ hasChanges }));
             expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
-            expect(screen.getByText('0 added')).toBeTruthy();
-            expect(screen.getByText('0 updated')).toBeTruthy();
+            // P3 of the #529 owner smoke: zero counts add nothing to the message, so no count row shows.
+            expect(screen.queryByText('0 added')).toBeNull();
+            expect(screen.queryByText('0 updated')).toBeNull();
             act(() => vi.advanceTimersByTime(5000));
             expect(screen.queryByRole('status')).toBeNull();
         });
@@ -702,7 +704,7 @@ describe('ActivityDock', () => {
         });
 
         // S8: a viewer can stay open for the whole switch, so its progress, Cancel and "Switch now" stay
-        // reachable above it: compact first, clear of the viewer's own controls, and expanding on click.
+        // reachable above it: compact first, in the dock's usual spot, and expanding on click.
         const dock = () => screen.getByTestId('activity-dock');
 
         it('raises the preparation above an open viewer in compact form, and expands it with Cancel', () => {
@@ -734,12 +736,21 @@ describe('ActivityDock', () => {
             expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
         });
 
-        it('returns the switch to its full form in the gallery layer once the viewer closes', () => {
+        it('returns the switch to its full form in the gallery layer once the viewer closes, in the same spot', () => {
+            const placement = () =>
+                dock()
+                    .className.split(/\s+/)
+                    .filter((name) => /^(top|right|bottom|left|inset)-/.test(name))
+                    .sort();
             startSwitch();
             const view = render(<ActivityDock isViewerOpen />);
             act(() => vi.advanceTimersByTime(600));
+            const overViewer = placement();
             view.rerender(<ActivityDock isViewerOpen={false} />);
 
+            // P1 of the owner smoke: one spot for the dock everywhere, so it never jumps when the viewer opens or closes.
+            expect(overViewer.length).toBeGreaterThan(0);
+            expect(placement()).toEqual(overViewer);
             expect(dock().className).toContain('z-[40]');
             expect(screen.getByText('Switching to Odin')).toBeTruthy();
             expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
