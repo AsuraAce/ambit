@@ -1,6 +1,7 @@
 ﻿import { renderHook, act, waitFor } from '../../test/testUtils';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { useImportOps } from '../useImportOps';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { GeneratorTool } from '../../types';
@@ -1044,5 +1045,57 @@ describe('useImportOps', () => {
             false
         );
         expect(updateLastScanned).toHaveBeenCalledWith('full', expect.any(Number));
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner. A user import waits for the switch; automatic imports keep the library current, so they keep running.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        it('refuses a manual path import', async () => {
+            const { result } = renderImportOps();
+
+            await act(async () => {
+                await result.current.handleImportPaths(['C:/picked/new.png']);
+            });
+
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.processNativePaths).not.toHaveBeenCalled();
+            expect(useLibraryStore.getState().isImporting).toBe(false);
+        });
+
+        it('refuses a manual folder import', async () => {
+            const { result } = renderImportOps();
+
+            await act(async () => {
+                await result.current.handleImportFolders([{ path: 'C:/picked' }]);
+            });
+
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.processFoldersUnified).not.toHaveBeenCalled();
+        });
+
+        it('refuses an in-memory file import', async () => {
+            const { result } = renderImportOps();
+
+            await act(async () => {
+                await result.current.handleWebFiles([new File(['x'], 'a.png')]);
+            });
+
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.processWebFiles).not.toHaveBeenCalled();
+        });
+
+        it('keeps running watcher path imports and folder imports', async () => {
+            const { result } = renderImportOps();
+
+            await act(async () => {
+                await result.current.handleImportPaths(['C:/watch/new.png'], undefined, { mode: 'background' });
+                await result.current.handleImportFolders([{ path: 'C:/watch' }], { mode: 'background' });
+            });
+
+            expect(mocks.processNativePaths).toHaveBeenCalled();
+            expect(mocks.processFoldersUnified).toHaveBeenCalled();
+            expect(mocks.addToast).not.toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+        });
     });
 });

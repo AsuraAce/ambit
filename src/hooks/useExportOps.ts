@@ -3,6 +3,7 @@ import { AIImage } from '../types';
 import { useToast } from './useToast';
 import { isBrowserMockMode } from '../services/runtime';
 import { getImagesByIds } from '../services/db/imageRepo';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface UseExportOpsProps {
     images: AIImage[];
@@ -19,6 +20,8 @@ export const useExportOps = ({ images }: UseExportOpsProps) => {
                 return;
             }
 
+            // Export re-reads rows through the owner-scoped views, which already belong to the target owner.
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const idArray = Array.from(ids);
             if (idArray.length === 0 || !destinationFolder) return;
 

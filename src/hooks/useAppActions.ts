@@ -26,6 +26,7 @@ import { beginImageFieldWrite, type ImageFieldChange } from '../utils/imageField
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import type { ImagesQueryKey } from './useImagesQuery';
 import type { ActiveImageStateAdapter } from './activeImageState';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface AppActionFileOps {
     deleteImages: (ids: string[]) => Promise<boolean>;
@@ -246,6 +247,7 @@ export const useAppActions = ({
 
     const executeDeleteByIds = React.useCallback(
         async (ids: string[], targetDeleteId: string | null) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const deleted = await fileOps.deleteImages(ids);
             if (!deleted) return;
 
@@ -268,6 +270,7 @@ export const useAppActions = ({
             setPendingViewerDeleteId(null);
         },
         [
+            addToast,
             fileOps,
             viewerImages,
             setViewerSessionImages,
@@ -286,6 +289,7 @@ export const useAppActions = ({
 
     const requestDeleteForId = React.useCallback(
         (id: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             setPendingViewerDeleteId(id);
             if (settings.confirmDelete) {
                 openModal('deleteConfirm');
@@ -294,7 +298,7 @@ export const useAppActions = ({
 
             void executeDeleteByIds([id], id);
         },
-        [settings.confirmDelete, openModal, setPendingViewerDeleteId, executeDeleteByIds]
+        [addToast, settings.confirmDelete, openModal, setPendingViewerDeleteId, executeDeleteByIds]
     );
 
     const handleDeleteViewerImage = (id: string) => {
@@ -302,6 +306,7 @@ export const useAppActions = ({
     };
 
     const handleExportConfirm = async (filename: string, folder: string, ids?: Set<string>) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const targetIds = ids || selectedIds;
         await fileOps.exportImages(filename, targetIds, folder, () => {
             if (!ids) setSelectedIds(new Set());
@@ -310,6 +315,7 @@ export const useAppActions = ({
     };
 
     const handleBulkFavorite = () => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const anyUnfavorite = images.some((img) => selectedIds.has(img.id) && !img.isFavorite);
         const previousImages = images;
         const ids = Array.from(selectedIds);
@@ -326,6 +332,7 @@ export const useAppActions = ({
     };
 
     const handleFavoriteImage = (id: string, options: SingleImageActionOptions = {}) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
 
@@ -343,6 +350,7 @@ export const useAppActions = ({
     };
 
     const handleBulkPin = () => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const anyUnpinned = images.some((img) => selectedIds.has(img.id) && !img.isPinned);
         const previousImages = images;
         const ids = Array.from(selectedIds);
@@ -366,6 +374,7 @@ export const useAppActions = ({
     };
 
     const handleBulkMask = async (targetId?: string, overrideValue?: boolean | null) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         let idsToToggle = new Set<string>();
 
         if (targetId) {
@@ -454,6 +463,7 @@ export const useAppActions = ({
     const handleSetImageSourceKind = React.useCallback(
         async (ids: string[], sourceKindOverride: SourceKind | null) => {
             if (ids.length === 0) return;
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
 
             try {
                 await setImageSourceKind(ids, sourceKindOverride);
@@ -509,6 +519,7 @@ export const useAppActions = ({
         (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
 
     const openMetadataRecovery = (targetId?: string, onRecovered?: (image: AIImage) => void) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const resolvedTargetId = resolveMetadataRecoveryTargetId(targetId);
         if (!resolvedTargetId) {
             addToast('Select an image before starting Prompt Recovery.', 'error');
@@ -534,6 +545,7 @@ export const useAppActions = ({
     };
 
     const executeMetadataRecovery = async (style: RecoveryStyle) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const pendingRecovery = pendingMetadataRecoveryRef.current;
         const targetId = pendingRecovery?.targetId ?? resolveMetadataRecoveryTargetId();
         if (!targetId) {
@@ -565,6 +577,7 @@ export const useAppActions = ({
     };
 
     const handlePinImage = (id: string, newPinned: boolean, options: SingleImageActionOptions = { showToast: true }) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const previousActiveImage = getImage(id);
         const previousImages = images;
         const isInCurrentQuery = images.some((image) => image.id === id);
@@ -621,6 +634,7 @@ export const useAppActions = ({
     };
 
     const runBackfill = async () => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         addToast('Starting background backfill...', 'info');
         const count = await backfillParameterColumns();
         if (count > 0) {

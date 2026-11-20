@@ -106,6 +106,43 @@ describe('ContextMenu', () => {
         expect(screen.getByRole('button', { name: 'Flux' }).parentElement?.className).toContain('right-');
     });
 
+    // #527: during an owner switch the gallery is a read-only view of the previous owner, so the menu offers
+    // only actions that read the file; anything that changes the library would land in the wrong owner's view.
+    it('offers only read actions when read-only', () => {
+        const cb = callbacks();
+        render(
+            <ContextMenu
+                x={10}
+                y={10}
+                readOnly
+                isPinned
+                enableAI
+                activeCollectionName="Favorites"
+                isFavorite
+                isMasked={false}
+                userMasked
+                isIntermediate
+                detectedSourceKind="generated"
+                onSetImageKind={vi.fn()}
+                modelsForThumbnail={[{ name: 'Flux', hash: 'abc', type: 'checkpoint' }]}
+                {...cb}
+            />
+        );
+
+        for (const label of ['Unfavorite', 'Unpin', 'Remove from Library'])
+            expect(screen.queryByRole('button', { name: label })).toBeNull();
+        for (const label of ['Image Kind', 'Organize', 'Privacy & AI'])
+            expect(screen.queryByRole('button', { name: new RegExp(label) })).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show in Folder' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open in Default App' }));
+        openSubmenu('Copy Data');
+        fireEvent.click(screen.getByRole('button', { name: 'Copy Prompt' }));
+        expect(cb.onShowInFolder).toHaveBeenCalledOnce();
+        expect(cb.onOpenInDefaultApp).toHaveBeenCalledOnce();
+        expect(cb.onCopyPrompt).toHaveBeenCalledOnce();
+    });
+
     it('renders alternate labels and omits unavailable optional actions', () => {
         const cb = callbacks();
         render(

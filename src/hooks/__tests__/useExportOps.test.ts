@@ -1,7 +1,8 @@
 import { act, renderHook } from '../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AIImage, GeneratorTool } from '../../types';
 import { useExportOps } from '../useExportOps';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const mocks = vi.hoisted(() => ({
     browserMode: false,
@@ -100,5 +101,21 @@ describe('useExportOps', () => {
         expect(mocks.addToast).toHaveBeenCalledWith('Export failed', 'error');
         expect(result.current.isExporting).toBe(false);
         error.mockRestore();
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner. Export re-reads rows through the owner-scoped views, so it would read the target owner's rows.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        it('refuses the export before reading any rows', async () => {
+            const { result } = renderHook(() => useExportOps({ images: [image('one')] }));
+
+            await act(async () => result.current.exportImages('out.zip', ['one'], 'C:/out'));
+
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.getImagesByIds).not.toHaveBeenCalled();
+            expect(mocks.exportImagesToZip).not.toHaveBeenCalled();
+            expect(result.current.isExporting).toBe(false);
+        });
     });
 });

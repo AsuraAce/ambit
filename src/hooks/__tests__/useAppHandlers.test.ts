@@ -1,10 +1,12 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppHandlers } from '../useAppHandlers';
 import { AIImage, GeneratorTool } from '../../types';
 import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
+import { OwnerSwitchPendingError } from '../../services/invoke/ownerSwitchGuard';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -771,5 +773,58 @@ describe('useAppHandlers', () => {
         const { result } = renderHandlers();
         await act(async () => result.current.handleDeleteFile(['a', 'b', 'c']));
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 2 entries from Ambit'), 'warning');
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner, so an edit
+    // or a library change now would land in the wrong owner's view.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        type Handlers = ReturnType<typeof useAppHandlers>;
+        const expectNoWrite = () => {
+            expect(mockAddToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mockSetImages).not.toHaveBeenCalled();
+            expect(mockUpdateImageMetadataFields).not.toHaveBeenCalled();
+            expect(mockUpdateImageNotesCol).not.toHaveBeenCalled();
+            expect(mockRevertImageMetadata).not.toHaveBeenCalled();
+            expect(mockRemoveImagesFromLibrary).not.toHaveBeenCalled();
+            expect(mockRestoreRemovedImages).not.toHaveBeenCalled();
+            expect(mockDeleteRemovedImagesFromDisk).not.toHaveBeenCalled();
+            expect(mockResolveExactDuplicateGroups).not.toHaveBeenCalled();
+        };
+
+        it.each([
+            ['handleUpdatePrompt', (h: Handlers) => h.handleUpdatePrompt('img1', 'A dog')],
+            ['handleUpdateNegativePrompt', (h: Handlers) => h.handleUpdateNegativePrompt('img1', 'blurry')],
+            ['handleUpdateModel', (h: Handlers) => h.handleUpdateModel('img1', 'Model B')],
+            ['handleUpdateTool', (h: Handlers) => h.handleUpdateTool('img1', GeneratorTool.COMFYUI)],
+            ['handleUpdateVideoGenerationMode', (h: Handlers) => h.handleUpdateVideoGenerationMode('img1', 'i2v')],
+            ['handleUpdateNotes', (h: Handlers) => h.handleUpdateNotes('img1', 'a note')],
+            ['handleRevertMetadata', (h: Handlers) => h.handleRevertMetadata('img1')],
+        ])('%s refuses with a notice and edits nothing', async (_name, run) => {
+            const { result } = renderHandlers();
+
+            await act(async () => {
+                await run(result.current);
+            });
+
+            expectNoWrite();
+        });
+
+        // These callers report a failure by catching a throw, so the refusal must throw rather than look like success.
+        it.each([
+            ['handleResolveDuplicate', (h: Handlers) => h.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2'] }])],
+            ['handleRestoreImages', (h: Handlers) => h.handleRestoreImages(['img1'])],
+            ['handleRemoveFromLibrary', (h: Handlers) => h.handleRemoveFromLibrary(['img1'])],
+            ['handleDeleteFile', (h: Handlers) => h.handleDeleteFile(['img1'])],
+        ])('%s throws OwnerSwitchPendingError and changes nothing', async (_name, run) => {
+            const { result } = renderHandlers();
+
+            await act(async () => {
+                await expect(run(result.current)).rejects.toBeInstanceOf(OwnerSwitchPendingError);
+            });
+
+            expectNoWrite();
+        });
     });
 });

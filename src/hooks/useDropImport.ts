@@ -12,6 +12,7 @@ import { listenWithCleanup } from '../utils/tauriListener';
 import { normalizePath } from '../utils/pathUtils';
 import type { ImportMediaKind } from '../utils/importProgress';
 import { createMonitoredFolder, scanAddedFolders } from '../features/settings/utils/addedFolderScan';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 // Files and folders dropped onto the window (#493). Files are imported in place, as
 // Import files does; a folder Rust confirmed with the user becomes a library folder.
@@ -149,6 +150,7 @@ export const useDropImport = ({ importPaths, importFolders, importWebFiles, moni
     const handleDropFiles = useCallback((files: File[]) => {
         const { addToast: toast, importWebFiles: importInMemory } = latestRef.current;
         if (files.length === 0) return;
+        if (refuseWriteDuringOwnerSwitch(toast)) return;
         if (!isTauriRuntime()) {
             importInMemory(files).catch((error: unknown) => console.error('[DropImport] Dropped-file import failed', error));
             return;

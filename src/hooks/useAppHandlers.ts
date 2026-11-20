@@ -19,6 +19,7 @@ import { beginImageFieldWrite } from '../utils/imageFieldWrites';
 import type { ActiveImageStateAdapter } from './activeImageState';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 import type { DeleteRemovedImagesResult, ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
+import { assertNoOwnerSwitchPending, refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface UseAppHandlersProps {
     images: AIImage[];
@@ -55,6 +56,7 @@ export const useAppHandlers = ({
     };
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
         if ((img.metadata.positivePrompt ?? '') === prompt) return;
@@ -79,6 +81,7 @@ export const useAppHandlers = ({
     };
 
     const handleUpdateNegativePrompt = async (id: string, negativePrompt: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
         if ((img.metadata.negativePrompt ?? '') === negativePrompt) return;
@@ -103,6 +106,7 @@ export const useAppHandlers = ({
     };
 
     const handleUpdateModel = async (id: string, model: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
         const normalizedModel = model.trim();
@@ -134,6 +138,7 @@ export const useAppHandlers = ({
     };
 
     const handleUpdateTool = async (id: string, tool: GeneratorTool) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
         if (img.metadata.tool === tool) return;
@@ -164,6 +169,7 @@ export const useAppHandlers = ({
     };
 
     const handleUpdateVideoGenerationMode = async (id: string, generationMode: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
         if ((img.metadata.generationMode ?? 'unknown') === generationMode) return;
@@ -192,6 +198,7 @@ export const useAppHandlers = ({
     };
 
     const handleResolveDuplicate = async (resolutions: ExactDuplicateResolution[]) => {
+        assertNoOwnerSwitchPending(addToast);
         let result: ExactDuplicateResolutionResult;
         try {
             const { resolveExactDuplicateGroups } = await import('../services/db/exactDuplicateRepo');
@@ -229,6 +236,7 @@ export const useAppHandlers = ({
     };
 
     const handleRestoreImages = async (ids: string[]) => {
+        assertNoOwnerSwitchPending(addToast);
         const result = await restoreRemovedImages(ids).catch((error) => {
             console.error('[Restore] Failed to restore removed images', error);
             addToast('Could not restore the selected items. Their Removed entries were kept.', 'error');
@@ -262,6 +270,7 @@ export const useAppHandlers = ({
     };
 
     const handleRemoveFromLibrary = async (ids: string[]) => {
+        assertNoOwnerSwitchPending(addToast);
         const result = await removeImagesFromLibrary(ids).catch((error) => {
             console.error('[Removed] Failed to remove images from the library', error);
             addToast('Could not remove the selected items. The library was left unchanged.', 'error');
@@ -285,6 +294,7 @@ export const useAppHandlers = ({
     };
 
     const handleDeleteFile = async (ids: string[]): Promise<DeleteRemovedImagesResult> => {
+        assertNoOwnerSwitchPending(addToast);
         try {
             const result = await deleteRemovedImagesFromDisk(ids);
             const unresolvedCount = result.failedIds.length + result.cleanupPendingIds.length;
@@ -346,6 +356,7 @@ export const useAppHandlers = ({
     };
 
     const handleUpdateNotes = async (id: string, notes: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const img = getImage(id);
         if (!img) return;
         if ((img.notes ?? '') === notes) return;
@@ -368,6 +379,7 @@ export const useAppHandlers = ({
     };
 
     const handleRevertMetadata = async (id: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         await revertImageMetadata(id);
         const [revertedImage] = await getImagesByIds([id]);
         if (!revertedImage) {

@@ -1,10 +1,11 @@
 import { renderHook, act } from '../../test/testUtils';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { useCollectionOperations } from '../useCollectionOperations';
 import { AIImage, Collection, FilterState, SmartCollection } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { QueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 // --- Mocks ---
 
@@ -57,6 +58,8 @@ const deferred = <T,>() => {
     });
     return { promise, resolve, reject };
 };
+
+type Ops = ReturnType<typeof useCollectionOperations>;
 
 describe('useCollectionOperations', () => {
     const mockSetAllCollections = vi.fn();
@@ -1223,5 +1226,37 @@ describe('useCollectionOperations', () => {
         vi.mocked(repo.setCollectionCustomThumbnail).mockRejectedValueOnce(new Error('reset'));
         await act(async () => result.current.resetCollectionThumbnail('col1'));
         expect(dispatchedCollections[1]).toBe(extra);
+    });
+
+    // #527: during a user owner switch the backend scope already belongs to the target owner, so a
+    // collection created or changed now would land in the wrong owner's view.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        it.each([
+            ['createCollection', (ops: Ops) => ops.createCollection('New Folder')],
+            ['saveSmartCollection', (ops: Ops) => ops.saveSmartCollection('Saved', smartFilters)],
+            ['renameCollection', (ops: Ops) => ops.renameCollection('col1', 'Renamed')],
+            ['setCollectionColor', (ops: Ops) => ops.setCollectionColor('col1', 'red')],
+            ['toggleArchiveCollection', (ops: Ops) => ops.toggleArchiveCollection('col1')],
+            ['togglePinCollection', (ops: Ops) => ops.togglePinCollection('col1')],
+            ['deleteCollection', (ops: Ops) => ops.deleteCollection('col1')],
+            ['addImagesToCollection', (ops: Ops) => ops.addImagesToCollection(['img2'], 'col1')],
+            ['removeImagesFromCollection', (ops: Ops) => ops.removeImagesFromCollection(['img1'], 'col1')],
+            ['setCollectionThumbnail', (ops: Ops) => ops.setCollectionThumbnail('col1', makeImage())],
+            ['resetCollectionThumbnail', (ops: Ops) => ops.resetCollectionThumbnail('col1')],
+        ])('refuses %s without writing or changing the shown collections', async (_name, run) => {
+            const repo = await import('../../services/db/collectionRepo');
+            const { result } = renderHook(() => useCollectionOperations(props));
+            await act(async () => {
+                await run(result.current);
+            });
+            for (const write of Object.values(repo)) {
+                if (vi.isMockFunction(write)) expect(write).not.toHaveBeenCalled();
+            }
+            expect(mockSetAllCollections).not.toHaveBeenCalled();
+            expect(mockAddToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+        });
     });
 });

@@ -8,6 +8,8 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { privacyMaskRefreshCoordinator } from '../../utils/privacyMaskRefreshCoordinator';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
+import { ToastContext } from '../ToastContext';
+import { OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 type SearchValue = ReturnType<typeof useSearch>;
 
@@ -1159,6 +1161,32 @@ describe('SearchProvider', () => {
             true,
             true
         );
+    });
+
+    // #527: during an owner switch the backend scope belongs to the target owner, so the write would land in
+    // the wrong owner's view and the optimistic change would show something that never happened.
+    it('refuses favorite and pin toggles while an owner switch is pending', async () => {
+        const original = image();
+        (mocks.searchState.current as SearchValue).images = [original];
+        const addToast = vi.fn();
+        render(
+            <ToastContext.Provider value={{ addToast, removeToast: vi.fn() }}>
+                <SearchProvider>
+                    <Consumer />
+                </SearchProvider>
+            </ToastContext.Provider>
+        );
+        startOwnerSwitchForTest();
+
+        await act(() => latest.toggleFavorite(original.id));
+        await act(() => latest.togglePin(original.id, true));
+
+        expect(addToast).toHaveBeenCalledTimes(2);
+        expect(addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+        expect(mocks.updateFavorite).not.toHaveBeenCalled();
+        expect(mocks.updatePinned).not.toHaveBeenCalled();
+        expect((mocks.searchState.current as SearchValue).setImages).not.toHaveBeenCalled();
+        expect(mocks.patchImageFlagsInQueryCaches).not.toHaveBeenCalled();
     });
 
     it('rolls optimistic favorite and pin updates back after persistence failures', async () => {

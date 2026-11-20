@@ -22,6 +22,7 @@ import {
 } from '../services/db/collectionRepo';
 import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 import { normalizeCollectionScope } from '../utils/filterState';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface UseCollectionOperationsProps {
     collections: Collection[];
@@ -95,6 +96,7 @@ export const useCollectionOperations = ({
 
     const createCollection = useCallback(
         async (name: string, filters?: FilterState) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const id = `c_${Date.now()}`;
             const newCol: Collection = {
                 id,
@@ -135,6 +137,7 @@ export const useCollectionOperations = ({
 
     const updateCollectionFilters = useCallback(
         async (id: string, filters: FilterState | undefined) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!col) return;
 
@@ -176,6 +179,7 @@ export const useCollectionOperations = ({
 
     const updateCollectionScope = useCallback(
         async (id: string, target: AmbitCollectionScopeTarget): Promise<boolean> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const collection = [...collections, ...smartCollections].find((item) => item.id === id);
             if (!collection || collection.source === 'invoke') return false;
 
@@ -209,6 +213,7 @@ export const useCollectionOperations = ({
 
     const deleteCollection = useCallback(
         async (id: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const original = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!original) return false;
 
@@ -237,6 +242,7 @@ export const useCollectionOperations = ({
 
     const resetInvokeCollection = useCallback(
         async (id: string): Promise<boolean> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const collection = [...collections, ...smartCollections].find((item) => item.id === id);
             if (!collection || collection.source !== 'invoke' || collection.invokeSourcePresent === false) return false;
 
@@ -260,6 +266,7 @@ export const useCollectionOperations = ({
 
     const renameCollection = useCallback(
         async (id: string, newName: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!col) return;
 
@@ -285,6 +292,7 @@ export const useCollectionOperations = ({
 
     const setCollectionColor = useCallback(
         async (id: string, color: string | undefined) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!col) return;
 
@@ -299,11 +307,12 @@ export const useCollectionOperations = ({
                 setAllCollections((prev) => prev.map((c) => (c.id === id ? col : c)));
             }
         },
-        [collections, smartCollections, setAllCollections, refreshCollections]
+        [addToast, collections, smartCollections, setAllCollections, refreshCollections]
     );
 
     const toggleArchiveCollection = useCallback(
         async (id: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!col) return;
 
@@ -330,6 +339,7 @@ export const useCollectionOperations = ({
 
     const togglePinCollection = useCallback(
         async (id: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!col) return;
 
@@ -346,11 +356,12 @@ export const useCollectionOperations = ({
                 setAllCollections((prev) => prev.map((c) => (c.id === id ? col : c)));
             }
         },
-        [collections, smartCollections, setAllCollections, refreshCollections]
+        [addToast, collections, smartCollections, setAllCollections, refreshCollections]
     );
 
     const addImagesToCollection = useCallback(
         async (imageIds: string[], collectionId: string): Promise<boolean> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const col = [...collections, ...smartCollections].find((c) => c.id === collectionId);
             if (!col) return false;
 
@@ -390,6 +401,7 @@ export const useCollectionOperations = ({
 
     const removeImagesFromCollection = useCallback(
         async (imageIds: string[], collectionId: string, onPersisted?: () => void): Promise<boolean> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const col = [...collections, ...smartCollections].find((c) => c.id === collectionId);
             if (!col) return false;
 
@@ -446,6 +458,7 @@ export const useCollectionOperations = ({
 
     const moveImagesBetweenCollections = useCallback(
         async (imageIds: string[], sourceId: string, targetId: string): Promise<boolean> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const sourceCol = [...collections, ...smartCollections].find((c) => c.id === sourceId);
             const targetCol = [...collections, ...smartCollections].find((c) => c.id === targetId);
             if (!sourceCol || !targetCol) return false;
@@ -480,6 +493,7 @@ export const useCollectionOperations = ({
 
     const setCollectionThumbnail = useCallback(
         async (collectionId: string, image: AIImage) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === collectionId);
             if (!col) {
                 addToast('Collection not found', 'error');
@@ -522,6 +536,7 @@ export const useCollectionOperations = ({
 
     const resetCollectionThumbnail = useCallback(
         async (id: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const col = [...collections, ...smartCollections].find((c) => c.id === id);
             if (!col) {
                 addToast('Collection not found', 'error');

@@ -18,7 +18,7 @@ import { useCollectionStore } from './stores/collectionStore';
 import { getCollectionCount } from './utils/collectionCount';
 import { orderAsDrawn, showsPinnedShelf } from './utils/pinnedShelf';
 import { useLibraryStore } from './stores/libraryStore';
-import { useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
 import { invokeSyncTrace } from './utils/invokeSyncTrace';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
@@ -842,6 +842,8 @@ export default function App() {
     const workspaceRef = useRef<HTMLElement>(null);
     const gridRef = useRef<VirtualGridHandle>(null);
     const invokeOperationId = useInvokeOwnerScopeStore((state) => state.operation?.id);
+    // While an owner switch is pending the viewer offers no edits: they would land in the target owner's scope.
+    const isViewerReadOnly = useInvokeOwnerScopeStore(isOwnerSwitchPending);
     const invokeViewCommitted = useInvokeOwnerScopeStore((state) => state.operation?.viewCommitted);
     const focusedInvokeOperationRef = useRef<symbol | undefined>(undefined);
     const pendingInvokeFocusRef = useRef(false);
@@ -1334,18 +1336,24 @@ export default function App() {
                                     setSelectedImageIndex(selectedImageIndex - 1);
                                 }
                             }}
-                            onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
-                            onTogglePin={(id, pinned) => actions.handlePinImage(id, pinned, { showToast: false })}
-                            onDelete={(id) => actions.handleDeleteViewerImage(id)}
-                            onUpdateNotes={(id, notes) => handlers.handleUpdateNotes(id, notes)}
-                            onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
-                            onUpdateNegativePrompt={(id, prompt) => handlers.handleUpdateNegativePrompt(id, prompt)}
-                            onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
-                            onUpdateTool={(id, tool) => handlers.handleUpdateTool(id, tool)}
-                            onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
-                            onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
+                            onToggleFavorite={isViewerReadOnly ? undefined : (id) => actions.handleFavoriteImage(id, { showToast: false })}
+                            onTogglePin={
+                                isViewerReadOnly ? undefined : (id, pinned) => actions.handlePinImage(id, pinned, { showToast: false })
+                            }
+                            onDelete={isViewerReadOnly ? undefined : (id) => actions.handleDeleteViewerImage(id)}
+                            onUpdateNotes={isViewerReadOnly ? undefined : (id, notes) => handlers.handleUpdateNotes(id, notes)}
+                            onUpdatePrompt={isViewerReadOnly ? undefined : (id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
+                            onUpdateNegativePrompt={
+                                isViewerReadOnly ? undefined : (id, prompt) => handlers.handleUpdateNegativePrompt(id, prompt)
+                            }
+                            onUpdateModel={isViewerReadOnly ? undefined : (id, model) => handlers.handleUpdateModel(id, model)}
+                            onUpdateTool={isViewerReadOnly ? undefined : (id, tool) => handlers.handleUpdateTool(id, tool)}
+                            onUpdateGenerationMode={
+                                isViewerReadOnly ? undefined : (id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)
+                            }
+                            onRevertMetadata={isViewerReadOnly ? undefined : (id) => handlers.handleRevertMetadata(id)}
                             onSearch={handleViewerSearch}
-                            onSetCollectionMembership={handleSetViewerCollectionMembership}
+                            onSetCollectionMembership={isViewerReadOnly ? undefined : handleSetViewerCollectionMembership}
                             modelOptions={modelOptions}
                             isShortcutBlocked={isViewerShortcutBlocked}
                             canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
@@ -1384,23 +1392,29 @@ export default function App() {
                             }}
                             canNavigateNext={selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1}
                             canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
-                            onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
-                            onUpdateNegativePrompt={(id, neg) => handlers.handleUpdateNegativePrompt(id, neg)}
-                            onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
-                            onUpdateTool={(id, tool) => handlers.handleUpdateTool(id, tool)}
-                            onSetImageKind={(id, sourceKindOverride) => actions.handleSetImageSourceKind([id], sourceKindOverride)}
-                            onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
-                            onTogglePin={(id, p) => actions.handlePinImage(id, p, { showToast: false })}
-                            onDelete={(id) => actions.handleDeleteViewerImage(id)}
+                            onUpdatePrompt={isViewerReadOnly ? undefined : (id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
+                            onUpdateNegativePrompt={
+                                isViewerReadOnly ? undefined : (id, neg) => handlers.handleUpdateNegativePrompt(id, neg)
+                            }
+                            onUpdateModel={isViewerReadOnly ? undefined : (id, model) => handlers.handleUpdateModel(id, model)}
+                            onUpdateTool={isViewerReadOnly ? undefined : (id, tool) => handlers.handleUpdateTool(id, tool)}
+                            onSetImageKind={
+                                isViewerReadOnly
+                                    ? undefined
+                                    : (id, sourceKindOverride) => actions.handleSetImageSourceKind([id], sourceKindOverride)
+                            }
+                            onToggleFavorite={isViewerReadOnly ? undefined : (id) => actions.handleFavoriteImage(id, { showToast: false })}
+                            onTogglePin={isViewerReadOnly ? undefined : (id, p) => actions.handlePinImage(id, p, { showToast: false })}
+                            onDelete={isViewerReadOnly ? undefined : (id) => actions.handleDeleteViewerImage(id)}
                             onOpenSettings={() => {
                                 modals.setInitialSettingsTab('intelligence');
                                 modals.openModal('settings');
                             }}
-                            onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
+                            onUpdateNotes={isViewerReadOnly ? undefined : (id, n) => handlers.handleUpdateNotes(id, n)}
                             onSearch={handleViewerSearch}
-                            onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
-                            onRecoverMetadata={() => actions.openMetadataRecovery()}
-                            onSetCollectionMembership={handleSetViewerCollectionMembership}
+                            onRevertMetadata={isViewerReadOnly ? undefined : (id) => handlers.handleRevertMetadata(id)}
+                            onRecoverMetadata={isViewerReadOnly ? undefined : () => actions.openMetadataRecovery()}
+                            onSetCollectionMembership={isViewerReadOnly ? undefined : handleSetViewerCollectionMembership}
                             availableTags={libraryPresentation.availableTags}
                             modelOptions={modelOptions}
                             isSidebarOpen={!settings.defaultTheaterMode}
