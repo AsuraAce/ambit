@@ -82,6 +82,22 @@ export const isInvokeOwnerScopeAdmitted = (configuredPath: string | null | undef
 export const isOwnerSwitchPending = (state: Pick<InvokeOwnerScopeStore, 'retainedOwnerScope'>): boolean =>
     state.retainedOwnerScope !== null;
 
+const ownerScopeKey = (scope: InvokeSyncScope | undefined): string =>
+    scope?.mode === 'owner' ? `owner:${scope.ownerId}` : (scope?.mode ?? 'none');
+
+/**
+ * True while a user owner switch's target is admitted but the screen still shows the previous owner (the
+ * swap is held), whichever operation is current: a retried catch-up runs under a new operation.
+ */
+export const isOwnerSwitchHeld = (state: Pick<InvokeOwnerScopeStore, 'retainedOwnerScope' | 'ownerScopeState'>): boolean => {
+    const { retainedOwnerScope, ownerScopeState } = state;
+    return (
+        retainedOwnerScope !== null &&
+        (ownerScopeState.status === 'ready' || ownerScopeState.status === 'offline_ready') &&
+        ownerScopeKey(ownerScopeState.scope) !== ownerScopeKey(retainedOwnerScope.scope)
+    );
+};
+
 // Fail closed: states that need the gate never keep a retained view.
 const releasesRetainedScope = (status: InvokeOwnerScopeState['status']): boolean =>
     status === 'error' || status === 'selection_required' || status === 'idle' || status === 'discovering';

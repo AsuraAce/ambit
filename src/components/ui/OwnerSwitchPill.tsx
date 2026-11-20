@@ -56,12 +56,14 @@ export const OwnerSwitchPill: React.FC = () => {
         const outcome = operation?.id === previous.operationId ? operation.phase : null;
         const admitted = ownerScopeState.status === 'ready' || ownerScopeState.status === 'offline_ready';
         const kept = `still showing ${previous.label}'s images`;
-        if (outcome === 'cancelled') {
+        // The admitted owner decides: once the target is admitted, cancelling or failing its catch-up during a
+        // held swap does not undo the switch, so the swap that follows shows the target.
+        if (admitted && scopeOwnerKey(ownerScopeState.scope) !== scopeOwnerKey(previous.scope)) {
+            setNote({ operationId: previous.operationId, text: `Now showing ${previous.targetLabel}'s images`, tone: 'done' });
+        } else if (outcome === 'cancelled') {
             setNote({ operationId: previous.operationId, text: `Switch cancelled · ${kept}`, tone: 'kept' });
         } else if (outcome === 'failed') {
             setNote({ operationId: previous.operationId, text: `Could not switch · ${kept}`, tone: 'kept' });
-        } else if (admitted && scopeOwnerKey(ownerScopeState.scope) !== scopeOwnerKey(previous.scope)) {
-            setNote({ operationId: previous.operationId, text: `Now showing ${previous.targetLabel}'s images`, tone: 'done' });
         }
     }, [retained]);
 

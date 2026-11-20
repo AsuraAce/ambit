@@ -629,8 +629,45 @@ describe('ActivityDock', () => {
         });
 
         // Q2: the target is ready but the gallery holds the previous owner; the result waits with "Switch now".
+        const admitOdin = () =>
+            act(() =>
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                    status: 'ready',
+                    rootPath: 'D:/Invoke',
+                    scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'odin' },
+                })
+            );
+
+        // R1: once Odin is admitted the switch is done; Cancel would stop only the catch-up, so the hold offers
+        // "Switch now" alone, and a catch-up failure keeps its message.
+        it('hides Cancel during the hold and keeps a failed catch-up message', () => {
+            startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock />);
+            expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+
+            act(() => completeInvokeOperation({ phase: 'failed', message: 'Board sync failed.' }));
+            expect(screen.getByText('Board sync failed.')).toBeTruthy();
+            expect(screen.getByText('Odin is ready. Its catch-up did not finish.')).toBeTruthy();
+            expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
+        });
+
+        // R2: Retry runs the catch-up under a new operation; the swap is still held, so "Switch now" stays.
+        it('keeps "Switch now" when a retried catch-up is the current operation', () => {
+            const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock />);
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'syncing', viewCommitted: true })));
+
+            expect(useInvokeOwnerScopeStore.getState().operation?.id).not.toBe(operation.id);
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
         it('offers "Switch now" while the swap is held and keeps the result until the swap', () => {
             const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
             render(<ActivityDock />);
             act(() => completeInvokeOperation());
 

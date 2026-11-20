@@ -113,6 +113,31 @@ describe('OwnerSwitchPill', () => {
         expect(screen.queryByText(text)).toBeNull();
     });
 
+    // R1: once Odin is admitted the switch is done. Cancelling or failing its catch-up during the held swap
+    // stops only the catch-up, so the swap shows Odin and the note must not claim Freya is still shown.
+    it.each(['cancelled', 'failed'] as const)('names the target after a held swap whose catch-up was %s', (phase) => {
+        render(<OwnerSwitchPill />);
+        const operationId = startSwitch();
+        act(() => vi.advanceTimersByTime(600));
+        endSwitch(operationId, 'odin', phase);
+
+        expect(screen.getByText("Now showing Odin's images")).toBeTruthy();
+        expect(screen.queryByText(/still showing Freya/)).toBeNull();
+    });
+
+    it('names the target when a retried catch-up is the current operation at the swap', () => {
+        render(<OwnerSwitchPill />);
+        const operationId = startSwitch();
+        act(() => {
+            const store = useInvokeOwnerScopeStore.getState();
+            store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('odin') });
+            store.setOperation((current) => current && { ...current, id: Symbol('retry'), phase: 'failed', viewCommitted: true });
+            store.releaseRetainedOwnerScope(operationId);
+        });
+
+        expect(screen.getByText("Now showing Odin's images")).toBeTruthy();
+    });
+
     it('shows only the "Now showing" note for a warm switch admitted within 600 ms', () => {
         render(<OwnerSwitchPill />);
         const operationId = startSwitch();

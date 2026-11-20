@@ -9,7 +9,7 @@ import {
     THUMBNAIL_QUEUE_RUNNING_FOOTER,
 } from '../../hooks/thumbnailQueueProgress';
 import { TooltipButton } from './InfoTooltip';
-import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { isOwnerSwitchHeld, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { getOperationOwnerSwitch, useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
 import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
@@ -210,6 +210,7 @@ export const ActivityDock: React.FC = () => {
     const retainedOwnerScope = useInvokeOwnerScopeStore((state) => state.retainedOwnerScope);
     const ownerSwitch = getOperationOwnerSwitch(invokeOperation, retainedOwnerScope);
     const requestOwnerSwitchSwap = useInvokeOwnerScopeStore((state) => state.requestOwnerSwitchSwap);
+    const isSwapHeld = useInvokeOwnerScopeStore(isOwnerSwitchHeld);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
     const removingResourcePath = useResourceRemovalDockEntry();
@@ -249,8 +250,8 @@ export const ActivityDock: React.FC = () => {
     const isInvokeCancelling = isInvokePresentation && invokeOperation?.phase === 'cancelling';
     const isInvokeSettling = isInvokePresentation && invokeOperation?.phase === 'settling';
     // Q2 of #527: the target owner is admitted, but the gallery keeps the previous owner while the viewer or
-    // a modal is open. "Switch now" swaps anyway.
-    const isOwnerSwitchHeld = isInvokePresentation && ownerSwitch !== null && invokeOperation?.viewCommitted === true;
+    // a modal is open. "Switch now" swaps anyway, whichever operation is current (a Retry starts a new one).
+    const isOwnerSwitchHeldShown = isInvokePresentation && isSwapHeld;
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult;
 
     let progress: SyncProgress | null = null;
@@ -339,7 +340,15 @@ export const ActivityDock: React.FC = () => {
         label = `InvokeAI · ${invokeOperation!.targetLabel}`;
         footerMessage = 'Existing images and collections are kept.';
     }
-    if (isOwnerSwitchHeld) footerMessage = `${invokeOperation.targetLabel} is ready.`;
+    if (isOwnerSwitchHeldShown && retainedOwnerScope) {
+        // The switch is done; the catch-up's own result (and a failure's message) stays in the message line.
+        footerMessage =
+            isInvokeResult && invokeOperation?.phase !== 'completed'
+                ? `${retainedOwnerScope.targetLabel} is ready. Its catch-up did not finish.`
+                : `${retainedOwnerScope.targetLabel} is ready.`;
+        // Cancel would only stop the catch-up, not the switch: it returns after the swap.
+        supportsCancel = false;
+    }
 
     if (progress?.mode === 'complete' && !isInvokeCancelling && !isInvokeSettling) {
         supportsCancel = false;
@@ -481,7 +490,7 @@ export const ActivityDock: React.FC = () => {
     const invokeResultInteractions = useInvokeResultDismissal(
         invokeOperation,
         // A held switch keeps its result, and with it "Switch now", until the swap.
-        isInvokeResult && shouldShow && !isActivityDockMinimized && !isOwnerSwitchHeld,
+        isInvokeResult && shouldShow && !isActivityDockMinimized && !isOwnerSwitchHeldShown,
         shouldShow,
         invokePresentation.isDocumentVisible
     );
@@ -506,7 +515,7 @@ export const ActivityDock: React.FC = () => {
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     // The viewer covers the gallery at the same layer; a held switch keeps "Switch now" above it.
-                    className={`fixed bottom-8 right-8 ${isOwnerSwitchHeld ? 'z-[110]' : 'z-[100]'}`}
+                    className={`fixed bottom-8 right-8 ${isOwnerSwitchHeldShown ? 'z-[110]' : 'z-[100]'}`}
                 >
                     {isActivityDockMinimized ? (
                         <motion.div layoutId="dock-content">
@@ -699,10 +708,10 @@ export const ActivityDock: React.FC = () => {
                                         {isInvokeCancelling ? 'Cancelling…' : isInvokeSettling ? 'Finishing…' : 'Cancel'}
                                     </button>
                                 )}
-                                {isOwnerSwitchHeld && (
+                                {isOwnerSwitchHeldShown && retainedOwnerScope && (
                                     <button
                                         type="button"
-                                        onClick={() => requestOwnerSwitchSwap(ownerSwitch.operationId)}
+                                        onClick={() => requestOwnerSwitchSwap(retainedOwnerScope.operationId)}
                                         className="inline-flex items-center gap-1 rounded-md bg-sage-500/10 px-2 py-1 text-xs font-bold text-sage-600 hover:bg-sage-500/20 dark:text-sage-300"
                                     >
                                         Switch now
