@@ -143,7 +143,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 }) => {
     const metadataDisclosure = useMetadataDisclosureState();
     const settings = useSettingsStore((s) => s.settings);
-    const privacyExposureBlocked = useSettingsStore((state) => state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready');
+    // During an owner switch the scoped views follow the target owner, so no full record is read (#527).
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
+    // The mask index is rebuilt for the target owner during a switch. The kept gallery follows the retained
+    // view's privacy rule instead, which App applies before it opens the viewer, as AppLayout does for the grid.
+    const privacyIndexPending = useSettingsStore((state) => state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready');
+    const privacyExposureBlocked = privacyIndexPending && !ownerSwitchPending;
     const [revealedImageId, setRevealedImageId] = useState<string | null>(initiallyRevealed ? image.id : null);
     const itemExposureBlocked = isMasked && !initiallyRevealed && revealedImageId !== image.id;
     const mediaExposureBlocked = privacyExposureBlocked || itemExposureBlocked;
@@ -151,8 +156,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
     const [settledMetadataId, setSettledMetadataId] = useState<string | null>(null);
-    // During an owner switch the scoped views follow the target owner, so no full record is read (#527).
-    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
 
     // --- Stack / Version Logic ---
     const [activeVersionId, setActiveVersionId] = useState<string | null>(null);

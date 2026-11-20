@@ -1626,6 +1626,28 @@ describe('App orchestration', () => {
             expect(mocks.clearSelection).toHaveBeenCalledTimes(clearSelectionCalls);
         });
 
+        // S2 of the owner smoke: an image tile clicked in the kept gallery opens the viewer on that image while
+        // Privacy Mode's mask index is rebuilt for the target owner. ImageViewer's own half is in its tests.
+        it('opens an image tile from the kept gallery during the switch, with Privacy Mode on', async () => {
+            mocks.privacyEnabled = true;
+            const view = renderFreya();
+            act(() => startOwnerSwitchForTest());
+            // The search store keeps Freya's pages until the swap; only the mask index follows Odin.
+            mocks.privacyMaskIndexStatus = 'pending';
+            mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke', scope: ownerScope('odin') };
+            view.rerender(<App />);
+            mocks.handleImageClick.mockImplementationOnce(
+                (_event: React.MouseEvent, _id: string, index: number, callback: (nextIndex: number) => void) => callback(index)
+            );
+
+            const layout = requireProbe(captured.appLayout, 'AppLayout');
+            expect(layout.images).toEqual([freyaImage]);
+            act(() => layout.handleImageClick({} as React.MouseEvent, freyaImage.id, 0, layout.setSelectedImageIndex));
+
+            await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
+            expect(view.container.querySelector('[data-testid="image-viewer"]')).not.toBeNull();
+        });
+
         // The full record and references come from owner-scoped views that already follow the target owner.
         it('refuses to open a referenced image during the switch without reading it', async () => {
             const view = renderFreya();

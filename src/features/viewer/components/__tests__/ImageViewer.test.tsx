@@ -10,6 +10,8 @@ const mockMetadataSidebar = vi.fn();
 const mockSetViewerTab = vi.fn();
 const viewerSettings = vi.hoisted(() => ({
     viewerPreferredTab: undefined as 'details' | 'metadata' | 'workflow' | undefined,
+    privacyEnabled: false,
+    privacyMaskIndexStatus: 'ready',
 }));
 const captures = vi.hoisted(() => ({
     toolbar: null as Record<string, unknown> | null,
@@ -125,8 +127,8 @@ vi.mock('../../../../stores/settingsStore', () => ({
             },
             isLoaded: true,
             setSettings: mockSetViewerTab,
-            privacyEnabled: false,
-            privacyMaskIndexStatus: 'ready',
+            privacyEnabled: viewerSettings.privacyEnabled,
+            privacyMaskIndexStatus: viewerSettings.privacyMaskIndexStatus,
         }),
 }));
 
@@ -221,6 +223,8 @@ describe('ImageViewer full metadata loading', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         viewerSettings.viewerPreferredTab = undefined;
+        viewerSettings.privacyEnabled = false;
+        viewerSettings.privacyMaskIndexStatus = 'ready';
         mockSetViewerTab.mockReset();
         mockSetViewerTab.mockImplementation((update: { viewerPreferredTab: typeof viewerSettings.viewerPreferredTab }) => {
             viewerSettings.viewerPreferredTab = update.viewerPreferredTab;
@@ -271,6 +275,33 @@ describe('ImageViewer full metadata loading', () => {
             await waitFor(() => expect(captures.sidebar?.isLoading).toBe(false));
             expect(mockGetImageWithFullMetadata).not.toHaveBeenCalled();
             expect(captures.sidebar?.detailsNotice).toBe('Full details return after the switch.');
+        } finally {
+            endOwnerSwitchForTest();
+        }
+    });
+
+    it('closes while Privacy Mode waits for its mask index', () => {
+        viewerSettings.privacyEnabled = true;
+        viewerSettings.privacyMaskIndexStatus = 'pending';
+        const { props } = renderViewer();
+
+        expect(screen.queryByTestId('image-canvas')).toBeNull();
+        expect(props.onClose).toHaveBeenCalledOnce();
+    });
+
+    // #527 S2: Privacy Mode is on by default and its mask index is rebuilt for the target owner during a
+    // switch, so the index check would close every image the user opens from the kept gallery. The kept
+    // page follows the retained view's privacy rule, which App applies before it opens the viewer.
+    it('opens an image during an owner switch while the mask index is rebuilt for the target owner', async () => {
+        viewerSettings.privacyEnabled = true;
+        viewerSettings.privacyMaskIndexStatus = 'pending';
+        startOwnerSwitchForTest();
+        try {
+            const { props } = renderViewer();
+
+            await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+            expect(screen.getByRole('dialog', { name: `Image viewer: ${lightImage.filename}` })).toBeTruthy();
+            expect(props.onClose).not.toHaveBeenCalled();
         } finally {
             endOwnerSwitchForTest();
         }
