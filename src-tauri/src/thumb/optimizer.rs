@@ -470,8 +470,8 @@ impl Drop for SourceRootProbeGuard {
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn start_thumbnail_optimization_job(
-    app: tauri::AppHandle,
+pub async fn start_thumbnail_optimization_job<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, ThumbnailOptimizationState>,
     config: ThumbnailOptimizationConfig,
     owner_id: String,
@@ -545,8 +545,8 @@ pub fn finish_thumbnail_repair_operation(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn repair_thumbnail_batch(
-    app: tauri::AppHandle,
+pub async fn repair_thumbnail_batch<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, ThumbnailOptimizationState>,
     input: ThumbnailRepairBatchInput,
 ) -> Result<ThumbnailRepairBatchResult, String> {
@@ -634,8 +634,8 @@ pub async fn retry_failed_thumbnail_optimizations(app: tauri::AppHandle) -> Resu
     .map_err(|e| e.to_string())?
 }
 
-fn run_thumbnail_optimization_job(
-    app: tauri::AppHandle,
+fn run_thumbnail_optimization_job<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     is_cancelled: Arc<AtomicBool>,
     is_throttled: Arc<AtomicBool>,
     config: ThumbnailOptimizationConfig,
@@ -881,8 +881,8 @@ fn run_thumbnail_optimization_job(
     Ok(result)
 }
 
-fn run_thumbnail_repair_batch(
-    app: tauri::AppHandle,
+fn run_thumbnail_repair_batch<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     is_cancelled: Arc<AtomicBool>,
     input: ThumbnailRepairBatchInput,
 ) -> Result<ThumbnailRepairBatchResult, String> {
@@ -2046,11 +2046,17 @@ fn load_thumbnail_candidates_for_ids(
     Ok(candidates)
 }
 
-fn emit_progress(app: &tauri::AppHandle, progress: &ThumbnailOptimizationProgress) {
+fn emit_progress<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    progress: &ThumbnailOptimizationProgress,
+) {
     let _ = progress.clone().emit(app);
 }
 
-fn emit_complete(app: &tauri::AppHandle, result: &ThumbnailOptimizationResult) {
+fn emit_complete<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    result: &ThumbnailOptimizationResult,
+) {
     let _ = ThumbnailOptimizationComplete(result.clone()).emit(app);
 }
 
@@ -3291,29 +3297,48 @@ mod tests {
         assert_eq!(row.5, None);
     }
 
+    // #401: both optimizer commands refuse a thumbnail folder that is not Ambit's own
+    // before they write to it. The test calls the commands themselves (#418), so it fails
+    // if either command stops checking the folder.
     #[test]
-    fn optimizer_refuses_a_foreign_thumbnail_dir_before_writing_to_it() {
+    fn optimizer_commands_refuse_a_foreign_thumbnail_dir_before_writing_to_it() {
+        use tauri::Manager;
+
         let temp_root = temp_thumbnail_dir("foreign-thumbnail-dir");
         let _ = fs::remove_dir_all(&temp_root);
-        let own = temp_root.join(".thumbnails");
+        fs::create_dir_all(&temp_root).expect("temp root");
+        // The mock app's data folders, and so its database and own thumbnail folder,
+        // live in `temp_root`.
+        let app = crate::library_grants::test_app(&temp_root);
+        app.manage(ThumbnailOptimizationState::default());
+        // The job emits progress, so a job that skipped the check would reach its writes.
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events![
+                ThumbnailOptimizationProgress,
+                ThumbnailOptimizationComplete
+            ])
+            .mount_events(app.handle());
+        let own = app_thumbnail_dir(app.handle()).expect("own thumbnail folder");
         let foreign = temp_root.join("foreign");
         fs::create_dir_all(&foreign).expect("foreign directory");
         let source_path = temp_root.join("source.png");
         image::ImageBuffer::from_pixel(8, 8, image::Rgba([0_u8, 0, 255, 255]))
             .save(&source_path)
             .expect("source image");
-        let conn = setup_queue_db();
-        insert_image(&conn, "foreign-dir", None, None, 0, 20);
-        conn.execute(
+
+        // One image that needs a thumbnail, in the database the commands open.
+        let db_path = crate::db::resolve_db_path(app.handle()).expect("database path");
+        let seed = setup_queue_db();
+        insert_image(&seed, "foreign-dir", None, None, 0, 20);
+        seed.execute(
             "UPDATE images SET path = ?1 WHERE id = 'foreign-dir'",
             [source_path.to_string_lossy().as_ref()],
         )
         .expect("set source path");
-        let candidate =
-            load_thumbnail_candidates_for_ids(&conn, &["foreign-dir".to_string()], true, false, 0)
-                .expect("load forced candidate")
-                .pop()
-                .expect("forced candidate");
+        seed.execute("VACUUM INTO ?1", [db_path.to_string_lossy().as_ref()])
+            .expect("write the database file");
+        drop(seed);
+
         let webp_count = |dir: &Path| {
             fs::read_dir(dir)
                 .map(|entries| {
@@ -3324,35 +3349,76 @@ mod tests {
                 })
                 .unwrap_or(0)
         };
-        // The order both optimizer commands run: the folder check, then the write.
-        let optimize = |dir: &Path| {
-            let dir = dir.to_string_lossy();
-            validate_thumbnail_dir(Some(&dir), &own)?;
-            Ok::<_, String>(optimize_thumbnail_candidate(
-                &candidate,
-                &dir,
-                true,
-                &AtomicBool::new(false),
+        let thumbnail_path = || {
+            Connection::open(&db_path)
+                .expect("open database")
+                .query_row(
+                    "SELECT thumbnail_path FROM images WHERE id = 'foreign-dir'",
+                    [],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .expect("read thumbnail path")
+        };
+        let refused = |error: String| {
+            error.starts_with("Thumbnail folder must be Ambit's own thumbnail folder")
+        };
+        let owner_id = "optimizer-test".to_string();
+        let repair = |dir: &Path, operation_id: u64| {
+            tauri::async_runtime::block_on(repair_thumbnail_batch(
+                app.handle().clone(),
+                app.state::<ThumbnailOptimizationState>(),
+                ThumbnailRepairBatchInput {
+                    operation_id,
+                    ids: vec!["foreign-dir".to_string()],
+                    thumbnail_dir: dir.to_string_lossy().into_owned(),
+                    source_roots: Vec::new(),
+                    force: true,
+                    respect_backoff: false,
+                },
             ))
         };
 
-        assert!(optimize(&foreign)
-            .expect_err("a foreign thumbnail folder is refused")
-            .starts_with("Thumbnail folder must be Ambit's own thumbnail folder"));
-        assert_eq!(
-            webp_count(&foreign),
-            0,
-            "nothing is written to the refused folder"
-        );
-
-        // The same optimization into Ambit's own folder writes a thumbnail, so the
-        // check above is what stopped the write.
-        fs::create_dir_all(&own).expect("own thumbnail directory");
-        assert!(matches!(
-            optimize(&own),
-            Ok(ThumbnailItemResult::Success { .. })
+        let job = tauri::async_runtime::block_on(start_thumbnail_optimization_job(
+            app.handle().clone(),
+            app.state::<ThumbnailOptimizationState>(),
+            ThumbnailOptimizationConfig {
+                thumbnail_dir: foreign.to_string_lossy().into_owned(),
+                include_upgradeable: true,
+                profile: ThumbnailOptimizationProfile::Quiet,
+                source_roots: Vec::new(),
+            },
+            owner_id.clone(),
         ));
+        assert!(
+            job.is_err_and(refused),
+            "the optimization job refuses a foreign thumbnail folder"
+        );
+        assert_eq!(webp_count(&foreign), 0, "the job writes nothing there");
+        assert_eq!(thumbnail_path(), None, "the job records no thumbnail");
+
+        let operation_id = tauri::async_runtime::block_on(begin_thumbnail_repair_operation(
+            app.state::<ThumbnailOptimizationState>(),
+            owner_id.clone(),
+        ))
+        .expect("begin repair operation");
+        assert!(
+            repair(&foreign, operation_id).is_err_and(refused),
+            "the repair batch refuses a foreign thumbnail folder"
+        );
+        assert_eq!(webp_count(&foreign), 0, "the repair writes nothing there");
+        assert_eq!(thumbnail_path(), None, "the repair records no thumbnail");
+
+        // The same repair into Ambit's own folder writes a thumbnail, so the folder
+        // check is what stopped the writes above.
+        fs::create_dir_all(&own).expect("own thumbnail directory");
+        let repaired = repair(&own, operation_id).expect("repair into the own folder");
+        assert_eq!(repaired.updates.len(), 1);
         assert_eq!(webp_count(&own), 1);
+        assert!(thumbnail_path().is_some());
+
+        finish_thumbnail_repair_operation(app.state::<ThumbnailOptimizationState>(), operation_id)
+            .expect("finish repair operation");
+        drop(app);
         let _ = fs::remove_dir_all(temp_root);
     }
 
