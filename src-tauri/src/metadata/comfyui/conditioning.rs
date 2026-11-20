@@ -1146,36 +1146,28 @@ fn evaluate_string_node_with_mode(
         return Some(parts.join(delimiter));
     }
 
+    let transform_inputs = TransformInputs {
+        graph,
+        node,
+        visited,
+        depth,
+        strict_connections,
+    };
+
     if t == "StringReplace" {
         let source = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "string",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
-            strict_connections,
         )?;
-        let find = evaluate_transform_input(
-            graph,
-            node,
-            "find",
-            visited,
-            depth,
-            MAX_TRANSFORM_PATTERN_BYTES,
-            None,
-            strict_connections,
-        )?;
+        let find =
+            evaluate_transform_input(&transform_inputs, "find", MAX_TRANSFORM_PATTERN_BYTES, None)?;
         let replacement = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "replace",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
-            strict_connections,
         )?;
         return replace_string_bounded(&source, &find, &replacement);
     }
@@ -1185,25 +1177,13 @@ fn evaluate_string_node_with_mode(
             return None;
         }
         let json_string = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "json_string",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
-            strict_connections,
         )?;
-        let key = evaluate_transform_input(
-            graph,
-            node,
-            "key",
-            visited,
-            depth,
-            MAX_TRANSFORM_PATTERN_BYTES,
-            None,
-            strict_connections,
-        )?;
+        let key =
+            evaluate_transform_input(&transform_inputs, "key", MAX_TRANSFORM_PATTERN_BYTES, None)?;
         let parsed: Value = serde_json::from_str(&json_string).ok()?;
         let value = parsed.as_object()?.get(&key);
         let result = match value {
@@ -1216,24 +1196,16 @@ fn evaluate_string_node_with_mode(
 
     if t == "RegexExtract" {
         let source = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "string",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
-            strict_connections,
         )?;
         let pattern = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "regex_pattern",
-            visited,
-            depth,
             MAX_TRANSFORM_PATTERN_BYTES,
             None,
-            strict_connections,
         )?;
         let mode = get_node_param(node, "mode").and_then(Value::as_str)?;
         let case_insensitive = get_node_param(node, "case_insensitive").and_then(Value::as_bool)?;
@@ -1254,34 +1226,22 @@ fn evaluate_string_node_with_mode(
 
     if t == "StringConcatenate" {
         let string_a = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "string_a",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             Some(""),
-            strict_connections,
         )?;
         let string_b = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "string_b",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             Some(""),
-            strict_connections,
         )?;
         let delimiter = evaluate_transform_input(
-            graph,
-            node,
+            &transform_inputs,
             "delimiter",
-            visited,
-            depth,
             MAX_TRANSFORM_STRING_BYTES,
             Some(""),
-            strict_connections,
         )?;
         if string_a.is_empty() {
             return Some(string_b);
@@ -1796,20 +1756,29 @@ fn trace_text_input_with_state(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "parameter-object refactor tracked in #405"
-)]
-fn evaluate_transform_input(
-    graph: &ComfyGraph,
-    node: &Value,
-    key: &str,
-    visited: &HashSet<String>,
+/// The transform node whose inputs `evaluate_transform_input` reads, with the traversal
+/// state those inputs are evaluated in.
+struct TransformInputs<'a> {
+    graph: &'a ComfyGraph,
+    node: &'a Value,
+    visited: &'a HashSet<String>,
     depth: usize,
+    strict_connections: bool,
+}
+
+fn evaluate_transform_input(
+    inputs: &TransformInputs,
+    key: &str,
     max_bytes: usize,
     default: Option<&str>,
-    strict_connections: bool,
 ) -> Option<String> {
+    let TransformInputs {
+        graph,
+        node,
+        visited,
+        depth,
+        strict_connections,
+    } = *inputs;
     let value = match get_input_source(node, key) {
         InputSourceConnection::Connected(source) => {
             let mut branch_visited = visited.clone();

@@ -669,16 +669,19 @@ fn manual_thumbnail_image(
     Ok(None)
 }
 
-#[allow(
-    clippy::type_complexity,
-    reason = "named result struct tracked in #405"
-)]
+struct FacetThumbnailFields {
+    thumbnail_path: Option<String>,
+    safe_thumbnail_path: Option<String>,
+    thumbnail_image_id: Option<String>,
+    thumbnail_is_sensitive: i64,
+}
+
 fn compute_thumbnail_fields(
     conn: &rusqlite::Connection,
     model: &FacetModelSource,
     dynamic_thumb: Option<&FacetThumb>,
     safe_thumb: Option<&FacetThumb>,
-) -> Result<(Option<String>, Option<String>, Option<String>, i64), String> {
+) -> Result<FacetThumbnailFields, String> {
     let manual_thumb = model
         .thumbnail_path
         .as_deref()
@@ -733,12 +736,12 @@ fn compute_thumbnail_fields(
         dynamic_thumb.map(|thumb| thumb.privacy_hidden).unwrap_or(0)
     };
 
-    Ok((
+    Ok(FacetThumbnailFields {
         thumbnail_path,
-        safe_thumb.map(|thumb| thumb.thumbnail_path.clone()),
+        safe_thumbnail_path: safe_thumb.map(|thumb| thumb.thumbnail_path.clone()),
         thumbnail_image_id,
-        sensitive,
-    ))
+        thumbnail_is_sensitive: sensitive,
+    })
 }
 
 fn sanitize_owner_hidden_facet_thumbnails(conn: &rusqlite::Connection) -> Result<usize, String> {
@@ -781,8 +784,12 @@ fn insert_facet_row(
     dynamic_thumb: Option<&FacetThumb>,
     safe_thumb: Option<&FacetThumb>,
 ) -> Result<(), String> {
-    let (thumbnail_path, safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive) =
-        compute_thumbnail_fields(conn, model, dynamic_thumb, safe_thumb)?;
+    let FacetThumbnailFields {
+        thumbnail_path,
+        safe_thumbnail_path,
+        thumbnail_image_id,
+        thumbnail_is_sensitive,
+    } = compute_thumbnail_fields(conn, model, dynamic_thumb, safe_thumb)?;
     let has_sidecar = model
         .sidecar_thumbnail_path
         .as_ref()

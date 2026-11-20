@@ -108,6 +108,16 @@ enum JournalRecordKind {
     Terminal,
 }
 
+/// Timings that accompany one journal record.
+#[derive(Clone, Copy, Default)]
+struct RecordTimes {
+    /// Renderer-side elapsed time; present only for renderer events.
+    renderer_ms: Option<u64>,
+    duration_ms: Option<u64>,
+    /// Native elapsed time to record instead of the current clock.
+    native_elapsed_ms: Option<u64>,
+}
+
 pub fn install(started: Instant, identifier: &str) -> Arc<StartupJournal> {
     let directory =
         dirs::data_local_dir().map(|root| root.join(identifier).join("logs").join("startup"));
@@ -289,12 +299,13 @@ impl StartupJournal {
                 self.record(
                     kind,
                     "completed",
-                    None,
-                    None,
+                    RecordTimes {
+                        native_elapsed_ms: Some(callback_ms),
+                        ..RecordTimes::default()
+                    },
                     json!({"phase":kind,"status":"completed","durationMs":null,
                         "observerElapsedMs":self.elapsed_ms()}),
                     JournalRecordKind::Terminal,
-                    Some(callback_ms),
                 );
                 continue;
             }
@@ -404,15 +415,16 @@ impl StartupJournal {
         self.record(
             phase,
             status,
-            None,
-            duration_ms,
+            RecordTimes {
+                duration_ms,
+                ..RecordTimes::default()
+            },
             json!({"phase":phase,"status":status,"durationMs":duration_ms}),
             if reserved {
                 JournalRecordKind::Terminal
             } else {
                 JournalRecordKind::Ordinary
             },
-            None,
         );
     }
 
@@ -428,8 +440,11 @@ impl StartupJournal {
         self.record(
             phase.as_str().unwrap_or("unknown"),
             status.as_str().unwrap_or("unknown"),
-            Some(event.elapsed_ms),
-            event.duration_ms,
+            RecordTimes {
+                renderer_ms: Some(event.elapsed_ms),
+                duration_ms: event.duration_ms,
+                native_elapsed_ms: Some(receipt_ms),
+            },
             json!(event),
             if crate::startup::is_repair(event.phase) {
                 JournalRecordKind::Repair
@@ -438,7 +453,6 @@ impl StartupJournal {
             } else {
                 JournalRecordKind::Ordinary
             },
-            Some(receipt_ms),
         );
         if let Some(report) = event.repair_report.as_ref() {
             self.log_repair_report(report);
@@ -483,20 +497,19 @@ impl StartupJournal {
         log::info!("[Startup repair] status={:?} elapsed={}ms unattributed={}ms; top exclusive: {}; filesystem enumeration (nested): {}", report.status, report.duration_ms, report.unattributed_ms, top, enumeration);
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "parameter-object refactor tracked in #405"
-    )]
     fn record(
         &self,
         phase: &str,
         status: &str,
-        renderer_ms: Option<u64>,
-        duration_ms: Option<u64>,
+        times: RecordTimes,
         event: Value,
         record_kind: JournalRecordKind,
-        native_elapsed_ms: Option<u64>,
     ) {
+        let RecordTimes {
+            renderer_ms,
+            duration_ms,
+            native_elapsed_ms,
+        } = times;
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };

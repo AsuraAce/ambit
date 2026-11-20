@@ -277,31 +277,21 @@ pub fn extract_from_sampler(
     let mut model_control_nets = Vec::new();
     let direct_model_unconnected =
         is_sampler_custom && get_input_connection(node, "model") == InputConnection::Unconnected;
-    if let Some(model) = trace_model_chain(
-        graph,
-        node,
-        "model",
-        loras,
-        ip_adapters,
-        hypernetworks,
-        &mut model_control_nets,
-        &mut resource_source_node_ids,
-    ) {
+    let mut model_resources = ModelChainResources {
+        loras: &mut *loras,
+        ip_adapters: &mut *ip_adapters,
+        hypernetworks: &mut *hypernetworks,
+        control_nets: &mut model_control_nets,
+        resource_source_node_ids: &mut resource_source_node_ids,
+    };
+    if let Some(model) = trace_model_chain(graph, node, "model", &mut model_resources) {
         meta.model = model.name;
         source_node_ids.insert(ComfyMetadataField::Model, vec![model.node_id]);
     } else if direct_model_unconnected {
         if let Some((_, guider_node)) = connected_cfg_guider(graph, node) {
-            if let Some(model) = trace_model_chain_with_mode(
-                graph,
-                guider_node,
-                "model",
-                loras,
-                ip_adapters,
-                hypernetworks,
-                &mut model_control_nets,
-                &mut resource_source_node_ids,
-                true,
-            ) {
+            if let Some(model) =
+                trace_model_chain_with_mode(graph, guider_node, "model", &mut model_resources, true)
+            {
                 meta.model = model.name;
                 source_node_ids.insert(ComfyMetadataField::Model, vec![model.node_id]);
             }
@@ -314,11 +304,7 @@ pub fn extract_from_sampler(
                     graph,
                     guider_node,
                     "model",
-                    loras,
-                    ip_adapters,
-                    hypernetworks,
-                    &mut model_control_nets,
-                    &mut resource_source_node_ids,
+                    &mut model_resources,
                     strict_connections,
                 ) {
                     meta.model = model.name;
@@ -865,46 +851,39 @@ struct ResolvedModel {
     node_id: String,
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "parameter-object refactor tracked in #405"
-)]
+/// The resource lists a model-chain trace adds the loaders it passes through to.
+struct ModelChainResources<'a> {
+    loras: &'a mut Vec<String>,
+    ip_adapters: &'a mut Vec<String>,
+    hypernetworks: &'a mut Vec<String>,
+    control_nets: &'a mut Vec<String>,
+    resource_source_node_ids: &'a mut ComfyResourceSourceNodeIds,
+}
+
 fn trace_model_chain(
     graph: &ComfyGraph,
     start_node: &Value,
     input_name: &str,
-    loras: &mut Vec<String>,
-    ip_adapters: &mut Vec<String>,
-    hypernetworks: &mut Vec<String>,
-    control_nets: &mut Vec<String>,
-    resource_source_node_ids: &mut ComfyResourceSourceNodeIds,
+    resources: &mut ModelChainResources,
 ) -> Option<ResolvedModel> {
     let strict_connections = get_node_type(start_node) == "SamplerCustom";
-    trace_model_chain_with_mode(
-        graph,
-        start_node,
-        input_name,
+    trace_model_chain_with_mode(graph, start_node, input_name, resources, strict_connections)
+}
+
+fn trace_model_chain_with_mode(
+    graph: &ComfyGraph,
+    start_node: &Value,
+    input_name: &str,
+    resources: &mut ModelChainResources,
+    strict_connections: bool,
+) -> Option<ResolvedModel> {
+    let ModelChainResources {
         loras,
         ip_adapters,
         hypernetworks,
         control_nets,
         resource_source_node_ids,
-        strict_connections,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn trace_model_chain_with_mode(
-    graph: &ComfyGraph,
-    start_node: &Value,
-    input_name: &str,
-    loras: &mut Vec<String>,
-    ip_adapters: &mut Vec<String>,
-    hypernetworks: &mut Vec<String>,
-    control_nets: &mut Vec<String>,
-    resource_source_node_ids: &mut ComfyResourceSourceNodeIds,
-    strict_connections: bool,
-) -> Option<ResolvedModel> {
+    } = resources;
     let mut current_id =
         get_model_chain_source_id(graph, start_node, input_name, strict_connections)?;
     let mut visited = HashSet::new();

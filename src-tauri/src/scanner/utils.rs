@@ -219,16 +219,17 @@ impl<'a> KnownMediaLookup<'a> {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "parameter-object refactor tracked in #405"
-)]
+/// How `scan_image_in_scope` reads one image, as the `scan_image` command receives it.
+pub struct ScanImageOptions {
+    pub thumbnail_dir: Option<String>,
+    pub skip_thumbnail: bool,
+    pub extract_workflow: bool,
+    pub default_tool: Option<String>,
+}
+
 pub fn scan_image_in_scope<F, K>(
     path: String,
-    thumbnail_dir: Option<String>,
-    skip_thumbnail: bool,
-    extract_workflow: bool,
-    default_tool: Option<String>,
+    options: ScanImageOptions,
     app_thumbnail_dir: &Path,
     is_allowed: F,
     is_known_media: K,
@@ -237,6 +238,12 @@ where
     F: FnMut(&Path) -> bool,
     K: FnMut(&str) -> Result<bool, String>,
 {
+    let ScanImageOptions {
+        thumbnail_dir,
+        skip_thumbnail,
+        extract_workflow,
+        default_tool,
+    } = options;
     validate_thumbnail_dir(thumbnail_dir.as_deref(), app_thumbnail_dir)?;
     validate_library_file_paths(std::slice::from_ref(&path), is_allowed, is_known_media)?;
     super::core::scan_image_internal(
@@ -616,7 +623,7 @@ mod tests {
         scan_directory_since_in_scope, scan_directory_with_stats_in_scope, scan_image_in_scope,
         scan_image_workflow_in_scope, scope_check_path, validate_bulk_scan_request,
         validate_library_file_paths, validate_metadata_probe_paths, validate_scoped_roots,
-        validate_thumbnail_dir, verify_image_paths_in_scope,
+        validate_thumbnail_dir, verify_image_paths_in_scope, ScanImageOptions,
     };
     use crate::scanner::models::FileMetadataProbe;
     use rusqlite::Connection;
@@ -838,10 +845,12 @@ mod tests {
         let scan = |thumbnail_dir: &Path| {
             scan_image_in_scope(
                 image.to_string_lossy().to_string(),
-                Some(thumbnail_dir.to_string_lossy().to_string()),
-                false,
-                false,
-                None,
+                ScanImageOptions {
+                    thumbnail_dir: Some(thumbnail_dir.to_string_lossy().to_string()),
+                    skip_thumbnail: false,
+                    extract_workflow: false,
+                    default_tool: None,
+                },
                 &own,
                 |_| true,
                 |_| Ok(false),
@@ -882,10 +891,12 @@ mod tests {
         outside(
             scan_image_in_scope(
                 path.clone(),
-                None,
-                true,
-                false,
-                None,
+                ScanImageOptions {
+                    thumbnail_dir: None,
+                    skip_thumbnail: true,
+                    extract_workflow: false,
+                    default_tool: None,
+                },
                 &own,
                 |_| false,
                 |_| Ok(false),
