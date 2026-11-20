@@ -733,8 +733,10 @@ mod tests {
         let _ = fs::remove_dir_all(temp_root);
     }
 
-    // `move_to_trash` trashes only files the library tracks in the active scope:
-    // a tracked path passes, an untracked or scope-hidden one is refused.
+    // The known-file check `move_to_trash` uses: a tracked path is accepted, an
+    // untracked or `invoke_scope_hidden` one is refused. The fixture views only
+    // filter on that flag; the Invoke source/owner scoping of the real views is
+    // not exercised here.
     #[test]
     fn known_media_file_matches_images_and_removed_images_only() {
         let conn = Connection::open_in_memory().unwrap();
