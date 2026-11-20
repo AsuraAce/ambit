@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Link2, LoaderCircle, RefreshCw } from 'lucide-react';
 import {
@@ -95,7 +95,11 @@ export const InvokeReferenceLinks = ({ imageId, onOpenImage }: InvokeReferenceLi
         enabled: !ownerSwitchPending,
     });
 
-    useEffect(() => setPendingImageId(null), [imageId]);
+    const [handledImageId, setHandledImageId] = useState(imageId);
+    if (imageId !== handledImageId) {
+        setHandledImageId(imageId);
+        setPendingImageId(null);
+    }
 
     const handleOpen = async (group: InvokeReferenceGroup) => {
         if (group.availability !== 'available' || !group.imageId || group.imageId === imageId) return;

@@ -324,9 +324,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({ imageA, imageB, onCl
         return () => observer.disconnect();
     }, [imageA.width, imageA.height, imageB.width, imageB.height, privacyExposureBlocked]);
 
-    useEffect(() => {
-        if (mode !== 'overlay') setIsOverlayHover(false);
-    }, [mode]);
+    if (mode !== 'overlay' && isOverlayHover) setIsOverlayHover(false);
 
     // --- Zoom/Pan Handlers ---
     const resetZoom = useCallback(() => {

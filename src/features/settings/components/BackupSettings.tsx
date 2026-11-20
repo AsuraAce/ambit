@@ -8,10 +8,24 @@ import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 export const BackupSettings: React.FC = () => {
     const [backups, setBackups] = React.useState<BackupInfo[]>([]);
-    const [isLoading, setIsLoading] = React.useState(false);
-    const [isCreating, setIsCreating] = React.useState(false);
     const { addToast } = useToast();
     const browserMockMode = isBrowserMockMode();
+    // The list loads on mount, so the first frame already shows the spinner.
+    const [isLoading, setIsLoading] = React.useState(!browserMockMode);
+    const [isCreating, setIsCreating] = React.useState(false);
+
+    const applyBackupsResult = React.useCallback(
+        (result: Awaited<ReturnType<typeof commands.getBackups>>) => {
+            if (result.status === 'ok') {
+                setBackups(result.data);
+            } else {
+                console.error(result.error);
+                addToast('Failed to load backups', 'error');
+            }
+            setIsLoading(false);
+        },
+        [addToast]
+    );
 
     const loadBackups = React.useCallback(async () => {
         if (browserMockMode) {
@@ -21,19 +35,19 @@ export const BackupSettings: React.FC = () => {
         }
 
         setIsLoading(true);
-        const result = await commands.getBackups();
-        if (result.status === 'ok') {
-            setBackups(result.data);
-        } else {
-            console.error(result.error);
-            addToast('Failed to load backups', 'error');
-        }
-        setIsLoading(false);
-    }, [addToast, browserMockMode]);
+        applyBackupsResult(await commands.getBackups());
+    }, [applyBackupsResult, browserMockMode]);
 
     React.useEffect(() => {
-        loadBackups().catch((error) => console.error('[Backups] Failed to load backups', error));
-    }, [loadBackups]);
+        if (browserMockMode) return;
+        commands
+            .getBackups()
+            .then((result) => applyBackupsResult(result))
+            .catch((error) => {
+                console.error('[Backups] Failed to load backups', error);
+                setIsLoading(false);
+            });
+    }, [applyBackupsResult, browserMockMode]);
 
     const handleCreateBackup = async () => {
         setIsCreating(true);

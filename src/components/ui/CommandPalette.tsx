@@ -102,12 +102,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         return options.filter((opt) => opt.label.toLowerCase().includes(query.toLowerCase()));
     }, [query, options]);
 
-    useEffect(() => {
+    // Opening starts from an empty query and the first option.
+    const [handledIsOpen, setHandledIsOpen] = useState(isOpen);
+    if (handledIsOpen !== isOpen) {
+        setHandledIsOpen(isOpen);
         if (isOpen) {
             setQuery('');
             setSelectedIndex(0);
         }
-    }, [isOpen]);
+    }
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

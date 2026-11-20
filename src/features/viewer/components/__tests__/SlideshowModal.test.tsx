@@ -196,6 +196,33 @@ describe('SlideshowModal', () => {
         expect(onClose).toHaveBeenCalledOnce();
     });
 
+    it('hides the HUD only after 3.5 s of inactivity and shows it again, already on the first frame, when reopened', () => {
+        const dialogClassPerCommit: (string | undefined)[] = [];
+        const ui = (isOpen: boolean) => (
+            <React.Profiler id="slideshow" onRender={() => dialogClassPerCommit.push(document.querySelector('[role="dialog"]')?.className)}>
+                <SlideshowModal isOpen={isOpen} images={images} initialIndex={0} onClose={onClose} />
+            </React.Profiler>
+        );
+        const { rerender } = render(ui(true));
+        const dialog = () => screen.getByRole('dialog');
+
+        act(() => vi.advanceTimersByTime(3499));
+        expect(dialog().className).not.toContain('cursor-none');
+        act(() => vi.advanceTimersByTime(1));
+        expect(dialog().className).toContain('cursor-none');
+
+        rerender(ui(false));
+        dialogClassPerCommit.length = 0;
+        rerender(ui(true));
+
+        expect(dialogClassPerCommit[0]).toBeDefined();
+        expect(dialogClassPerCommit.every((className) => !className?.includes('cursor-none'))).toBe(true);
+        act(() => vi.advanceTimersByTime(3499));
+        expect(dialog().className).not.toContain('cursor-none');
+        act(() => vi.advanceTimersByTime(1));
+        expect(dialog().className).toContain('cursor-none');
+    });
+
     it('uses shuffled navigation without repeating the current preloaded image', () => {
         const random = vi.spyOn(Math, 'random').mockReturnValue(0);
         const { container } = render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} isShuffleDefault />);

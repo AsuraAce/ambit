@@ -42,7 +42,18 @@ export default tseslint.config(
             // synchronously; callers and Promise-returning interfaces rely on that.
             '@typescript-eslint/require-await': 'off',
             'react-hooks/exhaustive-deps': 'error',
-            // React Compiler rules with existing findings; fixing them restructures components (#407).
+        },
+    },
+    {
+        // These files still set state in effects; they are fixed one by one under #407.
+        files: [
+            'src/contexts/SearchContext.tsx',
+            'src/App.tsx',
+            'src/features/viewer/components/ImageViewer.tsx',
+            'src/features/viewer/components/WorkflowInspector.tsx',
+            'src/features/viewer/components/VideoViewer.tsx',
+        ],
+        rules: {
             'react-hooks/set-state-in-effect': 'off',
         },
     },

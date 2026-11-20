@@ -100,17 +100,30 @@ const useLiveWatchPresentation = (
         revealedAt: null,
     });
 
-    React.useEffect(() => {
-        if (!isLiveWatchActive) {
+    // The immediate transitions adjust state during render, so each commits once: Live Watch stopping or its
+    // work ending unseen resets the presentation, new work starts a hidden one, and dismissing hides it.
+    // Each presentation has its own key; the episode count keeps keys unique for the life of the hook.
+    const [episode, setEpisode] = React.useState(0);
+    if (!isLiveWatchActive) {
+        if (presentation.key !== null || presentation.visible || presentation.revealedAt !== null) {
             setPresentation({ key: null, visible: false, revealedAt: null });
-            return;
         }
+    } else if (!isActiveWork) {
+        if (!presentation.visible && presentation.key !== null) {
+            setPresentation({ key: null, visible: false, revealedAt: null });
+        }
+    } else if (presentation.key === null) {
+        setPresentation({ key: `${session.source ?? 'watch'}:${episode + 1}`, visible: false, revealedAt: null });
+        setEpisode(episode + 1);
+    } else if (presentation.key === dismissedPresentationKey && presentation.visible) {
+        setPresentation({ ...presentation, visible: false, revealedAt: null });
+    }
+
+    React.useEffect(() => {
+        if (!isLiveWatchActive) return;
 
         if (!isActiveWork) {
-            if (!presentation.visible) {
-                setPresentation((prev) => (prev.key === null ? prev : { key: null, visible: false, revealedAt: null }));
-                return;
-            }
+            if (!presentation.visible) return;
 
             const now = Date.now();
             const revealedAt = presentation.revealedAt!;
@@ -122,37 +135,14 @@ const useLiveWatchPresentation = (
             return () => window.clearTimeout(timer);
         }
 
-        const presentationKey = presentation.key ?? `${session.source ?? 'watch'}:${Date.now()}`;
-
-        if (!presentation.key) {
-            setPresentation({ key: presentationKey, visible: false, revealedAt: null });
-            return;
-        }
-
-        if (presentationKey === dismissedPresentationKey) {
-            if (presentation.visible) {
-                setPresentation((prev) => ({ ...prev, visible: false, revealedAt: null }));
-            }
-            return;
-        }
-
-        if (presentation.visible) {
-            return;
-        }
+        const presentationKey = presentation.key;
+        if (presentationKey === null || presentationKey === dismissedPresentationKey || presentation.visible) return;
 
         const timer = window.setTimeout(() => {
             setPresentation({ key: presentationKey, visible: true, revealedAt: Date.now() });
         }, LIVE_WATCH_DOCK_REVEAL_MS);
         return () => window.clearTimeout(timer);
-    }, [
-        dismissedPresentationKey,
-        isActiveWork,
-        isLiveWatchActive,
-        presentation.key,
-        presentation.revealedAt,
-        presentation.visible,
-        session.source,
-    ]);
+    }, [dismissedPresentationKey, isActiveWork, isLiveWatchActive, presentation.key, presentation.revealedAt, presentation.visible]);
 
     const sourceLabel = getLiveWatchSourceLabel(session.source);
     const mode: LiveWatchPresentation['mode'] = presentation.visible ? 'expanded-active' : 'hidden';
@@ -440,9 +430,13 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
             return;
         }
 
-        setElapsedNow(Date.now());
+        // The clock may have stopped while no job was timed, so its first tick brings it to the present.
+        const firstTick = window.setTimeout(() => setElapsedNow(Date.now()), 0);
         const interval = window.setInterval(() => setElapsedNow(Date.now()), 1000);
-        return () => window.clearInterval(interval);
+        return () => {
+            window.clearTimeout(firstTick);
+            window.clearInterval(interval);
+        };
     }, [active, progress?.startedAt, showIndeterminateProgress]);
 
     const percent = isLiveWatchVisible ? 0 : isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;

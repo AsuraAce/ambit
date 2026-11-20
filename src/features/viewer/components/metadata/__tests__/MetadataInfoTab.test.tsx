@@ -352,6 +352,75 @@ describe('MetadataInfoTab', () => {
         expect(props.onUpdateModel).not.toHaveBeenCalled();
     });
 
+    it.each(['Positive', 'Negative'])(
+        'resets the unsaved %s prompt flag and suggestions when the viewer moves to another image',
+        (field) => {
+            const first = image(metadata(), metadata());
+            const { props, rerender } = renderTab(first, { availableTags: ['castle'] });
+            const staleFramesAfterNavigation: string[] = [];
+            let watching = false;
+            const ui = (value: AIImage) => (
+                <React.Profiler
+                    id="info-tab"
+                    onRender={() => {
+                        if (
+                            watching &&
+                            (document.querySelector('.border-ember-300') || screen.queryByRole('button', { name: /castle/i }))
+                        ) {
+                            staleFramesAfterNavigation.push(document.body.textContent ?? '');
+                        }
+                    }}
+                >
+                    <MetadataInfoTab {...props} image={value} />
+                </React.Profiler>
+            );
+            rerender(ui(first));
+
+            fireEvent.click(screen.getByRole('button', { name: `Edit ${field} prompt` }));
+            fireEvent.change(screen.getByRole('textbox', { name: `${field} prompt` }), { target: { value: 'portrait, cas' } });
+            expect(document.querySelectorAll('.border-ember-300')).toHaveLength(1);
+            expect(screen.queryAllByRole('button', { name: /castle/i })).toHaveLength(field === 'Positive' ? 1 : 0);
+
+            watching = true;
+            rerender(ui({ ...first, id: 'C:/library/next.png' }));
+
+            expect(document.querySelector('.border-ember-300')).toBeNull();
+            expect(screen.queryByRole('button', { name: /castle/i })).toBeNull();
+            expect(staleFramesAfterNavigation).toEqual([]);
+            expect(props.onUpdatePrompt).not.toHaveBeenCalled();
+            expect(props.onUpdateNegativePrompt).not.toHaveBeenCalled();
+        }
+    );
+
+    it('leaves the read-only original prompt view when the viewer moves to another image, with no stale frame', () => {
+        const first = image(metadata({ positivePrompt: 'Current prompt' }), metadata({ positivePrompt: 'Imported prompt' }));
+        const { props, rerender } = renderTab(first);
+        const originalPromptFramesAfterNavigation: boolean[] = [];
+        let watching = false;
+        const ui = (value: AIImage) => (
+            <React.Profiler
+                id="info-tab"
+                onRender={() => {
+                    if (watching) originalPromptFramesAfterNavigation.push(document.body.textContent?.includes('Imported prompt') ?? false);
+                }}
+            >
+                <MetadataInfoTab {...props} image={value} />
+            </React.Profiler>
+        );
+        rerender(ui(first));
+        fireEvent.click(screen.getByRole('button', { name: 'Original' }));
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).textContent).toBe('Imported prompt');
+        expect(screen.queryByRole('button', { name: 'Edit Positive prompt' })).toBeNull();
+
+        watching = true;
+        rerender(ui({ ...first, id: 'C:/library/next.png' }));
+
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).textContent).toBe('Current prompt');
+        expect(screen.getByRole('button', { name: 'Edit Positive prompt' })).toBeTruthy();
+        expect(originalPromptFramesAfterNavigation.length).toBeGreaterThan(0);
+        expect(originalPromptFramesAfterNavigation.every((showsOriginal) => !showsOriginal)).toBe(true);
+    });
+
     it('renders only populated optional parameter and resource rows', () => {
         const { props } = renderTab(
             image(

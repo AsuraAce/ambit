@@ -6,6 +6,10 @@ let cachedVersion: string | null = null;
 let inflightVersionRequest: Promise<string | null> | null = null;
 
 const loadVersion = async (): Promise<string | null> => {
+    if (cachedVersion) {
+        return cachedVersion;
+    }
+
     if (isBrowserMockMode()) {
         return (import.meta.env.VITE_APP_VERSION as string | undefined) || 'browser-dev';
     }
@@ -33,13 +37,6 @@ export const useAppVersion = () => {
 
     useEffect(() => {
         let isMounted = true;
-
-        if (cachedVersion) {
-            setVersion(cachedVersion);
-            return () => {
-                isMounted = false;
-            };
-        }
 
         void loadVersion().then((loadedVersion) => {
             if (isMounted) {

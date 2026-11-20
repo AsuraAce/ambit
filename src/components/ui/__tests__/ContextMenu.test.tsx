@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContextMenu } from '../ContextMenu';
@@ -141,6 +142,38 @@ describe('ContextMenu', () => {
         expect(cb.onShowInFolder).toHaveBeenCalledOnce();
         expect(cb.onOpenInDefaultApp).toHaveBeenCalledOnce();
         expect(cb.onCopyPrompt).toHaveBeenCalledOnce();
+    });
+
+    it('is already inside the viewport on the first commit and follows the anchor without a corrective commit', () => {
+        const positions: string[] = [];
+        // Reads the menu at each commit, before any passive effect could correct it.
+        const Probe = () => {
+            React.useLayoutEffect(() => {
+                const menu = document.querySelector<HTMLElement>('div.fixed');
+                positions.push(`${menu?.style.left} ${menu?.style.top}`);
+            });
+            return null;
+        };
+        const menu = (x: number, y: number) => (
+            <>
+                <ContextMenu
+                    x={x}
+                    y={y}
+                    isPinned={false}
+                    enableAI={false}
+                    isFavorite={false}
+                    isMasked={false}
+                    isIntermediate={false}
+                    {...callbacks()}
+                />
+                <Probe />
+            </>
+        );
+        const { rerender } = render(menu(950, 750));
+        rerender(menu(100, 200));
+        rerender(menu(990, 790));
+
+        expect(positions).toEqual(['760px 500px', '100px 200px', '760px 500px']);
     });
 
     it('renders alternate labels and omits unavailable optional actions', () => {

@@ -70,6 +70,12 @@ export const useGalleryMotion = ({
         }
     }
 
+    // Reduced motion closes both windows; the layout effect clears their timers.
+    if (!motionAllowed && (layoutWindowActive || gridWindowActive)) {
+        setLayoutWindowActive(false);
+        setGridWindowActive(false);
+    }
+
     useEffect(() => {
         if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
             return;
@@ -103,8 +109,6 @@ export const useGalleryMotion = ({
         if (prefersReducedMotion) {
             clearWindowTimer(layoutTimerRef);
             clearWindowTimer(gridTimerRef);
-            setLayoutWindowActive(false);
-            setGridWindowActive(false);
             return;
         }
 

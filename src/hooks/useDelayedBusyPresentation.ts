@@ -22,10 +22,9 @@ export const useDelayedBusyPresentation = (
         revealedAt: null,
     });
 
-    React.useEffect(() => {
-        if (presentation.resetKey === resetKey) return;
+    if (presentation.resetKey !== resetKey) {
         setPresentation({ resetKey, isVisible: false, revealedAt: null });
-    }, [presentation.resetKey, resetKey]);
+    }
 
     React.useEffect(() => {
         if (presentation.resetKey !== resetKey) return;

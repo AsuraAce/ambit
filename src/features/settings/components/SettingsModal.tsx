@@ -42,6 +42,22 @@ type DirectSettingsTab = Exclude<SettingsTab, 'connections' | 'advanced'>;
 
 const CONNECTION_SUB_TABS: readonly ConnectionSubTab[] = ['folders', 'resources', 'invokeai', 'a1111', 'comfyui'];
 
+const resolveOpenTabs = (
+    initialTab: NonNullable<SettingsModalProps['initialTab']>,
+    showDevTools: boolean
+): { tab: SettingsTab; connectionSubTab: ConnectionSubTab | undefined } => {
+    if (CONNECTION_SUB_TABS.includes(initialTab as ConnectionSubTab)) {
+        return { tab: 'connections', connectionSubTab: initialTab as ConnectionSubTab };
+    }
+    if (initialTab === 'experiments') {
+        return { tab: 'intelligence', connectionSubTab: undefined };
+    }
+    if (initialTab === 'dev' && !showDevTools) {
+        return { tab: 'advanced', connectionSubTab: undefined };
+    }
+    return { tab: initialTab as DirectSettingsTab, connectionSubTab: undefined };
+};
+
 const TAB_LABELS: Record<SettingsTab, string> = {
     general: 'General',
     connections: 'Connections',
@@ -101,8 +117,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(
         const appVersion = useAppVersion();
         const showDevTools = isDevelopmentBuild();
         const prefersReducedMotion = useReducedMotion();
-        const [activeTab, setActiveTab] = useState<SettingsTab>('general');
-        const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
+        const [activeTab, setActiveTab] = useState<SettingsTab>(() => (isOpen ? resolveOpenTabs(initialTab, showDevTools).tab : 'general'));
+        const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(() =>
+            isOpen ? resolveOpenTabs(initialTab, showDevTools).connectionSubTab : undefined
+        );
+        const [handledOpenInputs, setHandledOpenInputs] = useState({ isOpen, initialTab, showDevTools });
         const closeButtonRef = useRef<HTMLButtonElement>(null);
         const restoreFocusOnCloseRef = useRef(true);
         const invokeDraftSession = useInvokeConnectionDraft(settings, isOpen);
@@ -117,24 +136,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(
             // eslint-disable-next-line react-hooks/exhaustive-deps -- lists .reset, the only member used; the session object is new every render
         }, [invokeOwnerDiscoverySession.reset, isOpen]);
 
-        // Reset to initial tab when modal opens
-        useEffect(() => {
+        // Reset to initial tab when modal opens (or its target changes while open)
+        if (
+            handledOpenInputs.isOpen !== isOpen ||
+            handledOpenInputs.initialTab !== initialTab ||
+            handledOpenInputs.showDevTools !== showDevTools
+        ) {
+            setHandledOpenInputs({ isOpen, initialTab, showDevTools });
             if (isOpen) {
-                if (CONNECTION_SUB_TABS.includes(initialTab as ConnectionSubTab)) {
-                    setActiveTab('connections');
-                    setConnectionSubTab(initialTab as ConnectionSubTab);
-                } else if (initialTab === 'experiments') {
-                    setActiveTab('intelligence');
-                    setConnectionSubTab(undefined);
-                } else if (initialTab === 'dev' && !showDevTools) {
-                    setActiveTab('advanced');
-                    setConnectionSubTab(undefined);
-                } else {
-                    setActiveTab(initialTab as DirectSettingsTab);
-                    setConnectionSubTab(undefined);
-                }
+                const resolved = resolveOpenTabs(initialTab, showDevTools);
+                setActiveTab(resolved.tab);
+                setConnectionSubTab(resolved.connectionSubTab);
             }
-        }, [isOpen, initialTab, showDevTools]);
+        }
 
         useEffect(() => {
             if (!isOpen) return;

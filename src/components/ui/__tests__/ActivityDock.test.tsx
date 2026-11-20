@@ -215,6 +215,21 @@ describe('ActivityDock', () => {
             expect(screen.getByText('Removing resource folder')).toBeTruthy();
         });
 
+        it('waits the full second again when the same folder is removed a second time', () => {
+            vi.useFakeTimers();
+            render(<ActivityDock />);
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            act(() => void vi.advanceTimersByTime(1000));
+            expect(screen.getByText('Removing resource folder')).toBeTruthy();
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(null));
+            act(() => useResourceRemovalStore.getState().setRemovingResourcePath(FOLDER));
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+            act(() => void vi.advanceTimersByTime(999));
+            expect(screen.queryByText('Removing resource folder')).toBeNull();
+            act(() => void vi.advanceTimersByTime(1));
+            expect(screen.getByText('Removing resource folder')).toBeTruthy();
+        });
+
         it('restarts the delay when the path changes', () => {
             vi.useFakeTimers();
             render(<ActivityDock />);
@@ -363,6 +378,26 @@ describe('ActivityDock', () => {
             act(() => vi.advanceTimersByTime(2999));
             expect(screen.getByRole('status')).toBeTruthy();
             act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('runs the success timer when the dock is shown again after it hid while hovered', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            render(<ActivityDock />);
+            fireEvent.mouseEnter(screen.getByRole('status'));
+            // Dismissed ordinary work takes over the result's place, so the dock hides without a pointer leave.
+            act(() =>
+                useLibraryStore.setState({
+                    isActivityDockDismissed: true,
+                    isScanningDuplicates: true,
+                    duplicateScanProgress: { current: 1, total: 2 },
+                })
+            );
+            expect(screen.queryByText('Duplicate Scan')).toBeNull();
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(5000));
             expect(screen.queryByRole('status')).toBeNull();
         });
 
@@ -1564,6 +1599,33 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('Updating your library...')).toBeNull();
     });
 
+    it('makes Live Watch wait for a fresh reveal after higher-priority work has replaced it', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...',
+        });
+        render(<ActivityDock />);
+        act(() => void vi.advanceTimersByTime(2500));
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+
+        act(() =>
+            useLibraryStore.setState({
+                isImporting: true,
+                importProgress: { current: 1, total: 2, message: 'Importing selected files...' },
+            })
+        );
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        act(() => useLibraryStore.setState({ isImporting: false, importProgress: null }));
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        act(() => void vi.advanceTimersByTime(2499));
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        act(() => void vi.advanceTimersByTime(1));
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+    });
+
     it('keeps higher-priority work in control while Live Watch watching remains ambient', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
@@ -1707,6 +1769,28 @@ describe('ActivityDock', () => {
         expect(screen.getByText('1m 5s elapsed')).toBeTruthy();
         act(() => vi.advanceTimersByTime(55000));
         expect(screen.getByText('2m elapsed')).toBeTruthy();
+    });
+
+    it('shows the elapsed time of a job that starts after the clock stopped on its first tick', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        render(<ActivityDock />);
+        // No timed job runs, so the clock's last reading stays a minute behind the job started next.
+        act(() => vi.advanceTimersByTime(60_000));
+        act(() =>
+            useLibraryStore.setState({
+                isScanningDiscovery: true,
+                discoveryScanProgress: {
+                    current: 1,
+                    total: 0,
+                    message: 'Scanning',
+                    mode: 'indeterminate',
+                    startedAt: Date.now() - 8000,
+                },
+            })
+        );
+        act(() => vi.advanceTimersByTime(1));
+        expect(screen.getByText('8s elapsed')).toBeTruthy();
     });
 
     it.each([

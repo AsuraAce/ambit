@@ -105,6 +105,51 @@ describe('useGalleryMotion', () => {
         expect(result.current.shouldAnimateGrid).toBe(false);
     });
 
+    // Reduced motion cancels the window timers, so a window left open would reappear as animation the moment
+    // motion is allowed again, with no transition-key change to justify it.
+    it('closes both motion windows when reduced motion turns on mid-animation and does not revive them when it turns off', () => {
+        let reduced = false;
+        const listeners: Array<() => void> = [];
+        vi.stubGlobal(
+            'matchMedia',
+            vi.fn(
+                (query: string) =>
+                    ({
+                        get matches() {
+                            return reduced;
+                        },
+                        media: query,
+                        addEventListener: (_event: string, listener: () => void) => listeners.push(listener),
+                        removeEventListener: vi.fn(),
+                    }) as unknown as MediaQueryList
+            )
+        );
+        const setReducedMotion = (value: boolean) => {
+            reduced = value;
+            act(() => listeners.forEach((listener) => listener()));
+        };
+
+        const { result, rerender } = renderGalleryMotion({ transitionKey: 'initial', visibleItemCount: 20 });
+        rerender({ transitionKey: 'layout:grid', visibleItemCount: 20 });
+        expect(result.current.shouldAnimateLayout).toBe(true);
+        expect(result.current.shouldAnimateGrid).toBe(true);
+
+        setReducedMotion(true);
+        expect(result.current.motionAllowed).toBe(false);
+        expect(result.current.shouldAnimateLayout).toBe(false);
+        expect(result.current.shouldAnimateGrid).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+
+        setReducedMotion(false);
+        expect(result.current.motionAllowed).toBe(true);
+        expect(result.current.shouldAnimateLayout).toBe(false);
+        expect(result.current.shouldAnimateGrid).toBe(false);
+
+        rerender({ transitionKey: 'layout:list', visibleItemCount: 20 });
+        expect(result.current.shouldAnimateLayout).toBe(true);
+        expect(result.current.shouldAnimateGrid).toBe(true);
+    });
+
     it('keeps the grid settle but disables per-card layout motion above the visible item cap', () => {
         const { result, rerender } = renderGalleryMotion({ transitionKey: 'initial', visibleItemCount: 120 });
 

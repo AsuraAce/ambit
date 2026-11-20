@@ -283,20 +283,17 @@ export const useLibraryStatsQuery = ({
     const [activeSummaryVersion, setActiveSummaryVersion] = useState(0);
     const [activeSummarySemanticKey, setActiveSummarySemanticKey] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (statsSummaryQuery.status !== 'success' || statsSummaryQuery.isFetching || statsSummaryQuery.isPlaceholderData) {
-            return;
+    // Each time the summary query settles (or any of its inputs change while settled), record its semantic key
+    // and bump the summary version. This adjusts state during render, so the keyword query enables in the same commit.
+    const summarySettleInputs = `${statsSummaryQuery.dataUpdatedAt}|${statsSummaryQuery.isFetching}|${statsSummaryQuery.isPlaceholderData}|${statsSummaryQuery.status}|${keywordStatsSemanticKey}`;
+    const [handledSummarySettleInputs, setHandledSummarySettleInputs] = useState<string | null>(null);
+    if (handledSummarySettleInputs !== summarySettleInputs) {
+        setHandledSummarySettleInputs(summarySettleInputs);
+        if (statsSummaryQuery.status === 'success' && !statsSummaryQuery.isFetching && !statsSummaryQuery.isPlaceholderData) {
+            setActiveSummarySemanticKey(keywordStatsSemanticKey);
+            setActiveSummaryVersion((version) => version + 1);
         }
-
-        setActiveSummarySemanticKey(keywordStatsSemanticKey);
-        setActiveSummaryVersion((version) => version + 1);
-    }, [
-        statsSummaryQuery.dataUpdatedAt,
-        statsSummaryQuery.isFetching,
-        statsSummaryQuery.isPlaceholderData,
-        statsSummaryQuery.status,
-        keywordStatsSemanticKey,
-    ]);
+    }
     const keywordStatsQueryKey = useMemo(
         () => ['libraryKeywordStats', keywordStatsSemanticKey, activeSummaryVersion] as const,
         [activeSummaryVersion, keywordStatsSemanticKey]

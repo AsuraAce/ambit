@@ -1,9 +1,75 @@
+import * as React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShortcutsModal } from '../ShortcutsModal';
 
+// Records the page text at every commit, before any passive effect could change it.
+const CommitProbe: React.FC<{ commits: string[] }> = ({ commits }) => {
+    React.useLayoutEffect(() => {
+        commits.push(document.body.textContent ?? '');
+    });
+    return null;
+};
+
 describe('ShortcutsModal', () => {
     beforeEach(() => localStorage.clear());
+
+    it('shows the saved expanded categories on the first commit when opened', () => {
+        localStorage.setItem('ambit_shortcuts_expanded', JSON.stringify({ 'Library Navigation': true }));
+        const commits: string[] = [];
+        render(
+            <>
+                <ShortcutsModal isOpen onClose={vi.fn()} />
+                <CommitProbe commits={commits} />
+            </>
+        );
+
+        expect(commits[0]).toContain('Navigate grid');
+        expect(commits[0]).not.toContain('Show this help dialog');
+    });
+
+    it('opens General on the first commit when the saved categories cannot be read', () => {
+        localStorage.setItem('ambit_shortcuts_expanded', '{broken');
+        const commits: string[] = [];
+        render(
+            <>
+                <ShortcutsModal isOpen onClose={vi.fn()} />
+                <CommitProbe commits={commits} />
+            </>
+        );
+
+        expect(commits[0]).toContain('Show this help dialog');
+        expect(commits[0]).not.toContain('Navigate grid');
+    });
+
+    it('opens on the requested tab each time, even after the user switched tabs', () => {
+        const commits: string[] = [];
+        const modal = (isOpen: boolean, initialTab: 'shortcuts' | 'setup') => (
+            <>
+                <ShortcutsModal isOpen={isOpen} onClose={vi.fn()} initialTab={initialTab} />
+                <CommitProbe commits={commits} />
+            </>
+        );
+        const { rerender } = render(modal(true, 'shortcuts'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search Syntax' }));
+        expect(screen.getByText('Example Query')).toBeTruthy();
+
+        rerender(modal(false, 'setup'));
+        commits.length = 0;
+        rerender(modal(true, 'setup'));
+        expect(commits).toHaveLength(1);
+        expect(commits[0]).toContain('Review your setup');
+        expect(commits[0]).not.toContain('Example Query');
+
+        // The same props reopen on the same tab, not on whichever tab the user left.
+        fireEvent.click(screen.getByRole('button', { name: 'Shortcuts' }));
+        rerender(modal(false, 'setup'));
+        commits.length = 0;
+        rerender(modal(true, 'setup'));
+        expect(commits).toHaveLength(1);
+        expect(commits[0]).toContain('Review your setup');
+        expect(commits[0]).not.toContain('Show this help dialog');
+    });
 
     it('renders only while open and defaults to an expanded General category', async () => {
         const { rerender } = render(<ShortcutsModal isOpen={false} onClose={vi.fn()} />);

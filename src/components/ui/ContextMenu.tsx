@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Copy,
     Heart,
@@ -115,18 +115,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     const MENU_WIDTH = 240;
     const SUBMENU_WIDTH = 220;
 
-    const [menuPos, setMenuPos] = useState({ top: y, left: x });
-    const [side, setSide] = useState<'right' | 'left'>('right');
-
-    useEffect(() => {
+    // The viewport size and fixed width estimates decide the position, so it is known on the first render.
+    const { menuPos, side } = useMemo(() => {
         const top = Math.min(y, window.innerHeight - 300);
         const left = Math.min(x, window.innerWidth - MENU_WIDTH);
 
         // Determine which side submenus should open on
         const wouldOverflowRight = left + MENU_WIDTH + SUBMENU_WIDTH > window.innerWidth;
-        setSide(wouldOverflowRight ? 'left' : 'right');
-
-        setMenuPos({ top, left });
+        return { menuPos: { top, left }, side: wouldOverflowRight ? ('left' as const) : ('right' as const) };
     }, [x, y]);
 
     return (

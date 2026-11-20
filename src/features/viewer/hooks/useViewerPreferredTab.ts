@@ -20,9 +20,7 @@ export const useViewerPreferredTab = (availableTabs: readonly ViewerTabId[]): Vi
     const [preHydrationTab, setPreHydrationTab] = React.useState<ViewerTabId | undefined>();
     const defaultTab = React.useMemo(() => fallbackTab(availableTabs), [availableTabs]);
 
-    React.useEffect(() => {
-        if (isLoaded && preHydrationTab !== undefined) setPreHydrationTab(undefined);
-    }, [isLoaded, preHydrationTab]);
+    if (isLoaded && preHydrationTab !== undefined) setPreHydrationTab(undefined);
 
     const defaultDetailsTab = availableTabs.includes('details') ? 'details' : defaultTab;
     const selectedTab = isLoaded ? preferredTab : preHydrationTab;

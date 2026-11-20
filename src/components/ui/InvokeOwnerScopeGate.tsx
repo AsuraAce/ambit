@@ -29,8 +29,17 @@ const BusyGate: React.FC<{ state: InvokeOwnerScopeState; autoFocus: boolean }> =
     const progress = operation?.progress ?? state.progress;
     const scopeIdentity = state.scope?.mode === 'owner' ? state.scope.ownerId : state.scope?.mode;
     const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
-    React.useEffect(() => {
+    // The counter restarts at zero for a new root, scope or operation; the effect below runs its clock.
+    const [handledTarget, setHandledTarget] = React.useState({ rootPath: state.rootPath, scopeIdentity, operationId: operation?.id });
+    if (
+        handledTarget.rootPath !== state.rootPath ||
+        handledTarget.scopeIdentity !== scopeIdentity ||
+        handledTarget.operationId !== operation?.id
+    ) {
+        setHandledTarget({ rootPath: state.rootPath, scopeIdentity, operationId: operation?.id });
         setElapsedSeconds(0);
+    }
+    React.useEffect(() => {
         const startedAt = Date.now();
         const timer = window.setInterval(() => {
             setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
@@ -129,17 +138,28 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
         if (!isBusy && autoFocus) headingRef.current?.focus();
     }, [isBusy, state.status, autoFocus]);
 
-    React.useEffect(() => {
+    // A new discovery source drops the selection, the confirmation and the error; leaving the selection
+    // step drops the submit state and the confirmation. Both adjust state during render.
+    const [handledDiscoverySource, setHandledDiscoverySource] = React.useState(discoverySource);
+    if (handledDiscoverySource !== discoverySource) {
+        setHandledDiscoverySource(discoverySource);
         setPendingSelection(undefined);
         setIsAllUsersConfirmOpen(false);
         setSubmitError(null);
-    }, [discoverySource]);
+    }
+
+    const [handledStatus, setHandledStatus] = React.useState(state.status);
+    if (handledStatus !== state.status) {
+        setHandledStatus(state.status);
+        if (state.status !== 'selection_required') {
+            setIsSubmitting(false);
+            setIsAllUsersConfirmOpen(false);
+        }
+    }
 
     React.useEffect(() => {
         if (state.status !== 'selection_required') {
             isSubmittingRef.current = false;
-            setIsSubmitting(false);
-            setIsAllUsersConfirmOpen(false);
         }
     }, [state.status]);
 

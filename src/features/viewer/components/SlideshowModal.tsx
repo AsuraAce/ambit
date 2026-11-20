@@ -57,15 +57,26 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({ isOpen, images, 
     }, [isShuffle, images.length]);
 
     // Handle Mouse Movement to toggle HUD
-    const handleMouseMove = () => {
-        setShowHud(true);
+    const armHudTimeout = () => {
         if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
         hudTimeoutRef.current = setTimeout(() => setShowHud(false), 3500);
     };
 
+    const handleMouseMove = () => {
+        setShowHud(true);
+        armHudTimeout();
+    };
+
+    // Opening shows the HUD during render; the effect below starts the hide timer.
+    const [handledIsOpen, setHandledIsOpen] = useState(isOpen);
+    if (isOpen !== handledIsOpen) {
+        setHandledIsOpen(isOpen);
+        if (isOpen) setShowHud(true);
+    }
+
     useEffect(() => {
         if (isOpen) {
-            handleMouseMove();
+            armHudTimeout();
         }
         return () => {
             if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);

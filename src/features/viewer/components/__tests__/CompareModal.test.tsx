@@ -176,6 +176,24 @@ describe('CompareModal', () => {
         fireEvent.click(screen.getByText('Split'));
     });
 
+    it('does not carry the overlay hover reveal into a later visit to overlay mode', () => {
+        const { container } = renderModal();
+        const root = container.firstElementChild as HTMLElement;
+        const revealLayer = () => container.querySelector('div.transition-opacity.duration-300.ease-out');
+
+        fireEvent.click(screen.getByText('Overlay'));
+        expect(revealLayer()?.className).toContain('opacity-0');
+        fireEvent.mouseMove(root, { clientX: 500, clientY: 300 });
+        expect(revealLayer()?.className).toContain('opacity-100');
+
+        fireEvent.click(screen.getByText('Split'));
+        expect(revealLayer()).toBeNull();
+        fireEvent.click(screen.getByText('Overlay'));
+
+        expect(revealLayer()?.className).toContain('opacity-0');
+        expect(revealLayer()?.className).not.toContain('opacity-100');
+    });
+
     it('switches prompt modes, toggles and resizes the sidebar, and handles identical prompts', () => {
         const identical = createImage('b', {
             metadata: {

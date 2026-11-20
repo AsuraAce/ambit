@@ -21,12 +21,14 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({ isOpen, onClose, t
     const [activeAnalysisTab, setActiveAnalysisTab] = React.useState(0);
 
     // Reset tabs when modal opens with new content
-    React.useEffect(() => {
+    const [handledOpen, setHandledOpen] = React.useState({ isOpen, content });
+    if (handledOpen.isOpen !== isOpen || handledOpen.content !== content) {
+        setHandledOpen({ isOpen, content });
         if (isOpen) {
             setActiveTab(0);
             setActiveAnalysisTab(0);
         }
-    }, [isOpen, content]);
+    }
 
     if (!isOpen || !content) return null;
 

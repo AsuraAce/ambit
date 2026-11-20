@@ -56,6 +56,11 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
     const [membershipsByAsset, setMembershipsByAsset] = React.useState<Map<string, string[]>>(() => new Map([[assetId, []]]));
     const [loadState, setLoadState] = React.useState<MembershipLoadState>({ assetId, status: 'loading' });
     const [retryToken, setRetryToken] = React.useState(0);
+
+    // A different asset starts loading during render, so its first frame is never marked ready from the previous asset's state.
+    if (loadState.assetId !== assetId) {
+        setLoadState({ assetId, status: 'loading' });
+    }
     const [pendingKeys, setPendingKeys] = React.useState<Set<string>>(() => new Set());
     const pendingKeysRef = React.useRef(new Set<string>());
     const activeAssetIdRef = React.useRef(assetId);
@@ -107,7 +112,6 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
         const requestedAssetId = assetId;
         const requestId = requestIdRef.current + 1;
         requestIdRef.current = requestId;
-        setLoadState({ assetId: requestedAssetId, status: 'loading' });
 
         void getCollectionsForImage(requestedAssetId)
             .then((collectionIds) => {
@@ -306,7 +310,10 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                         <span className="text-xs text-gray-600 dark:text-gray-300">Could not load collection membership.</span>
                         <button
                             type="button"
-                            onClick={() => setRetryToken((token) => token + 1)}
+                            onClick={() => {
+                                setLoadState({ assetId, status: 'loading' });
+                                setRetryToken((token) => token + 1);
+                            }}
                             className="text-xs font-medium text-sage-700 hover:underline dark:text-sage-300"
                         >
                             Retry

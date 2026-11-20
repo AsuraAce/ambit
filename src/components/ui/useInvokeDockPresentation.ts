@@ -50,11 +50,10 @@ export const useInvokeDockPresentation = (
         return () => window.clearTimeout(timer);
     }, [operationId, origin, isActive]);
 
-    React.useEffect(() => {
-        if (operationId && isActiveVisible && canShowActive && isDocumentVisible) {
-            setShownId(operationId);
-        }
-    }, [operationId, isActiveVisible, canShowActive, isDocumentVisible]);
+    // Remember that this operation's dock was shown, so a silent startup success stays hidden.
+    if (operationId && isActiveVisible && canShowActive && isDocumentVisible && shownId !== operationId) {
+        setShownId(operationId);
+    }
 
     // Zero image counts cannot prove that board or ownership work was unchanged.
     const isSilentStartupSuccess =
@@ -81,8 +80,18 @@ export const useInvokeResultDismissal = (
     const [isHovered, setIsHovered] = React.useState(false);
     const [hasFocus, setHasFocus] = React.useState(false);
 
-    React.useEffect(() => {
+    // Hover ends with the dock: when the dock, its result or the operation changes while it is hidden.
+    const [handledDock, setHandledDock] = React.useState({ isDockShown, isResultVisible, operationId });
+    if (
+        handledDock.isDockShown !== isDockShown ||
+        handledDock.isResultVisible !== isResultVisible ||
+        handledDock.operationId !== operationId
+    ) {
+        setHandledDock({ isDockShown, isResultVisible, operationId });
         if (!isDockShown) setIsHovered(false);
+    }
+
+    React.useEffect(() => {
         setHasFocus(dockRef.current?.contains(document.activeElement) ?? false);
     }, [isDockShown, isResultVisible, operationId]);
 

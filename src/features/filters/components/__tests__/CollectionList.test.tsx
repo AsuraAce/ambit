@@ -364,6 +364,58 @@ describe('CollectionList interactions', () => {
         expect(screen.getByText('Collection 00')).toBeTruthy();
     });
 
+    // The profiler records the "Show More" label of every commit. The label is derived from the render limit, so a limit
+    // that is only reset by a follow-up effect (one commit with the stale, scrolled-out limit) is caught, not just the
+    // settled result. Rows are not counted: rows that are leaving stay mounted for their exit animation.
+    describe('scrolled-out render limit', () => {
+        const manyCollections = Array.from({ length: 130 }, (_, index) => ({
+            ...makeCollection({ id: `id-${index}`, name: `Collection ${index}`, createdAt: index, updatedAt: index }),
+            isArchived: index % 2 === 0,
+        }));
+
+        const renderProfiledList = () => {
+            const labels: Array<string | null> = [];
+            const readLabel = () =>
+                Array.from(document.querySelectorAll('button'))
+                    .map((button) => button.textContent ?? '')
+                    .find((text) => text.startsWith('Show More')) ?? null;
+            render(
+                <React.Profiler id="collection-list" onRender={() => labels.push(readLabel())}>
+                    <CollectionList collections={manyCollections} filters={filters} setFilters={setFilters} onDeleteCollection={vi.fn()} />
+                </React.Profiler>
+            );
+            return { labels, readLabel };
+        };
+
+        it('returns to the first sixty rows when the search query changes', () => {
+            const { labels, readLabel } = renderProfiledList();
+            fireEvent.click(screen.getByRole('button', { name: 'Include Archived' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
+            expect(readLabel()).toBe('Show More (70 remaining)');
+            fireEvent.click(screen.getByRole('button', { name: /show more/i }));
+            expect(readLabel()).toBe('Show More (10 remaining)');
+
+            labels.length = 0;
+            fireEvent.change(screen.getByPlaceholderText('Find collection...'), { target: { value: 'collection' } });
+
+            expect(labels.length).toBeGreaterThan(0);
+            expect(labels.every((label) => label === 'Show More (70 remaining)')).toBe(true);
+        });
+
+        it('returns to the first sixty rows when archived collections are shown or hidden', () => {
+            const { labels, readLabel } = renderProfiledList();
+            expect(readLabel()).toBe('Show More (5 remaining)');
+            fireEvent.click(screen.getByRole('button', { name: /show more/i }));
+            expect(readLabel()).toBeNull();
+
+            labels.length = 0;
+            fireEvent.click(screen.getByRole('button', { name: 'Include Archived' }));
+
+            expect(labels.length).toBeGreaterThan(0);
+            expect(labels.every((label) => label === 'Show More (70 remaining)')).toBe(true);
+        });
+    });
+
     it('submits valid renames and ignores blank names', () => {
         const first = renderList();
         fireEvent.click(screen.getByLabelText('rename-alpha'));

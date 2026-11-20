@@ -125,7 +125,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Missing Scan Special State
-    const [_scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
 
     useEffect(() => {
@@ -309,24 +308,41 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         [activeTab, clearSelection]
     );
 
-    const handleScanComplete = useCallback(async (ids: string[]) => {
-        setScanMissingIds(new Set(ids));
-        if (ids.length > 0) {
-            try {
-                const fetched = await getImagesByIds(ids);
-                setFetchedMissingImages(fetched);
-            } catch (e) {
-                console.error('Failed to fetch missing images', e);
-            }
-        } else {
-            setFetchedMissingImages([]);
+    const fetchMissingImages = useCallback(async (ids: string[]) => {
+        try {
+            const fetched = await getImagesByIds(ids);
+            setFetchedMissingImages(fetched);
+        } catch (e) {
+            console.error('Failed to fetch missing images', e);
         }
     }, []);
 
+    const handleScanComplete = useCallback(
+        async (ids: string[]) => {
+            if (ids.length > 0) {
+                await fetchMissingImages(ids);
+            } else {
+                setFetchedMissingImages([]);
+            }
+        },
+        [fetchMissingImages]
+    );
+
+    // A scan that found nothing clears the fetched list during render; a scan with ids fetches them below.
+    const [handledMissingScan, setHandledMissingScan] = useState(lastMissingScanResult);
+    if (lastMissingScanResult !== handledMissingScan) {
+        setHandledMissingScan(lastMissingScanResult);
+        if (lastMissingScanResult && lastMissingScanResult.missingIds.length === 0) {
+            setFetchedMissingImages([]);
+        }
+    }
+
     useEffect(() => {
-        if (!lastMissingScanResult) return;
-        void handleScanComplete(lastMissingScanResult.missingIds);
-    }, [lastMissingScanResult, handleScanComplete]);
+        if (!lastMissingScanResult || lastMissingScanResult.missingIds.length === 0) return;
+        getImagesByIds(lastMissingScanResult.missingIds)
+            .then((fetched) => setFetchedMissingImages(fetched))
+            .catch((e) => console.error('Failed to fetch missing images', e));
+    }, [lastMissingScanResult]);
 
     // Wrapper for selection to match expected signature in sub-components if needed
     // Most subcomponents expect `onItemClick: (id, index, e) => void`
@@ -431,11 +447,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
         const removedIds = new Set(ids);
         if (activeTab === 'missing') {
-            setScanMissingIds((prev) => {
-                const next = new Set(prev);
-                ids.forEach((id) => next.delete(id));
-                return next;
-            });
             setFetchedMissingImages((prev) => prev.filter((img) => !removedIds.has(img.id)));
             setLocalMissingImages((prev) => prev.filter((img) => !removedIds.has(img.id)));
         } else if (activeTab === 'untagged') {
@@ -498,7 +509,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             console.error('[Maintenance] Missing-image purge failed', error);
             return;
         }
-        setScanMissingIds(new Set());
         setFetchedMissingImages([]);
         setLocalMissingImages([]);
         try {
@@ -520,11 +530,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setViewingImageId(null);
 
         if (activeTab === 'missing') {
-            setScanMissingIds((prev) => {
-                const next = new Set(prev);
-                next.delete(id);
-                return next;
-            });
             setFetchedMissingImages((prev) => prev.filter((img) => img.id !== id));
             setLocalMissingImages((prev) => prev.filter((img) => img.id !== id));
         } else if (activeTab === 'untagged') {
