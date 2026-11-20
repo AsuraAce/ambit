@@ -14,6 +14,7 @@ import { processNativePaths, type ImportResult } from '../../../services/importS
 import { isBrowserMockMode } from '../../../services/runtime';
 import { getThumbnailDir } from '../../../services/thumbnailService';
 import { createMonitoredFolder, detectGeneratorVariant, isCompleteImport, scanAddedFolders } from '../utils/addedFolderScan';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported images were kept; rescan to continue.';
 
@@ -122,6 +123,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
 
     const handleRescan = useCallback(
         async (id: string, path: string, variant?: string, isManaged?: boolean) => {
+            // A user rescan waits for an owner switch; the incremental branch would import past the guarded handlers.
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             setScanningIds((prev) => new Set(prev).add(id));
             try {
                 if (isManaged && variant === GeneratorTool.INVOKEAI && onInvokeSync) {
@@ -317,6 +320,7 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
     );
 
     const addMonitoredFolder = (normalizedNew: string) => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         const newFolder = createMonitoredFolder(normalizedNew);
         const { variant } = newFolder;
 
@@ -346,6 +350,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
     const handleAddFolder = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newFolderPath.trim()) return;
+        // Refuse before anything is saved: a folder added now could not get its first scan.
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
 
         const normalizedNew = normalizePath(newFolderPath);
         const existing = settings.monitoredFolders.find((f) => normalizePath(f.path) === normalizedNew);

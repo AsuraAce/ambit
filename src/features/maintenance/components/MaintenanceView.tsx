@@ -28,6 +28,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { refreshThumbnailConsumers } from '../../../services/thumbnailConsumerRefresh';
 import { useToast } from '../../../hooks/useToast';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -629,6 +630,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleUnmarkIntermediates = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         for (const id of ids) {
             await toggleImageIntermediate(id, false);
         }

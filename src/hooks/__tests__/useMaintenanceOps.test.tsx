@@ -1,9 +1,10 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage, type AppSettings } from '../../types';
 import { useMaintenanceOps } from '../useMaintenanceOps';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const mockAddToast = vi.fn();
 const mockImageToAnalysisBase64 = vi.fn();
@@ -371,5 +372,46 @@ describe('useMaintenanceOps metadata recovery', () => {
         await act(async () => result.current.deleteImages([image.id, other.id]));
 
         expect(mockAddToast).toHaveBeenCalledWith('Removed 2 items from the library', 'success');
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner. Removing or recovering an image now would act on the wrong owner's rows.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        const renderOps = () =>
+            renderHook(() => useMaintenanceOps({ images: [image], setImages: vi.fn(), refreshCollections: vi.fn(), settings }), {
+                wrapper: ({ children }: { children: React.ReactNode }) => (
+                    <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+                ),
+            });
+
+        it('refuses to remove images and reports that nothing was removed', async () => {
+            const { result } = renderOps();
+            let removed: boolean | undefined;
+
+            await act(async () => {
+                removed = await result.current.deleteImages([image.id]);
+            });
+
+            expect(removed).toBe(false);
+            expect(mockAddToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(imageRepoMocks.removeImagesFromLibrary).not.toHaveBeenCalled();
+        });
+
+        it('refuses prompt recovery before reading the image or calling Gemini', async () => {
+            const { result } = renderOps();
+            let recovered: AIImage | null | undefined;
+
+            await act(async () => {
+                recovered = await result.current.recoverMetadata(image.id, 'generic');
+            });
+
+            expect(recovered).toBeNull();
+            expect(mockAddToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mockImageToAnalysisBase64).not.toHaveBeenCalled();
+            expect(mockRecoverImageMetadata).not.toHaveBeenCalled();
+            expect(mockUpdateImageMetadataFields).not.toHaveBeenCalled();
+            expect(result.current.isRecoveringMetadata).toBe(false);
+        });
     });
 });

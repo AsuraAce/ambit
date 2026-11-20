@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { isInvokeOwnerScopeAdmitted, useInvokeOwnerScopeStore, type InvokeOwnerScopeState } from '../invokeOwnerScopeStore';
+import {
+    isInvokeOwnerScopeAdmitted,
+    isOwnerSwitchPending,
+    useInvokeOwnerScopeStore,
+    type InvokeOwnerScopeState,
+    type RetainedOwnerScope,
+} from '../invokeOwnerScopeStore';
 
 describe('InvokeAI owner admission state', () => {
     beforeEach(() => {
@@ -38,6 +44,46 @@ describe('InvokeAI owner admission state', () => {
         expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toEqual({
             status: 'ready',
             rootPath: 'D:/Invoke',
+        });
+    });
+
+    describe('retained owner during a user switch (#527)', () => {
+        const retained = (operationId: symbol): RetainedOwnerScope => ({
+            operationId,
+            rootPath: 'D:/Invoke',
+            scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke/outputs/images', mode: 'owner', ownerId: 'freya' },
+            label: 'Freya',
+            targetLabel: 'Odin',
+        });
+
+        it('lets only the retaining operation release the shown owner', () => {
+            const current = Symbol('current');
+            useInvokeOwnerScopeStore.getState().retainOwnerScope(retained(current));
+
+            useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(Symbol('stale'));
+            expect(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())).toBe(true);
+
+            useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(current);
+            expect(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())).toBe(false);
+        });
+
+        // Fail closed: a state that needs the gate must never keep showing the previous owner.
+        it.each(['error', 'selection_required', 'idle', 'discovering'] as const)('drops the retained owner on %s', (status) => {
+            useInvokeOwnerScopeStore.getState().retainOwnerScope(retained(Symbol('switch')));
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status, rootPath: 'D:/Invoke' });
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+        });
+
+        it.each(['applying', 'ready', 'offline_ready'] as const)('keeps the retained owner while the state is %s', (status) => {
+            useInvokeOwnerScopeStore.getState().retainOwnerScope(retained(Symbol('switch')));
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status, rootPath: 'D:/Invoke' });
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).not.toBeNull();
+        });
+
+        it('clears the retained owner on reset', () => {
+            useInvokeOwnerScopeStore.getState().retainOwnerScope(retained(Symbol('switch')));
+            useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
         });
     });
 });

@@ -46,6 +46,8 @@ import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
 import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
 import { isInvokeOwnerScopeAdmitted, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
+import { ToastContext } from './ToastContext';
 
 interface SearchContextType {
     images: AIImage[];
@@ -122,6 +124,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const { settings, setSettings, privacyEnabled, isLoaded: settingsLoaded } = useSettings();
     const { collections, smartCollections, refreshCollections, isLoaded: collectionsLoaded } = useCollections();
     const queryClient = useQueryClient();
+    // Optional: some tests render the search context without the toast provider.
+    const notifyToast = useContext(ToastContext)?.addToast;
     const privacyMaskIndexStatus = useSettingsStore((state) => state.privacyMaskIndexStatus);
     const privacyMaskIndexRetryToken = useSettingsStore((state) => state.privacyMaskIndexRetryToken);
     const setPrivacyMaskIndexState = useSettingsStore((state) => state.setPrivacyMaskIndexState);
@@ -544,6 +548,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const toggleFavorite = useCallback(
         async (id: string) => {
+            if (refuseWriteDuringOwnerSwitch(notifyToast)) return;
             const imgs = useSearchStore.getState().images;
             const img = imgs.find((i) => i.id === id);
             if (!img) return;
@@ -565,11 +570,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 revertImageFieldsInQueryCaches(queryClient, reverts);
             }
         },
-        [queryClient, refreshCollectionsAfterImageFlagChange, setImages]
+        [queryClient, refreshCollectionsAfterImageFlagChange, setImages, notifyToast]
     );
 
     const togglePin = useCallback(
         async (id: string, isPinned?: boolean) => {
+            if (refuseWriteDuringOwnerSwitch(notifyToast)) return;
             const imgs = useSearchStore.getState().images;
             const img = imgs.find((i) => i.id === id);
             if (!img) return;
@@ -607,7 +613,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 revertImageFieldsInQueryCaches(queryClient, reverts, { ...order, reorderQueryKey: imagesQueryKey });
             }
         },
-        [filters.collectionId, imagesQueryKey, queryClient, refreshCollectionsAfterImageFlagChange, setImages]
+        [filters.collectionId, imagesQueryKey, notifyToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages]
     );
 
     // ... Missing: setRecentSearches, loadFacet, availableHiddenContent

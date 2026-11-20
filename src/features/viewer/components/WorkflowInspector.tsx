@@ -36,6 +36,7 @@ import {
     type WorkflowInputs,
     type WorkflowNodeConnections,
 } from './workflowGraphUtils';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 interface WorkflowInspectorProps {
     image: AIImage;
@@ -969,12 +970,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
 
                     if (isValidWorkflow) {
                         setLocalWorkflow(result);
-                        await updateImageWorkflow(image.id, result); // result is checked in isValidWorkflow
+                        // The cached workflow waits while an owner switch is pending; it is found again next time.
+                        if (!refuseWriteDuringOwnerSwitch()) await updateImageWorkflow(image.id, result); // result is checked in isValidWorkflow
                         onWorkflowLoaded?.(result);
                     } else {
                         // No workflow found - persist this so we hide the tab next time
                         console.log('[Workflow] No workflow found (or invalid graph), setting hasWorkflowHint=false for:', image.id);
-                        await updateImageWorkflowHint(image.id, false);
+                        if (!refuseWriteDuringOwnerSwitch()) await updateImageWorkflowHint(image.id, false);
                     }
                 } catch (e) {
                     console.error('[Workflow] Failed lazy loading', e);

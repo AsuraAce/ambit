@@ -28,6 +28,8 @@ interface ContextMenuProps {
     x: number;
     y: number;
     isPinned?: boolean;
+    /** Offers only actions that change nothing in the library (copy, show, open), as during an owner switch. */
+    readOnly?: boolean;
     enableAI?: boolean;
     activeCollectionName?: string;
     onClose: () => void;
@@ -64,6 +66,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     x,
     y,
     isPinned,
+    readOnly = false,
     enableAI,
     activeCollectionName,
     onClose,
@@ -135,26 +138,32 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             {/* Quick Actions Bar */}
             <div className="flex items-center justify-between px-2 pb-1.5 pt-0.5 border-b border-white/5 mb-1">
                 <div className="flex gap-0.5">
-                    <ActionButton
-                        icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />}
-                        onClick={() => onToggleFavorite?.()}
-                        label={isFavorite ? 'Unfavorite' : 'Favorite'}
-                        pressed={Boolean(isFavorite)}
-                    />
-                    <ActionButton
-                        icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-sage-400 text-white' : 'text-gray-400'}`} />}
-                        onClick={onTogglePin}
-                        label={isPinned ? 'Unpin' : 'Pin to Top'}
-                        pressed={Boolean(isPinned)}
-                    />
+                    {!readOnly && (
+                        <ActionButton
+                            icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />}
+                            onClick={() => onToggleFavorite?.()}
+                            label={isFavorite ? 'Unfavorite' : 'Favorite'}
+                            pressed={Boolean(isFavorite)}
+                        />
+                    )}
+                    {!readOnly && (
+                        <ActionButton
+                            icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-sage-400 text-white' : 'text-gray-400'}`} />}
+                            onClick={onTogglePin}
+                            label={isPinned ? 'Unpin' : 'Pin to Top'}
+                            pressed={Boolean(isPinned)}
+                        />
+                    )}
                     <ActionButton icon={<Folder className="w-4 h-4 text-gray-400" />} onClick={onShowInFolder} label="Show in Folder" />
                 </div>
-                <ActionButton
-                    icon={<Trash2 className="w-4 h-4 text-gray-400" />}
-                    onClick={onDelete}
-                    label="Remove from Library"
-                    className="hover:!bg-red-500/20 hover:!text-red-400"
-                />
+                {!readOnly && (
+                    <ActionButton
+                        icon={<Trash2 className="w-4 h-4 text-gray-400" />}
+                        onClick={onDelete}
+                        label="Remove from Library"
+                        className="hover:!bg-red-500/20 hover:!text-red-400"
+                    />
+                )}
             </div>
 
             {/* Main Menu Groups */}
@@ -173,7 +182,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 )}
             </SubMenu>
 
-            {onSetImageKind && detectedSourceKind && (
+            {!readOnly && onSetImageKind && detectedSourceKind && (
                 <SubMenu label="Image Kind" icon={<ImageIcon className="w-4 h-4 text-gray-400" />} side={side}>
                     <MenuItem
                         icon={<Check className={`w-4 h-4 ${sourceKindOverride === undefined ? 'opacity-100' : 'opacity-0'}`} />}
@@ -193,109 +202,113 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 </SubMenu>
             )}
 
-            <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-gray-400" />} side={side}>
-                <MenuItem
-                    icon={<FolderPlus className="w-4 h-4 text-gray-400" />}
-                    label="Add to Collection..."
-                    onClick={onAddToCollection}
-                />
-                {onMoveToCollection && (
+            {!readOnly && (
+                <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-gray-400" />} side={side}>
                     <MenuItem
-                        icon={<Layout className="w-4 h-4 text-gray-400" />}
-                        label="Move to Collection..."
-                        onClick={onMoveToCollection}
+                        icon={<FolderPlus className="w-4 h-4 text-gray-400" />}
+                        label="Add to Collection..."
+                        onClick={onAddToCollection}
                     />
-                )}
-                {activeCollectionName && onRemoveFromCollection && (
-                    <MenuItem
-                        icon={<FolderMinus className="w-4 h-4 text-gray-400" />}
-                        label="Remove from Collection"
-                        onClick={onRemoveFromCollection}
-                        className="hover:!bg-red-500/10 hover:!text-red-200"
-                    />
-                )}
-                <div className="h-px bg-white/5 my-1" />
-                {/* Collection Thumbnail */}
-                {onSetThumbnail && (
-                    <MenuItem
-                        icon={<ImageIcon className="w-4 h-4 text-gray-400" />}
-                        label="Set as Collection Thumb"
-                        onClick={onSetThumbnail}
-                    />
-                )}
-                {onUnsetThumbnail && (
-                    <MenuItem
-                        icon={<ImageOff className="w-4 h-4 text-gray-500" />}
-                        label="Reset Collection Thumb"
-                        onClick={onUnsetThumbnail}
-                    />
-                )}
-
-                {/* Model Thumbnails */}
-                {modelsForThumbnail && modelsForThumbnail.length > 0 && onSetModelThumbnail && (
-                    <>
-                        <div className="h-px bg-white/5 my-1" />
-                        <div className="px-2 py-1 text-[10px] uppercase font-bold text-gray-500">Set Model Thumbnail</div>
-                        {modelsForThumbnail.map((m, i) => (
-                            <MenuItem
-                                key={i}
-                                icon={<ImageIcon className="w-3 h-3 text-gray-400" />}
-                                label={m.name}
-                                onClick={() => onSetModelThumbnail(m)}
-                            />
-                        ))}
-                    </>
-                )}
-            </SubMenu>
-
-            <SubMenu label="Privacy & AI" icon={<Shield className="w-4 h-4 text-gray-400" />} side={side}>
-                {onToggleMask && (
-                    <>
-                        {userMasked !== undefined && (
-                            <MenuItem
-                                icon={<MinusCircle className="w-4 h-4 text-gray-400" />}
-                                label="Reset Mask to Auto"
-                                onClick={() => onToggleMask(null)}
-                            />
-                        )}
-                        {!isMasked && (
-                            <MenuItem
-                                icon={<EyeOff className="w-4 h-4 text-gray-400" />}
-                                label="Mask Content"
-                                onClick={() => onToggleMask(true)}
-                            />
-                        )}
-                        {isMasked && (
-                            <MenuItem
-                                icon={<Eye className="w-4 h-4 text-gray-400" />}
-                                label="Unmask Content"
-                                onClick={() => onToggleMask(false)}
-                            />
-                        )}
-                    </>
-                )}
-                {onToggleIntermediate && (
-                    <>
-                        <div className="h-px bg-white/5 my-1" />
+                    {onMoveToCollection && (
                         <MenuItem
-                            icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-gray-400' : 'text-gray-400'}`} />}
-                            label={isIntermediate ? 'Unmark as Intermediate' : 'Mark as Intermediate'}
-                            onClick={onToggleIntermediate}
+                            icon={<Layout className="w-4 h-4 text-gray-400" />}
+                            label="Move to Collection..."
+                            onClick={onMoveToCollection}
                         />
-                    </>
-                )}
-                {enableAI && onRecoverMetadata && (
-                    <>
-                        <div className="h-px bg-white/5 my-1" />
+                    )}
+                    {activeCollectionName && onRemoveFromCollection && (
                         <MenuItem
-                            icon={<Wand2 className="w-4 h-4 text-gray-400" />}
-                            label="Recover Metadata (AI)"
-                            onClick={onRecoverMetadata}
-                            className="text-gray-400"
+                            icon={<FolderMinus className="w-4 h-4 text-gray-400" />}
+                            label="Remove from Collection"
+                            onClick={onRemoveFromCollection}
+                            className="hover:!bg-red-500/10 hover:!text-red-200"
                         />
-                    </>
-                )}
-            </SubMenu>
+                    )}
+                    <div className="h-px bg-white/5 my-1" />
+                    {/* Collection Thumbnail */}
+                    {onSetThumbnail && (
+                        <MenuItem
+                            icon={<ImageIcon className="w-4 h-4 text-gray-400" />}
+                            label="Set as Collection Thumb"
+                            onClick={onSetThumbnail}
+                        />
+                    )}
+                    {onUnsetThumbnail && (
+                        <MenuItem
+                            icon={<ImageOff className="w-4 h-4 text-gray-500" />}
+                            label="Reset Collection Thumb"
+                            onClick={onUnsetThumbnail}
+                        />
+                    )}
+
+                    {/* Model Thumbnails */}
+                    {modelsForThumbnail && modelsForThumbnail.length > 0 && onSetModelThumbnail && (
+                        <>
+                            <div className="h-px bg-white/5 my-1" />
+                            <div className="px-2 py-1 text-[10px] uppercase font-bold text-gray-500">Set Model Thumbnail</div>
+                            {modelsForThumbnail.map((m, i) => (
+                                <MenuItem
+                                    key={i}
+                                    icon={<ImageIcon className="w-3 h-3 text-gray-400" />}
+                                    label={m.name}
+                                    onClick={() => onSetModelThumbnail(m)}
+                                />
+                            ))}
+                        </>
+                    )}
+                </SubMenu>
+            )}
+
+            {!readOnly && (
+                <SubMenu label="Privacy & AI" icon={<Shield className="w-4 h-4 text-gray-400" />} side={side}>
+                    {onToggleMask && (
+                        <>
+                            {userMasked !== undefined && (
+                                <MenuItem
+                                    icon={<MinusCircle className="w-4 h-4 text-gray-400" />}
+                                    label="Reset Mask to Auto"
+                                    onClick={() => onToggleMask(null)}
+                                />
+                            )}
+                            {!isMasked && (
+                                <MenuItem
+                                    icon={<EyeOff className="w-4 h-4 text-gray-400" />}
+                                    label="Mask Content"
+                                    onClick={() => onToggleMask(true)}
+                                />
+                            )}
+                            {isMasked && (
+                                <MenuItem
+                                    icon={<Eye className="w-4 h-4 text-gray-400" />}
+                                    label="Unmask Content"
+                                    onClick={() => onToggleMask(false)}
+                                />
+                            )}
+                        </>
+                    )}
+                    {onToggleIntermediate && (
+                        <>
+                            <div className="h-px bg-white/5 my-1" />
+                            <MenuItem
+                                icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-gray-400' : 'text-gray-400'}`} />}
+                                label={isIntermediate ? 'Unmark as Intermediate' : 'Mark as Intermediate'}
+                                onClick={onToggleIntermediate}
+                            />
+                        </>
+                    )}
+                    {enableAI && onRecoverMetadata && (
+                        <>
+                            <div className="h-px bg-white/5 my-1" />
+                            <MenuItem
+                                icon={<Wand2 className="w-4 h-4 text-gray-400" />}
+                                label="Recover Metadata (AI)"
+                                onClick={onRecoverMetadata}
+                                className="text-gray-400"
+                            />
+                        </>
+                    )}
+                </SubMenu>
+            )}
 
             <div className="h-px bg-white/5 my-1" />
 

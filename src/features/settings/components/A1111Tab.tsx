@@ -10,6 +10,7 @@ import type { ImportResult } from '../../../services/importService';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 interface TabProps {
     settings: AppSettings;
@@ -103,6 +104,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
             return;
         }
 
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         setIsDiscovering(true);
         let newFolderIds = new Set<string>();
 

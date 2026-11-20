@@ -8,6 +8,7 @@ import { getImagesByIds } from '../services/db/imageRepo';
 import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 import { useQueryClient } from '@tanstack/react-query';
 import { refreshThumbnailConsumers } from '../services/thumbnailConsumerRefresh';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface UseThumbnailOpsProps {
     images: AIImage[];
@@ -27,6 +28,7 @@ export const useThumbnailOps = ({ images, setImages, refreshCollectionThumbnails
                 return;
             }
 
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const targetIds = Array.isArray(arg) ? arg : undefined;
             const onProgress = typeof arg === 'function' ? arg : undefined;
 

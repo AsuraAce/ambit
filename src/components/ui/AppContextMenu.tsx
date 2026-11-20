@@ -15,6 +15,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { useAppActions } from '../../hooks/useAppActions';
 import type { useCollectionOperations } from '../../hooks/useCollectionOperations';
 import type { useModalManager } from '../../hooks/useModalManager';
+import { refuseWriteDuringOwnerSwitch } from '../../services/invoke/ownerSwitchGuard';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 
 interface AppContextMenuProps {
     contextMenu: ContextMenuState | null;
@@ -45,6 +47,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const allCollections = useCollectionStore((s) => s.collections);
     const queryClient = useQueryClient();
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const collections = React.useMemo(() => allCollections.filter((c) => !c.filters), [allCollections]);
@@ -64,6 +67,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             x={contextMenu.x}
             y={contextMenu.y}
             isPinned={activeImage?.isPinned}
+            readOnly={ownerSwitchPending}
             isFavorite={activeImage?.isFavorite}
             isMasked={activeImage ? isImageMasked(activeImage, privacyEnabled, effectiveMaskedKeywords) : false}
             userMasked={activeImage?.userMasked}
@@ -181,7 +185,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             onToggleIntermediate={
                 isGenerated
                     ? async () => {
-                          if (contextMenu.imageId) {
+                          if (contextMenu.imageId && !refuseWriteDuringOwnerSwitch(addToast)) {
                               await toggleImageIntermediate(contextMenu.imageId, !activeImage?.metadata?.isIntermediate);
                               // We might need to refresh state here, but let's assume watchers handle it
                               addToast(

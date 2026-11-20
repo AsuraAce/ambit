@@ -22,6 +22,7 @@ import { getThumbnailDir } from '../services/thumbnailService';
 import { ensureFolderAccessible } from '../services/assetScope';
 import { rebuildFacetCache } from '../services/db/imageRepo';
 import { hasActiveResultFilters } from '../utils/filterState';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface ImportOptions {
     mode?: ImportMode;
@@ -165,6 +166,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
     // desktop app imports by native path and never reaches it (#493).
     const importWebFiles = useCallback(
         async (files: File[], owner: string) => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const abortCtrl = new AbortController();
             const importRunId = beginImportRun({
                 owner,
@@ -194,6 +196,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
     const importImages = useCallback(
         async (e: React.ChangeEvent<HTMLInputElement>) => {
             if (!e.target.files) return;
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
             const files = Array.from(e.target.files);
             try {
                 await importWebFiles(files, 'file-picker-import');
@@ -201,7 +204,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 e.target.value = '';
             }
         },
-        [importWebFiles]
+        [addToast, importWebFiles]
     );
 
     const handleWebFiles = useCallback((files: File[]) => importWebFiles(files, 'web-file-import'), [importWebFiles]);
@@ -220,6 +223,8 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
             } = options;
             const isStartup = mode === 'startup';
             const isManual = mode === 'manual';
+            // Automatic imports (startup, watcher) keep running; a user import waits for the switch.
+            if (isManual && refuseWriteDuringOwnerSwitch(addToast)) return;
             const shouldWaitForStableFiles = waitForStableFiles ?? isStartup;
 
             if (paths.length === 0 && isStartup) {
@@ -296,6 +301,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
             const mode = options.mode ?? 'manual';
             const isStartup = mode === 'startup';
             const isManual = mode === 'manual';
+            if (isManual && refuseWriteDuringOwnerSwitch(addToast)) return;
             const abortCtrl = new AbortController();
             const initialProgress = formatStableImportProgress({
                 current: 0,

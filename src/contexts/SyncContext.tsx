@@ -1351,6 +1351,28 @@ export const SyncProvider: React.FC<{
                     throw new Error('The active InvokeAI connection changed. Review the connection again.');
                 }
                 if (!reuseView) {
+                    // A user switch between owners of an admitted root keeps the shown owner's identity (#527).
+                    const previousScope = previousState.scope;
+                    if (
+                        sameSource &&
+                        !sameOwner &&
+                        previousScope &&
+                        (previousState.status === 'ready' || previousState.status === 'offline_ready')
+                    ) {
+                        const labelFor = (target: InvokeSyncScope, owners: InvokeOwnerDiscovery['owners'] | undefined): string =>
+                            target.mode === 'owner'
+                                ? owners?.find((owner) => owner.ownerId === target.ownerId)?.displayName || target.ownerId
+                                : target.mode === 'legacy'
+                                  ? 'InvokeAI'
+                                  : 'All users';
+                        useInvokeOwnerScopeStore.getState().retainOwnerScope({
+                            operationId: token,
+                            rootPath: draft.invokeAiPath,
+                            scope: previousScope,
+                            label: labelFor(previousScope, previousState.discovery?.owners ?? discovery.owners),
+                            targetLabel: labelFor(scope, discovery.owners),
+                        });
+                    }
                     setInvokeOwnerScopeState({
                         status: 'applying',
                         operationPhase: 'preparing',
@@ -1401,6 +1423,8 @@ export const SyncProvider: React.FC<{
                     warning: admission.boardScopeWarning,
                 });
                 viewCommitted = true;
+                // The target is admitted, so writes land in the scope the user chose.
+                useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(token);
                 updateInvokeOperation(token, { phase: 'syncing', viewCommitted: true });
                 if (previousRoot && !isSameInvokeConnectionSource(previousRoot, draft.invokeAiPath)) {
                     // The new root is applied and saved. Only now drop the old root's grant:
@@ -1553,6 +1577,8 @@ export const SyncProvider: React.FC<{
                     useLibraryStore.getState().markInvokeSyncCancelled();
                 }
                 if (ownerTransitionRef.current?.token === token) ownerTransitionRef.current = null;
+                // Rolled back to the previous owner, or failed closed: nothing is retained past the operation.
+                useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(token);
                 if (useLibraryStore.getState().syncAbortController === controller) setSyncAbortController(null);
                 setIsInvokeSyncActive(false);
                 startPendingInvokeLiveRerun();

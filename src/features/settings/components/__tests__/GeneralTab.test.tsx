@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { useLibraryStore } from '../../../../stores/libraryStore';
 import { GeneralTab } from '../GeneralTab';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 import type { AppSettings } from '../../../../types';
 
 const mockAddToast = vi.fn();
@@ -388,5 +389,32 @@ describe('GeneralTab Smart Thumbnail details', () => {
         await screen.findAllByText('string.png');
         fireEvent.click(screen.getByRole('button', { name: /retry all/i }));
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to retry thumbnails: retry offline', 'error'));
+    });
+    // #527: a user-started maintenance write waits for an owner switch.
+    it('refuses Retry all while an InvokeAI owner switch is pending', async () => {
+        vi.mocked(invoke).mockResolvedValueOnce({
+            failures: [
+                {
+                    id: 'img-failed',
+                    path: 'C:/library/failed-image.png',
+                    thumbnailPath: null,
+                    failureCount: 1,
+                    lastError: 'Failed to decode image',
+                    lastAttemptAt: 1777824000000,
+                },
+            ],
+        });
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        expect(await screen.findByText('failed-image.png')).toBeTruthy();
+
+        startOwnerSwitchForTest();
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /retry all/i }));
+            expect(mockAddToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(invoke).not.toHaveBeenCalledWith('retry_failed_thumbnail_optimizations');
+        } finally {
+            endOwnerSwitchForTest();
+        }
     });
 });

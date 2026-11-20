@@ -39,6 +39,7 @@ import type { useModalManager } from '../hooks/useModalManager';
 import { PrivacyProtectionGate } from './ui/PrivacyProtectionGate';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import LibraryLoadError from '../features/library/components/LibraryLoadError';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 
 setupGlobalLogging();
 
@@ -209,6 +210,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore((s) => s.privacyMaskIndexStatus);
     const privacyExposureBlocked = forcePrivacyProtectionGate || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
+    // Every selection action changes the library, so the bar waits while an owner switch is pending.
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const _allCollections = useCollectionStore((s) => s.collections);
@@ -691,7 +694,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </div>
                 </div>
 
-                {!privacyExposureBlocked && (
+                {!privacyExposureBlocked && !ownerSwitchPending && (
                     <SelectionBar
                         selectedIds={selectedIds}
                         filteredImages={images}

@@ -1,8 +1,9 @@
 import { act, renderHook } from '../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AIImage, GeneratorTool } from '../../types';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useThumbnailOps } from '../useThumbnailOps';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const mocks = vi.hoisted(() => ({
     browserMode: false,
@@ -189,5 +190,19 @@ describe('useThumbnailOps', () => {
         expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
         expect(mocks.addToast).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner. Regeneration writes thumbnail rows through the scoped views, which belong to the target owner.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        it('refuses thumbnail regeneration', async () => {
+            const { result } = setup([image('one')]);
+
+            await act(async () => result.current.regenerateThumbnails());
+
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.regenerate).not.toHaveBeenCalled();
+        });
     });
 });

@@ -5,6 +5,7 @@ import { GeneratorTool, type AppSettings } from '../../../../types';
 import type { ImportResult } from '../../../../services/importService';
 import { A1111FolderType, WebUIVariant, type DiscoveryCandidate } from '../../../../services/a1111/types';
 import { A1111Tab } from '../A1111Tab';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 
 const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
@@ -753,5 +754,30 @@ describe('A1111Tab discovery warnings', () => {
         fireEvent.click(await screen.findByRole('button', { name: /link\/sync 1 folders/i }));
         expect(await screen.findByText('Use Check Console for details')).toBeTruthy();
         expect(setSettings).not.toHaveBeenCalled();
+    });
+    // #527: Link & Import saves new library folders and imports them, so it waits for an owner switch.
+    it('refuses Link & Import while an InvokeAI owner switch is pending, saving nothing', async () => {
+        const onScanFolder = vi.fn();
+        const setSettings = vi.fn();
+        mocks.discoverA1111Candidates.mockResolvedValue({
+            detectedVariant: WebUIVariant.A1111,
+            candidates: [candidate()],
+            logs: [],
+            warnings: [],
+        });
+        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images']);
+        render(<A1111Tab settings={createSettings()} setSettings={setSettings} onScanFolder={onScanFolder} />);
+        fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
+        const link = await screen.findByRole('button', { name: /link & import 1 folders/i });
+
+        startOwnerSwitchForTest();
+        try {
+            fireEvent.click(link);
+            await waitFor(() => expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info'));
+            expect(setSettings).not.toHaveBeenCalled();
+            expect(onScanFolder).not.toHaveBeenCalled();
+        } finally {
+            endOwnerSwitchForTest();
+        }
     });
 });

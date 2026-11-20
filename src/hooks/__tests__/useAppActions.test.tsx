@@ -1,13 +1,14 @@
 import type React from 'react';
 import { renderHook as renderPlainHook } from '@testing-library/react';
 import { renderHook, act, waitFor } from '../../test/testUtils';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useAppActions } from '../useAppActions';
 import type { ActiveImageStateAdapter } from '../activeImageState';
 import type { ImagesQueryKey } from '../useImagesQuery';
 import type { AIImage, SourceKind } from '../../types';
 import { countPendingImageFieldWritesForTests } from '../../utils/imageFieldWrites';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 type MockImage = Pick<AIImage, 'id' | 'filename' | 'timestamp'> &
     Partial<AIImage> & {
@@ -1277,6 +1278,44 @@ describe('useAppActions', () => {
             expect(live('1')?.isPinned).toBe(false);
             expect(live('2')?.isPinned).toBe(false);
             expect(countPendingImageFieldWritesForTests()).toBe(0);
+        });
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner. A write now
+    // would land in the wrong owner's view, and an optimistic update would show a change that never happens.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        type Actions = ReturnType<typeof useAppActions>;
+        it.each([
+            ['handleBulkFavorite', (a: Actions) => a.handleBulkFavorite()],
+            ['handleFavoriteImage', (a: Actions) => a.handleFavoriteImage('1')],
+            ['handleBulkPin', (a: Actions) => a.handleBulkPin()],
+            ['handlePinImage', (a: Actions) => a.handlePinImage('1', true)],
+            ['handleBulkMask', (a: Actions) => a.handleBulkMask('1', true)],
+            ['handleSetImageSourceKind', (a: Actions) => a.handleSetImageSourceKind(['1'], 'photograph')],
+            ['executeDelete', (a: Actions) => a.executeDelete()],
+            ['requestDeleteForId', (a: Actions) => a.requestDeleteForId('1')],
+            ['handleExportConfirm', (a: Actions) => a.handleExportConfirm('out.zip', 'D:/Exports')],
+            ['openMetadataRecovery', (a: Actions) => a.openMetadataRecovery('1')],
+            ['runBackfill', (a: Actions) => a.runBackfill()],
+        ])('%s refuses with a notice and changes nothing', async (_name, run) => {
+            const { result } = renderHook(() => useAppActions(props));
+
+            await act(async () => {
+                await run(result.current);
+            });
+
+            expect(mockAddToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mockSetImages).not.toHaveBeenCalled();
+            expect(mockToggleImageFavorite).not.toHaveBeenCalled();
+            expect(mockToggleImagePin).not.toHaveBeenCalled();
+            expect(mockSetImageMasks).not.toHaveBeenCalled();
+            expect(mockSetImageSourceKind).not.toHaveBeenCalled();
+            expect(mockFileOps.deleteImages).not.toHaveBeenCalled();
+            expect(mockFileOps.exportImages).not.toHaveBeenCalled();
+            expect(mockModalManager.openModal).not.toHaveBeenCalled();
+            expect(mockBackfillParameterColumns).not.toHaveBeenCalled();
         });
     });
 });

@@ -1,10 +1,11 @@
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryDropResult } from '../../bindings';
 import type { AppSettings, MonitoredFolder } from '../../types';
 import type { ImportResult } from '../../services/importService';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { DROP_BUSY_MESSAGE, DROP_UNAVAILABLE_MESSAGE, useDropImport } from '../useDropImport';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const runtime = vi.hoisted(() => ({ tauri: true }));
 const listeners = vi.hoisted(() => new Map<string, (event: { payload: LibraryDropResult }) => void>());
@@ -202,5 +203,36 @@ describe('useDropImport', () => {
         expect(importWebFiles).toHaveBeenCalledWith(dropped);
         expect(mocks.postDroppedFiles).not.toHaveBeenCalled();
         expect(listeners.size).toBe(0);
+    });
+    // #527: during a user owner switch the backend scope already belongs to the target owner. A dropped file is a user import, so it waits for the switch.
+    describe('while an InvokeAI owner switch is pending', () => {
+        beforeEach(startOwnerSwitchForTest);
+        afterEach(endOwnerSwitchForTest);
+
+        it('turns a drop away without posting it to the backend', () => {
+            const { result } = renderDropImport();
+
+            act(() => result.current.handleDropFiles([file('a.png')]));
+
+            expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(mocks.postDroppedFiles).not.toHaveBeenCalled();
+            expect(importWebFiles).not.toHaveBeenCalled();
+        });
+    });
+
+    // A folder saved now could not get its first scan, and would be left looking scanned (A3 in the #528 review).
+    it('saves no folder when the switch starts while Rust grants a folder drop', async () => {
+        const { result } = renderDropImport();
+        act(() => result.current.handleDropFiles([file('art')]));
+        startOwnerSwitchForTest();
+        try {
+            await act(async () => listeners.get('library-drop-result')?.({ payload: dropResult({ folders: ['C:/art'] }) }));
+        } finally {
+            endOwnerSwitchForTest();
+        }
+
+        expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(importFolders).not.toHaveBeenCalled();
     });
 });

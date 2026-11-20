@@ -16,6 +16,7 @@ import { removeImagesFromQueryCaches, updateImagesQueryCaches } from '../utils/i
 import { getEffectiveAiModel, getEffectiveAiThinkingMode, getEffectiveSystemPrompts } from '../utils/settingsUtils';
 import type { ActiveImageStateAdapter } from './activeImageState';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
+import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
 
 interface UseMaintenanceOpsProps {
     images: AIImage[];
@@ -36,6 +37,7 @@ export const useMaintenanceOps = ({ images, setImages, refreshCollections, setti
 
     const deleteImages = useCallback(
         async (ids: string[]): Promise<boolean> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return false;
             const logPrefix = '[MaintenanceOps] removeFromLibrary';
             let rebuildSucceeded = false;
 
@@ -90,6 +92,7 @@ export const useMaintenanceOps = ({ images, setImages, refreshCollections, setti
 
     const recoverMetadata = useCallback(
         async (targetId: string, style: RecoveryStyle): Promise<AIImage | null> => {
+            if (refuseWriteDuringOwnerSwitch(addToast)) return null;
             setIsRecoveringMetadata(true);
             try {
                 const img =
