@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import * as React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../../../../bindings';
 import { showPathInFolder } from '../../../../services/osOpen';
@@ -42,6 +43,82 @@ describe('BackupSettings', () => {
         const backupButton = screen.getByRole('button', { name: 'Backup Now' }) as HTMLButtonElement;
         expect(backupButton.disabled).toBe(true);
         fireEvent.click(backupButton);
+    });
+
+    it('shows the loading state on the first committed frame and clears it once the list arrives', async () => {
+        let resolveBackups!: (result: Awaited<ReturnType<typeof commands.getBackups>>) => void;
+        getBackups.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveBackups = resolve;
+                })
+        );
+        const refreshDisabledPerCommit: boolean[] = [];
+        render(
+            <React.Profiler
+                id="backups"
+                onRender={() =>
+                    refreshDisabledPerCommit.push(
+                        (screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement).disabled
+                    )
+                }
+            >
+                <BackupSettings />
+            </React.Profiler>
+        );
+
+        expect(refreshDisabledPerCommit[0]).toBe(true);
+        expect(screen.getByRole('button', { name: 'Refresh Backup List' }).querySelector('svg')?.getAttribute('class')).toContain(
+            'animate-spin'
+        );
+
+        await act(async () => resolveBackups({ status: 'ok', data: [backup(1)] }));
+
+        expect(await screen.findByText('backup-1.db')).toBeTruthy();
+        const refresh = screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement;
+        expect(refresh.disabled).toBe(false);
+        expect(refresh.querySelector('svg')?.getAttribute('class')).not.toContain('animate-spin');
+        expect(getBackups).toHaveBeenCalledOnce();
+    });
+
+    it('clears the loading state after a failed first load', async () => {
+        getBackups.mockResolvedValueOnce({ status: 'error', error: 'load failed' });
+        render(<BackupSettings />);
+
+        await waitFor(() => expect(addToast).toHaveBeenCalledWith('Failed to load backups', 'error'));
+        await waitFor(() =>
+            expect((screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement).disabled).toBe(false)
+        );
+    });
+
+    it('does not show a loading spinner in browser mock mode', () => {
+        runtime.browser = true;
+        render(<BackupSettings />);
+
+        const refresh = screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement;
+        expect(refresh.disabled).toBe(false);
+        expect(refresh.querySelector('svg')?.getAttribute('class')).not.toContain('animate-spin');
+        expect(getBackups).not.toHaveBeenCalled();
+    });
+
+    it('Refresh disables the button while it reloads, then shows the new list', async () => {
+        render(<BackupSettings />);
+        await screen.findByText('No backups found');
+        let resolveRefresh!: (result: Awaited<ReturnType<typeof commands.getBackups>>) => void;
+        getBackups.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveRefresh = resolve;
+                })
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Refresh Backup List' }));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement).disabled).toBe(true));
+        await act(async () => resolveRefresh({ status: 'ok', data: [backup(7)] }));
+
+        expect(await screen.findByText('backup-7.db')).toBeTruthy();
+        expect((screen.getByRole('button', { name: 'Refresh Backup List' }) as HTMLButtonElement).disabled).toBe(false);
+        expect(getBackups).toHaveBeenCalledTimes(2);
     });
 
     it('loads, formats, limits, refreshes, and opens native backups', async () => {

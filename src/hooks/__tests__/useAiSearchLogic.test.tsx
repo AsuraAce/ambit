@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiSearchLogic } from '../useAiSearchLogic';
@@ -219,6 +220,84 @@ describe('useAiSearchLogic', () => {
         expect(result.current.isAiSearchEnabled).toBe(true);
         expect(focus).toHaveBeenCalledTimes(1);
         expect(mockAddToast).toHaveBeenCalledWith('AI Features Enabled & Ready', 'success');
+    });
+
+    // The toast and focus are side effects of the activation; a re-render or a later settings change must not repeat them.
+    it('announces a pending activation exactly once, even across later re-renders', async () => {
+        vi.useFakeTimers();
+        const disabledSettings = { ...mockSettings, enableAI: false };
+        const { result, rerender } = renderHook(({ settings }) => useAiSearchLogic({ ...props, settings }), {
+            initialProps: { settings: disabledSettings },
+        });
+        const focus = vi.fn();
+        result.current.inputRef.current = { focus } as unknown as HTMLInputElement;
+        act(() => result.current.toggleAiSearch());
+
+        rerender({ settings: mockSettings });
+        rerender({ settings: { ...mockSettings } });
+        await act(async () => vi.advanceTimersByTimeAsync(500));
+
+        const readyToasts = mockAddToast.mock.calls.filter(([message]) => message === 'AI Features Enabled & Ready');
+        expect(readyToasts).toEqual([['AI Features Enabled & Ready', 'success']]);
+        expect(focus).toHaveBeenCalledTimes(1);
+        expect(result.current.isAiSearchEnabled).toBe(true);
+    });
+
+    // The search box must not flash an AI-off frame between Settings enabling AI and the pending toggle taking effect.
+    it('shows AI search on in the first committed frame once Settings enables a pending activation', async () => {
+        vi.useFakeTimers();
+        const frames: boolean[] = [];
+        const disabledSettings = { ...mockSettings, enableAI: false };
+        const { result, rerender } = renderHook(
+            ({ settings }) => {
+                const value = useAiSearchLogic({ ...props, settings });
+                useLayoutEffect(() => {
+                    frames.push(value.isAiSearchEnabled);
+                });
+                return value;
+            },
+            { initialProps: { settings: disabledSettings } }
+        );
+        act(() => result.current.toggleAiSearch());
+
+        frames.length = 0;
+        rerender({ settings: mockSettings });
+
+        expect(frames).toEqual([true]);
+        await act(async () => vi.advanceTimersByTimeAsync(100));
+    });
+
+    it('focuses the input only after the 100 ms timeout when activating a pending toggle', async () => {
+        vi.useFakeTimers();
+        const disabledSettings = { ...mockSettings, enableAI: false };
+        const { result, rerender } = renderHook(({ settings }) => useAiSearchLogic({ ...props, settings }), {
+            initialProps: { settings: disabledSettings },
+        });
+        const focus = vi.fn();
+        result.current.inputRef.current = { focus } as unknown as HTMLInputElement;
+        act(() => result.current.toggleAiSearch());
+
+        rerender({ settings: mockSettings });
+        await act(async () => vi.advanceTimersByTimeAsync(99));
+        expect(focus).not.toHaveBeenCalled();
+
+        await act(async () => vi.advanceTimersByTimeAsync(1));
+        expect(focus).toHaveBeenCalledTimes(1);
+    });
+
+    // The hook reports `isAiSearchEnabled && settings.enableAI`, so the stored flag is only visible when the setting comes back.
+    it('turns AI search off for good when the enableAI setting is disabled', () => {
+        const { result, rerender } = renderHook(({ settings }) => useAiSearchLogic({ ...props, settings }), {
+            initialProps: { settings: mockSettings },
+        });
+        act(() => result.current.toggleAiSearch());
+        expect(result.current.isAiSearchEnabled).toBe(true);
+
+        rerender({ settings: { ...mockSettings, enableAI: false } });
+        expect(result.current.isAiSearchEnabled).toBe(false);
+
+        rerender({ settings: mockSettings });
+        expect(result.current.isAiSearchEnabled).toBe(false);
     });
 
     it('focuses when toggled on and can toggle back off', async () => {

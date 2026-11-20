@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { usePalette } from '../usePalette';
@@ -72,6 +73,79 @@ describe('usePalette controlled extraction', () => {
         await act(async () => {
             ControlledImage.instances[3].onload?.();
             ControlledImage.instances[3].onerror?.();
+        });
+    });
+    describe('loading state across URL changes', () => {
+        const stubRedPixelCanvas = () => {
+            const pixels = new Uint8ClampedArray(400);
+            pixels.set([255, 0, 0, 255], 0);
+            vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+                drawImage: vi.fn(),
+                getImageData: () => ({ data: pixels }),
+            } as unknown as CanvasRenderingContext2D);
+        };
+
+        // Every committed frame is recorded (layout effects run before passive effects), so a state that is
+        // only correct after an effect has run still fails.
+        const renderRecordedPalette = (initialUrl: string | null) => {
+            const frames: Array<{ isLoading: boolean; palette: string[] }> = [];
+            const hook = renderHook(
+                ({ url }: { url: string | null }) => {
+                    const value = usePalette(url);
+                    useLayoutEffect(() => {
+                        frames.push({ isLoading: value.isLoading, palette: value.palette });
+                    });
+                    return value;
+                },
+                { initialProps: { url: initialUrl } }
+            );
+            return { ...hook, frames };
+        };
+
+        it('is never loading when there is no image URL', () => {
+            ControlledImage.instances = [];
+            vi.stubGlobal('Image', ControlledImage);
+
+            const { result, frames } = renderRecordedPalette(null);
+
+            expect(frames.every((frame) => !frame.isLoading && frame.palette.length === 0)).toBe(true);
+            expect(result.current).toEqual({ palette: [], isLoading: false });
+            expect(ControlledImage.instances).toHaveLength(0);
+        });
+
+        it('shows loading from the first frame of a new URL until extraction finishes', async () => {
+            ControlledImage.instances = [];
+            vi.stubGlobal('Image', ControlledImage);
+            stubRedPixelCanvas();
+
+            const { result, rerender, frames } = renderRecordedPalette('first.png');
+            await act(async () => ControlledImage.instances[0].onload?.());
+            expect(result.current).toEqual({ palette: ['#ff0000'], isLoading: false });
+
+            frames.length = 0;
+            rerender({ url: 'second.png' });
+
+            expect(frames[0].isLoading).toBe(true);
+            expect(result.current.isLoading).toBe(true);
+
+            await act(async () => ControlledImage.instances[1].onload?.());
+            expect(result.current.isLoading).toBe(false);
+        });
+
+        it('clears the palette and stops loading in the first frame when the URL becomes null', async () => {
+            ControlledImage.instances = [];
+            vi.stubGlobal('Image', ControlledImage);
+            stubRedPixelCanvas();
+
+            const { result, rerender, frames } = renderRecordedPalette('first.png');
+            await act(async () => ControlledImage.instances[0].onload?.());
+            expect(result.current.palette).toEqual(['#ff0000']);
+
+            frames.length = 0;
+            rerender({ url: null });
+
+            expect(frames.every((frame) => !frame.isLoading && frame.palette.length === 0)).toBe(true);
+            expect(result.current).toEqual({ palette: [], isLoading: false });
         });
     });
 });

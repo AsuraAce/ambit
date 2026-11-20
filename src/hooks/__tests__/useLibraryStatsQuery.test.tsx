@@ -1,4 +1,4 @@
-import React, { PropsWithChildren } from 'react';
+import React, { PropsWithChildren, useLayoutEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -587,6 +587,55 @@ describe('useLibraryStatsQuery valid facets', () => {
         });
 
         await waitFor(() => expect(result.current.data.stats.keywordStats).toEqual([{ text: 'sunset', value: 6 }]));
+    });
+
+    // Keyword results belong to the summary they were computed against. Once a refreshed summary lands, no committed
+    // frame may show its numbers next to keywords from the previous summary, not even for one commit.
+    it('never commits a refreshed summary beside the previous summary keyword results', async () => {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        const wrapper = ({ children }: PropsWithChildren) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+        const initialKeywords = [{ text: 'aurora', value: 4 }];
+        const summaryRefetch = createDeferred<LibraryStatsSummary>();
+
+        searchRepoMocks.getLibraryStatsSummary
+            .mockResolvedValueOnce({ ...emptySummary, totalImages: 4, avgSteps: 20 })
+            .mockReturnValueOnce(summaryRefetch.promise);
+        searchRepoMocks.getKeywordStats.mockResolvedValueOnce(initialKeywords).mockReturnValueOnce(new Promise(() => undefined));
+
+        const frames: Array<{ avgSteps: number; keywordStats: LibraryStats['keywordStats'] }> = [];
+        const { result } = renderHook(
+            () => {
+                const value = useLibraryStatsQuery({
+                    filters: createDefaultFilters(),
+                    settings,
+                    privacyEnabled: false,
+                    allCollections: [],
+                    settingsLoaded: true,
+                    assetScope: 'used',
+                    keywordStatsEnabled: true,
+                });
+                useLayoutEffect(() => {
+                    frames.push({ avgSteps: value.data.stats.avgSteps, keywordStats: value.data.stats.keywordStats });
+                });
+                return value;
+            },
+            { wrapper }
+        );
+        await waitFor(() => expect(result.current.data.stats.keywordStats).toEqual(initialKeywords));
+
+        act(() => {
+            void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+        });
+        await waitFor(() => expect(result.current.isFetching).toBe(true));
+
+        frames.length = 0;
+        act(() => {
+            summaryRefetch.resolve({ ...emptySummary, totalImages: 7, avgSteps: 40 });
+        });
+        await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(2));
+
+        expect(frames.some((frame) => frame.avgSteps === 40)).toBe(true);
+        expect(frames.filter((frame) => frame.avgSteps === 40).every((frame) => frame.keywordStats.length === 0)).toBe(true);
     });
 
     it('holds the summary and facet scans during an owner-cache repair and shows loading, never zeros', async () => {

@@ -442,6 +442,73 @@ describe('MetadataEditTab', () => {
         consoleError.mockRestore();
     });
 
+    it('Retry shows loading immediately instead of a stale error frame, then the loaded list', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const retried = deferred<string[]>();
+        collectionRepoMocks.getCollectionsForImage.mockRejectedValueOnce(new Error('read failed')).mockReturnValueOnce(retried.promise);
+        const frames: { alert: boolean; loading: boolean }[] = [];
+        render(
+            <React.Profiler
+                id="membership"
+                onRender={() =>
+                    frames.push({
+                        alert: !!document.querySelector('[role="alert"]'),
+                        loading: !!document.querySelector('[role="status"][aria-label="Loading collection membership"]'),
+                    })
+                }
+            >
+                <EditorHarness />
+            </React.Profiler>
+        );
+        await screen.findByRole('alert');
+
+        frames.length = 0;
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+        expect(screen.queryByRole('alert')).toBeNull();
+        expect(screen.getByRole('status', { name: 'Loading collection membership' })).toBeTruthy();
+        expect(frames.some((frame) => frame.alert)).toBe(false);
+        expect(frames.every((frame) => frame.loading)).toBe(true);
+
+        await act(async () => retried.resolve(['one']));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(screen.queryByRole('status', { name: 'Loading collection membership' })).toBeNull();
+        expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledTimes(2);
+        consoleError.mockRestore();
+    });
+
+    it('shows loading, never the previous image ready list, on every frame after switching images', async () => {
+        const second = deferred<string[]>();
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['one']).mockReturnValueOnce(second.promise);
+        const frames: { loading: boolean; anyEnabled: boolean }[] = [];
+        const ui = (id: string) => (
+            <React.Profiler
+                id="membership"
+                onRender={() =>
+                    frames.push({
+                        loading: !!document.querySelector('[role="status"][aria-label="Loading collection membership"]'),
+                        anyEnabled: [...document.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].some(
+                            (button) => !button.disabled
+                        ),
+                    })
+                }
+            >
+                <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, id)} />
+            </React.Profiler>
+        );
+        const { rerender } = render(ui('image-1'));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+
+        frames.length = 0;
+        rerender(ui('image-2'));
+
+        expect(frames.length).toBeGreaterThan(0);
+        expect(frames.every((frame) => frame.loading && !frame.anyEnabled)).toBe(true);
+        await act(async () => second.resolve([]));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('false');
+    });
+
     it('handles membership fetch failures and ignores completion after unmount', async () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         collectionRepoMocks.getCollectionsForImage.mockRejectedValueOnce(new Error('read failed'));

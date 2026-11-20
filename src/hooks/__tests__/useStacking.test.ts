@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useStacking } from '../useStacking';
@@ -174,5 +175,72 @@ describe('useStacking', () => {
             )
         );
         expect(result.current.isCalculating).toBe(false);
+    });
+
+    // `isCalculating` drives the spinner; it must be right in the frame where the images change, not one commit later.
+    describe('committed frames', () => {
+        type Frame = { isCalculating: boolean; stackCount: number };
+        const renderRecordedStacking = (initialImages: unknown[]) => {
+            const frames: Frame[] = [];
+            const hook = renderHook(
+                ({ images }: { images: unknown[] }) => {
+                    const value = useStacking(images as Parameters<typeof useStacking>[0]);
+                    useLayoutEffect(() => {
+                        frames.push({ isCalculating: value.isCalculating, stackCount: value.suggestedStacks.length });
+                    });
+                    return value;
+                },
+                { initialProps: { images: initialImages } }
+            );
+            return { ...hook, frames };
+        };
+
+        const completeLatestRequest = () => {
+            const requestId = (vi.mocked(Worker.prototype.postMessage).mock.calls.at(-1)?.[0] as { requestId: string }).requestId;
+            const handler = vi.mocked(Worker.prototype.addEventListener).mock.calls.at(-1)?.[1] as EventListener;
+            act(() => handler(new MessageEvent('message', { data: { requestId, type: 'stacks-result', groups: [{ id: 'stack' }] } })));
+        };
+
+        it('is calculating on the first frame for a non-empty library and idle for an empty one', () => {
+            expect(renderRecordedStacking(mockImages).frames[0].isCalculating).toBe(true);
+            expect(renderRecordedStacking([]).frames).toEqual([{ isCalculating: false, stackCount: 0 }]);
+        });
+
+        it('starts calculating in the first frame of a new image signature', () => {
+            const { result, rerender, frames } = renderRecordedStacking(mockImages);
+            act(() => vi.advanceTimersByTime(500));
+            completeLatestRequest();
+            expect(result.current.isCalculating).toBe(false);
+
+            frames.length = 0;
+            rerender({ images: [...mockImages, { ...mockImages[1], id: '3' }] });
+
+            expect(frames[0].isCalculating).toBe(true);
+        });
+
+        it('stays idle when new image objects keep the same signature', () => {
+            const { result, rerender, frames } = renderRecordedStacking(mockImages);
+            act(() => vi.advanceTimersByTime(500));
+            completeLatestRequest();
+
+            frames.length = 0;
+            rerender({ images: mockImages.map((image) => ({ ...image })) });
+            act(() => vi.advanceTimersByTime(500));
+
+            expect(frames.every((frame) => !frame.isCalculating)).toBe(true);
+            expect(result.current.isCalculating).toBe(false);
+        });
+
+        it('clears stacks and stops calculating in the first frame once the library is empty', () => {
+            const { rerender, frames } = renderRecordedStacking(mockImages);
+            act(() => vi.advanceTimersByTime(500));
+            completeLatestRequest();
+            expect(frames.at(-1)).toEqual({ isCalculating: false, stackCount: 1 });
+
+            frames.length = 0;
+            rerender({ images: [] });
+
+            expect(frames).toEqual([{ isCalculating: false, stackCount: 0 }]);
+        });
     });
 });

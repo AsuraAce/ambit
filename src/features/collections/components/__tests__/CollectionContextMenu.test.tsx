@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CollectionContextMenu } from '../CollectionContextMenu';
@@ -39,6 +40,29 @@ describe('CollectionContextMenu', () => {
         unmount();
         fireEvent.mouseDown(document.body);
         expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('is already on screen on the first commit and follows the anchor without a corrective commit', () => {
+        const positions: string[] = [];
+        // Reads the menu at each commit, before any passive effect could correct it.
+        const Probe = () => {
+            React.useLayoutEffect(() => {
+                const menu = document.querySelector<HTMLElement>('div.fixed');
+                positions.push(`${menu?.style.left} ${menu?.style.top}`);
+            });
+            return null;
+        };
+        const menu = (x: number, y: number) => (
+            <>
+                <CollectionContextMenu x={x} y={y} collectionId="collection-1" {...callbacks()} />
+                <Probe />
+            </>
+        );
+        const { rerender } = render(menu(480, 390));
+        rerender(menu(10, 20));
+        rerender(menu(495, 395));
+
+        expect(positions).toEqual(['260px 100px', '10px 20px', '260px 100px']);
     });
 
     it('exposes every collection action and optional management item', () => {

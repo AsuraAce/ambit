@@ -242,6 +242,69 @@ describe('SettingsModal', () => {
         expect(screen.queryByText('Intelligence panel')).toBeNull();
     });
 
+    describe('initial tab on open', () => {
+        const openProps = {
+            onClose: vi.fn(),
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const activeHeadingPerCommit: (string | null | undefined)[] = [];
+        const renderProfiled = (props: React.ComponentProps<typeof SettingsModal>) => (
+            <React.Profiler id="settings" onRender={() => activeHeadingPerCommit.push(document.querySelector('h3')?.textContent)}>
+                <SettingsModal {...props} />
+            </React.Profiler>
+        );
+
+        beforeEach(() => {
+            activeHeadingPerCommit.length = 0;
+        });
+
+        it('shows the legacy experiments target on the first committed frame, with no General flash', () => {
+            render(renderProfiled({ ...openProps, isOpen: true, initialTab: 'experiments' }));
+
+            expect(activeHeadingPerCommit[0]).toBe('Intelligence');
+            expect(activeHeadingPerCommit).not.toContain('General');
+            expect(screen.getByText('Intelligence panel')).toBeTruthy();
+        });
+
+        it('shows the target tab on the first frame after a closed modal opens', () => {
+            const { rerender } = render(renderProfiled({ ...openProps, isOpen: false, initialTab: 'intelligence' }));
+            activeHeadingPerCommit.length = 0;
+
+            rerender(renderProfiled({ ...openProps, isOpen: true, initialTab: 'intelligence' }));
+
+            expect(activeHeadingPerCommit[0]).toBe('Intelligence');
+            expect(activeHeadingPerCommit).not.toContain('General');
+        });
+
+        it('opens a connection sub-tab deep link on the first committed frame', () => {
+            render(renderProfiled({ ...openProps, isOpen: true, initialTab: 'a1111' }));
+
+            expect(activeHeadingPerCommit[0]).toBe('Connections');
+            expect(screen.getByText('Connections panel a1111')).toBeTruthy();
+        });
+
+        it('resets to the initial tab when the modal is re-opened after navigating elsewhere', () => {
+            const { rerender } = render(<SettingsModal {...openProps} isOpen initialTab="intelligence" />);
+            fireEvent.click(screen.getByRole('button', { name: 'General' }));
+            expect(screen.getByText('Add folder update')).toBeTruthy();
+
+            rerender(<SettingsModal {...openProps} isOpen={false} initialTab="intelligence" />);
+            rerender(<SettingsModal {...openProps} isOpen initialTab="intelligence" />);
+
+            expect(screen.getByText('Intelligence panel')).toBeTruthy();
+            expect(screen.queryByText('Add folder update')).toBeNull();
+        });
+    });
+
     it('forwards direct settings values without wrapping them', () => {
         const onSave = vi.fn<(update: AppSettingsUpdate) => void>();
         render(

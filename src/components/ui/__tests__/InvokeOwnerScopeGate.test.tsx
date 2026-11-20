@@ -1,8 +1,34 @@
+import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '../../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvokeOwnerScopeState } from '../../../contexts/SyncContext';
+import type { InvokeOwnerDiscovery } from '../../../types';
 import { InvokeOwnerScopeGate } from '../InvokeOwnerScopeGate';
 import { useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
+
+// Records what the DOM shows at every commit, before any passive effect can correct it.
+const CommitProbe: React.FC<{ read: () => string; commits: string[] }> = ({ read, commits }) => {
+    // Subscribing to the same store as the gate makes the probe commit together with it.
+    useInvokeOwnerScopeStore((store) => store.operation);
+    React.useLayoutEffect(() => {
+        commits.push(read());
+    });
+    return null;
+};
+
+const createDiscovery = (dbPath: string): InvokeOwnerDiscovery => ({
+    schemaMode: 'multi_user',
+    dbPath,
+    imagesRoot: 'D:/Invoke',
+    owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+    unassignedImageCount: 0,
+});
+
+const selectionState = (dbPath = 'D:/Invoke/databases/invokeai.db'): InvokeOwnerScopeState => ({
+    status: 'selection_required',
+    rootPath: 'D:/Invoke',
+    discovery: createDiscovery(dbPath),
+});
 
 const renderGate = (state: InvokeOwnerScopeState) => {
     const callbacks = {
@@ -309,5 +335,132 @@ describe('InvokeOwnerScopeGate', () => {
         expect(screen.getByText('InvokeAI needs attention')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
         expect(callbacks.onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    describe('busy elapsed time', () => {
+        const busyState = (overrides: Partial<InvokeOwnerScopeState> = {}): InvokeOwnerScopeState => ({
+            status: 'applying',
+            rootPath: 'D:/Invoke',
+            scope: { mode: 'owner', ownerId: 'owner-a', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke' },
+            progress: { current: 0, total: 0, message: 'Preparing...' },
+            ...overrides,
+        });
+        const callbacks = { onSelect: vi.fn(), onRetry: vi.fn(), onOpenSettings: vi.fn() };
+        const statusText = () => screen.getByRole('status').textContent ?? '';
+
+        beforeEach(() => vi.useFakeTimers());
+        afterEach(() => vi.useRealTimers());
+
+        it.each([
+            ['root', busyState({ rootPath: 'D:/Other' })],
+            ['scope', busyState({ scope: { mode: 'all', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke' } })],
+        ])('counts from zero again when the %s changes, without showing the old count first', (_name, next) => {
+            const commits: string[] = [];
+            const gate = (state: InvokeOwnerScopeState) => (
+                <>
+                    <InvokeOwnerScopeGate state={state} {...callbacks} />
+                    <CommitProbe commits={commits} read={statusText} />
+                </>
+            );
+            const { rerender } = render(gate(busyState()));
+            act(() => void vi.advanceTimersByTime(7000));
+            expect(statusText()).toContain('7s elapsed');
+
+            commits.length = 0;
+            rerender(gate(next));
+            expect(commits.length).toBeGreaterThan(0);
+            expect(commits.filter((text) => text.includes('elapsed'))).toEqual([]);
+            act(() => void vi.advanceTimersByTime(5000));
+            expect(statusText()).toContain('5s elapsed');
+        });
+
+        it('counts from zero again when a new operation starts', () => {
+            const commits: string[] = [];
+            const operation = (id: string) => ({
+                id: Symbol(id),
+                origin: 'user' as const,
+                rootPath: 'D:/Invoke',
+                targetLabel: 'Odin',
+                phase: 'preparing' as const,
+                viewCommitted: false,
+                progress: { current: 0, total: 0 },
+            });
+            useInvokeOwnerScopeStore.getState().setOperation(operation('first'));
+            render(
+                <>
+                    <InvokeOwnerScopeGate state={busyState()} {...callbacks} />
+                    <CommitProbe commits={commits} read={statusText} />
+                </>
+            );
+            act(() => void vi.advanceTimersByTime(7000));
+            expect(statusText()).toContain('7s elapsed');
+
+            commits.length = 0;
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(operation('second')));
+            expect(commits.length).toBeGreaterThan(0);
+            expect(commits.filter((text) => text.includes('elapsed'))).toEqual([]);
+            act(() => void vi.advanceTimersByTime(5000));
+            expect(statusText()).toContain('5s elapsed');
+        });
+    });
+
+    describe('owner selection', () => {
+        const openViewButton = () => screen.getByRole('button', { name: /Open view|Opening view/ }) as HTMLButtonElement;
+        const renderSelection = (onSelect: () => void | Promise<void>) => {
+            const callbacks = { onSelect, onRetry: vi.fn(), onOpenSettings: vi.fn() };
+            const view = render(<InvokeOwnerScopeGate state={selectionState()} {...callbacks} />);
+            return {
+                rerenderState: (state: InvokeOwnerScopeState) => view.rerender(<InvokeOwnerScopeGate state={state} {...callbacks} />),
+            };
+        };
+
+        it('drops the pending choice and a failed submit message when another InvokeAI database is discovered', async () => {
+            const { rerenderState } = renderSelection(() => Promise.reject(new Error('Could not open view')));
+            fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+            fireEvent.click(openViewButton());
+            expect((await screen.findByRole('alert')).textContent).toBe('Could not open view');
+            expect(openViewButton().disabled).toBe(false);
+
+            rerenderState(selectionState('D:/Other/databases/invokeai.db'));
+            expect(screen.queryByRole('alert')).toBeNull();
+            expect(openViewButton().disabled).toBe(true);
+        });
+
+        it('closes the All users confirmation when another InvokeAI database is discovered', async () => {
+            const { rerenderState } = renderSelection(vi.fn());
+            fireEvent.click(screen.getByRole('button', { name: /^All users/ }));
+            fireEvent.click(openViewButton());
+            expect(screen.getByRole('dialog', { name: 'Show images from all InvokeAI users?' })).toBeTruthy();
+
+            rerenderState(selectionState('D:/Other/databases/invokeai.db'));
+            await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        });
+
+        it('stops the Opening view state when the status leaves selection_required', () => {
+            const onSelect = vi.fn(() => new Promise<void>(() => undefined));
+            const { rerenderState } = renderSelection(onSelect);
+            fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+            fireEvent.click(openViewButton());
+            expect(openViewButton().textContent).toBe('Opening view…');
+            expect(openViewButton().disabled).toBe(true);
+
+            rerenderState({ ...selectionState(), status: 'applying' });
+            rerenderState(selectionState());
+            expect(openViewButton().textContent).toBe('Open view');
+            expect(openViewButton().disabled).toBe(false);
+            fireEvent.click(openViewButton());
+            expect(onSelect).toHaveBeenCalledTimes(2);
+        });
+
+        it('closes the All users confirmation when the status leaves selection_required', () => {
+            const { rerenderState } = renderSelection(vi.fn());
+            fireEvent.click(screen.getByRole('button', { name: /^All users/ }));
+            fireEvent.click(openViewButton());
+            expect(screen.getByRole('dialog', { name: 'Show images from all InvokeAI users?' })).toBeTruthy();
+
+            rerenderState({ ...selectionState(), status: 'applying' });
+            rerenderState(selectionState());
+            expect(screen.queryByRole('dialog')).toBeNull();
+        });
     });
 });

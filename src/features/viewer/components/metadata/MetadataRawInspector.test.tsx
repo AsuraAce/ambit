@@ -86,6 +86,34 @@ describe('MetadataRawInspector', () => {
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith('{broken json');
     });
 
+    it('falls back to the parsed view, never committing the raw source, when the next image has no workflow JSON', () => {
+        const withWorkflow = imageFixture({ rawParameters: 'steps=20', workflowJson: '{"nodes":[1,2]}' });
+        const withoutWorkflow = imageFixture({ rawParameters: 'steps=20' });
+        const copyLabelPerCommit: (string | null | undefined)[] = [];
+        const ui = (value: AIImage) => (
+            <React.Profiler
+                id="raw-inspector"
+                onRender={() => copyLabelPerCommit.push(document.querySelector('button[aria-label^="Copy "]')?.getAttribute('aria-label'))}
+            >
+                <MetadataRawInspector image={value} />
+            </React.Profiler>
+        );
+        const { rerender } = render(ui(withWorkflow));
+        fireEvent.click(screen.getByRole('button', { name: /view internal metadata/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
+        expect(screen.getByText(/"nodes": \[/)).toBeTruthy();
+
+        copyLabelPerCommit.length = 0;
+        rerender(ui(withoutWorkflow));
+
+        expect(screen.queryByRole('button', { name: 'JSON' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Parsed' }).className).toContain('bg-sage-100');
+        expect(screen.getByText(/"model": "Model"/)).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Copy parsed metadata' })).toBeTruthy();
+        expect(copyLabelPerCommit.length).toBeGreaterThan(0);
+        expect(copyLabelPerCommit.every((label) => label === 'Copy parsed metadata')).toBe(true);
+    });
+
     it('falls back when raw source and workflow JSON are absent', () => {
         render(<MetadataRawInspector image={imageFixture({})} />);
         fireEvent.click(screen.getByRole('button', { name: /view internal metadata/i }));

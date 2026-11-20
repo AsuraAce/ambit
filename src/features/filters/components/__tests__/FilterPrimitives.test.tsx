@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Zap } from 'lucide-react';
@@ -226,6 +227,58 @@ describe('FilterPrimitives', () => {
 
         rerender(<FilterSlider label="CFG" min={0} max={10} minValue={2} maxValue={9} onChange={onChange} />);
         expect(container.textContent).toContain('2 - 9');
+    });
+
+    // The range readout is recorded at every commit, so a reset that only lands through a follow-up effect (one
+    // commit still showing the old range) fails, not just the settled result.
+    it('moves the thumbs in the same commit when the range props are reset while idle', () => {
+        const onChange = vi.fn();
+        const readouts: Array<string | null> = [];
+        const readReadout = () => document.querySelector('.font-mono')?.textContent ?? null;
+        const slider = (minValue: number | undefined, maxValue: number | undefined) => (
+            <React.Profiler id="slider" onRender={() => readouts.push(readReadout())}>
+                <FilterSlider label="CFG" min={0} max={10} minValue={minValue} maxValue={maxValue} onChange={onChange} />
+            </React.Profiler>
+        );
+        const { container, rerender } = render(slider(3, 8));
+        expect(readReadout()).toBe('3 - 8');
+
+        readouts.length = 0;
+        rerender(slider(undefined, undefined));
+
+        expect(readouts.length).toBeGreaterThan(0);
+        expect(readouts.every((readout) => readout === '0 - 10')).toBe(true);
+
+        // The reset also reaches the commit value: grabbing and releasing a thumb reports the reset range.
+        fireEvent.mouseDown(container.querySelectorAll('.cursor-ew-resize')[0]);
+        fireEvent.mouseUp(window);
+        expect(onChange).toHaveBeenCalledWith(undefined, undefined);
+    });
+
+    it('ignores an external range reset while a thumb is being dragged', () => {
+        const onChange = vi.fn();
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 20,
+            top: 0,
+            right: 100,
+            bottom: 20,
+            left: 0,
+            toJSON: () => ({}),
+        });
+        const { container, rerender } = render(<FilterSlider label="CFG" min={0} max={10} minValue={3} maxValue={8} onChange={onChange} />);
+
+        fireEvent.mouseDown(container.querySelectorAll('.cursor-ew-resize')[0], { clientX: 30 });
+        fireEvent.mouseMove(window, { clientX: 50 });
+        expect(container.textContent).toContain('5 - 8');
+
+        rerender(<FilterSlider label="CFG" min={0} max={10} minValue={1} maxValue={9} onChange={onChange} />);
+        expect(container.textContent).toContain('5 - 8');
+
+        fireEvent.mouseUp(window);
+        expect(onChange).toHaveBeenCalledWith(5, 8);
     });
 
     it('renders closed header and sort-dropdown class variants', () => {

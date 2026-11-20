@@ -715,6 +715,45 @@ describe('MaintenanceView', () => {
         await waitFor(() => expect(screen.getByTestId('missing-count').textContent).toBe('0'));
     });
 
+    it('clears the earlier fetched list when a rescan in the store finds nothing, without committing a stale frame', async () => {
+        imageRepoMock.getImagesByIds.mockResolvedValueOnce([createImage({ id: 'missing-store', isMissing: true })]);
+        const missingCountPerCommit: (string | null | undefined)[] = [];
+        const props = createProps();
+        render(
+            <React.Profiler
+                id="maintenance"
+                onRender={() => missingCountPerCommit.push(document.querySelector('[data-testid="missing-count"]')?.textContent)}
+            >
+                <MaintenanceView {...props} />
+            </React.Profiler>
+        );
+        act(() => {
+            useLibraryStore.getState().setLastMissingScanResult({
+                scanned: 10,
+                total: 10,
+                missingIds: ['missing-store'],
+                sampleMissingPaths: ['missing-store.png'],
+                wasCancelled: false,
+            });
+        });
+        await waitFor(() => expect(screen.getByTestId('missing-count').textContent).toBe('1'));
+
+        missingCountPerCommit.length = 0;
+        act(() => {
+            useLibraryStore.getState().setLastMissingScanResult({
+                scanned: 10,
+                total: 10,
+                missingIds: [],
+                sampleMissingPaths: [],
+                wasCancelled: false,
+            });
+        });
+
+        expect(screen.getByTestId('missing-count').textContent).toBe('0');
+        expect(missingCountPerCommit).not.toContain('1');
+        expect(imageRepoMock.getImagesByIds).toHaveBeenCalledTimes(1);
+    });
+
     it('logs failed missing-result hydration without breaking the tab', async () => {
         const failure = new Error('missing lookup failed');
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

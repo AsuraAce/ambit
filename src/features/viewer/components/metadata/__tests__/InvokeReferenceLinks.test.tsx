@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InvokeReferenceLinks } from '../InvokeReferenceLinks';
+import { INVOKE_REFERENCE_QUERY_KEY } from '../../../../../services/db/invokeReferenceRepo';
 
 const mocks = vi.hoisted(() => ({ getInvokeReferenceGraph: vi.fn() }));
 
@@ -103,6 +104,45 @@ describe('InvokeReferenceLinks', () => {
         resolveOpen(false);
         await waitFor(() => expect(mocks.getInvokeReferenceGraph).toHaveBeenCalledTimes(2));
         await waitFor(() => expect(screen.queryByRole('heading', { name: 'Source Images' })).toBeNull());
+    });
+
+    it('clears the pending open when the viewer moves to another image, without a stale busy frame', () => {
+        const graph = {
+            sourceImages: [
+                { imageId: 'source', invokeImageName: 'source.png', availability: 'available' as const, roles: ['init_image' as const] },
+            ],
+            usedBy: [],
+        };
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+        queryClient.setQueryData([...INVOKE_REFERENCE_QUERY_KEY, 'current'], graph);
+        queryClient.setQueryData([...INVOKE_REFERENCE_QUERY_KEY, 'next'], graph);
+        const onOpenImage = vi.fn(() => new Promise<boolean>(() => undefined));
+        const sourceButtonStatePerCommit: { busy: string | null | undefined; disabled: boolean | undefined }[] = [];
+        const ui = (imageId: string) => (
+            <QueryClientProvider client={queryClient}>
+                <React.Profiler
+                    id="references"
+                    onRender={() => {
+                        const button = document.querySelector<HTMLButtonElement>('button[aria-label="Open source.png"]');
+                        sourceButtonStatePerCommit.push({ busy: button?.getAttribute('aria-busy'), disabled: button?.disabled });
+                    }}
+                >
+                    <InvokeReferenceLinks imageId={imageId} onOpenImage={onOpenImage} />
+                </React.Profiler>
+            </QueryClientProvider>
+        );
+        const { rerender } = render(ui('current'));
+        fireEvent.click(screen.getByRole('button', { name: 'Open source.png' }));
+        expect(screen.getByRole('button', { name: 'Open source.png' }).getAttribute('aria-busy')).toBe('true');
+
+        sourceButtonStatePerCommit.length = 0;
+        rerender(ui('next'));
+
+        const button = screen.getByRole('button', { name: 'Open source.png' }) as HTMLButtonElement;
+        expect(button.disabled).toBe(false);
+        expect(button.getAttribute('aria-busy')).toBe('false');
+        expect(sourceButtonStatePerCommit.length).toBeGreaterThan(0);
+        expect(sourceButtonStatePerCommit.every((state) => state.busy === 'false' && state.disabled === false)).toBe(true);
     });
 
     it('offers retry after a query failure', async () => {

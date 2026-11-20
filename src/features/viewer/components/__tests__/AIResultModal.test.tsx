@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { act, fireEvent, render, screen } from '../../../../test/testUtils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AIResultModal } from '../AIResultModal';
@@ -111,6 +112,39 @@ describe('AIResultModal', () => {
         const headerClose = container.querySelector('.lucide-x')?.closest('button') as HTMLButtonElement;
         fireEvent.click(headerClose);
         expect(onClose).toHaveBeenCalledTimes(3);
+    });
+
+    it('reopening resets the variation tab without committing the previous selection first', () => {
+        const props = { onClose: vi.fn(), type: 'variations' as const, content: ['one', 'two'], onCopy: vi.fn() };
+        const bodyPerCommit: (string | null)[] = [];
+        const ui = (isOpen: boolean) => (
+            <React.Profiler id="ai-result" onRender={() => bodyPerCommit.push(document.body.textContent)}>
+                <AIResultModal {...props} isOpen={isOpen} />
+            </React.Profiler>
+        );
+        const { rerender } = render(ui(true));
+        fireEvent.click(screen.getByText('Variation 2'));
+        expect(screen.getByText('Viewing 2 of 2')).toBeTruthy();
+        rerender(ui(false));
+
+        bodyPerCommit.length = 0;
+        rerender(ui(true));
+
+        expect(screen.getByText('Viewing 1 of 2')).toBeTruthy();
+        expect(bodyPerCommit.some((body) => body?.includes('Viewing 2 of 2'))).toBe(false);
+    });
+
+    it('resets the analysis tab to the report when new analysis content arrives', () => {
+        const props = { onClose: vi.fn(), type: 'analysis' as const, onCopy: vi.fn() };
+        const analysisFor = (name: string) => `### Analysis\n${name} report\n\n### Applied Example\n${name} mastered`;
+        const { rerender } = render(<AIResultModal {...props} isOpen content={analysisFor('first')} />);
+        fireEvent.click(screen.getByText('Applied Example'));
+        expect(screen.getByText('first mastered')).toBeTruthy();
+
+        rerender(<AIResultModal {...props} isOpen content={analysisFor('second')} />);
+
+        expect(screen.getByText('second report')).toBeTruthy();
+        expect(screen.queryByText('second mastered')).toBeNull();
     });
 
     it('omits applied-example controls when analysis has no mastered prompt', () => {

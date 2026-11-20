@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
@@ -853,6 +854,70 @@ describe('ResourceSection interactions and remaining states', () => {
         expect(screen.queryByText('Item 30')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /show more/i }));
         expect(screen.getByText('Item 30')).toBeTruthy();
+    });
+
+    // The profiler records the "Show More" label of every commit. The label is derived from the render limit, so a
+    // limit that is only reset by a follow-up effect (one commit with the stale, scrolled-out limit) is caught.
+    describe('scrolled-out render limit', () => {
+        const data = Array.from({ length: 70 }, (_, index) => ({ name: `Item ${String(index).padStart(2, '0')}`, count: 70 - index }));
+
+        const renderProfiledSection = () => {
+            const labels: Array<string | null> = [];
+            const readLabel = () =>
+                Array.from(document.querySelectorAll('button'))
+                    .map((button) => button.textContent ?? '')
+                    .find((text) => text.startsWith('Show More')) ?? null;
+            const sectionFor = (overrides: Partial<ComponentProps<typeof ResourceSection>> = {}) => (
+                <React.Profiler id="resource-section" onRender={() => labels.push(readLabel())}>
+                    <ResourceSection
+                        title="Resources"
+                        type="loras"
+                        filters={filters}
+                        setFilters={vi.fn()}
+                        data={data}
+                        isOpen
+                        onToggle={vi.fn()}
+                        {...overrides}
+                    />
+                </React.Profiler>
+            );
+            const view = render(sectionFor());
+            fireEvent.click(screen.getByRole('button', { name: /show more/i }));
+            expect(readLabel()).toBe('Show More (10 remaining)');
+            labels.length = 0;
+            return { labels, view, sectionFor };
+        };
+
+        const expectResetToThirty = (labels: Array<string | null>) => {
+            expect(labels.length).toBeGreaterThan(0);
+            expect(labels.every((label) => label === 'Show More (40 remaining)')).toBe(true);
+        };
+
+        it('returns to the first thirty items when the search query changes', () => {
+            const { labels } = renderProfiledSection();
+            fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
+            labels.length = 0;
+
+            fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), { target: { value: 'item' } });
+
+            expectResetToThirty(labels);
+        });
+
+        it('returns to the first thirty items when the resource type changes', () => {
+            const { labels, view, sectionFor } = renderProfiledSection();
+
+            view.rerender(sectionFor({ type: 'embeddings' }));
+
+            expectResetToThirty(labels);
+        });
+
+        it('returns to the first thirty items when the filters change', () => {
+            const { labels, view, sectionFor } = renderProfiledSection();
+
+            view.rerender(sectionFor({ filters: { ...filters, loras: ['Item 05'] } }));
+
+            expectResetToThirty(labels);
+        });
     });
 
     it.each([
