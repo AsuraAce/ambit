@@ -11,11 +11,13 @@ export const useResourceRemovalDockEntry = (): string | null => {
     const removingPath = useResourceRemovalStore((state) => state.removingResourcePath);
     const [revealedPath, setRevealedPath] = React.useState<string | null>(null);
 
+    // A finished removal forgets its reveal, so a repeat removal of the same folder waits the full delay again.
+    if (!removingPath && revealedPath !== null) {
+        setRevealedPath(null);
+    }
+
     React.useEffect(() => {
-        if (!removingPath) {
-            setRevealedPath(null);
-            return;
-        }
+        if (!removingPath) return;
         const timer = window.setTimeout(() => {
             setRevealedPath(removingPath);
         }, RESOURCE_REMOVAL_DOCK_DELAY_MS);

@@ -30,21 +30,25 @@ export const useAiSearchLogic = ({
     const inputRef = useRef<HTMLInputElement>(null);
     const isAiRequestActiveRef = useRef(false);
 
-    // Sync state: If global setting is disabled, force local state off immediately
-    useEffect(() => {
-        if (!settings.enableAI) {
-            setIsAiSearchEnabled(false);
-        }
-    }, [settings.enableAI]);
+    // If the global setting is disabled, force local state off; once Settings enables it for a pending
+    // toggle, turn AI search on. Both adjust state during render; the effect below does the side effects.
+    const [aiActivationCount, setAiActivationCount] = useState(0);
+    if (!settings.enableAI && isAiSearchEnabled) {
+        setIsAiSearchEnabled(false);
+    }
+    if (pendingAiActivation && settings.enableAI) {
+        setIsAiSearchEnabled(true);
+        setPendingAiActivation(false);
+        setAiActivationCount((count) => count + 1);
+    }
 
+    const handledAiActivationRef = useRef(0);
     useEffect(() => {
-        if (pendingAiActivation && settings.enableAI) {
-            setIsAiSearchEnabled(true);
-            setPendingAiActivation(false);
-            setTimeout(() => inputRef.current?.focus(), 100);
-            addToast('AI Features Enabled & Ready', 'success');
-        }
-    }, [settings.enableAI, pendingAiActivation, addToast]);
+        if (aiActivationCount === handledAiActivationRef.current) return;
+        handledAiActivationRef.current = aiActivationCount;
+        setTimeout(() => inputRef.current?.focus(), 100);
+        addToast('AI Features Enabled & Ready', 'success');
+    }, [aiActivationCount, addToast]);
 
     const toggleAiSearch = () => {
         if (!settings.enableAI) {

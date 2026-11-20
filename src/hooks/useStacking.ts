@@ -21,9 +21,26 @@ const getWorker = () => {
     return sharedWorker;
 };
 
+const getImagesSignature = (images: AIImage[]) => images.length + images[0].timestamp;
+
 export const useStacking = (images: AIImage[]) => {
     const [suggestedStacks, setSuggestedStacks] = useState<StackGroup[]>([]);
-    const [isCalculating, setIsCalculating] = useState(false);
+    const [isCalculating, setIsCalculating] = useState(images.length > 0);
+
+    // Mirrors the effect's decision below, during render: an empty library clears the stacks, and a new
+    // signature (length plus first timestamp, a cheap proxy for "changed meaningfully") starts calculating.
+    const [handledImages, setHandledImages] = useState(images);
+    const [handledSignature, setHandledSignature] = useState(() => (images.length > 0 ? getImagesSignature(images) : 0));
+    if (handledImages !== images) {
+        setHandledImages(images);
+        if (images.length === 0) {
+            setSuggestedStacks((current) => (current.length === 0 ? current : []));
+            setIsCalculating(false);
+        } else if (getImagesSignature(images) !== handledSignature) {
+            setHandledSignature(getImagesSignature(images));
+            setIsCalculating(true);
+        }
+    }
 
     // Debounce ref
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -34,13 +51,11 @@ export const useStacking = (images: AIImage[]) => {
         if (images.length === 0) {
             activeWorkerCleanupRef.current?.();
             activeWorkerCleanupRef.current = null;
-            setSuggestedStacks((current) => (current.length === 0 ? current : []));
-            setIsCalculating(false);
             return;
         }
 
-        // Avoid re-running if images haven't changed meaningfully (length check is a cheap proxy)
-        const currentSig = images.length + images[0].timestamp;
+        // Avoid re-running if images haven't changed meaningfully
+        const currentSig = getImagesSignature(images);
         if (currentSig === lastImagesRef.current) return;
         lastImagesRef.current = currentSig;
 
@@ -48,7 +63,6 @@ export const useStacking = (images: AIImage[]) => {
         activeWorkerCleanupRef.current?.();
         activeWorkerCleanupRef.current = null;
 
-        setIsCalculating(true);
         timeoutRef.current = setTimeout(() => {
             const worker = getWorker();
             const requestId = `stack_${Date.now()}`;

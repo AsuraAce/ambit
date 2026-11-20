@@ -37,9 +37,7 @@ export const MetadataRawInspector = ({ image }: MetadataRawInspectorProps) => {
         return () => window.clearTimeout(timeout);
     }, [copiedMode]);
 
-    useEffect(() => {
-        if (rawViewMode === 'json' && !image.metadata.workflowJson) setRawViewMode('parsed');
-    }, [image.metadata.workflowJson, rawViewMode]);
+    if (rawViewMode === 'json' && !image.metadata.workflowJson) setRawViewMode('parsed');
 
     const copyRawContent = async () => {
         if (!rawContent) return;

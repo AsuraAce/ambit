@@ -15,10 +15,12 @@ export const MetadataGeneratorField: React.FC<MetadataGeneratorFieldProps> = ({ 
     const [draft, setDraft] = React.useState(value);
     const editorRef = React.useRef<HTMLDivElement>(null);
 
-    React.useEffect(() => {
+    const [handledValue, setHandledValue] = React.useState(value);
+    if (value !== handledValue) {
+        setHandledValue(value);
         setDraft(value);
         setIsEditing(false);
-    }, [value]);
+    }
 
     React.useEffect(() => {
         if (!isEditing) return;

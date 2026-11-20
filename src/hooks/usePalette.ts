@@ -3,18 +3,23 @@ import { repairAssetUrl } from '../utils/pathUtils';
 
 export const usePalette = (imageUrl: string | null) => {
     const [palette, setPalette] = useState<string[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(Boolean(imageUrl));
 
-    useEffect(() => {
-        let isActive = true;
+    // A new URL clears the palette (no URL) or starts loading; the effect below does the extraction.
+    const [handledUrl, setHandledUrl] = useState(imageUrl);
+    if (handledUrl !== imageUrl) {
+        setHandledUrl(imageUrl);
         if (!imageUrl) {
             setPalette([]);
             setIsLoading(false);
-            return () => {
-                isActive = false;
-            };
+        } else {
+            setIsLoading(true);
         }
-        setIsLoading(true);
+    }
+
+    useEffect(() => {
+        if (!imageUrl) return;
+        let isActive = true;
 
         const img = new Image();
         img.crossOrigin = 'Anonymous';

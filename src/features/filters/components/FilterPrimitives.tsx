@@ -81,15 +81,20 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
     const valuesRef = useRef({ min: localMin, max: localMax });
 
     // Sync local state with props when NOT dragging
-    useEffect(() => {
+    const [handledSync, setHandledSync] = useState({ propCurrentMin, propCurrentMax, isDragging });
+    if (
+        handledSync.propCurrentMin !== propCurrentMin ||
+        handledSync.propCurrentMax !== propCurrentMax ||
+        handledSync.isDragging !== isDragging
+    ) {
+        setHandledSync({ propCurrentMin, propCurrentMax, isDragging });
         if (!isDragging) {
             setLocalMin(propCurrentMin);
             setLocalMax(propCurrentMax);
-            valuesRef.current = { min: propCurrentMin, max: propCurrentMax };
         }
-    }, [propCurrentMin, propCurrentMax, isDragging]);
+    }
 
-    // Update ref when local state changes
+    // Update ref when local state changes (this also covers the sync above)
     useEffect(() => {
         valuesRef.current = { min: localMin, max: localMax };
     }, [localMin, localMax]);

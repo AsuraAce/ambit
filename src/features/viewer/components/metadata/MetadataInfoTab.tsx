@@ -84,12 +84,17 @@ export const MetadataInfoTab = ({
     const negativePromptDraftRef = useRef(negativePromptValue);
 
     // --- Helpers ---
-    useEffect(() => {
+    const [handledImageId, setHandledImageId] = useState(image.id);
+    if (image.id !== handledImageId) {
+        setHandledImageId(image.id);
         setIsPromptDirty(false);
-        promptDirtyRef.current = false;
         setIsNegativePromptDirty(false);
         setShowOriginalPrompt(false);
         setPromptSuggestions([]);
+    }
+
+    useEffect(() => {
+        promptDirtyRef.current = false;
     }, [image.id]);
 
     useEffect(() => {

@@ -105,9 +105,11 @@ export function CollectionList<T extends Collection>({
     const [renderLimit, setRenderLimit] = useState(60);
 
     // Reset pagination when search changes
-    React.useEffect(() => {
+    const [handledListInputs, setHandledListInputs] = useState({ searchQuery, showArchived });
+    if (handledListInputs.searchQuery !== searchQuery || handledListInputs.showArchived !== showArchived) {
+        setHandledListInputs({ searchQuery, showArchived });
         setRenderLimit(60);
-    }, [searchQuery, showArchived]);
+    }
 
     React.useEffect(() => {
         if (showArchived) {

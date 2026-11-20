@@ -277,9 +277,11 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const hasMore = filteredItems.length > renderLimit;
 
     // Reset limit when query changes or type changes
-    useEffect(() => {
+    const [handledLimitInputs, setHandledLimitInputs] = useState({ searchQuery, type, filters });
+    if (handledLimitInputs.searchQuery !== searchQuery || handledLimitInputs.type !== type || handledLimitInputs.filters !== filters) {
+        setHandledLimitInputs({ searchQuery, type, filters });
         setRenderLimit(30);
-    }, [searchQuery, type, filters]);
+    }
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ResourceItem } | null>(null);

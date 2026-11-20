@@ -27,9 +27,20 @@ const getSearchOperatorIcon = (category: SearchOperatorCategory) => {
     }
 };
 
+// The saved expanded categories; General is open by default and when the saved value is unreadable.
+const readExpandedCategories = (): Record<string, boolean> => {
+    const saved = localStorage.getItem('ambit_shortcuts_expanded');
+    if (!saved) return { General: true };
+    try {
+        return JSON.parse(saved) as Record<string, boolean>;
+    } catch {
+        return { General: true };
+    }
+};
+
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose, initialTab = 'shortcuts', onOpenSetupGuide }) => {
     const [activeTab, setActiveTab] = useState<'shortcuts' | 'search' | 'setup'>(initialTab);
-    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(readExpandedCategories);
     const closeButtonRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
@@ -42,22 +53,6 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
             if (previousFocus?.isConnected) previousFocus.focus();
         };
     }, [isOpen]);
-
-    // Load expanded state from localStorage
-    useEffect(() => {
-        const saved = localStorage.getItem('ambit_shortcuts_expanded');
-        if (saved) {
-            try {
-                setExpandedCategories(JSON.parse(saved) as Record<string, boolean>);
-            } catch {
-                // Fail silently, use defaults
-                setExpandedCategories({ General: true });
-            }
-        } else {
-            // Default: General is open
-            setExpandedCategories({ General: true });
-        }
-    }, []);
 
     // Save expanded state to localStorage
     useEffect(() => {
@@ -74,11 +69,13 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
     };
 
     // Sync internal state if prop changes while open
-    useEffect(() => {
+    const [handledTab, setHandledTab] = useState({ isOpen, initialTab });
+    if (handledTab.isOpen !== isOpen || handledTab.initialTab !== initialTab) {
+        setHandledTab({ isOpen, initialTab });
         if (isOpen) {
             setActiveTab(initialTab);
         }
-    }, [isOpen, initialTab]);
+    }
 
     if (!isOpen) return null;
 

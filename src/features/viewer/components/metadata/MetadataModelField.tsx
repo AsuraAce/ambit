@@ -33,7 +33,9 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({ presenta
     const [isEditing, setIsEditing] = React.useState(false);
     const [isCustom, setIsCustom] = React.useState(false);
     const [query, setQuery] = React.useState('');
-    const [draft, setDraft] = React.useState('');
+    const [draft, setDraft] = React.useState(() =>
+        presentation.isHashFallback || presentation.value === 'Unknown' ? '' : presentation.value
+    );
     const [isOpen, setIsOpen] = React.useState(false);
     const [activeIndex, setActiveIndex] = React.useState(0);
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -46,12 +48,17 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({ presenta
         return availableOptions.filter((option) => option.toLocaleLowerCase().includes(normalizedQuery));
     }, [availableOptions, query]);
 
-    React.useEffect(() => {
+    const [handledPresentation, setHandledPresentation] = React.useState({
+        isHashFallback: presentation.isHashFallback,
+        value: presentation.value,
+    });
+    if (handledPresentation.isHashFallback !== presentation.isHashFallback || handledPresentation.value !== presentation.value) {
+        setHandledPresentation({ isHashFallback: presentation.isHashFallback, value: presentation.value });
         setIsEditing(false);
         setIsCustom(false);
         setQuery('');
         setDraft(presentation.isHashFallback || presentation.value === 'Unknown' ? '' : presentation.value);
-    }, [presentation.isHashFallback, presentation.value]);
+    }
 
     const startEditing = () => {
         setDraft(presentation.isHashFallback || presentation.value === 'Unknown' ? '' : presentation.value);

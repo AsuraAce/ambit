@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Folder, DatabaseZap, Palette, FlaskConical, Boxes } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { FoldersTab, InvokeAITab, A1111Tab, ComfyUITab, ResourcesTab } from './';
@@ -35,9 +35,11 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
     const [activeTab, setActiveTab] = useState<ConnectionSubTab>(initialSubTab);
 
     // Sync active tab if initialSubTab changes (e.g. deep linking)
-    useEffect(() => {
+    const [handledSubTab, setHandledSubTab] = useState(initialSubTab);
+    if (initialSubTab !== handledSubTab) {
+        setHandledSubTab(initialSubTab);
         setActiveTab(initialSubTab);
-    }, [initialSubTab]);
+    }
 
     const tabs: { id: ConnectionSubTab; label: string; icon: React.ReactNode }[] = [
         { id: 'folders', label: 'Folders', icon: <Folder className="w-4 h-4" /> },

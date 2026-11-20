@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Pencil, Trash2, Archive, ArchiveRestore, Play, Download, ImageOff, Pin, Settings } from 'lucide-react';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
@@ -69,7 +69,11 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
 
     // Keep menu within viewport logic
     const MENU_WIDTH = 240;
-    const [menuPos, setMenuPos] = useState({ top: y, left: x });
+    // The viewport size and a fixed width estimate decide the position, so it is known on the first render.
+    const menuPos = useMemo(
+        () => ({ top: Math.min(y, window.innerHeight - 300), left: Math.min(x, window.innerWidth - MENU_WIDTH) }),
+        [x, y]
+    );
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -80,12 +84,6 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
     }, [onClose]);
-
-    useEffect(() => {
-        const top = Math.min(y, window.innerHeight - 300);
-        const left = Math.min(x, window.innerWidth - MENU_WIDTH);
-        setMenuPos({ top, left });
-    }, [x, y]);
 
     // User-selected collection colours: a documented exception to the semantic palette
     // (docs/design-system.md), so they use broad Tailwind hues rather than Ambit roles.
