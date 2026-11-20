@@ -82,9 +82,10 @@ export const useImagesQuery = ({
 
     // Create stable fingerprint of smart collection filters (if any)
     // This prevents cache invalidation when unrelated collection counts change
+    const activeCollectionFilters = activeCollection?.filters;
     const smartFilterHash = useMemo(
-        () => (activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null),
-        [activeCollection?.filters]
+        () => (activeCollectionFilters ? JSON.stringify(activeCollectionFilters) : null),
+        [activeCollectionFilters]
     );
 
     const imagesQueryKey = useMemo<ImagesQueryKey>(

@@ -7186,6 +7186,42 @@ describe('Library Integration (Provider Stack)', () => {
             );
         });
 
+        // Board changes found while preparing a view are reported once. Re-applying the same view
+        // reuses that admission and must not report them again, even if the re-apply sync fails.
+        it('does not re-report consumed preparation changes after a reused view fails to sync', async () => {
+            mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: { selection?: { mode: string } }) => ({
+                changed: true,
+                sourceFactsUpdated: 0,
+                activeVisibilityUpdated: 0,
+                removedVisibilityUpdated: 0,
+                boardCollectionsUpdated: 1,
+                mode: selection?.mode ?? 'unselected',
+            }));
+            const hook = await setup(true);
+            await act(async () => {
+                await hook.startInvokeSync({ mode: 'manual' });
+            });
+            expect(useInvokeOwnerScopeStore.getState().operation).toMatchObject({ phase: 'completed', hasChanges: true });
+
+            mocks.applyInvokeOwnerScope.mockClear();
+            mocks.syncImages.mockClear();
+            mocks.syncImages.mockRejectedValueOnce(new Error('source failed'));
+            await act(async () => {
+                await hook.applyInvokeConnection(draftFor());
+            });
+            expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+            expect(mocks.syncImages).toHaveBeenCalledOnce();
+
+            await act(async () => {
+                await hook.startInvokeSync({ mode: 'manual' });
+            });
+            expect(useInvokeOwnerScopeStore.getState().operation).toMatchObject({
+                phase: 'completed',
+                hasChanges: false,
+                message: 'Already up to date.',
+            });
+        });
+
         it('opens the verified gallery before importing finishes and retains the operation reservation', async () => {
             const hook = await setup(true);
             const pending = createDeferred<ReturnType<typeof createNoopInvokeSyncResult>>();

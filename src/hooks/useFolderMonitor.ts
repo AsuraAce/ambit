@@ -392,39 +392,6 @@ export function useFolderMonitor({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the folder list changes; adding these would re-run the folder diff when they change
     }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths, browserMockMode]);
 
-    // Live Watch Catch-up
-    const isLiveWatching = useLibraryStore((s) => s.isLiveWatching);
-    const hasLiveWatchStartedRef = useRef(isLiveWatching);
-
-    // Unified Watcher Effect (Handles "Turn On")
-    useEffect(() => {
-        if (browserMockMode) return;
-
-        const activeFolders = monitoredFolders.filter((f) => f.isActive && !f.initialScanCancelled);
-        if (activeFolders.length === 0) {
-            hasLiveWatchStartedRef.current = isLiveWatching;
-            return;
-        }
-
-        // CRITICAL: If an import is already running (e.g. manual re-scan), DO NOT start another scan.
-        // This prevents lock contention on the database (Read lock vs Write lock).
-        if (useLibraryStore.getState().isImporting) {
-            console.log('[FolderMonitor] Skipping live scan check - Import already in progress');
-            return;
-        }
-
-        // Condition 1: Turning ON (Catch-up)
-        const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
-
-        if (isTurningOn) {
-            console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
-            performUnifiedScan(activeFolders, 'Catch-up').catch((error) => console.error('[FolderMonitor] Catch-up scan failed', error));
-        }
-
-        hasLiveWatchStartedRef.current = isLiveWatching;
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle; performUnifiedScan is declared after this effect (#407) and recreated often
-    }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata, browserMockMode]);
-
     // Reusable Scan Logic (Extracted from previous effect)
     const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
         let totalFilesFound = 0;
@@ -536,4 +503,37 @@ export function useFolderMonitor({
             console.log(`[FolderMonitor] ${source}: No new files found.`);
         }
     };
+
+    // Live Watch Catch-up
+    const isLiveWatching = useLibraryStore((s) => s.isLiveWatching);
+    const hasLiveWatchStartedRef = useRef(isLiveWatching);
+
+    // Unified Watcher Effect (Handles "Turn On")
+    useEffect(() => {
+        if (browserMockMode) return;
+
+        const activeFolders = monitoredFolders.filter((f) => f.isActive && !f.initialScanCancelled);
+        if (activeFolders.length === 0) {
+            hasLiveWatchStartedRef.current = isLiveWatching;
+            return;
+        }
+
+        // CRITICAL: If an import is already running (e.g. manual re-scan), DO NOT start another scan.
+        // This prevents lock contention on the database (Read lock vs Write lock).
+        if (useLibraryStore.getState().isImporting) {
+            console.log('[FolderMonitor] Skipping live scan check - Import already in progress');
+            return;
+        }
+
+        // Condition 1: Turning ON (Catch-up)
+        const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
+
+        if (isTurningOn) {
+            console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
+            performUnifiedScan(activeFolders, 'Catch-up').catch((error) => console.error('[FolderMonitor] Catch-up scan failed', error));
+        }
+
+        hasLiveWatchStartedRef.current = isLiveWatching;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle; performUnifiedScan is recreated every render, so adding it would re-run this effect each time
+    }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata, browserMockMode]);
 }

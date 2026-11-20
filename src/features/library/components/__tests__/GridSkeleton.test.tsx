@@ -17,6 +17,22 @@ describe('GridSkeleton', () => {
         expect((root.children[0] as HTMLElement).style.height).toBe('300px');
     });
 
+    // A skeleton that re-randomises on every render flickers while the library loads.
+    it('keeps randomized sizes when the parent re-renders', () => {
+        let next = 0;
+        vi.spyOn(Math, 'random').mockImplementation(() => {
+            next = (next + 0.37) % 1;
+            return next;
+        });
+        const { container, rerender } = render(<GridSkeleton />);
+        const heights = () => Array.from(container.firstElementChild!.children, (child) => (child as HTMLElement).style.height);
+        const first = heights();
+        expect(new Set(first).size).toBeGreaterThan(1);
+
+        rerender(<GridSkeleton />);
+        expect(heights()).toEqual(first);
+    });
+
     it('renders justified placeholders with width and growth', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.25);
         const { container } = render(<GridSkeleton layout="justified" />);
