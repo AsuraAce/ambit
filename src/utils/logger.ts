@@ -1,3 +1,4 @@
+import { commands } from '../bindings';
 import { useSettingsStore } from '../stores/settingsStore';
 import { LogLevel } from '../types';
 
@@ -16,6 +17,38 @@ let originalConsole: {
     warn: typeof console.warn;
     error: typeof console.error;
 } | null = null;
+
+const describeRejectionReason = (reason: unknown): string => {
+    if (reason instanceof Error) {
+        const header = `${reason.name}: ${reason.message}`;
+        // WebKit stacks omit the message, so prefix it when the stack lacks it.
+        if (!reason.stack) return header;
+        return reason.stack.includes(reason.message) ? reason.stack : `${header}\n${reason.stack}`;
+    }
+    if (typeof reason === 'string') return reason;
+    try {
+        return JSON.stringify(reason) ?? String(reason);
+    } catch {
+        try {
+            return String(reason);
+        } catch {
+            return '[unserializable rejection reason]';
+        }
+    }
+};
+
+// A rejected promise nobody caught (e.g. an async JSX handler) would otherwise vanish.
+const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    const text = describeRejectionReason(event.reason);
+    console.error('Unhandled promise rejection:', text);
+    // Bridge to the Rust log file. Must never reject or throw: it runs inside the rejection handler,
+    // and outside Tauri (plain web dev) the invoke fails.
+    try {
+        commands.logFrontendError(text).catch(() => undefined);
+    } catch {
+        // ignore
+    }
+};
 
 export const setupGlobalLogging = () => {
     if (originalConsole) return; // already set up
@@ -53,11 +86,14 @@ export const setupGlobalLogging = () => {
     console.error = (...args: unknown[]) => {
         if (getLevelValue() <= LOG_LEVELS.error) originalConsole!.error(...args);
     };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
 };
 
 export const resetGlobalLoggingForTests = () => {
     if (!originalConsole) return;
 
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     console.log = originalConsole.log;
     console.debug = originalConsole.debug;
     console.info = originalConsole.info;

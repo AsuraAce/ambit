@@ -420,6 +420,26 @@ impl StartupState {
     }
 }
 
+const FRONTEND_ERROR_MAX_CHARS: usize = 4096;
+
+fn truncate_frontend_message(message: &str) -> &str {
+    match message.char_indices().nth(FRONTEND_ERROR_MAX_CHARS) {
+        Some((end, _)) => &message[..end],
+        None => message,
+    }
+}
+
+/// Writes one webview-reported failure (an unhandled promise rejection) to the app log file.
+/// The text is capped so the webview cannot write unbounded data.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn log_frontend_error(message: String) {
+    log::error!(
+        "frontend: unhandled promise rejection: {}",
+        truncate_frontend_message(&message)
+    );
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn record_startup_diagnostic(
@@ -666,8 +686,21 @@ fn duration_ms(duration: Duration) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_diagnostic, StartupDiagnosticEvent, StartupState};
+    use super::{
+        truncate_frontend_message, validate_diagnostic, StartupDiagnosticEvent, StartupState,
+        FRONTEND_ERROR_MAX_CHARS,
+    };
     use std::time::Instant;
+
+    #[test]
+    fn frontend_error_message_is_capped_on_a_char_boundary() {
+        let short = "short";
+        assert_eq!(truncate_frontend_message(short), short);
+        let long = "é".repeat(FRONTEND_ERROR_MAX_CHARS + 10);
+        let capped = truncate_frontend_message(&long);
+        assert_eq!(capped.chars().count(), FRONTEND_ERROR_MAX_CHARS);
+        assert!(long.starts_with(capped));
+    }
 
     fn repair_decision() -> serde_json::Value {
         serde_json::json!({

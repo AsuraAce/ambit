@@ -42,6 +42,7 @@ const commandCases: CommandCase[] = [
         payload: { event: { launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null } },
         returnsResult: true,
     },
+    { name: 'logFrontendError', invokeName: 'log_frontend_error', args: ['boom'], payload: { message: 'boom' }, returnsResult: false },
     { name: 'saveApiKey', invokeName: 'save_api_key', args: ['key'], payload: { key: 'key' }, returnsResult: true },
     { name: 'loadApiKey', invokeName: 'load_api_key', args: [], returnsResult: true },
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },

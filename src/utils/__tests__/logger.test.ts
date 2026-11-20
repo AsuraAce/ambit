@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
+const { logFrontendError } = vi.hoisted(() => ({ logFrontendError: vi.fn() }));
+vi.mock('../../bindings', () => ({ commands: { logFrontendError } }));
+
 import { createDefaultAppSettings } from '../../constants/defaultSettings';
 import type { LogLevel } from '../../types';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -128,5 +131,77 @@ describe('setupGlobalLogging', () => {
 
         expect(consoleSpies.error).toHaveBeenCalledTimes(1);
         expect(consoleSpies.error).toHaveBeenCalledWith('[startup] failure');
+    });
+
+    describe('unhandled promise rejections', () => {
+        beforeEach(() => {
+            logFrontendError.mockReset();
+            logFrontendError.mockResolvedValue(undefined);
+        });
+
+        // jsdom has no PromiseRejectionEvent, so build the event the browser would dispatch.
+        const rejectWith = (reason: unknown) => {
+            const event = new Event('unhandledrejection');
+            Object.defineProperty(event, 'reason', { value: reason });
+            window.dispatchEvent(event);
+        };
+
+        it('writes a rejection nobody caught through console.error and the Rust log bridge', () => {
+            setupGlobalLogging();
+
+            rejectWith(new Error('save failed'));
+
+            expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+            const [label, detail] = consoleSpies.error.mock.calls[0] as [string, string];
+            expect(label).toBe('Unhandled promise rejection:');
+            expect(detail).toContain('save failed');
+            expect(logFrontendError).toHaveBeenCalledTimes(1);
+            expect(logFrontendError.mock.calls[0][0]).toContain('save failed');
+        });
+
+        it('serializes string and non-Error reasons', () => {
+            setupGlobalLogging();
+
+            rejectWith('plain string');
+            rejectWith({ code: 7 });
+            rejectWith(undefined);
+
+            expect(consoleSpies.error.mock.calls.map((call) => call[1])).toEqual(['plain string', '{"code":7}', 'undefined']);
+        });
+
+        it('logs once per rejection even when setup runs repeatedly', () => {
+            setupGlobalLogging();
+            setupGlobalLogging();
+
+            rejectWith('once');
+
+            expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+        });
+
+        it('prefixes the message when the stack omits it (WebKit)', () => {
+            setupGlobalLogging();
+            const failure = new Error('no message in stack');
+            failure.stack = 'frame@file:1:1';
+
+            rejectWith(failure);
+
+            expect(logFrontendError).toHaveBeenCalledWith('Error: no message in stack\nframe@file:1:1');
+        });
+
+        it('never throws or re-rejects when the bridge fails or the reason cannot be serialized', async () => {
+            logFrontendError.mockRejectedValue(new Error('no tauri'));
+            setupGlobalLogging();
+            const circular = Object.create(null) as Record<string, unknown>;
+            circular.self = circular;
+
+            expect(() => rejectWith(circular)).not.toThrow();
+            logFrontendError.mockImplementation(() => {
+                throw new Error('sync failure');
+            });
+            expect(() => rejectWith('x')).not.toThrow();
+            await Promise.resolve();
+
+            expect(logFrontendError.mock.calls[0][0]).toBe('[unserializable rejection reason]');
+        });
     });
 });
