@@ -7347,6 +7347,12 @@ describe('Library Integration (Provider Stack)', () => {
                     scope: expect.objectContaining({ ownerId: 'owner-a' }),
                 });
                 expect(useSettingsStore.getState().settings.invokeOwnerSelection).toMatchObject({ ownerId: 'owner-a' });
+                // The dock and toast say the gallery never left the shown owner.
+                expect(useInvokeOwnerScopeStore.getState().operation?.message).toBe(
+                    failure === 'cancelled'
+                        ? 'Switch cancelled. Still showing owner-a.'
+                        : 'Could not switch to owner-b (Preparation failed). Still showing owner-a.'
+                );
             });
 
             // Fail closed: if the previous owner cannot be restored, nothing keeps showing it.

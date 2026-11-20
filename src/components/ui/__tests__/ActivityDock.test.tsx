@@ -582,6 +582,70 @@ describe('ActivityDock', () => {
         });
     });
 
+    // #527: a user switch keeps the previous owner browsable, so its preparation lives in the dock, not the gate.
+    describe('user owner switch', () => {
+        const startSwitch = (overrides: Partial<InvokeOperationState> = {}) => {
+            const operation = createInvokeOperation({ phase: 'preparing', viewCommitted: false, ...overrides });
+            useInvokeOwnerScopeStore.getState().setOperation(operation);
+            useInvokeOwnerScopeStore.getState().retainOwnerScope({
+                operationId: operation.id,
+                rootPath: 'D:/Invoke',
+                scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'freya' },
+                label: 'Freya',
+                targetLabel: 'Odin',
+            });
+            return operation;
+        };
+
+        beforeEach(() => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        });
+
+        it('shows the preparation with Cancel only after 600 ms', () => {
+            const operation = startSwitch();
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(599));
+            expect(screen.queryByText('Switching to Odin')).toBeNull();
+
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByText("You can keep browsing Freya's images.")).toBeTruthy();
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(operation.cancel).toHaveBeenCalledOnce();
+        });
+
+        it('never shows the preparation of a warm switch admitted within 600 ms', () => {
+            startSwitch();
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(550));
+            act(() =>
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOperation((current) => current && { ...current, phase: 'syncing', viewCommitted: true })
+            );
+            act(() => vi.advanceTimersByTime(1000));
+            expect(screen.queryByText('Switching to Odin')).toBeNull();
+        });
+
+        // Q2: the target is ready but the gallery holds the previous owner; the result waits with "Switch now".
+        it('offers "Switch now" while the swap is held and keeps the result until the swap', () => {
+            const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
+            render(<ActivityDock />);
+            act(() => completeInvokeOperation());
+
+            expect(screen.getByText('Odin is ready.')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(10000));
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+
+            act(() => useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(operation.id));
+            expect(screen.queryByRole('button', { name: 'Switch now' })).toBeNull();
+            act(() => vi.advanceTimersByTime(5000));
+            expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+        });
+    });
+
     it('identifies startup synchronization as InvokeAI catch-up', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',

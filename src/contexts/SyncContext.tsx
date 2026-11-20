@@ -1520,7 +1520,13 @@ export const SyncProvider: React.FC<{
                         } else {
                             setInvokeOwnerScopeState(previousState);
                         }
-                        if (previousAdmission?.allowed) message += ' The previous view was restored.';
+                        // A user switch kept the previous owner on screen, so say so in its own words (#527).
+                        const ownerSwitch = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
+                        if (ownerSwitch?.operationId === token && !retryingUnpreparedView) {
+                            message = aborted
+                                ? `Switch cancelled. Still showing ${ownerSwitch.label}.`
+                                : `Could not switch to ${ownerSwitch.targetLabel} (${errorMessage}). Still showing ${ownerSwitch.label}.`;
+                        } else if (previousAdmission?.allowed) message += ' The previous view was restored.';
                     } catch (rollbackError) {
                         message += ` The previous view could not be restored: ${String(rollbackError)}`;
                         setInvokeOwnerScopeState({

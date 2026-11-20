@@ -5,6 +5,7 @@ import type { AppSettings, InvokeOwnerDiscovery } from '../../../../types';
 import { useInvokeConnectionDraft } from '../../hooks/useInvokeConnectionDraft';
 import { useInvokeOwnerDiscovery } from '../../hooks/useInvokeOwnerDiscovery';
 import { InvokeAITab } from '../InvokeAITab';
+import { useInvokeOwnerScopeStore } from '../../../../stores/invokeOwnerScopeStore';
 
 const mocks = vi.hoisted(() => ({
     inspect: vi.fn(),
@@ -125,6 +126,7 @@ describe('InvokeAITab draft connection flow', () => {
         mocks.isInvokeSyncActive = false;
         mocks.isLiveSyncing = false;
         mocks.syncStatus = 'idle';
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
 
     it('does not apply typed edits until the explicit connection action', async () => {
@@ -504,6 +506,60 @@ describe('InvokeAITab draft connection flow', () => {
         resolveDiscovery(legacyDiscovery('D:/Old'));
         await waitFor(() => expect(screen.queryByText('Connected to a legacy InvokeAI database.')).toBeNull());
         expect((screen.getByRole('button', { name: 'Connect & Import' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // Q3 of #527: a second choice during a switch would retarget a view the gallery is not showing; cancel first.
+    it('locks the owner choice during a user switch, offers Cancel, and unlocks after it', () => {
+        const cancel = vi.fn();
+        const operationId = Symbol('switch');
+        mocks.ownerScopeState = {
+            status: 'ready',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Applied/databases/invokeai.db',
+                imagesRoot: 'D:/Applied',
+                owners: [
+                    { ownerId: 'freya', displayName: 'Freya', imageCount: 2 },
+                    { ownerId: 'odin', displayName: 'Odin', imageCount: 3 },
+                ],
+                unassignedImageCount: 0,
+            },
+        };
+        const applied = {
+            ...settings('D:/Applied'),
+            invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner' as const, ownerId: 'freya' },
+        };
+        render(<DraftHarness settings={applied} setSettings={vi.fn()} />);
+        expect(screen.getByRole('button', { name: /odin/i })).toBeTruthy();
+
+        act(() => {
+            useInvokeOwnerScopeStore.getState().setOperation({
+                id: operationId,
+                origin: 'user',
+                rootPath: 'D:/Applied',
+                targetLabel: 'Odin',
+                phase: 'preparing',
+                viewCommitted: false,
+                progress: { current: 0, total: 0 },
+                cancel,
+            });
+            useInvokeOwnerScopeStore.getState().retainOwnerScope({
+                operationId,
+                rootPath: 'D:/Applied',
+                scope: { dbPath: 'D:/Applied/databases/invokeai.db', imagesRoot: 'D:/Applied', mode: 'owner', ownerId: 'freya' },
+                label: 'Freya',
+                targetLabel: 'Odin',
+            });
+        });
+
+        expect(screen.queryByRole('button', { name: /odin/i })).toBeNull();
+        expect(screen.getByText('Switching to Odin. Cancel the switch to choose again.')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel switch' }));
+        expect(cancel).toHaveBeenCalledOnce();
+
+        act(() => useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(operationId));
+        expect(screen.queryByText(/Cancel the switch to choose again/)).toBeNull();
+        expect(screen.getByRole('button', { name: /odin/i })).toBeTruthy();
     });
 
     it('formats owner preparation progress with the active locale', () => {

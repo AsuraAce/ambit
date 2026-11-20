@@ -10,7 +10,7 @@ import {
 } from '../../hooks/thumbnailQueueProgress';
 import { TooltipButton } from './InfoTooltip';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
-import { useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
+import { getOperationOwnerSwitch, useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
 import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
@@ -207,12 +207,15 @@ export const ActivityDock: React.FC = () => {
     } = useLibraryStore();
     const invokeOperation = useInvokeOwnerScopeStore((state) => state.operation);
     const setInvokeOperation = useInvokeOwnerScopeStore((state) => state.setOperation);
+    const retainedOwnerScope = useInvokeOwnerScopeStore((state) => state.retainedOwnerScope);
+    const ownerSwitch = getOperationOwnerSwitch(invokeOperation, retainedOwnerScope);
+    const requestOwnerSwitchSwap = useInvokeOwnerScopeStore((state) => state.requestOwnerSwitchSwap);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
     const removingResourcePath = useResourceRemovalDockEntry();
     const isRemovingResource = removingResourcePath !== null;
 
-    const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed);
+    const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed, ownerSwitch);
     const isInvokeOperationActive = invokePresentation.isActiveVisible;
     const isManualSyncing = isInvokeOperationActive || (invokeOperation === null && syncStatus === 'syncing');
 
@@ -245,6 +248,9 @@ export const ActivityDock: React.FC = () => {
     const isInvokePresentation = (!isImporting && isInvokeOperationActive) || isInvokeResult;
     const isInvokeCancelling = isInvokePresentation && invokeOperation?.phase === 'cancelling';
     const isInvokeSettling = isInvokePresentation && invokeOperation?.phase === 'settling';
+    // Q2 of #527: the target owner is admitted, but the gallery keeps the previous owner while the viewer or
+    // a modal is open. "Switch now" swaps anyway.
+    const isOwnerSwitchHeld = isInvokePresentation && ownerSwitch !== null && invokeOperation?.viewCommitted === true;
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult;
 
     let progress: SyncProgress | null = null;
@@ -260,16 +266,19 @@ export const ActivityDock: React.FC = () => {
         supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
         progress = isInvokePresentation ? invokeOperation!.progress : syncProgress;
-        label = isInvokePresentation
-            ? `InvokeAI · ${invokeOperation!.targetLabel}`
-            : invokeSyncActivityKind === 'startup'
-              ? 'InvokeAI Catch-up'
-              : 'InvokeAI Sync';
+        label = invokePresentation.isOwnerSwitchPreparing
+            ? `Switching to ${invokeOperation!.targetLabel}`
+            : isInvokePresentation
+              ? `InvokeAI · ${invokeOperation!.targetLabel}`
+              : invokeSyncActivityKind === 'startup'
+                ? 'InvokeAI Catch-up'
+                : 'InvokeAI Sync';
         supportsCancel = isInvokePresentation ? Boolean(invokeOperation!.cancel) || isInvokeCancelling || isInvokeSettling : true;
-        footerMessage =
-            invokeSyncActivityKind === 'startup'
-                ? 'You can keep using the library while Ambit catches up.'
-                : 'You can keep using the library while Ambit synchronizes InvokeAI.';
+        footerMessage = invokePresentation.isOwnerSwitchPreparing
+            ? `You can keep browsing ${ownerSwitch!.label}'s images.`
+            : invokeSyncActivityKind === 'startup'
+              ? 'You can keep using the library while Ambit catches up.'
+              : 'You can keep using the library while Ambit synchronizes InvokeAI.';
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;
         label = 'Optimizing';
@@ -330,6 +339,7 @@ export const ActivityDock: React.FC = () => {
         label = `InvokeAI · ${invokeOperation!.targetLabel}`;
         footerMessage = 'Existing images and collections are kept.';
     }
+    if (isOwnerSwitchHeld) footerMessage = `${invokeOperation.targetLabel} is ready.`;
 
     if (progress?.mode === 'complete' && !isInvokeCancelling && !isInvokeSettling) {
         supportsCancel = false;
@@ -470,7 +480,8 @@ export const ActivityDock: React.FC = () => {
     }, [invokeOperation, isInvokePresentation, shouldShow, isActivityDockMinimized]);
     const invokeResultInteractions = useInvokeResultDismissal(
         invokeOperation,
-        isInvokeResult && shouldShow && !isActivityDockMinimized,
+        // A held switch keeps its result, and with it "Switch now", until the swap.
+        isInvokeResult && shouldShow && !isActivityDockMinimized && !isOwnerSwitchHeld,
         shouldShow,
         invokePresentation.isDocumentVisible
     );
@@ -494,7 +505,8 @@ export const ActivityDock: React.FC = () => {
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    className="fixed bottom-8 right-8 z-[100]"
+                    // The viewer covers the gallery at the same layer; a held switch keeps "Switch now" above it.
+                    className={`fixed bottom-8 right-8 ${isOwnerSwitchHeld ? 'z-[110]' : 'z-[100]'}`}
                 >
                     {isActivityDockMinimized ? (
                         <motion.div layoutId="dock-content">
@@ -685,6 +697,15 @@ export const ActivityDock: React.FC = () => {
                                         className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider disabled:cursor-wait disabled:opacity-60"
                                     >
                                         {isInvokeCancelling ? 'Cancelling…' : isInvokeSettling ? 'Finishing…' : 'Cancel'}
+                                    </button>
+                                )}
+                                {isOwnerSwitchHeld && (
+                                    <button
+                                        type="button"
+                                        onClick={() => requestOwnerSwitchSwap(ownerSwitch.operationId)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-sage-500/10 px-2 py-1 text-xs font-bold text-sage-600 hover:bg-sage-500/20 dark:text-sage-300"
+                                    >
+                                        Switch now
                                     </button>
                                 )}
                                 {isInvokeResult && invokeOperation?.retry && invokeOperation.phase !== 'completed' && (
