@@ -1387,6 +1387,10 @@ export const SyncProvider: React.FC<{
                 if (settingsRef.current.lastSyncedAt !== targetCursor) await publish({ lastSyncedAt: targetCursor });
                 assertSubmittedConnection();
                 ownerScopeAdmissionRef.current = { ...admission, rootPath: draft.invokeAiPath };
+                // The copy is a new object; keep it marked if this admission's preparation changes were already reported.
+                if (consumedPreparationAdmissionsRef.current.has(admission)) {
+                    consumedPreparationAdmissionsRef.current.add(ownerScopeAdmissionRef.current);
+                }
                 pendingInvokeViewReadyAnnouncementRootRef.current = null;
                 // Visibility, caches and settings are coherent. Import failure no longer undoes this choice.
                 setInvokeOwnerScopeState({
@@ -1813,7 +1817,7 @@ export const SyncProvider: React.FC<{
                 message: 'InvokeAI synchronization ended without a result.',
             };
             let activeRunFinished = false;
-            // Callers set syncOutcome before calling: the compiler rejects reassigning it from this closure.
+            // Does not reassign syncOutcome: the early returns that call it never reach the finally that reads it.
             const finishActiveRun = (outcome: InvokeSyncOutcome) => {
                 if (activeRunFinished) return;
                 activeRunFinished = true;
@@ -1916,7 +1920,6 @@ export const SyncProvider: React.FC<{
                                 },
                             });
                         if (!options.controller && useLibraryStore.getState().syncAbortController === ctrl) setSyncAbortController(null);
-                        syncOutcome = outcome;
                         finishActiveRun(outcome);
                         return outcome;
                     }
@@ -1942,7 +1945,6 @@ export const SyncProvider: React.FC<{
                         consumedPreparationAdmissionsRef.current.add(ownerAdmission);
                         if (!options.controller && useLibraryStore.getState().syncAbortController === ctrl) setSyncAbortController(null);
                         const outcome: InvokeSyncOutcome = { status: 'completed' };
-                        syncOutcome = outcome;
                         finishActiveRun(outcome);
                         return outcome;
                     }
