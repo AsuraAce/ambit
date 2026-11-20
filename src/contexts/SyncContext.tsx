@@ -702,7 +702,11 @@ export const SyncProvider: React.FC<{
                 !!targetedLiveDrainPromiseRef.current ||
                 pendingTargetedPathsRef.current.size > 0 ||
                 library.isImporting ||
-                library.isStartupCatchupPending;
+                library.isStartupCatchupPending ||
+                // New images still waiting for thumbnails: each thumbnail write dirties the cache again,
+                // so a repair now would be undone right after it commits.
+                library.isBackgroundHealingActive ||
+                library.backgroundHealingPaused;
             if (busy) {
                 scheduleOwnerCacheIdleRepairRef.current();
                 return;

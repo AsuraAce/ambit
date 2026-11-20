@@ -3570,6 +3570,30 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
         });
 
+        // Each thumbnail the queue writes dirties the cache again, so an idle repair that ran while new
+        // images still wait for thumbnails would be undone right after it commits.
+        it.each([
+            ['is generating thumbnails', { isBackgroundHealingActive: true }, { isBackgroundHealingActive: false }],
+            ['has thumbnails waiting behind other work', { backgroundHealingPaused: true }, { backgroundHealingPaused: false }],
+        ])('waits while the thumbnail queue %s and repairs once it is done', async (_name, busy, done) => {
+            await startViewWithIdleRepairScheduled();
+            mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 7));
+            act(() => useLibraryStore.setState(busy));
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(95_000);
+            });
+            expect(mocks.beginActiveInvokeScopeCacheBuild).not.toHaveBeenCalled();
+
+            act(() => useLibraryStore.setState(done));
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(31_000);
+            });
+
+            expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
+        });
+
         // Runs an idle repair up to its claim, which stays pending until the returned gate resolves.
         const startIdleRepairHoldingClaim = async () => {
             const view = await startViewWithIdleRepairScheduled();
