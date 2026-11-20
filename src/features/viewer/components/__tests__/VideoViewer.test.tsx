@@ -727,3 +727,85 @@ describe('VideoViewer', () => {
         expect(screen.queryByText(/ComfyUI workflow evidence/)).toBeNull();
     });
 });
+
+// #407: these resets happen during render, so no committed frame shows the previous state.
+describe('VideoViewer first committed frame after a change', () => {
+    const baseProps = (overrides: Partial<VideoAsset> = {}): React.ComponentProps<typeof VideoViewer> => ({
+        video: { ...video, ...overrides },
+        isMasked: false,
+        onClose: vi.fn(),
+        onNext: vi.fn(),
+        onPrev: vi.fn(),
+        onUpdateNotes: vi.fn(),
+    });
+
+    /** Renders the viewer in a Profiler and records `probe()` after every commit. */
+    const renderWithCommitLog = <T,>(props: React.ComponentProps<typeof VideoViewer>, probe: () => T) => {
+        const commits: T[] = [];
+        const ui = (next: React.ComponentProps<typeof VideoViewer>) => (
+            <React.Profiler id="video-viewer" onRender={() => commits.push(probe())}>
+                <VideoViewer {...next} />
+            </React.Profiler>
+        );
+        const view = render(ui(props));
+        return { ...view, commits, rerenderWith: (next: React.ComponentProps<typeof VideoViewer>) => view.rerender(ui(next)) };
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getCollectionsForImage.mockResolvedValue([]);
+        mocks.getImageWithFullMetadata.mockResolvedValue(video);
+        mocks.prepareVideoPlayback.mockResolvedValue({ status: 'ok', data: 'C:/videos/clip.mp4' });
+        mocks.settings.viewerPreferredTab = 'details';
+        mocks.settingsListeners.clear();
+    });
+
+    it('gates a masked video in the first frame after its reveal grant is withdrawn', async () => {
+        const props = { ...baseProps(), isMasked: true, initiallyRevealed: true };
+        const view = renderWithCommitLog(props, () => screen.queryByRole('button', { name: 'Reveal video' }) === null);
+        await waitFor(() => expect(document.querySelector('video')).not.toBeNull());
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...props, initiallyRevealed: false });
+
+        expect(view.commits.length).toBeGreaterThan(0);
+        expect(view.commits).not.toContain(true);
+    });
+
+    it('shows a changed playback status in the first frame', async () => {
+        const props = baseProps({ playbackStatus: 'playable' });
+        const view = renderWithCommitLog(props, () => screen.queryByText('Playback unavailable here') !== null);
+        await waitFor(() => expect(document.querySelector('video')).not.toBeNull());
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...props, video: { ...props.video, playbackStatus: 'external_required' } });
+
+        expect(view.commits[0]).toBe(true);
+    });
+
+    it('shows changed notes for the same video in the first frame', async () => {
+        const props = baseProps({ notes: 'first notes' });
+        const view = renderWithCommitLog(props, () => (screen.queryByLabelText('Notes') as HTMLTextAreaElement | null)?.value);
+        await waitFor(() => expect(mocks.getImageWithFullMetadata).toHaveBeenCalled());
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...props, video: { ...props.video, notes: 'saved notes' } });
+
+        expect(view.commits[0]).toBe('saved notes');
+    });
+
+    it('drops full-record evidence in the first frame after the source goes missing', async () => {
+        const props = baseProps({ metadata: { ...video.metadata, loras: [] } });
+        mocks.getImageWithFullMetadata.mockResolvedValue({ ...video, metadata: { ...video.metadata, loras: ['full-evidence-lora'] } });
+        mocks.settings.viewerPreferredTab = 'metadata';
+        const view = renderWithCommitLog(props, () => screen.queryByText('full-evidence-lora') !== null);
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        await waitFor(() => expect(screen.getByText('full-evidence-lora')).toBeTruthy());
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...props, video: { ...props.video, isMissing: true } });
+
+        expect(view.commits.length).toBeGreaterThan(0);
+        expect(view.commits).not.toContain(true);
+    });
+});

@@ -903,3 +903,144 @@ describe('ImageViewer full metadata loading', () => {
         expect(status?.querySelector('.fill-current')).toBeTruthy();
     });
 });
+
+// #407: these resets happen during render, so no committed frame shows the previous state.
+describe('ImageViewer first committed frame after a change', () => {
+    const baseProps = (): React.ComponentProps<typeof ImageViewer> => ({
+        image: lightImage,
+        onClose: vi.fn(),
+        onNext: vi.fn(),
+        onPrev: vi.fn(),
+        onSearch: vi.fn(),
+        onToggleFavorite: vi.fn(),
+        onOpenSettings: vi.fn(),
+        isOpen: true,
+    });
+
+    /** Renders the viewer in a Profiler and records `probe()` after every commit. */
+    const renderWithCommitLog = <T,>(props: React.ComponentProps<typeof ImageViewer>, probe: () => T) => {
+        const commits: T[] = [];
+        const ui = (next: React.ComponentProps<typeof ImageViewer>) => (
+            <React.Profiler id="image-viewer" onRender={() => commits.push(probe())}>
+                <ImageViewer {...next} />
+            </React.Profiler>
+        );
+        const view = render(ui(props));
+        return { ...view, commits, rerenderWith: (next: React.ComponentProps<typeof ImageViewer>) => view.rerender(ui(next)) };
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        viewerSettings.privacyEnabled = false;
+        viewerSettings.privacyMaskIndexStatus = 'ready';
+        Object.keys(captures).forEach((key) => {
+            captures[key as keyof typeof captures] = null;
+        });
+        aiState.value.modalOpen = false;
+        mockGetImageWithFullMetadata.mockResolvedValue(lightImage);
+    });
+
+    afterEach(() => {
+        endOwnerSwitchForTest();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
+    it('requests only the next image after stepping away from a selected version', async () => {
+        const large = { ...lightImage, id: 'large', width: 512, height: 512 };
+        const props = { ...baseProps(), image: { ...lightImage, stack: [large] } };
+        const view = renderWithCommitLog(props, () => null);
+        act(() => (captures.versions as { onVersionSelect: (id: string) => void }).onVersionSelect('large'));
+        await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith('large'));
+        mockGetImageWithFullMetadata.mockClear();
+
+        view.rerenderWith({ ...props, image: { ...lightImage, id: 'next' } });
+        await act(async () => Promise.resolve());
+
+        expect(mockGetImageWithFullMetadata.mock.calls).toEqual([['next']]);
+    });
+
+    it('opens during an owner switch without a loading frame', async () => {
+        startOwnerSwitchForTest();
+        const view = renderWithCommitLog(baseProps(), () => captures.sidebar?.isLoading);
+        await act(async () => Promise.resolve());
+
+        expect(view.commits.length).toBeGreaterThan(0);
+        expect(view.commits).not.toContain(true);
+    });
+
+    it('shows loading in the first frame after an owner switch ends', async () => {
+        mockGetImageWithFullMetadata.mockReturnValue(new Promise(() => undefined));
+        startOwnerSwitchForTest();
+        const view = renderWithCommitLog(baseProps(), () => captures.sidebar?.isLoading);
+        await act(async () => Promise.resolve());
+        view.commits.length = 0;
+
+        act(() => endOwnerSwitchForTest());
+
+        expect(view.commits[0]).toBe(true);
+        expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
+    });
+
+    it("never shows the previous image's notes or prompts after a step", async () => {
+        const first: AIImage = { ...lightImage, notes: 'first notes', metadata: metadata('first prompt') };
+        const next: AIImage = { ...lightImage, id: 'next', notes: 'next notes', metadata: metadata('next prompt') };
+        const props = { ...baseProps(), image: first };
+        const view = renderWithCommitLog(props, () => ({
+            notes: captures.sidebar?.notes,
+            prompt: captures.sidebar?.promptValue,
+        }));
+        await act(async () => Promise.resolve());
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...props, image: next });
+
+        expect(view.commits[0]).toEqual({ notes: 'next notes', prompt: 'next prompt' });
+        expect(view.commits).not.toContainEqual(expect.objectContaining({ notes: 'first notes' }));
+    });
+
+    it('gates a masked image in the first frame after its reveal grant is withdrawn', async () => {
+        const props = { ...baseProps(), isMasked: true, initiallyRevealed: true };
+        const view = renderWithCommitLog(props, () => screen.queryByTestId('image-canvas') !== null);
+        await act(async () => Promise.resolve());
+        expect(screen.getByTestId('image-canvas')).toBeTruthy();
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...props, initiallyRevealed: false });
+
+        expect(view.commits.length).toBeGreaterThan(0);
+        expect(view.commits).not.toContain(true);
+        expect(screen.getByRole('button', { name: 'Reveal image' })).toBeTruthy();
+    });
+
+    it('shows the status HUD in the first frame after a step', async () => {
+        vi.useFakeTimers();
+        const view = renderWithCommitLog(baseProps(), () => document.querySelector('[role="status"]') !== null);
+        await act(async () => Promise.resolve());
+        act(() => vi.advanceTimersByTime(1600));
+        expect(document.querySelector('[role="status"]')).toBeNull();
+        view.commits.length = 0;
+
+        view.rerenderWith({ ...baseProps(), image: { ...lightImage, id: 'next' } });
+
+        expect(view.commits[0]).toBe(true);
+        act(() => vi.advanceTimersByTime(1600));
+        expect(document.querySelector('[role="status"]')).toBeNull();
+    });
+
+    it('shows the controls in the first frame after leaving theater mode', async () => {
+        vi.useFakeTimers();
+        const view = renderWithCommitLog({ ...baseProps(), isSidebarOpen: true }, () => captures.toolbar?.showControls);
+        await act(async () => Promise.resolve());
+        const leftArea = screen.getByTestId('viewer-toolbar').parentElement as HTMLElement;
+        fireEvent.mouseMove(leftArea);
+        act(() => vi.advanceTimersByTime(3000));
+        act(() => (captures.toolbar as { onToggleTheater: () => void }).onToggleTheater());
+        expect(captures.toolbar?.showControls).toBe(false);
+        view.commits.length = 0;
+
+        act(() => (captures.toolbar as { onToggleTheater: () => void }).onToggleTheater());
+
+        expect(view.commits[0]).toBe(true);
+    });
+});
