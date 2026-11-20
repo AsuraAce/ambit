@@ -80,12 +80,6 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
     const { refreshHiddenAvailability, refreshMetadata } = useSearch();
     const queryClient = useQueryClient();
 
-    const extractNativePaths = useCallback((files: File[]): string[] => {
-        return files
-            .map((file) => (file as File & { path?: string }).path)
-            .filter((path): path is string => typeof path === 'string' && path.length > 0);
-    }, []);
-
     const commitImportResult = useCallback(
         async (result: ImportResult, options: CommitImportOptions = {}) => {
             const { images: newImages, stats } = result;
@@ -167,97 +161,50 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
         [addToast]
     );
 
+    // The browser mock mode's in-memory import, from the hidden file input or a drop. The
+    // desktop app imports by native path and never reaches it (#493).
+    const importWebFiles = useCallback(
+        async (files: File[], owner: string) => {
+            const abortCtrl = new AbortController();
+            const importRunId = beginImportRun({
+                owner,
+                abortController: abortCtrl,
+            });
+            if (!importRunId) {
+                addToast('Import already in progress', 'info');
+                return;
+            }
+
+            try {
+                const result = await processWebFiles(files, abortCtrl.signal);
+                if (result.wasCancelled) {
+                    addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
+                    return;
+                }
+                await commitImportResult(result);
+            } catch {
+                addToast('Import failed', 'error');
+            } finally {
+                finishImportRun(importRunId);
+            }
+        },
+        [beginImportRun, finishImportRun, commitImportResult, addToast]
+    );
+
     const importImages = useCallback(
         async (e: React.ChangeEvent<HTMLInputElement>) => {
             if (!e.target.files) return;
             const files = Array.from(e.target.files);
-            const nativePaths = extractNativePaths(files);
-            const abortCtrl = nativePaths.length === files.length && nativePaths.length > 0 ? new AbortController() : null;
-            const importRunId = beginImportRun({
-                owner: 'file-picker-import',
-                abortController: abortCtrl,
-            });
-            if (!importRunId) {
-                addToast('Import already in progress', 'info');
-                e.target.value = '';
-                return;
-            }
-
             try {
-                if (abortCtrl) {
-                    const thumbDir = await getThumbnailDir();
-                    const result = await processNativePaths(
-                        nativePaths,
-                        thumbDir,
-                        (current, total, message) => {
-                            setImportProgressForRun(importRunId, { current, total, message });
-                        },
-                        undefined,
-                        abortCtrl.signal
-                    );
-                    if (result.wasCancelled) {
-                        addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
-                        return;
-                    }
-                    await commitImportResult(result);
-                    return;
-                }
-
-                const result = await processWebFiles(files);
-                await commitImportResult(result);
-            } catch {
-                addToast('Import failed', 'error');
+                await importWebFiles(files, 'file-picker-import');
             } finally {
-                finishImportRun(importRunId);
                 e.target.value = '';
             }
         },
-        [beginImportRun, setImportProgressForRun, finishImportRun, extractNativePaths, commitImportResult, addToast]
+        [importWebFiles]
     );
 
-    const handleWebFiles = useCallback(
-        async (files: File[]) => {
-            const nativePaths = extractNativePaths(files);
-            const abortCtrl = nativePaths.length === files.length && nativePaths.length > 0 ? new AbortController() : null;
-            const importRunId = beginImportRun({
-                owner: 'web-file-import',
-                abortController: abortCtrl,
-            });
-            if (!importRunId) {
-                addToast('Import already in progress', 'info');
-                return;
-            }
-
-            try {
-                if (abortCtrl) {
-                    const thumbDir = await getThumbnailDir();
-                    const result = await processNativePaths(
-                        nativePaths,
-                        thumbDir,
-                        (current, total, message) => {
-                            setImportProgressForRun(importRunId, { current, total, message });
-                        },
-                        undefined,
-                        abortCtrl.signal
-                    );
-                    if (result.wasCancelled) {
-                        addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
-                        return;
-                    }
-                    await commitImportResult(result);
-                    return;
-                }
-
-                const result = await processWebFiles(files);
-                await commitImportResult(result);
-            } catch {
-                addToast('Import failed', 'error');
-            } finally {
-                finishImportRun(importRunId);
-            }
-        },
-        [beginImportRun, setImportProgressForRun, finishImportRun, extractNativePaths, commitImportResult, addToast]
-    );
+    const handleWebFiles = useCallback((files: File[]) => importWebFiles(files, 'web-file-import'), [importWebFiles]);
 
     const handleImportPaths = useCallback(
         async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {

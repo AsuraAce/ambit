@@ -5,30 +5,27 @@ import { useState, useEffect, useRef } from 'react';
  *
  * With dragDropEnabled: false in tauri.conf.json, we handle ALL drag-and-drop
  * (both internal and external) via the standard HTML5 Drag and Drop API.
+ * Tauri's native drop would stop the app's own HTML5 drags on Windows (#493).
  *
  * Internal drags (application/x-ambit-image-ids) are ignored by this hook
- * and handled by the individual drop target components.
+ * and handled by the individual drop target components. Dropped files go to
+ * `onDropFiles`, which hands them to Rust for their paths (see useDropImport).
  */
 
 interface UseDragDropProps {
-    onImportPaths: (paths: string[]) => void;
-    onImportFiles: (files: FileList) => void;
+    onDropFiles: (files: File[]) => void;
 }
 
-export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) {
+export function useDragDrop({ onDropFiles }: UseDragDropProps) {
     const [isDraggingExternal, setIsDraggingExternal] = useState(false);
 
-    const onImportPathsRef = useRef(onImportPaths);
-    const onImportFilesRef = useRef(onImportFiles);
+    const onDropFilesRef = useRef(onDropFiles);
 
     useEffect(() => {
-        onImportPathsRef.current = onImportPaths;
-        onImportFilesRef.current = onImportFiles;
-    }, [onImportPaths, onImportFiles]);
+        onDropFilesRef.current = onDropFiles;
+    }, [onDropFiles]);
 
     useEffect(() => {
-        const isTauriEnv = !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-
         // Helper: is this an internal (image reorder) drag?
         const isInternalDrag = (e: DragEvent): boolean => {
             const types = e.dataTransfer?.types ? Array.from(e.dataTransfer.types) : [];
@@ -58,6 +55,9 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
             }
         };
 
+        // Any drop ends the drag, so the overlay clears even when a drop zone stops the event.
+        const clearOverlay = () => setIsDraggingExternal(false);
+
         const handleDrop = (e: DragEvent) => {
             if (isInternalDrag(e)) return; // Don't intercept internal drops
 
@@ -65,33 +65,23 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
             e.stopPropagation();
             setIsDraggingExternal(false);
 
-            if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-                if (isTauriEnv) {
-                    // In Tauri, File objects may have a .path property
-                    const files = Array.from(e.dataTransfer.files);
-                    const paths = files.map((file) => (file as File & { path?: string }).path).filter((path): path is string => !!path);
-
-                    if (paths.length > 0) {
-                        console.log('[DragDrop] External drop with paths:', paths.length);
-                        onImportPathsRef.current(paths);
-                        return;
-                    }
-                }
-
-                console.log('[DragDrop] External drop with files:', e.dataTransfer.files.length);
-                onImportFilesRef.current(e.dataTransfer.files);
+            const files = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
+            if (files.length > 0) {
+                onDropFilesRef.current(files);
             }
         };
 
         window.addEventListener('dragenter', handleDragEnter);
         window.addEventListener('dragover', handleDragOver);
         window.addEventListener('dragleave', handleDragLeave);
+        window.addEventListener('drop', clearOverlay, true);
         window.addEventListener('drop', handleDrop);
 
         return () => {
             window.removeEventListener('dragenter', handleDragEnter);
             window.removeEventListener('dragover', handleDragOver);
             window.removeEventListener('dragleave', handleDragLeave);
+            window.removeEventListener('drop', clearOverlay, true);
             window.removeEventListener('drop', handleDrop);
         };
     }, []);

@@ -5,7 +5,7 @@ import { type ImageMetadata, type VideoAsset } from '../types';
 import { getFilename, normalizePath } from '../utils/pathUtils';
 import { unwrap } from '../utils/spectaUtils';
 
-const VIDEO_FILTER_EXTENSIONS = ['mp4', 'webm', 'mov', 'm4v', 'mkv'];
+export const VIDEO_FILTER_EXTENSIONS = ['mp4', 'webm', 'mov', 'm4v', 'mkv'];
 const VIDEO_POSTER_CANCEL_POLL_MS = 50;
 
 class VideoPosterCancelledError extends Error {

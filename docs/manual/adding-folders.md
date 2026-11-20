@@ -24,6 +24,18 @@ Use integrations when you want Ambit to understand an existing generator workspa
 
 Manual video import accepts MP4, WebM, MOV, M4V, and MKV candidates. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app. Folder scans and Live Watch also discover supported videos, including create, modify, rename, and removal changes. A video whose poster cannot be generated remains cataloged with a generic placeholder.
 
+## Dragging Files Into Ambit
+
+You can also drag files or folders from File Explorer onto the Ambit window.
+
+- Dropped images (PNG, JPG, WebP) and videos (MP4, WebM, MOV, M4V, MKV) are imported like Select Images and Select Videos. Ambit catalogs them where they are: it does not copy them. If you later move or delete a dropped file, Ambit loses it.
+- A dropped folder asks first: Ambit shows "Allow folder access". If you allow it, the folder becomes a monitored folder and is scanned, as if you had added it in Settings.
+- You can drop images, videos, and folders together. Ambit tells you which items it could not import, such as a text file.
+- An image dragged straight from a web browser is not a file on disk yet. Save it to a folder first, then drop the saved file.
+- One import runs at a time. If you drop files while an import is running, Ambit asks you to wait for it or cancel it, then drop again.
+
+Drag-and-drop import works on Windows, where Ambit runs today.
+
 ## Monitored Folders
 
 Open Settings > Connections > Folders to manage monitored media folders.

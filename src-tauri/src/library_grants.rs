@@ -4,8 +4,10 @@
 //! say which folders the user chose. This registry can: only Rust writes it, the
 //! fs capability denies it to the webview, and an entry is added only when the
 //! user picks a folder or file in a native dialog opened from Rust, confirms a
-//! typed folder in a native confirmation, or names a folder already inside a
-//! granted one. On start Rust grants every entry again. The first start without a
+//! typed folder in a native confirmation, drops a media file onto the window
+//! (its path comes from WebView2, not the page; see `drop_import`), or names a
+//! folder already inside a granted one. A dropped folder still goes through the
+//! confirmation. On start Rust grants every entry again. The first start without a
 //! registry seeds it once from what the previous version already granted.
 //!
 //! The webview cannot add a folder any other way: `register_library_path` grants
@@ -806,6 +808,54 @@ fn grant_picked_files<R: Runtime>(app: &tauri::AppHandle<R>, paths: &[String]) -
         }
     }
     granted
+}
+
+/// Grants and records files the user dropped onto the window, as the file picker
+/// does (#493). Only `drop_import` calls it, with paths WebView2 resolved from the
+/// dropped files; no command reaches it. Returns the files it could not grant.
+pub(crate) fn record_dropped_files<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    paths: &[String],
+) -> Result<Vec<String>, String> {
+    let mut granted = Vec::new();
+    let mut failed = Vec::new();
+    for path in paths {
+        match grant_library_file(app, path) {
+            Ok(file) => granted.push(display_path(&file)),
+            Err(error) => {
+                log::warn!("[LibraryGrants] Not granting dropped {path}: {error}");
+                failed.push(path.clone());
+            }
+        }
+    }
+    with_registry(app, |registry| ((), registry.add_files(&granted)))?;
+    Ok(failed)
+}
+
+/// A mock app with an empty registry already loaded, saving inside `directory`.
+#[cfg(test)]
+pub(crate) fn test_app(directory: &Path) -> tauri::App<tauri::test::MockRuntime> {
+    let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+    // An absolute identifier puts the app's data folders in the test's own directory.
+    let identifier = directory.to_str().unwrap();
+    #[cfg(windows)]
+    let identifier = identifier.strip_prefix(r"\\?\").unwrap_or(identifier);
+    context.config_mut().identifier = identifier.to_owned();
+    let app = tauri::test::mock_builder().build(context).unwrap();
+    let state = LibraryGrantState::default();
+    *state.registry.lock().unwrap() = Some(GrantRegistry::default());
+    app.handle().manage(state);
+    app
+}
+
+#[cfg(test)]
+pub(crate) fn recorded_files<R: Runtime>(app: &tauri::AppHandle<R>) -> Vec<String> {
+    with_registry(app, |registry| (registry.files.clone(), false)).unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn recorded_folder_count<R: Runtime>(app: &tauri::AppHandle<R>) -> usize {
+    with_registry(app, |registry| (registry.folders.len(), false)).unwrap()
 }
 
 #[derive(Debug, PartialEq, Eq)]

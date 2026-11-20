@@ -717,63 +717,58 @@ describe('useImportOps', () => {
         consoleSpy.mockRestore();
     });
 
-    it('handles native file-picker progress, cancellation, contention, and failures', async () => {
-        const native = new File(['x'], 'native.png') as File & { path: string };
-        native.path = 'C:/native.png';
-        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, onProgress) => {
-            onProgress(1, 2, 'Reading');
-            return emptyImportResult(true);
-        });
-        const first = renderImportOps();
-        const input = document.createElement('input');
-        Object.defineProperty(input, 'files', { value: [native] });
-        await act(async () => first.result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
-        expect(mocks.processNativePaths).toHaveBeenCalledWith(
-            ['C:/native.png'],
-            'C:/thumbs',
-            expect.any(Function),
-            undefined,
-            expect.any(AbortSignal)
+    it('stops a file-picker import of browser files on Cancel and frees the import run', async () => {
+        // A stuck web import left "Starting work..." with no working Cancel (#493).
+        mocks.processWebFiles.mockImplementationOnce(
+            (_files: File[], signal?: AbortSignal) =>
+                new Promise<ImportResult>((resolve) => {
+                    signal?.addEventListener('abort', () => resolve(emptyImportResult(true)));
+                })
         );
-        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
-        expect(input.value).toBe('');
-        first.unmount();
+        const { result } = renderImportOps();
+        const input = document.createElement('input');
+        Object.defineProperty(input, 'files', { value: [new File(['x'], 'web.png')] });
 
+        let importDone!: Promise<void>;
+        act(() => {
+            importDone = result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>);
+        });
+        await waitFor(() => expect(useLibraryStore.getState().isImporting).toBe(true));
+        act(() => useLibraryStore.getState().cancelImport());
+        await act(async () => importDone);
+
+        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        expect(useLibraryStore.getState().importRunId).toBeNull();
+        expect(input.value).toBe('');
+    });
+
+    it('turns away a file-picker import while another import runs, and reports one that fails', async () => {
         useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
-        const second = renderImportOps();
+        const busy = renderImportOps();
         const busyInput = document.createElement('input');
         Object.defineProperty(busyInput, 'files', { value: [new File(['x'], 'web.png')] });
-        await act(async () => second.result.current.importImages({ target: busyInput } as unknown as React.ChangeEvent<HTMLInputElement>));
+        await act(async () => busy.result.current.importImages({ target: busyInput } as unknown as React.ChangeEvent<HTMLInputElement>));
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
-        second.unmount();
+        expect(mocks.processWebFiles).not.toHaveBeenCalled();
+        busy.unmount();
 
         useLibraryStore.getState().finishImportRun(useLibraryStore.getState().importRunId!);
         mocks.processWebFiles.mockRejectedValueOnce(new Error('bad file'));
-        const third = renderImportOps();
+        const failed = renderImportOps();
         const failedInput = document.createElement('input');
         Object.defineProperty(failedInput, 'files', { value: [new File(['x'], 'bad.png')] });
-        await act(async () => third.result.current.importImages({ target: failedInput } as unknown as React.ChangeEvent<HTMLInputElement>));
+        await act(async () =>
+            failed.result.current.importImages({ target: failedInput } as unknown as React.ChangeEvent<HTMLInputElement>)
+        );
         expect(mocks.addToast).toHaveBeenCalledWith('Import failed', 'error');
+        expect(useLibraryStore.getState().isImporting).toBe(false);
     });
 
     it('ignores file-picker changes without a FileList', async () => {
         const { result } = renderImportOps();
         await act(async () => result.current.importImages({ target: { files: null } } as React.ChangeEvent<HTMLInputElement>));
         expect(mocks.processWebFiles).not.toHaveBeenCalled();
-    });
-
-    it('commits successful native file-picker imports', async () => {
-        const native = new File(['x'], 'native.png') as File & { path: string };
-        native.path = 'C:/native.png';
-        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('native')] }));
-        const { result } = renderImportOps();
-        const input = document.createElement('input');
-        Object.defineProperty(input, 'files', { value: [native] });
-
-        await act(async () => result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
-
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
-        expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
     });
 
     it('commits successful browser file-picker imports', async () => {
@@ -786,36 +781,6 @@ describe('useImportOps', () => {
 
         expect(mocks.processWebFiles).toHaveBeenCalledTimes(1);
         expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
-    });
-
-    it('handles native web-file drops across success, cancellation, failure, and contention', async () => {
-        const native = new File(['x'], 'native.png') as File & { path: string };
-        native.path = 'C:/native.png';
-        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
-            progress(1, 1, 'Done');
-            return importResult({ images: [importedImage('native')] });
-        });
-        const success = renderImportOps();
-        await act(async () => success.result.current.handleWebFiles([native]));
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
-        success.unmount();
-
-        mocks.processNativePaths.mockResolvedValueOnce(emptyImportResult(true));
-        const cancelled = renderImportOps();
-        await act(async () => cancelled.result.current.handleWebFiles([native]));
-        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
-        cancelled.unmount();
-
-        mocks.getThumbnailDir.mockRejectedValueOnce(new Error('failed'));
-        const failed = renderImportOps();
-        await act(async () => failed.result.current.handleWebFiles([native]));
-        expect(mocks.addToast).toHaveBeenCalledWith('Import failed', 'error');
-        failed.unmount();
-
-        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
-        const busy = renderImportOps();
-        await act(async () => busy.result.current.handleWebFiles([native]));
-        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
     });
 
     it('forwards external path progress and startup options without owning import state', async () => {

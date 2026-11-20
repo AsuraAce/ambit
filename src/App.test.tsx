@@ -208,7 +208,7 @@ const mocks = vi.hoisted(() => ({
     toggleAiSearch: vi.fn(),
     submitSearch: vi.fn(),
     aiSearchOptions: null as null | { onOpenSettings: () => void },
-    dragDropOptions: null as null | { onImportFiles: (files: FileList) => void; onImportPaths: (paths: string[]) => void },
+    dragDropOptions: null as null | { onDropFiles: (files: File[]) => void },
     fileInputRef: { current: null as HTMLInputElement | null },
     handleImportFiles: vi.fn().mockResolvedValue(undefined),
     handleImportPaths: vi.fn().mockResolvedValue(undefined),
@@ -471,7 +471,7 @@ vi.mock('./hooks/useAppActions', () => ({
     }),
 }));
 vi.mock('./hooks/useDragDrop', () => ({
-    useDragDrop: (options: { onImportFiles: (files: FileList) => void; onImportPaths: (paths: string[]) => void }) => {
+    useDragDrop: (options: { onDropFiles: (files: File[]) => void }) => {
         mocks.dragDropOptions = options;
         return { isDraggingExternal: true };
     },
@@ -2744,15 +2744,9 @@ describe('App orchestration', () => {
 
         const dragOptions = requireProbe(mocks.dragDropOptions, 'Drag-drop options');
         const file = new File(['image'], 'drop.png', { type: 'image/png' });
-        const files = {
-            0: file,
-            length: 1,
-            item: (index: number) => (index === 0 ? file : null),
-        } as unknown as FileList;
-        dragOptions.onImportFiles(files);
+        // Outside the desktop runtime a drop is imported in memory (browser mock mode).
+        dragOptions.onDropFiles([file]);
         expect(mocks.handleImportFiles).toHaveBeenCalledWith([file]);
-        dragOptions.onImportPaths(['C:/drop.png']);
-        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/drop.png']);
 
         const monitorOptions = mocks.folderMonitor.mock.calls[0][0] as {
             onScan: (folders: AppSettings['monitoredFolders'], options: { forceRescan: boolean }) => void;
@@ -2792,8 +2786,7 @@ describe('App orchestration', () => {
         expect(updatedShortcuts.isViewerOpen).toBe(true);
     });
 
-    it('falls back to the browser file input when the native picker fails', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    it('reports a failed native picker on desktop instead of opening the path-less file input (#493)', async () => {
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
         vi.mocked(pickLibraryFiles).mockRejectedValueOnce(new Error('picker unavailable'));
         render(<App />);
@@ -2803,8 +2796,8 @@ describe('App orchestration', () => {
 
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
 
-        expect(errorSpy).toHaveBeenCalledWith('[App] Native file picker import failed, falling back to file input.', expect.any(Error));
-        expect(clickSpy).toHaveBeenCalled();
+        expect(mocks.addToast).toHaveBeenCalledWith('Image import failed: Error: picker unavailable', 'error');
+        expect(clickSpy).not.toHaveBeenCalled();
     });
 
     it('derives smart collection scope labels and counts', () => {

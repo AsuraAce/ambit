@@ -1,5 +1,12 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { processFoldersUnified, processNativePaths, processTargetedFiles, processWebFiles, scanResourceThumbnails } from '../importService';
+import {
+    processFoldersUnified,
+    processNativePaths,
+    processTargetedFiles,
+    processWebFiles,
+    scanResourceThumbnails,
+    WEB_IMAGE_LOAD_TIMEOUT_MS,
+} from '../importService';
 import { GeneratorTool } from '../../types';
 import { normalizePath } from '../../utils/pathUtils';
 
@@ -1172,6 +1179,51 @@ describe('processTargetedFiles', () => {
                 },
             });
         } finally {
+            URL.createObjectURL = originalCreateObjectUrl;
+            vi.stubGlobal('Image', originalImage);
+        }
+    });
+
+    // #493: a browser image that fails or never loads (the desktop CSP blocked blob: images) used to
+    // leave the import waiting forever, holding the import run. It must settle and count as failed.
+    it('settles when a browser image fails or never loads, and stops when cancelled', async () => {
+        const originalCreateObjectUrl = URL.createObjectURL;
+        const originalImage = globalThis.Image;
+        class StuckImage {
+            width = 0;
+            height = 0;
+            onload: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+
+            set src(value: string) {
+                if (value.includes('broken')) queueMicrotask(() => this.onerror?.());
+                // Any other image never loads.
+            }
+        }
+        URL.createObjectURL = vi.fn((file: Blob) => `blob://${(file as File).name}`);
+        vi.stubGlobal('Image', StuckImage);
+        mocks.parseImageFile.mockResolvedValue({ metadata: {}, extra: {} });
+        vi.useFakeTimers();
+
+        try {
+            const pending = processWebFiles([
+                new File(['x'], 'broken.png', { type: 'image/png' }),
+                new File(['x'], 'stuck.png', { type: 'image/png' }),
+            ]);
+            await vi.advanceTimersByTimeAsync(WEB_IMAGE_LOAD_TIMEOUT_MS);
+            const result = await pending;
+
+            expect(result.stats).toEqual({ processed: 2, imported: 0, skipped: 0, errors: 2 });
+            expect(result.wasCancelled).toBe(false);
+
+            const controller = new AbortController();
+            controller.abort();
+            const cancelled = await processWebFiles([new File(['x'], 'stuck.png', { type: 'image/png' })], controller.signal);
+            expect(cancelled.wasCancelled).toBe(true);
+            expect(cancelled.stats.errors).toBe(0);
+        } finally {
+            vi.useRealTimers();
+            mocks.parseImageFile.mockReset();
             URL.createObjectURL = originalCreateObjectUrl;
             vi.stubGlobal('Image', originalImage);
         }
