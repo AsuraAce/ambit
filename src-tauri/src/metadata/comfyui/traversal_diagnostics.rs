@@ -474,22 +474,10 @@ impl IssueCollector {
             InputSourceConnection::Unconnected => (sampler_id.to_string(), sampler, input_name),
         };
 
-        let mut visited = HashSet::new();
-        self.trace_prompt_input(
-            graph,
-            &owner_id,
-            owner,
-            selected_input,
-            field,
-            &mut visited,
-            0,
-        );
+        self.trace_prompt_input(graph, &owner_id, owner, selected_input, field);
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "parameter-object refactor tracked in #405"
-    )]
+    /// Starts a fresh prompt trace (empty visited set, depth 0) at one input of `owner`.
     fn trace_prompt_input(
         &mut self,
         graph: &ComfyGraph,
@@ -497,18 +485,12 @@ impl IssueCollector {
         owner: &Value,
         input_name: &str,
         field: ComfyMetadataField,
-        visited: &mut HashSet<String>,
-        depth: usize,
     ) {
         match get_input_source(owner, input_name) {
-            InputSourceConnection::Connected(source) => self.trace_prompt_source(
-                graph,
-                &source,
-                Some(input_name),
-                field,
-                visited,
-                depth + 1,
-            ),
+            InputSourceConnection::Connected(source) => {
+                let mut visited = HashSet::new();
+                self.trace_prompt_source(graph, &source, Some(input_name), field, &mut visited, 1)
+            }
             InputSourceConnection::DeclaredUnresolved => self.push(
                 field,
                 owner_id,

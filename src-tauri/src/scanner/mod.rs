@@ -53,10 +53,12 @@ pub async fn scan_image(
     let mut known_media = utils::KnownMediaLookup::new(&app);
     utils::scan_image_in_scope(
         path,
-        thumbnail_dir,
-        skip_thumbnail,
-        extract_workflow,
-        default_tool,
+        utils::ScanImageOptions {
+            thumbnail_dir,
+            skip_thumbnail,
+            extract_workflow,
+            default_tool,
+        },
         &app_thumbnail_dir,
         crate::library_grants::LibraryAccess::checker(&app),
         |candidate| known_media.contains(candidate),

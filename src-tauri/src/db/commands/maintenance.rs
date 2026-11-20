@@ -2361,21 +2361,38 @@ mod tests {
         assert!(super::pending_migration_count(&path, &[1]).is_err());
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "parameter-object refactor tracked in #405"
-    )]
-    fn seed_image(
-        conn: &Connection,
-        id: &str,
-        hash: &str,
+    /// Per-image state `seed_image` writes beyond the id and hash.
+    struct SeedImageState<'a> {
         favorite: bool,
         pinned: bool,
         user_masked: Option<bool>,
-        metadata_json: &str,
-        board_id: Option<&str>,
-        notes: Option<&str>,
-    ) {
+        metadata_json: &'a str,
+        board_id: Option<&'a str>,
+        notes: Option<&'a str>,
+    }
+
+    impl Default for SeedImageState<'_> {
+        fn default() -> Self {
+            Self {
+                favorite: false,
+                pinned: false,
+                user_masked: None,
+                metadata_json: "{}",
+                board_id: None,
+                notes: None,
+            }
+        }
+    }
+
+    fn seed_image(conn: &Connection, id: &str, hash: &str, state: SeedImageState) {
+        let SeedImageState {
+            favorite,
+            pinned,
+            user_masked,
+            metadata_json,
+            board_id,
+            notes,
+        } = state;
         conn.execute(
             "INSERT INTO images (
                 id, path, width, height, file_size, file_hash, timestamp, metadata_json,
@@ -2449,9 +2466,9 @@ mod tests {
     fn file_hash_candidates_include_images_and_videos_with_matching_sizes() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "image", "", false, false, None, "{}", None, None);
-        seed_image(&conn, "video", "", false, false, None, "{}", None, None);
-        seed_image(&conn, "unique", "", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "", SeedImageState::default());
+        seed_image(&conn, "video", "", SeedImageState::default());
+        seed_image(&conn, "unique", "", SeedImageState::default());
         conn.execute(
             "UPDATE images
              SET media_type = 'video', duration_ms = 1000, video_codec = 'h264',
@@ -2511,12 +2528,14 @@ mod tests {
             &conn,
             "C:/library/image.png",
             "hash",
-            true,
-            true,
-            Some(false),
-            metadata,
-            Some("board-a"),
-            Some("notes"),
+            SeedImageState {
+                favorite: true,
+                pinned: true,
+                user_masked: Some(false),
+                metadata_json: metadata,
+                board_id: Some("board-a"),
+                notes: Some("notes"),
+            },
         );
         conn.execute(
             "UPDATE images SET parser_version = 17 WHERE id = 'C:/library/image.png'",
@@ -2650,12 +2669,13 @@ mod tests {
                 &conn,
                 id,
                 "video-hash",
-                true,
-                true,
-                Some(true),
-                "{}",
-                None,
-                Some("video notes"),
+                SeedImageState {
+                    favorite: true,
+                    pinned: true,
+                    user_masked: Some(true),
+                    notes: Some("video notes"),
+                    ..SeedImageState::default()
+                },
             );
             conn.execute(
                 "UPDATE images
@@ -2765,7 +2785,7 @@ mod tests {
     fn legacy_removed_rows_restore_as_needing_reparse() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "hash", SeedImageState::default());
         remove_images_from_library_inner(&conn, &["image".to_string()]).unwrap();
         conn.execute(
             "UPDATE removed_images SET file_hash = NULL, parser_version = NULL WHERE id = 'image'",
@@ -2789,7 +2809,7 @@ mod tests {
     fn removed_lifecycle_rolls_back_tombstone_when_active_delete_fails() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "hash", SeedImageState::default());
         conn.execute_batch(
             "CREATE TRIGGER block_image_delete BEFORE DELETE ON images
              BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
@@ -2808,7 +2828,7 @@ mod tests {
     fn restore_keeps_image_when_legacy_membership_json_is_malformed() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "hash", SeedImageState::default());
         remove_images_from_library_inner(&conn, &["image".to_string()]).unwrap();
         conn.execute(
             "UPDATE removed_images SET collection_ids_json = '{' WHERE id = 'image'",
@@ -2834,23 +2854,13 @@ mod tests {
             &conn,
             "source-image",
             "source-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
+            SeedImageState::default(),
         );
         seed_image(
             &conn,
             "added-image",
             "added-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
+            SeedImageState::default(),
         );
         conn.execute_batch(
             "UPDATE images
@@ -2906,7 +2916,7 @@ mod tests {
     fn collection_move_is_atomic_and_preserves_hybrid_exclusion_semantics() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "hash", SeedImageState::default());
         conn.execute(
             r#"INSERT INTO collections (
                 id, name, created_at, filter_state, manual_exclusions,
@@ -2977,7 +2987,7 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         activate_test_owner_scope(&conn, "owner", Some("owner-a"));
-        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "hash", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images
              SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
@@ -3030,28 +3040,8 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         activate_test_owner_scope(&conn, "owner", Some("owner-a"));
-        seed_image(
-            &conn,
-            "source-image",
-            "source",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
-        seed_image(
-            &conn,
-            "local-image",
-            "local",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "source-image", "source", SeedImageState::default());
+        seed_image(&conn, "local-image", "local", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images
              SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
@@ -3181,17 +3171,7 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         activate_test_owner_scope(&conn, "all", None);
-        seed_image(
-            &conn,
-            "owned-image",
-            "source",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "owned-image", "source", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images
              SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
@@ -3234,7 +3214,7 @@ mod tests {
     fn collection_move_rolls_back_source_changes_when_target_insert_fails() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "image", "hash", SeedImageState::default());
         conn.execute(
             r#"INSERT INTO collections (id, name, created_at, filter_state, manual_exclusions)
              VALUES ('source', 'Source', 1, NULL, NULL),
@@ -3301,23 +3281,25 @@ mod tests {
             &conn,
             "keeper",
             "same-hash",
-            false,
-            false,
-            None,
-            r#"{"positivePrompt":"keeper metadata"}"#,
-            Some("keeper-board"),
-            Some("keeper notes"),
+            SeedImageState {
+                metadata_json: r#"{"positivePrompt":"keeper metadata"}"#,
+                board_id: Some("keeper-board"),
+                notes: Some("keeper notes"),
+                ..SeedImageState::default()
+            },
         );
         seed_image(
             &conn,
             "favorite-copy",
             "same-hash",
-            true,
-            false,
-            Some(true),
-            r#"{"positivePrompt":"removed metadata"}"#,
-            Some("removed-board"),
-            Some("removed notes"),
+            SeedImageState {
+                favorite: true,
+                user_masked: Some(true),
+                metadata_json: r#"{"positivePrompt":"removed metadata"}"#,
+                board_id: Some("removed-board"),
+                notes: Some("removed notes"),
+                ..SeedImageState::default()
+            },
         );
         conn.execute(
             "UPDATE images
@@ -3337,12 +3319,11 @@ mod tests {
             &conn,
             "pinned-copy",
             "same-hash",
-            false,
-            true,
-            Some(true),
-            "{}",
-            None,
-            None,
+            SeedImageState {
+                pinned: true,
+                user_masked: Some(true),
+                ..SeedImageState::default()
+            },
         );
         conn.execute(
             "INSERT INTO collections (id, name, created_at, custom_thumbnail)
@@ -3507,7 +3488,7 @@ mod tests {
     fn native_remove_restore_preserves_photo_classification_and_orientation_state() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(&conn, "photo", "hash", false, false, None, "{}", None, None);
+        seed_image(&conn, "photo", "hash", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images SET detected_source_kind = 'photograph',
                 source_kind_override = 'other', source_kind = 'other',
@@ -3542,28 +3523,8 @@ mod tests {
     fn exact_duplicate_resolution_preserves_invoke_source_facts_in_removed_state() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(
-            &conn,
-            "keeper",
-            "same-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
-        seed_image(
-            &conn,
-            "invoke-copy",
-            "same-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "keeper", "same-hash", SeedImageState::default());
+        seed_image(&conn, "invoke-copy", "same-hash", SeedImageState::default());
         conn.execute(
             "UPDATE images
              SET invoke_image_name = 'control.png',
@@ -3617,28 +3578,8 @@ mod tests {
     fn exact_duplicate_resolution_rejects_owner_hidden_rows() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(
-            &conn,
-            "keeper",
-            "same-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
-        seed_image(
-            &conn,
-            "hidden-copy",
-            "same-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "keeper", "same-hash", SeedImageState::default());
+        seed_image(&conn, "hidden-copy", "same-hash", SeedImageState::default());
         conn.execute(
             "UPDATE images SET invoke_scope_hidden = 1 WHERE id = 'hidden-copy'",
             [],
@@ -3669,30 +3610,24 @@ mod tests {
     fn exact_duplicate_resolution_keeps_automatic_mask_when_removed_overrides_conflict() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(
-            &conn, "keeper", "hash", false, false, None, "{}", None, None,
-        );
+        seed_image(&conn, "keeper", "hash", SeedImageState::default());
         seed_image(
             &conn,
             "masked",
             "hash",
-            false,
-            false,
-            Some(true),
-            "{}",
-            None,
-            None,
+            SeedImageState {
+                user_masked: Some(true),
+                ..SeedImageState::default()
+            },
         );
         seed_image(
             &conn,
             "unmasked",
             "hash",
-            false,
-            false,
-            Some(false),
-            "{}",
-            None,
-            None,
+            SeedImageState {
+                user_masked: Some(false),
+                ..SeedImageState::default()
+            },
         );
 
         let result = resolve_exact_duplicate_groups_inner(
@@ -3711,26 +3646,10 @@ mod tests {
     fn exact_duplicate_resolution_rolls_back_the_batch_when_any_group_is_stale() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        seed_image(
-            &conn, "keep-a", "hash-a", false, false, None, "{}", None, None,
-        );
-        seed_image(
-            &conn, "remove-a", "hash-a", false, false, None, "{}", None, None,
-        );
-        seed_image(
-            &conn, "keep-b", "hash-b", false, false, None, "{}", None, None,
-        );
-        seed_image(
-            &conn,
-            "remove-b",
-            "changed-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "keep-a", "hash-a", SeedImageState::default());
+        seed_image(&conn, "remove-a", "hash-a", SeedImageState::default());
+        seed_image(&conn, "keep-b", "hash-b", SeedImageState::default());
+        seed_image(&conn, "remove-b", "changed-hash", SeedImageState::default());
 
         let error = resolve_exact_duplicate_groups_inner(
             &conn,
@@ -3763,28 +3682,8 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         activate_test_owner_scope(&conn, "all", None);
-        seed_image(
-            &conn,
-            "owner-a-image",
-            "a",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
-        seed_image(
-            &conn,
-            "owner-b-image",
-            "b",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "owner-a-image", "a", SeedImageState::default());
+        seed_image(&conn, "owner-b-image", "b", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
              WHERE id = 'owner-a-image';
@@ -3815,28 +3714,8 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         activate_test_owner_scope(&conn, "all", None);
-        seed_image(
-            &conn,
-            "owner-a-image",
-            "a",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
-        seed_image(
-            &conn,
-            "owner-b-image",
-            "b",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "owner-a-image", "a", SeedImageState::default());
+        seed_image(&conn, "owner-b-image", "b", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
              WHERE id = 'owner-a-image';
@@ -3931,12 +3810,7 @@ mod tests {
             &conn,
             "thumbnail-image",
             "thumbnail-hash",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
+            SeedImageState::default(),
         );
         conn.execute_batch(
             "UPDATE images
@@ -3977,24 +3851,9 @@ mod tests {
             &conn,
             "existing-member",
             "existing",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
+            SeedImageState::default(),
         );
-        seed_image(
-            &conn,
-            "hidden-member",
-            "hidden",
-            false,
-            false,
-            None,
-            "{}",
-            None,
-            None,
-        );
+        seed_image(&conn, "hidden-member", "hidden", SeedImageState::default());
         conn.execute_batch(
             "UPDATE images
              SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'

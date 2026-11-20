@@ -672,10 +672,7 @@ fn run_thumbnail_optimization_job<R: tauri::Runtime>(
             &result,
             started_at,
             config.profile,
-            0,
-            0,
-            0,
-            0,
+            ProgressTimings::default(),
             ThumbnailOptimizationPhase::Discovering,
             false,
         ),
@@ -780,10 +777,12 @@ fn run_thumbnail_optimization_job<R: tauri::Runtime>(
                             &result,
                             started_at,
                             config.profile,
-                            last_batch_ms,
-                            last_db_ms,
-                            millis_to_u64(encode_ms_since_progress),
-                            last_candidate_fetch_ms,
+                            ProgressTimings {
+                                batch_ms: last_batch_ms,
+                                db_ms: last_db_ms,
+                                encode_ms: millis_to_u64(encode_ms_since_progress),
+                                candidate_fetch_ms: last_candidate_fetch_ms,
+                            },
                             ThumbnailOptimizationPhase::Persisting,
                             is_throttled.load(Ordering::SeqCst),
                         ),
@@ -803,10 +802,12 @@ fn run_thumbnail_optimization_job<R: tauri::Runtime>(
                             &result,
                             started_at,
                             config.profile,
-                            last_batch_ms,
-                            last_db_ms,
-                            millis_to_u64(encode_ms_since_progress),
-                            last_candidate_fetch_ms,
+                            ProgressTimings {
+                                batch_ms: last_batch_ms,
+                                db_ms: last_db_ms,
+                                encode_ms: millis_to_u64(encode_ms_since_progress),
+                                candidate_fetch_ms: last_candidate_fetch_ms,
+                            },
                             if is_throttled.load(Ordering::SeqCst) {
                                 ThumbnailOptimizationPhase::Throttled
                             } else {
@@ -855,10 +856,12 @@ fn run_thumbnail_optimization_job<R: tauri::Runtime>(
             &result,
             started_at,
             config.profile,
-            last_batch_ms,
-            last_db_ms,
-            millis_to_u64(encode_ms_since_progress),
-            last_candidate_fetch_ms,
+            ProgressTimings {
+                batch_ms: last_batch_ms,
+                db_ms: last_db_ms,
+                encode_ms: millis_to_u64(encode_ms_since_progress),
+                candidate_fetch_ms: last_candidate_fetch_ms,
+            },
             ThumbnailOptimizationPhase::Complete,
             is_throttled.load(Ordering::SeqCst),
         ),
@@ -1217,21 +1220,29 @@ fn flush_pending_thumbnail_results(
     Ok(elapsed_ms(db_started_at))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "parameter-object refactor tracked in #405"
-)]
-fn build_progress_payload(
-    result: &ThumbnailOptimizationResult,
-    started_at: Instant,
-    profile: ThumbnailOptimizationProfile,
+/// Stage timings reported with one optimization progress update.
+#[derive(Debug, Clone, Copy, Default)]
+struct ProgressTimings {
     batch_ms: u64,
     db_ms: u64,
     encode_ms: u64,
     candidate_fetch_ms: u64,
+}
+
+fn build_progress_payload(
+    result: &ThumbnailOptimizationResult,
+    started_at: Instant,
+    profile: ThumbnailOptimizationProfile,
+    timings: ProgressTimings,
     phase: ThumbnailOptimizationPhase,
     is_throttled: bool,
 ) -> ThumbnailOptimizationProgress {
+    let ProgressTimings {
+        batch_ms,
+        db_ms,
+        encode_ms,
+        candidate_fetch_ms,
+    } = timings;
     let elapsed_seconds = started_at.elapsed().as_secs_f64();
     let images_per_second = if elapsed_seconds > 0.0 {
         result.checked as f64 / elapsed_seconds
@@ -2639,10 +2650,12 @@ mod tests {
             &result,
             started_at,
             ThumbnailOptimizationProfile::Balanced,
-            12,
-            0,
-            millis_to_u64(encode_ms),
-            7,
+            ProgressTimings {
+                batch_ms: 12,
+                db_ms: 0,
+                encode_ms: millis_to_u64(encode_ms),
+                candidate_fetch_ms: 7,
+            },
             ThumbnailOptimizationPhase::Throttled,
             true,
         );
@@ -2662,10 +2675,7 @@ mod tests {
             &ThumbnailOptimizationResult::default(),
             Instant::now(),
             ThumbnailOptimizationProfile::Balanced,
-            0,
-            0,
-            0,
-            0,
+            ProgressTimings::default(),
             ThumbnailOptimizationPhase::Discovering,
             false,
         );
