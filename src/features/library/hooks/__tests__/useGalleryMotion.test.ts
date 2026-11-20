@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGalleryMotion, UseGalleryMotionOptions } from '../useGalleryMotion';
@@ -70,6 +71,27 @@ describe('useGalleryMotion', () => {
 
         expect(result.current.shouldAnimateLayout).toBe(false);
         expect(result.current.shouldAnimateGrid).toBe(false);
+    });
+
+    // Cards must already carry their transition when they move to the new layout; motion that
+    // arrives one commit later would let the first layout jump without animating.
+    it('animates in the first commit after the transition key changes, with a single commit', () => {
+        const commits: Array<{ layout: boolean; grid: boolean }> = [];
+        const { rerender } = renderHook(
+            (props: UseGalleryMotionOptions) => {
+                const motion = useGalleryMotion(props);
+                useLayoutEffect(() => {
+                    commits.push({ layout: motion.shouldAnimateLayout, grid: motion.shouldAnimateGrid });
+                });
+                return motion;
+            },
+            { initialProps: { transitionKey: 'initial', visibleItemCount: 20 } }
+        );
+
+        commits.length = 0;
+        rerender({ transitionKey: 'layout:grid', visibleItemCount: 20 });
+
+        expect(commits).toEqual([{ layout: true, grid: true }]);
     });
 
     it('disables layout and grid motion when reduced motion is preferred', () => {

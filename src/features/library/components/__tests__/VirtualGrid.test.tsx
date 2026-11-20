@@ -724,9 +724,41 @@ describe('VirtualGrid gallery motion', () => {
         expect(container.firstElementChild).toBeTruthy();
     });
 
+    // The virtualized window must cover the scroll container, not the browser window: a tall
+    // gallery pane would otherwise show empty rows at the bottom.
+    it('sizes the rendered window from the scroll container height', async () => {
+        const { container: scrollContainer } = createScrollContainer(2000, 1_000_000);
+        const scrollContainerRef = { current: scrollContainer };
+        render(
+            <VirtualGrid<TestItem>
+                items={createItems(1_000)}
+                layout="grid"
+                minItemWidth={100}
+                gap={0}
+                padding={0}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+                transitionKey="layout:grid"
+            />
+        );
+
+        // Four 100px columns: rows below 2000px + 1500px of buffer are rendered.
+        await screen.findByTestId('grid-item-item-136');
+        expect(screen.queryByTestId('grid-item-item-140')).toBeNull();
+
+        // A taller pane is picked up on the next scroll frame.
+        Object.defineProperty(scrollContainer, 'clientHeight', { value: 3000, configurable: true });
+        act(() => {
+            scrollContainer.dispatchEvent(new Event('scroll'));
+        });
+        await screen.findByTestId('grid-item-item-176');
+        expect(screen.queryByTestId('grid-item-item-180')).toBeNull();
+    });
+
     // Scrolling is the hot path for large libraries: one commit per scroll frame, plus one when
     // scroll-motion suppression ends. A change that adds renders per frame fails here.
-    it('commits once per scroll frame in a 10,000-item library', async () => {
+    it('commits once per scroll frame in a 10,000-item library', () => {
+        vi.useFakeTimers();
         const { container: scrollContainer } = createScrollContainer(600, 1_000_000);
         const scrollContainerRef = { current: scrollContainer };
         const renderCounts = { commits: 0, items: 0 };
@@ -734,7 +766,16 @@ describe('VirtualGrid gallery motion', () => {
             renderCounts.items += 1;
             return renderItem(item, style);
         };
-        const wait = (ms: number) => act(() => new Promise<void>((resolve) => window.setTimeout(resolve, ms)));
+        // Run each queued frame or timer in its own act() so every state update commits on its
+        // own, as separate browser frames would; one act() around all of them would batch them.
+        const runFramesOneByOne = () => {
+            for (let step = 0; step < 100 && vi.getTimerCount() > 0; step += 1) {
+                act(() => {
+                    vi.advanceTimersToNextTimer();
+                });
+            }
+            expect(vi.getTimerCount()).toBe(0);
+        };
 
         render(
             <React.Profiler
@@ -755,23 +796,30 @@ describe('VirtualGrid gallery motion', () => {
                 />
             </React.Profiler>
         );
-        await screen.findByTestId('grid-item-item-0');
-        await wait(300);
+        try {
+            runFramesOneByOne();
+            expect(screen.getByTestId('grid-item-item-0')).toBeTruthy();
 
-        renderCounts.commits = 0;
-        renderCounts.items = 0;
-        const scrollFrames = 5;
-        for (let frame = 1; frame <= scrollFrames; frame += 1) {
-            act(() => {
-                scrollContainer.scrollTop = frame * 1000;
-                scrollContainer.dispatchEvent(new Event('scroll'));
-            });
-            await wait(20);
+            renderCounts.commits = 0;
+            renderCounts.items = 0;
+            const scrollFrames = 5;
+            for (let frame = 1; frame <= scrollFrames; frame += 1) {
+                act(() => {
+                    scrollContainer.scrollTop = frame * 1000;
+                    scrollContainer.dispatchEvent(new Event('scroll'));
+                });
+                act(() => {
+                    vi.advanceTimersToNextTimer();
+                });
+            }
+            runFramesOneByOne();
+
+            expect(screen.getByTestId('grid-item-item-200')).toBeTruthy();
+            // Baseline measured on main before #407 part 2: one commit per scroll frame plus one
+            // when scroll-motion suppression ends.
+            expect({ commits: renderCounts.commits, items: renderCounts.items }).toEqual({ commits: scrollFrames + 1, items: 844 });
+        } finally {
+            vi.useRealTimers();
         }
-        await wait(300);
-
-        expect(screen.getByTestId('grid-item-item-200')).toBeTruthy();
-        // Baseline measured on main before #407 part 2: five scroll frames plus the end of suppression.
-        expect({ commits: renderCounts.commits, items: renderCounts.items }).toEqual({ commits: scrollFrames + 1, items: 844 });
     });
 });
