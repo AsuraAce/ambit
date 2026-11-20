@@ -23,6 +23,7 @@ import { ensureFolderAccessible } from '../services/assetScope';
 import { rebuildFacetCache } from '../services/db/imageRepo';
 import { hasActiveResultFilters } from '../utils/filterState';
 import { refuseWriteDuringOwnerSwitch } from '../services/invoke/ownerSwitchGuard';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 
 interface ImportOptions {
     mode?: ImportMode;
@@ -95,6 +96,9 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                     console.log(`[ImportOps] Batch import detected. Triggering full metadata refresh.`);
                     await refreshMetadata();
                 } else if (
+                    // During a user owner switch (#527) the store keeps the previous owner's view, and an automatic
+                    // import belongs to the target owner: refetch, which the store takes only after the swap.
+                    isOwnerSwitchPending(useInvokeOwnerScopeStore.getState()) ||
                     hasActiveResultFilters(useSearchStore.getState().filters) ||
                     !belongsOnTop(uniqueNewImages, images, useSearchStore.getState().sortOption)
                 ) {

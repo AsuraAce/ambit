@@ -98,6 +98,9 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const mountedRef = useRef(true);
     const operation = useInvokeOwnerScopeStore((state) => state.operation);
     const isOperationPending = operation !== null && !['completed', 'cancelled', 'failed'].includes(operation.phase);
+    // Q3 of #527: while a user switch keeps the previous owner on screen, choosing again waits for it to end.
+    const ownerSwitch = useInvokeOwnerScopeStore((state) => state.retainedOwnerScope);
+    const isOwnerSwitchPreparing = ownerSwitch !== null && operation?.id === ownerSwitch.operationId && !operation.viewCommitted;
     const refreshCollections = useCollectionStore((state) => state.refreshCollections);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const draftRoot = draft.invokeAiPath.trim();
@@ -116,7 +119,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
             ? undefined
             : matchingDraftSelection;
     const ownerScopeInProgress = invokeOwnerScopeState.status === 'discovering' || invokeOwnerScopeState.status === 'applying';
-    const ownerScopeBusy = ownerScopeInProgress || invokeOwnerScopeState.isRetrying === true;
+    const ownerScopeBusy = ownerScopeInProgress || invokeOwnerScopeState.isRetrying === true || ownerSwitch !== null;
     const foregroundInvokeSyncActive = isInvokeSyncActive && !isLiveSyncing;
     const rootControlsBusy = ownerScopeBusy || foregroundInvokeSyncActive || isApplying;
     const rootControlsLocked = ownerScopeBusy || isInvokeSyncActive || isApplying;
@@ -491,6 +494,25 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     </span>
                                 )}
                             </span>
+                        </div>
+                    )}
+
+                    {ownerSwitch && (
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+                            <span>
+                                {isOwnerSwitchPreparing
+                                    ? `Switching to ${ownerSwitch.targetLabel}. Cancel the switch to choose again.`
+                                    : `${ownerSwitch.targetLabel} is ready. Close Settings to show ${ownerSwitch.targetLabel}'s images.`}
+                            </span>
+                            {isOwnerSwitchPreparing && operation?.cancel && (
+                                <button
+                                    type="button"
+                                    onClick={operation.cancel}
+                                    className="rounded-xl bg-red-500/10 px-4 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-500/20 dark:text-red-300"
+                                >
+                                    Cancel switch
+                                </button>
+                            )}
                         </div>
                     )}
 

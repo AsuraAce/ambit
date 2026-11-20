@@ -1,13 +1,37 @@
 import * as React from 'react';
-import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../stores/invokeOwnerScopeStore';
+import { useInvokeOwnerScopeStore, type InvokeOperationState, type RetainedOwnerScope } from '../../stores/invokeOwnerScopeStore';
+import { useDelayedBusyPresentation } from '../../hooks/useDelayedBusyPresentation';
 
 const STARTUP_REVEAL_MS = 2500;
 const SUCCESS_VISIBLE_MS = 5000;
+/** A user owner switch shows its preparation only after this, so a warm switch never flashes it (#527). */
+export const OWNER_SWITCH_REVEAL_DELAY_MS = 600;
+const OWNER_SWITCH_MINIMUM_VISIBLE_MS = 400;
 
-export const useInvokeDockPresentation = (operation: InvokeOperationState | null, canShowActive: boolean) => {
+/** The user switch this operation drives while the gallery still shows the previous owner, if any. */
+export const getOperationOwnerSwitch = (
+    operation: InvokeOperationState | null,
+    retained: RetainedOwnerScope | null
+): RetainedOwnerScope | null => (operation && retained?.operationId === operation.id ? retained : null);
+
+export const useInvokeDockPresentation = (
+    operation: InvokeOperationState | null,
+    canShowActive: boolean,
+    ownerSwitch: RetainedOwnerScope | null = null
+) => {
     const operationId = operation?.id;
     const origin = operation?.origin;
-    const isActive = operation?.viewCommitted === true && ['syncing', 'cancelling', 'settling'].includes(operation.phase);
+    // A user owner switch prepares the target while the previous owner stays browsable, so its preparation
+    // is shown here instead of the gate, after a short delay (#527).
+    const isOwnerSwitchPreparing =
+        ownerSwitch !== null && operation?.viewCommitted === false && ['preparing', 'cancelling', 'settling'].includes(operation.phase);
+    const isOwnerSwitchPreparationVisible = useDelayedBusyPresentation(isOwnerSwitchPreparing, {
+        revealDelayMs: OWNER_SWITCH_REVEAL_DELAY_MS,
+        minimumVisibleMs: OWNER_SWITCH_MINIMUM_VISIBLE_MS,
+    });
+    const isActive =
+        (operation?.viewCommitted === true && ['syncing', 'cancelling', 'settling'].includes(operation.phase)) ||
+        (isOwnerSwitchPreparing && isOwnerSwitchPreparationVisible);
     const [revealedId, setRevealedId] = React.useState<symbol | null>(null);
     const [shownId, setShownId] = React.useState<symbol | null>(null);
     const [isDocumentVisible, setIsDocumentVisible] = React.useState(() => document.visibilityState !== 'hidden');
@@ -37,6 +61,7 @@ export const useInvokeDockPresentation = (operation: InvokeOperationState | null
         origin === 'startup' && operation?.phase === 'completed' && operation.hasChanges === false && shownId !== operationId;
 
     return {
+        isOwnerSwitchPreparing: isOwnerSwitchPreparing && isOwnerSwitchPreparationVisible,
         isActiveVisible,
         isResultVisible: operation !== null && ['completed', 'cancelled', 'failed'].includes(operation.phase) && !isSilentStartupSuccess,
         isDocumentVisible,

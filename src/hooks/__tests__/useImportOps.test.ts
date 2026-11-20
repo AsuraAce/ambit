@@ -620,6 +620,26 @@ describe('useImportOps', () => {
         invalidateQueries.mockRestore();
     });
 
+    // B5 of the #528 review: startup imports keep running during an owner switch. Their rows belong to the target
+    // owner, so they must not be prepended into the previous owner's view that the store still shows.
+    it('refetches instead of prepending an automatic import while an owner switch is pending', async () => {
+        const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('odin-row', 2000)] }));
+        const { result, setImages } = renderImportOps({}, [importedImage('freya-row')]);
+        startOwnerSwitchForTest();
+        try {
+            await act(async () => {
+                await result.current.handleImportPaths(['D:/Invoke/outputs/images/odin.png'], undefined, { mode: 'startup' });
+            });
+            expect(mocks.processNativePaths).toHaveBeenCalled();
+            expect(setImages).not.toHaveBeenCalled();
+            expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        } finally {
+            endOwnerSwitchForTest();
+            invalidateQueries.mockRestore();
+        }
+    });
+
     it('prepends a small import in the unfiltered Library without a refetch', async () => {
         const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
         mocks.processWebFiles.mockResolvedValueOnce(importResult({ images: [importedImage('added')] }));

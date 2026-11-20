@@ -6,6 +6,7 @@ import { LibraryProvider, useLibraryContext } from '../LibraryContext';
 import { useSync, type InvokeSyncOutcome } from '../SyncContext';
 import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
@@ -6846,7 +6847,7 @@ describe('Library Integration (Provider Stack)', () => {
                 await hook.startInvokeSync({ mode: 'startup' });
             });
             expect(screen.getByText('Synchronization complete.')).toBeTruthy();
-            expect(screen.getByText('0 added')).toBeTruthy();
+            expect(screen.queryByText('0 added')).toBeNull();
             await waitFor(() => expect(screen.queryByText('Synchronization complete.')).toBeNull(), { timeout: 6500 });
         }, 10000);
 
@@ -7290,7 +7291,9 @@ describe('Library Integration (Provider Stack)', () => {
             };
 
             // While the target prepares, the screen still belongs to the owner the user was browsing.
-            it('keeps the shown owner while another owner on the same root prepares, until the target is admitted', async () => {
+            // After admission the shown owner stays until the presentation swaps (useOwnerScopeTransitionPresentation),
+            // so a viewer left open is not replaced under the user (Q2 of #527).
+            it('keeps the shown owner while another owner on the same root prepares, and past admission until the swap', async () => {
                 const hook = await setup(true);
                 const { pending, application } = await startPendingSwitch(hook);
                 expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toMatchObject({
@@ -7319,9 +7322,54 @@ describe('Library Integration (Provider Stack)', () => {
                 } finally {
                     unsubscribe();
                 }
-                // Once the target is admitted, writes land in its scope, so they are allowed again.
-                expect(atCatchUp).toEqual([{ owner: expect.objectContaining({ ownerId: 'owner-b' }), writesAllowed: true }]);
-                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
+                // Admission does not release the shown owner: writes keep waiting until the presentation swaps.
+                expect(atCatchUp).toEqual([{ owner: expect.objectContaining({ ownerId: 'owner-b' }), writesAllowed: false }]);
+                expect(useInvokeOwnerScopeStore.getState().ownerScopeState).toMatchObject({
+                    status: 'ready',
+                    scope: expect.objectContaining({ ownerId: 'owner-b' }),
+                });
+                expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toMatchObject({
+                    scope: expect.objectContaining({ ownerId: 'owner-a' }),
+                });
+            });
+
+            // B5 of the #528 review: automatic work keeps running during a switch. A watcher import that lands after
+            // the target is admitted refetches the gallery query with the target's rows; none may reach the store
+            // (and so the screen) while the previous owner is still shown.
+            it('keeps a watcher import from putting the target owner rows on screen before the swap', async () => {
+                const freyaRow = { id: 'freya-row', path: 'D:/Invoke/outputs/images/freya.png' };
+                const odinRow = { id: 'odin-row', path: 'D:/Invoke/outputs/images/odin.png' };
+                mocks.searchImages.mockResolvedValue([freyaRow]);
+                const hook = await setup(true);
+                await waitFor(() => expect(useSearchStore.getState().images.map((row) => row.id)).toEqual(['freya-row']));
+
+                const { pending, application } = await startPendingSwitch(hook);
+                await act(async () => {
+                    pending.resolve(ownerScopeResult);
+                    await application();
+                });
+                expect(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())).toBe(true);
+
+                mocks.searchImages.mockClear().mockResolvedValue([odinRow, freyaRow]);
+                mocks.processTargetedFiles.mockResolvedValueOnce({
+                    handledPaths: ['D:/Invoke/outputs/images/odin.png'],
+                    failedPaths: [],
+                    stats: { imported: 1 },
+                    touchedFacetTypes: [],
+                    touchedFacetResources: undefined,
+                });
+                await act(async () => {
+                    await hook.startTargetedLiveSync(['D:/Invoke/outputs/images/odin.png']);
+                });
+
+                // The drain ran and the query refetched the target owner's rows...
+                expect(mocks.processTargetedFiles).toHaveBeenCalled();
+                await waitFor(() => expect(mocks.searchImages).toHaveBeenCalled());
+                await act(async () => {
+                    await Promise.resolve();
+                });
+                // ...but the store still holds only what was on screen.
+                expect(useSearchStore.getState().images.map((row) => row.id)).toEqual(['freya-row']);
             });
 
             it.each(['cancelled', 'failed'] as const)('returns to the shown owner when the switch is %s', async (failure) => {
@@ -7339,6 +7387,12 @@ describe('Library Integration (Provider Stack)', () => {
                     scope: expect.objectContaining({ ownerId: 'owner-a' }),
                 });
                 expect(useSettingsStore.getState().settings.invokeOwnerSelection).toMatchObject({ ownerId: 'owner-a' });
+                // The dock and toast say the gallery never left the shown owner.
+                expect(useInvokeOwnerScopeStore.getState().operation?.message).toBe(
+                    failure === 'cancelled'
+                        ? 'Switch cancelled. Still showing owner-a.'
+                        : 'Could not switch to owner-b (Preparation failed). Still showing owner-a.'
+                );
             });
 
             // Fail closed: if the previous owner cannot be restored, nothing keeps showing it.

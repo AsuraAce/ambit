@@ -6,6 +6,7 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { type AIImage, type VideoAsset, GeneratorTool } from '../../../types';
 import type { DeleteRemovedImagesResult } from '../../../bindings';
 import { MaintenanceView } from './MaintenanceView';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../test/ownerSwitch';
 
 const maintenanceDataMock = vi.hoisted(() => ({
     isLoading: false,
@@ -1044,6 +1045,26 @@ describe('MaintenanceView', () => {
             expect(useLibraryStore.getState().thumbnailAbortController).toBeNull();
         } finally {
             errorSpy.mockRestore();
+        }
+    });
+
+    // #527: "Regenerate All" rewrites thumbnails of the owner-scoped view, so it waits for an owner switch.
+    it('refuses Regenerate All while an InvokeAI owner switch is pending', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails']);
+        maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' })];
+        maintenanceDataMock.unoptimizedTotalCount = 1;
+        renderView();
+        fireEvent.click(screen.getByText('Tab thumbnails'));
+        const regenerateAll = await screen.findByText('Regenerate All');
+
+        startOwnerSwitchForTest();
+        try {
+            fireEvent.click(regenerateAll);
+            await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info'));
+            expect(thumbnailServiceMock.regenerateAllUnoptimized).not.toHaveBeenCalled();
+            expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
+        } finally {
+            endOwnerSwitchForTest();
         }
     });
 

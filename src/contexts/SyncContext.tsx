@@ -1423,8 +1423,6 @@ export const SyncProvider: React.FC<{
                     warning: admission.boardScopeWarning,
                 });
                 viewCommitted = true;
-                // The target is admitted, so writes land in the scope the user chose.
-                useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(token);
                 updateInvokeOperation(token, { phase: 'syncing', viewCommitted: true });
                 if (previousRoot && !isSameInvokeConnectionSource(previousRoot, draft.invokeAiPath)) {
                     // The new root is applied and saved. Only now drop the old root's grant:
@@ -1522,7 +1520,13 @@ export const SyncProvider: React.FC<{
                         } else {
                             setInvokeOwnerScopeState(previousState);
                         }
-                        if (previousAdmission?.allowed) message += ' The previous view was restored.';
+                        // A user switch kept the previous owner on screen, so say so in its own words (#527).
+                        const ownerSwitch = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
+                        if (ownerSwitch?.operationId === token && !retryingUnpreparedView) {
+                            message = aborted
+                                ? `Switch cancelled. Still showing ${ownerSwitch.label}.`
+                                : `Could not switch to ${ownerSwitch.targetLabel} (${errorMessage}). Still showing ${ownerSwitch.label}.`;
+                        } else if (previousAdmission?.allowed) message += ' The previous view was restored.';
                     } catch (rollbackError) {
                         message += ` The previous view could not be restored: ${String(rollbackError)}`;
                         setInvokeOwnerScopeState({
@@ -1577,8 +1581,9 @@ export const SyncProvider: React.FC<{
                     useLibraryStore.getState().markInvokeSyncCancelled();
                 }
                 if (ownerTransitionRef.current?.token === token) ownerTransitionRef.current = null;
-                // Rolled back to the previous owner, or failed closed: nothing is retained past the operation.
-                useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(token);
+                // Once the target is admitted, the presentation releases the retained owner at its swap
+                // (useOwnerScopeTransitionPresentation). Otherwise the switch rolled back or failed closed.
+                if (!viewCommitted) useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(token);
                 if (useLibraryStore.getState().syncAbortController === controller) setSyncAbortController(null);
                 setIsInvokeSyncActive(false);
                 startPendingInvokeLiveRerun();

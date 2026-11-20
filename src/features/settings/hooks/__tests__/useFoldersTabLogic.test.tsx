@@ -1054,10 +1054,11 @@ describe('useFoldersTabLogic', () => {
             expect(setSettings).not.toHaveBeenCalled();
         });
 
-        it('leaves an added folder queued for its first scan when the switch starts before the scan', async () => {
+        // The live auto-scan skips a queued folder, so the first scan must resume by itself once the switch ends.
+        it('runs the first scan of an added folder once a switch that started before it ends', async () => {
             vi.useFakeTimers();
             try {
-                const onScanFolder = vi.fn();
+                const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({ completedSourcePaths: ['D:/Art'] }));
                 const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
                 act(() => result.current.setNewFolderPath('D:/Art'));
                 await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
@@ -1068,14 +1069,60 @@ describe('useFoldersTabLogic', () => {
                     await vi.advanceTimersByTimeAsync(500);
                 });
 
+                // Waiting: nothing scanned and nothing recorded, so the folder stays queued with no cursor.
                 expect(onScanFolder).not.toHaveBeenCalled();
-                expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
-                expect(addToastMock).not.toHaveBeenCalledWith('Folder scan completed with import errors', 'warning');
-                // Only the add was saved: the folder keeps initialScanPending and no cursor, so startup or Rescan scans it.
+                expect(addToastMock).toHaveBeenCalledWith('The new folder is scanned after the switch to Odin.', 'info');
                 expect(setSettings).toHaveBeenCalledOnce();
                 const added = (setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings)(baseSettings);
                 expect(added.monitoredFolders[0]).toMatchObject({ path: 'D:/Art', initialScanPending: true });
                 expect(added.monitoredFolders[0].lastScanned).toBeUndefined();
+
+                // The real setter saves to the settings store, which the deferred scan re-reads.
+                useSettingsStore.setState({ settings: added });
+                await act(async () => {
+                    endOwnerSwitchForTest();
+                    await vi.advanceTimersByTimeAsync(0);
+                });
+
+                expect(onScanFolder).toHaveBeenCalledWith([{ path: 'D:/Art', variant: GeneratorTool.UNKNOWN }]);
+                const finalized = (setSettings.mock.calls[1][0] as (previous: AppSettings) => AppSettings)(added);
+                expect(finalized.monitoredFolders[0]).toMatchObject({ initialScanPending: false, lastScanned: expect.any(Number) });
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        // R5: a folder removed (or deactivated) while its first scan waited must not be scanned afterwards.
+        it.each([
+            ['removed', (added: AppSettings): AppSettings => ({ ...added, monitoredFolders: [] })],
+            [
+                'deactivated',
+                (added: AppSettings): AppSettings => ({
+                    ...added,
+                    monitoredFolders: added.monitoredFolders.map((folder) => ({ ...folder, isActive: false })),
+                }),
+            ],
+        ])('skips the deferred first scan of a folder %s while it waited for the switch', async (_, change) => {
+            vi.useFakeTimers();
+            try {
+                const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({ completedSourcePaths: ['D:/Art'] }));
+                const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
+                act(() => result.current.setNewFolderPath('D:/Art'));
+                await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+                const added = (setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings)(baseSettings);
+
+                startOwnerSwitchForTest();
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(500);
+                });
+                useSettingsStore.setState({ settings: change(added) });
+                await act(async () => {
+                    endOwnerSwitchForTest();
+                    await vi.advanceTimersByTimeAsync(0);
+                });
+
+                expect(onScanFolder).not.toHaveBeenCalled();
+                expect(setSettings).toHaveBeenCalledOnce();
             } finally {
                 vi.useRealTimers();
             }

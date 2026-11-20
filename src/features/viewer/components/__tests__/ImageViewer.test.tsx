@@ -3,12 +3,15 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { ImageViewer } from '../ImageViewer';
+import { endOwnerSwitchForTest, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 
 const mockGetImageWithFullMetadata = vi.fn();
 const mockMetadataSidebar = vi.fn();
 const mockSetViewerTab = vi.fn();
 const viewerSettings = vi.hoisted(() => ({
     viewerPreferredTab: undefined as 'details' | 'metadata' | 'workflow' | undefined,
+    privacyEnabled: false,
+    privacyMaskIndexStatus: 'ready',
 }));
 const captures = vi.hoisted(() => ({
     toolbar: null as Record<string, unknown> | null,
@@ -124,8 +127,8 @@ vi.mock('../../../../stores/settingsStore', () => ({
             },
             isLoaded: true,
             setSettings: mockSetViewerTab,
-            privacyEnabled: false,
-            privacyMaskIndexStatus: 'ready',
+            privacyEnabled: viewerSettings.privacyEnabled,
+            privacyMaskIndexStatus: viewerSettings.privacyMaskIndexStatus,
         }),
 }));
 
@@ -220,6 +223,8 @@ describe('ImageViewer full metadata loading', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         viewerSettings.viewerPreferredTab = undefined;
+        viewerSettings.privacyEnabled = false;
+        viewerSettings.privacyMaskIndexStatus = 'ready';
         mockSetViewerTab.mockReset();
         mockSetViewerTab.mockImplementation((update: { viewerPreferredTab: typeof viewerSettings.viewerPreferredTab }) => {
             viewerSettings.viewerPreferredTab = update.viewerPreferredTab;
@@ -258,6 +263,48 @@ describe('ImageViewer full metadata loading', () => {
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
         // #392: Rust grants library folders at start; viewing never asks it to widen the scope.
         expect(assetAccessMock).not.toHaveBeenCalled();
+    });
+
+    // #527: during an owner switch the scoped views already follow the target owner, so the viewer shows the
+    // gallery row with a note instead of reading the full record.
+    it('does not read the full record during an owner switch and says when details return', async () => {
+        startOwnerSwitchForTest();
+        try {
+            renderViewer();
+
+            await waitFor(() => expect(captures.sidebar?.isLoading).toBe(false));
+            expect(mockGetImageWithFullMetadata).not.toHaveBeenCalled();
+            expect(captures.sidebar?.detailsNotice).toBe('Full details return after the switch.');
+        } finally {
+            endOwnerSwitchForTest();
+        }
+    });
+
+    it('closes while Privacy Mode waits for its mask index', () => {
+        viewerSettings.privacyEnabled = true;
+        viewerSettings.privacyMaskIndexStatus = 'pending';
+        const { props } = renderViewer();
+
+        expect(screen.queryByTestId('image-canvas')).toBeNull();
+        expect(props.onClose).toHaveBeenCalledOnce();
+    });
+
+    // #527 S2: Privacy Mode is on by default and its mask index is rebuilt for the target owner during a
+    // switch, so the index check would close every image the user opens from the kept gallery. The kept
+    // page follows the retained view's privacy rule, which App applies before it opens the viewer.
+    it('opens an image during an owner switch while the mask index is rebuilt for the target owner', async () => {
+        viewerSettings.privacyEnabled = true;
+        viewerSettings.privacyMaskIndexStatus = 'pending';
+        startOwnerSwitchForTest();
+        try {
+            const { props } = renderViewer();
+
+            await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+            expect(screen.getByRole('dialog', { name: `Image viewer: ${lightImage.filename}` })).toBeTruthy();
+            expect(props.onClose).not.toHaveBeenCalled();
+        } finally {
+            endOwnerSwitchForTest();
+        }
     });
 
     it('uses a card reveal grant without showing a second image gate', async () => {
@@ -467,6 +514,54 @@ describe('ImageViewer full metadata loading', () => {
         expect(onDelete).toHaveBeenCalledTimes(2);
         expect(onClose).toHaveBeenCalledTimes(2);
         input.remove();
+    });
+
+    it('leaves Space to a focused button on the owner-switch dock above the viewer', async () => {
+        const onClose = vi.fn();
+        renderViewer({ onClose });
+        await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
+
+        // The dock is portalled to document.body, outside the viewer, while a switch prepares.
+        const dock = document.createElement('div');
+        dock.setAttribute('data-activity-dock', '');
+        const cancel = document.createElement('button');
+        cancel.textContent = 'Cancel';
+        const inner = document.createElement('span');
+        cancel.appendChild(inner);
+        dock.appendChild(cancel);
+        document.body.appendChild(dock);
+        cancel.focus();
+
+        const onButton = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        act(() => cancel.dispatchEvent(onButton));
+        const onButtonChild = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        act(() => inner.dispatchEvent(onButtonChild));
+
+        // Not prevented, so the browser activates the button; the viewer stays open.
+        expect(onButton.defaultPrevented).toBe(false);
+        expect(onButtonChild.defaultPrevented).toBe(false);
+        expect(onClose).not.toHaveBeenCalled();
+        dock.remove();
+    });
+
+    // B1 of the #529 closure review: a grid card opens the viewer through a full-card button that keeps focus.
+    // Space must still close the viewer, not press that card (or a toolbar button) behind it.
+    it('closes on Space while the grid card that opened the viewer keeps focus', async () => {
+        const onClose = vi.fn();
+        renderViewer({ onClose });
+        await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
+
+        const card = document.createElement('button');
+        card.setAttribute('aria-label', 'Open light.png');
+        document.body.appendChild(card);
+        card.focus();
+
+        const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        act(() => card.dispatchEvent(space));
+
+        expect(space.defaultPrevented).toBe(true);
+        expect(onClose).toHaveBeenCalledOnce();
+        card.remove();
     });
 
     it('lets the AI modal own shortcuts and closes it before the viewer on Escape', () => {

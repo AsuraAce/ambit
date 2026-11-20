@@ -122,7 +122,8 @@ describe('ActivityDock', () => {
         expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
         expect(screen.getByRole('status').textContent).toBe('Processing images: 2/5');
         expect(screen.getByText('1 added')).toBeTruthy();
-        expect(screen.getByText('0 updated')).toBeTruthy();
+        // P3 of the #529 owner smoke: a zero count is left out, the non-zero one stays.
+        expect(screen.queryByText('0 updated')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(cancel).toHaveBeenCalledTimes(1);
         act(() => useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling' }));
@@ -315,8 +316,9 @@ describe('ActivityDock', () => {
             act(() => vi.advanceTimersByTime(100));
             act(() => completeInvokeOperation({ hasChanges }));
             expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
-            expect(screen.getByText('0 added')).toBeTruthy();
-            expect(screen.getByText('0 updated')).toBeTruthy();
+            // P3 of the #529 owner smoke: zero counts add nothing to the message, so no count row shows.
+            expect(screen.queryByText('0 added')).toBeNull();
+            expect(screen.queryByText('0 updated')).toBeNull();
             act(() => vi.advanceTimersByTime(5000));
             expect(screen.queryByRole('status')).toBeNull();
         });
@@ -582,6 +584,193 @@ describe('ActivityDock', () => {
         });
     });
 
+    // #527: a user switch keeps the previous owner browsable, so its preparation lives in the dock, not the gate.
+    describe('user owner switch', () => {
+        const startSwitch = (overrides: Partial<InvokeOperationState> = {}) => {
+            const operation = createInvokeOperation({ phase: 'preparing', viewCommitted: false, ...overrides });
+            useInvokeOwnerScopeStore.getState().setOperation(operation);
+            useInvokeOwnerScopeStore.getState().retainOwnerScope({
+                operationId: operation.id,
+                rootPath: 'D:/Invoke',
+                scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'freya' },
+                label: 'Freya',
+                targetLabel: 'Odin',
+            });
+            return operation;
+        };
+
+        beforeEach(() => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        });
+
+        it('shows the preparation with Cancel only after 600 ms', () => {
+            const operation = startSwitch();
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(599));
+            expect(screen.queryByText('Switching to Odin')).toBeNull();
+
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByText("You can keep browsing Freya's images.")).toBeTruthy();
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(operation.cancel).toHaveBeenCalledOnce();
+        });
+
+        it('never shows the preparation of a warm switch admitted within 600 ms', () => {
+            startSwitch();
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(550));
+            act(() =>
+                useInvokeOwnerScopeStore
+                    .getState()
+                    .setOperation((current) => current && { ...current, phase: 'syncing', viewCommitted: true })
+            );
+            act(() => vi.advanceTimersByTime(1000));
+            expect(screen.queryByText('Switching to Odin')).toBeNull();
+        });
+
+        // Q2: the target is ready but the gallery holds the previous owner; the result waits with "Switch now".
+        const admitOdin = () =>
+            act(() =>
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                    status: 'ready',
+                    rootPath: 'D:/Invoke',
+                    scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'odin' },
+                })
+            );
+
+        // R1: once Odin is admitted the switch is done; Cancel would stop only the catch-up, so the hold offers
+        // "Switch now" alone, and a catch-up failure keeps its message.
+        it('hides Cancel during the hold and keeps a failed catch-up message', () => {
+            startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock />);
+            expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+
+            act(() => completeInvokeOperation({ phase: 'failed', message: 'Board sync failed.' }));
+            expect(screen.getByText('Board sync failed.')).toBeTruthy();
+            expect(screen.getByText('Odin is ready. Its catch-up did not finish.')).toBeTruthy();
+            expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
+        });
+
+        // N1: background thumbnail work outranks a finished catch-up's result; the held swap must still offer
+        // "Switch now", ahead of it.
+        it('keeps "Switch now" ahead of background work once the held catch-up finished', () => {
+            startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            useLibraryStore.setState({
+                isBackgroundHealingActive: true,
+                backgroundHealingProgress: { current: 3, total: 10, message: 'Optimized 3 thumbnails' },
+            });
+            render(<ActivityDock />);
+            act(() => completeInvokeOperation());
+
+            expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+            expect(screen.getByText('Odin is ready.')).toBeTruthy();
+            expect(screen.queryByText('Smart Thumbnails')).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
+        // R2: Retry runs the catch-up under a new operation; the swap is still held, so "Switch now" stays.
+        it('keeps "Switch now" when a retried catch-up is the current operation', () => {
+            const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock />);
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'syncing', viewCommitted: true })));
+
+            expect(useInvokeOwnerScopeStore.getState().operation?.id).not.toBe(operation.id);
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
+        it('offers "Switch now" while the swap is held and keeps the result until the swap', () => {
+            const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock />);
+            act(() => completeInvokeOperation());
+
+            expect(screen.getByText('Odin is ready.')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(10000));
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+
+            act(() => useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(operation.id));
+            expect(screen.queryByRole('button', { name: 'Switch now' })).toBeNull();
+            act(() => vi.advanceTimersByTime(5000));
+            expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+        });
+
+        // S8: a viewer can stay open for the whole switch, so its progress, Cancel and "Switch now" stay
+        // reachable above it: compact first, in the dock's usual spot, and expanding on click.
+        const dock = () => screen.getByTestId('activity-dock');
+
+        it('raises the preparation above an open viewer in compact form, and expands it with Cancel', () => {
+            const operation = startSwitch();
+            render(<ActivityDock isViewerOpen />);
+            act(() => vi.advanceTimersByTime(600));
+
+            expect(dock().className).toContain('z-[110]');
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
+            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            // The image viewer leaves Space to buttons inside this marker only (B1 of the #529 closure review).
+            expect(screen.getByRole('button', { name: 'Cancel' }).closest('[data-activity-dock] button')).toBeTruthy();
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(operation.cancel).toHaveBeenCalledOnce();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
+            expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();
+            // Collapsing it over the viewer leaves the dock's own minimized choice for the gallery alone.
+            expect(useLibraryStore.getState().isActivityDockMinimized).toBe(false);
+        });
+
+        it('raises "Switch now" above an open viewer during the hold', () => {
+            startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            render(<ActivityDock isViewerOpen />);
+
+            expect(dock().className).toContain('z-[110]');
+            fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
+        it('returns the switch to its full form in the gallery layer once the viewer closes, in the same spot', () => {
+            const placement = () =>
+                dock()
+                    .className.split(/\s+/)
+                    .filter((name) => /^(top|right|bottom|left|inset)-/.test(name))
+                    .sort();
+            startSwitch();
+            const view = render(<ActivityDock isViewerOpen />);
+            act(() => vi.advanceTimersByTime(600));
+            const overViewer = placement();
+            view.rerender(<ActivityDock isViewerOpen={false} />);
+
+            // P1 of the owner smoke: one spot for the dock everywhere, so it never jumps when the viewer opens or closes.
+            expect(overViewer.length).toBeGreaterThan(0);
+            expect(placement()).toEqual(overViewer);
+            expect(dock().className).toContain('z-[40]');
+            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+        });
+    });
+
+    // S8: only an owner switch rises above a viewer; other activities stay under viewers and dialogs.
+    it('leaves ordinary activities under an open viewer', () => {
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: { current: 1, total: 4, message: 'Healing' },
+        });
+        render(<ActivityDock isViewerOpen />);
+
+        expect(screen.getByTestId('activity-dock').className).toContain('z-[40]');
+        expect(screen.getByTestId('activity-dock').className).not.toContain('z-[110]');
+    });
+
     it('identifies startup synchronization as InvokeAI catch-up', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
@@ -737,6 +926,52 @@ describe('ActivityDock', () => {
         expect(screen.getByText('Cancel')).toBeTruthy();
     });
 
+    // P2 of the #529 owner smoke: Smart Thumbnails starts at an owner switch's swap and outranks its result. It
+    // pauses for work that has no dock entry of its own (an owner's filter repair, a pending metadata refresh),
+    // and the dock emptied once the result's time ran out, then sprang back when the thumbnails resumed.
+    it('never leaves the dock empty while Smart Thumbnails pauses after an InvokeAI result', () => {
+        vi.useFakeTimers();
+        try {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation());
+            const empty: string[] = [];
+            const check = (step: string) => {
+                if (!document.body.querySelector('[data-testid="activity-dock"]')) empty.push(step);
+            };
+            render(<ActivityDock />);
+            act(() => completeInvokeOperation());
+            act(() =>
+                useLibraryStore.setState({
+                    isBackgroundHealingActive: true,
+                    backgroundHealingProgress: { current: 3, total: 10, message: 'Optimized 3 thumbnails' },
+                })
+            );
+            expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
+            check('thumbnails running');
+
+            act(() => useLibraryStore.setState({ backgroundHealingPaused: true }));
+            // A finished result outranks the paused thumbnails while it lasts.
+            expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
+            check('paused, result shown');
+            act(() => vi.advanceTimersByTime(5000));
+            expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+            check('paused, result over');
+            expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
+            expect(screen.getByText('Paused while other work finishes.')).toBeTruthy();
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+            // Nothing runs while paused, so the icon holds still.
+            const sparkles = () => screen.getByTestId('activity-dock').querySelector('svg.lucide-sparkles');
+            expect(sparkles()?.getAttribute('class')).not.toContain('animate-pulse');
+
+            act(() => useLibraryStore.setState({ backgroundHealingPaused: false }));
+            expect(screen.getByText('Optimized 3 thumbnails')).toBeTruthy();
+            expect(sparkles()?.getAttribute('class')).toContain('animate-pulse');
+            check('resumed');
+            expect(empty).toEqual([]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('renders completed smart thumbnail progress without generic count or percent chrome', () => {
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
@@ -820,7 +1055,8 @@ describe('ActivityDock', () => {
             },
         });
 
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
 
         expect(screen.getByText('Discovery Scan')).toBeTruthy();
         expect(screen.getByText('Updating local asset index...')).toBeTruthy();
@@ -1037,7 +1273,8 @@ describe('ActivityDock', () => {
             progress: { current: 0, total: 0, message: undefined },
         });
 
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
 
         act(() => {
             vi.advanceTimersByTime(2499);
@@ -1074,7 +1311,8 @@ describe('ActivityDock', () => {
     it('reveals sustained folder Live Watch import and keeps source context stable', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
@@ -1410,7 +1648,8 @@ describe('ActivityDock', () => {
             backgroundHealingProgress: { current: 1, total: 4, message: 'Healing' },
             isActivityDockMinimized: true,
         });
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
         expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
     });
 
@@ -1499,7 +1738,8 @@ describe('ActivityDock', () => {
     it('minimizes visible Live Watch without the low-priority pulse class', () => {
         vi.useFakeTimers();
         useLibraryStore.getState().startLiveWatchSession('invoke', { phase: 'syncing' });
-        const { container } = render(<ActivityDock />);
+        // The dock renders in document.body (S8 of #527), so its classes are read from there.
+        const { baseElement: container } = render(<ActivityDock />);
         act(() => vi.advanceTimersByTime(2500));
         fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
         expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();

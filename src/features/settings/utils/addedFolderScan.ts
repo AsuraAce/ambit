@@ -2,7 +2,8 @@ import type * as React from 'react';
 import { AppSettings, GeneratorTool, MonitoredFolder } from '../../../types';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import type { ImportResult } from '../../../services/importService';
-import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 // Adding a library folder and running its first scan, shared by Settings → Folders
 // and a folder dropped onto the window (#493).
@@ -46,14 +47,41 @@ interface ScanAddedFoldersOptions {
     afterScan?: () => Promise<void>;
 }
 
+/** Resolves once no user owner switch is pending (finished, cancelled or failed). */
+const waitForOwnerSwitchToEnd = (): Promise<void> =>
+    new Promise((resolve) => {
+        if (!isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())) {
+            resolve();
+            return;
+        }
+        const unsubscribe = useInvokeOwnerScopeStore.subscribe((state) => {
+            if (isOwnerSwitchPending(state)) return;
+            unsubscribe();
+            resolve();
+        });
+    });
+
 /** Runs the first scan of newly added folders and records how it ended on each folder. */
 export const scanAddedFolders = async (
-    foldersToScan: AddedFolder[],
+    addedFolders: AddedFolder[],
     { onScanFolder, setSettings, addToast, afterScan }: ScanAddedFoldersOptions
 ): Promise<void> => {
-    // A switch that started after the folder was saved: leave it queued (initialScanPending) rather than
-    // recording a scan that never ran. The next startup scan or a Rescan picks it up.
-    if (refuseWriteDuringOwnerSwitch(addToast)) return;
+    // A switch that started after the folder was saved (#527): a user scan would be refused, so the first
+    // scan waits for the switch to end. The folder stays queued (initialScanPending) meanwhile, and the
+    // live auto-scan skips queued folders, so nothing else would scan it this session.
+    let foldersToScan = addedFolders;
+    const retained = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
+    if (retained) {
+        addToast(
+            `${addedFolders.length === 1 ? 'The new folder is' : 'New folders are'} scanned after the switch to ${retained.targetLabel}.`,
+            'info'
+        );
+        await waitForOwnerSwitchToEnd();
+        // The user may have removed or deactivated a folder while it waited: scan only what is still configured.
+        const current = useSettingsStore.getState().settings.monitoredFolders;
+        foldersToScan = addedFolders.filter((added) => current.some((folder) => folder.id === added.id && folder.isActive));
+        if (foldersToScan.length === 0) return;
+    }
     try {
         const result = await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
         if (isCompleteImport(result)) {

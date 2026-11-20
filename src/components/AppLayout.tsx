@@ -40,6 +40,7 @@ import { PrivacyProtectionGate } from './ui/PrivacyProtectionGate';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import LibraryLoadError from '../features/library/components/LibraryLoadError';
 import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { OwnerSwitchPill } from './ui/OwnerSwitchPill';
 
 setupGlobalLogging();
 
@@ -123,6 +124,8 @@ interface AppLayoutProps {
     onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     onViewerSearch: (term: string) => void;
     isViewerShortcutBlocked: boolean;
+    /** An image or video viewer covers the app; an owner switch keeps its dock entry above it. */
+    isViewerOpen: boolean;
     onSetImageKind: (id: string, sourceKindOverride: SourceKind | null) => Promise<void>;
     toggleFavorite: (id: string) => void | Promise<void>;
     actions: ReturnType<typeof useAppActions>;
@@ -147,6 +150,14 @@ interface AppLayoutProps {
     onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onEditCollection: (colId: string) => void;
 }
+
+/** Browse only during a user owner switch (#527): what would read the target owner's library waits. */
+const OwnerSwitchPausedNote: React.FC<{ detail: string }> = ({ detail }) => (
+    <div role="status" className="w-full py-8 text-center text-xs text-gray-500 dark:text-zinc-400">
+        <p className="font-semibold text-gray-700 dark:text-zinc-200">Paused while switching</p>
+        <p className="mt-1">{detail}</p>
+    </div>
+);
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
     isInvokeCollectionCatchupPending = false,
@@ -179,6 +190,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     onOpenReferencedImage,
     onViewerSearch,
     isViewerShortcutBlocked,
+    isViewerOpen,
     onSetImageKind,
     modelOptions = [],
     actions,
@@ -209,9 +221,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const settings = useSettingsStore((s) => s.settings);
     const privacyEnabled = useSettingsStore((s) => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore((s) => s.privacyMaskIndexStatus);
-    const privacyExposureBlocked = forcePrivacyProtectionGate || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
     // Every selection action changes the library, so the bar waits while an owner switch is pending.
     const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
+    const { privacyExposureBlocked: retainedViewPrivacyBlocked } = useSearch();
+    // The mask index is rebuilt for the target owner during a switch; the kept view follows its own rule (#527).
+    const privacyExposureBlocked =
+        forcePrivacyProtectionGate ||
+        (ownerSwitchPending ? retainedViewPrivacyBlocked : privacyEnabled && privacyMaskIndexStatus !== 'ready');
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const _allCollections = useCollectionStore((s) => s.collections);
@@ -472,6 +488,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     />
                 )}
 
+                {/* Browse only during a user owner switch (#527): the header pauses what would query the target owner. */}
                 <AppHeader
                     viewMode={viewMode}
                     filters={filters}
@@ -499,9 +516,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         modals.openModal('slideshow');
                     }}
                     clearAllFilters={clearAllFilters}
+                    browseOnly={ownerSwitchPending}
                 />
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
+                    <OwnerSwitchPill />
                     <div
                         ref={scrollContainerRef}
                         className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}
@@ -515,7 +534,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                             />
                         ) : (
                             <ErrorBoundary>
-                                {viewMode === 'dashboard' ? (
+                                {ownerSwitchPending && (viewMode === 'dashboard' || viewMode === 'maintenance') ? (
+                                    <OwnerSwitchPausedNote detail="This view returns after the switch." />
+                                ) : viewMode === 'dashboard' ? (
                                     <React.Suspense fallback={<ViewLoadingFallback />}>
                                         <StatsDashboard
                                             images={images}
@@ -664,6 +685,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-500"></div>
                                                     </div>
                                                 )}
+                                                {ownerSwitchPending && images.length < (displayedCount ?? 0) && (
+                                                    <OwnerSwitchPausedNote detail="More images load after the switch." />
+                                                )}
                                             </>
                                         )}
                                     </>
@@ -719,7 +743,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     />
                 )}
 
-                <ActivityDock />
+                <ActivityDock isViewerOpen={isViewerOpen} />
             </main>
         </div>
     );

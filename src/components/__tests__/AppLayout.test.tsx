@@ -4,6 +4,7 @@ import { AppLayout } from '../AppLayout';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AIImage } from '../../types';
+import { endOwnerSwitchForTest, startOwnerSwitchForTest } from '../../test/ownerSwitch';
 
 const searchState = vi.hoisted(() => ({
     value: {
@@ -247,6 +248,18 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('app-header')).toBeTruthy();
         expect(screen.getByTestId('error-boundary')).toBeTruthy();
     });
+    // #527: the header itself decides what pauses during a switch; view controls stay usable (no inert wrapper).
+    it('passes browse-only to the header during an owner switch instead of making the whole header inert', () => {
+        startOwnerSwitchForTest();
+        try {
+            render(<AppLayout {...defaultProps} />);
+            expect(capturedProps.header?.browseOnly).toBe(true);
+            expect(screen.getByTestId('app-header').closest('[inert]')).toBeNull();
+        } finally {
+            endOwnerSwitchForTest();
+        }
+    });
+
     it('suppresses the native focus outline on the programmatically focused workspace', () => {
         render(<AppLayout {...defaultProps} />);
 
@@ -583,6 +596,19 @@ describe('AppLayout', () => {
         expect(await screen.findByRole('heading', { name: 'Building your library…' })).toBeTruthy();
         expect(screen.getByRole('status').textContent).toContain('Importing images from folder...');
         expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+    });
+
+    // S8 of #527: the workspace's backdrop blur makes it a stacking context and the containing block of fixed
+    // children, so a dock inside it sits under every viewer whatever its z-index. jsdom computes no stacking,
+    // so this pins where the dock renders; the browser check is in the #529 description.
+    it('renders the activity dock outside the workspace and any blurred, filtered or transformed ancestor', () => {
+        useLibraryStore.setState({ isImporting: true, importProgress: { current: 2, total: 10, message: 'Importing' } });
+        render(<AppLayout {...defaultProps} isViewerOpen={false} />);
+
+        const dock = screen.getByTestId('activity-dock');
+        expect(dock.closest('main')).toBeNull();
+        // A direct child of body has no ancestor that could trap its z-index.
+        expect(dock.parentElement).toBe(document.body);
     });
 
     it('falls back to first-import guidance and restores the empty CTA when importing ends', async () => {

@@ -26,6 +26,8 @@ import { MetadataGeneratorField } from './metadata/MetadataGeneratorField';
 import { MetadataModelField } from './metadata/MetadataModelField';
 import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
 import { useViewerPreferredTab } from '../hooks/useViewerPreferredTab';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 type VideoViewerTab = 'details' | 'metadata' | 'workflow';
 
@@ -102,6 +104,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     const [positivePromptState, setPositivePromptState] = React.useState({ videoId: video.id, value: video.metadata.positivePrompt });
     const [negativePromptState, setNegativePromptState] = React.useState({ videoId: video.id, value: video.metadata.negativePrompt });
     const [fullVideo, setFullVideo] = React.useState<VideoAsset | null>(null);
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
     const playbackStatus = playbackState.videoId === video.id ? playbackState.status : video.playbackStatus;
     const playbackUrl = playbackState.videoId === video.id ? playbackState.url : null;
     const notes = notesState.videoId === video.id ? notesState.value : (video.notes ?? '');
@@ -131,6 +134,8 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
             setFullVideo(null);
             return;
         }
+        // During an owner switch the scoped views follow the target owner (#527); a loaded record stays.
+        if (ownerSwitchPending) return;
 
         let cancelled = false;
         void getImageWithFullMetadata(video.id)
@@ -143,7 +148,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [revealed, video.id, video.isMissing]);
+    }, [ownerSwitchPending, revealed, video.id, video.isMissing]);
 
     const metadataVideo = React.useMemo<VideoAsset>(() => {
         if (fullVideo?.id !== video.id) return video;
@@ -246,6 +251,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     };
 
     const handleExport = async () => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         try {
             const { open } = await import('@tauri-apps/plugin-dialog');
             const destination = await open({ directory: true, multiple: false });

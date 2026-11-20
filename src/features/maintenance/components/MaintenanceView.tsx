@@ -570,6 +570,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleRegenerate = async (ids?: string[]) => {
         if (!onRegenerateThumbnails) return;
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
 
         if (ids && ids.length > 0) {
             // Regenerate specific selected images - uses existing callback

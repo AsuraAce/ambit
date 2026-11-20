@@ -3,6 +3,7 @@ import { Grid, Clock, Eraser, BarChart3, Filter, Heart, Gift, HelpCircle, Settin
 import { ViewMode, FilterState } from '../../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
 
 interface AppSidebarProps {
     viewMode: ViewMode;
@@ -30,6 +31,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     showSupportPulse,
 }) => {
     const brandGlyphSrc = '/branding/ambit-glyph.svg';
+    // Browse only during a user owner switch (#527): these views and filters read the target owner's library.
+    const ownerSwitchPending = useInvokeOwnerScopeStore(isOwnerSwitchPending);
+    const pausedTooltip = (tooltip: string) => (ownerSwitchPending ? `${tooltip} (paused while switching)` : tooltip);
 
     return (
         <aside className="hidden md:flex w-20 flex-col items-center py-6 h-full rounded-3xl bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 z-20 shadow-2xl transition-all duration-500 ease-spring">
@@ -61,14 +65,16 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     active={viewMode === 'dashboard'}
                     onClick={() => setViewMode('dashboard')}
                     icon={<BarChart3 />}
-                    tooltip="Statistics"
+                    tooltip={pausedTooltip('Statistics')}
+                    disabled={ownerSwitchPending}
                 />
                 <NavButton
                     state="view"
                     active={viewMode === 'maintenance'}
                     onClick={() => setViewMode('maintenance')}
                     icon={<Eraser />}
-                    tooltip="Maintenance"
+                    tooltip={pausedTooltip('Maintenance')}
+                    disabled={ownerSwitchPending}
                 />
 
                 <div className="h-px w-8 bg-gray-300 dark:bg-white/10 my-2" />
@@ -86,14 +92,16 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     active={filters.favoritesOnly}
                     onClick={() => setFilters((prev) => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))}
                     icon={<Heart className={filters.favoritesOnly ? 'fill-red-500 text-red-500' : ''} />}
-                    tooltip={filters.favoritesOnly ? 'Disable Favorites Only' : 'Show Favorites Only'}
+                    tooltip={pausedTooltip(filters.favoritesOnly ? 'Disable Favorites Only' : 'Show Favorites Only')}
+                    disabled={ownerSwitchPending}
                 />
                 <NavButton
                     state="toggle"
                     active={!!filters.pinnedOnly}
                     onClick={() => setFilters((prev) => ({ ...prev, pinnedOnly: !prev.pinnedOnly }))}
                     icon={<Pin className={filters.pinnedOnly ? 'fill-white text-white' : ''} />}
-                    tooltip={filters.pinnedOnly ? 'Disable Pinned Only' : 'Show Pinned Only'}
+                    tooltip={pausedTooltip(filters.pinnedOnly ? 'Disable Pinned Only' : 'Show Pinned Only')}
+                    disabled={ownerSwitchPending}
                 />
             </nav>
 
@@ -130,6 +138,7 @@ const NavButton = ({
     state = 'action',
     badgeContent,
     badgeColor = 'bg-sage-500',
+    disabled = false,
 }: {
     active: boolean;
     current?: boolean;
@@ -140,14 +149,16 @@ const NavButton = ({
     state?: 'view' | 'toggle' | 'action';
     badgeContent?: string | number;
     badgeColor?: string;
+    disabled?: boolean;
 }) => (
     <TooltipButton
         label={tooltip}
         content={tooltip}
         onClick={onClick}
+        disabled={disabled}
         aria-current={state === 'view' && (current ?? active) ? 'page' : undefined}
         aria-pressed={state === 'toggle' ? (pressed ?? active) : undefined}
-        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ease-spring group relative ${active ? 'bg-sage-500 text-white shadow-lg shadow-sage-500/30' : 'text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-zinc-200'}`}
+        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ease-spring group relative disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-sage-500 text-white shadow-lg shadow-sage-500/30' : 'text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-zinc-200'}`}
     >
         {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 20 }) : icon}
 

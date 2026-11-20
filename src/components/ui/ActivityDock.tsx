@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search, CheckCircle2, AlertTriangle, RotateCw } from 'lucide-react';
 import { useLibraryStore, type LiveWatchSessionSource, type LiveWatchSessionState, type SyncProgress } from '../../stores/libraryStore';
@@ -9,8 +10,8 @@ import {
     THUMBNAIL_QUEUE_RUNNING_FOOTER,
 } from '../../hooks/thumbnailQueueProgress';
 import { TooltipButton } from './InfoTooltip';
-import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
-import { useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
+import { isOwnerSwitchHeld, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { getOperationOwnerSwitch, useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
 import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
@@ -166,7 +167,12 @@ const useLiveWatchPresentation = (
     };
 };
 
-export const ActivityDock: React.FC = () => {
+interface ActivityDockProps {
+    /** An image or video viewer covers the app. */
+    isViewerOpen?: boolean;
+}
+
+export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false }) => {
     const {
         isImporting,
         importProgress,
@@ -207,12 +213,16 @@ export const ActivityDock: React.FC = () => {
     } = useLibraryStore();
     const invokeOperation = useInvokeOwnerScopeStore((state) => state.operation);
     const setInvokeOperation = useInvokeOwnerScopeStore((state) => state.setOperation);
+    const retainedOwnerScope = useInvokeOwnerScopeStore((state) => state.retainedOwnerScope);
+    const ownerSwitch = getOperationOwnerSwitch(invokeOperation, retainedOwnerScope);
+    const requestOwnerSwitchSwap = useInvokeOwnerScopeStore((state) => state.requestOwnerSwitchSwap);
+    const isSwapHeld = useInvokeOwnerScopeStore(isOwnerSwitchHeld);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
     const removingResourcePath = useResourceRemovalDockEntry();
     const isRemovingResource = removingResourcePath !== null;
 
-    const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed);
+    const invokePresentation = useInvokeDockPresentation(invokeOperation, !isImporting && !isActivityDockDismissed, ownerSwitch);
     const isInvokeOperationActive = invokePresentation.isActiveVisible;
     const isManualSyncing = isInvokeOperationActive || (invokeOperation === null && syncStatus === 'syncing');
 
@@ -245,7 +255,44 @@ export const ActivityDock: React.FC = () => {
     const isInvokePresentation = (!isImporting && isInvokeOperationActive) || isInvokeResult;
     const isInvokeCancelling = isInvokePresentation && invokeOperation?.phase === 'cancelling';
     const isInvokeSettling = isInvokePresentation && invokeOperation?.phase === 'settling';
-    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult;
+    // Q2 of #527: the target owner is admitted, but the gallery keeps the previous owner while the viewer or
+    // a modal is open. "Switch now" swaps anyway, whichever operation is current (a Retry starts a new one).
+    const isOwnerSwitchHeldShown = isSwapHeld;
+    // The held swap outranks every other activity: once its catch-up ended, or another activity outranks
+    // that, the dock still offers "Switch now" on its own entry.
+    const isOwnerSwitchHeldEntry = isOwnerSwitchHeldShown && !isInvokePresentation;
+    // P2 of the #529 owner smoke: Smart Thumbnails pauses for work that has no dock entry of its own (a filter
+    // repair, a pending metadata refresh). With nothing else to show it keeps its entry, marked paused, so the
+    // dock does not empty and come back when the thumbnails resume.
+    const isBackgroundPausedShown =
+        isBackgroundHealingActive &&
+        backgroundHealingPaused &&
+        !isHighPriorityActive &&
+        !isRefreshActive &&
+        !isLiveWatchVisible &&
+        !isInvokeResult &&
+        !isOwnerSwitchHeldEntry;
+    const isSmartThumbnailsShown = isBackgroundActive || isBackgroundPausedShown;
+    const active =
+        isHighPriorityActive ||
+        isBackgroundActive ||
+        isRefreshActive ||
+        isLiveWatchVisible ||
+        isInvokeResult ||
+        isOwnerSwitchHeldEntry ||
+        isBackgroundPausedShown;
+    // S8 of #527: an owner switch's progress, Cancel and "Switch now" stay reachable while a viewer is open.
+    // Over the viewer the entry starts compact, in the dock's usual spot, and expands on click.
+    const isOwnerSwitchEntryShown =
+        isOwnerSwitchHeldShown || (!isImporting && isManualSyncing && invokePresentation.isOwnerSwitchPreparing);
+    const isOverViewer = isViewerOpen && isOwnerSwitchEntryShown;
+    const [isExpandedOverViewer, setIsExpandedOverViewer] = React.useState(false);
+    const [wasOverViewer, setWasOverViewer] = React.useState(isOverViewer);
+    if (wasOverViewer !== isOverViewer) {
+        setWasOverViewer(isOverViewer);
+        setIsExpandedOverViewer(false);
+    }
+    const isCompact = isOverViewer ? !isExpandedOverViewer : isActivityDockMinimized;
 
     let progress: SyncProgress | null = null;
     let label = '';
@@ -254,22 +301,33 @@ export const ActivityDock: React.FC = () => {
     let supportsCancel = false;
     let footerMessage = 'Tracking continues in the top header.';
 
-    if (isImporting) {
+    if (isOwnerSwitchHeldEntry && retainedOwnerScope) {
+        progress = {
+            current: 0,
+            total: 0,
+            mode: 'complete',
+            message: `Close the viewer or dialog to show ${retainedOwnerScope.targetLabel}'s images.`,
+        };
+        label = `InvokeAI · ${retainedOwnerScope.targetLabel}`;
+    } else if (isImporting) {
         progress = importProgress;
         label = 'Importing';
         supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
         progress = isInvokePresentation ? invokeOperation!.progress : syncProgress;
-        label = isInvokePresentation
-            ? `InvokeAI · ${invokeOperation!.targetLabel}`
-            : invokeSyncActivityKind === 'startup'
-              ? 'InvokeAI Catch-up'
-              : 'InvokeAI Sync';
+        label = invokePresentation.isOwnerSwitchPreparing
+            ? `Switching to ${invokeOperation!.targetLabel}`
+            : isInvokePresentation
+              ? `InvokeAI · ${invokeOperation!.targetLabel}`
+              : invokeSyncActivityKind === 'startup'
+                ? 'InvokeAI Catch-up'
+                : 'InvokeAI Sync';
         supportsCancel = isInvokePresentation ? Boolean(invokeOperation!.cancel) || isInvokeCancelling || isInvokeSettling : true;
-        footerMessage =
-            invokeSyncActivityKind === 'startup'
-                ? 'You can keep using the library while Ambit catches up.'
-                : 'You can keep using the library while Ambit synchronizes InvokeAI.';
+        footerMessage = invokePresentation.isOwnerSwitchPreparing
+            ? `You can keep browsing ${ownerSwitch!.label}'s images.`
+            : invokeSyncActivityKind === 'startup'
+              ? 'You can keep using the library while Ambit catches up.'
+              : 'You can keep using the library while Ambit synchronizes InvokeAI.';
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;
         label = 'Optimizing';
@@ -329,6 +387,24 @@ export const ActivityDock: React.FC = () => {
         progress = invokeOperation!.progress;
         label = `InvokeAI · ${invokeOperation!.targetLabel}`;
         footerMessage = 'Existing images and collections are kept.';
+    } else if (isBackgroundPausedShown) {
+        progress = {
+            current: backgroundHealingProgress?.current ?? 0,
+            total: backgroundHealingProgress?.total ?? 0,
+            message: 'Paused while other work finishes.',
+        };
+        label = 'Smart Thumbnails';
+        isLowPriority = true;
+        footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
+    }
+    if (isOwnerSwitchHeldShown && retainedOwnerScope) {
+        // The switch is done; the catch-up's own result (and a failure's message) stays in the message line.
+        footerMessage =
+            isInvokeResult && invokeOperation?.phase !== 'completed'
+                ? `${retainedOwnerScope.targetLabel} is ready. Its catch-up did not finish.`
+                : `${retainedOwnerScope.targetLabel} is ready.`;
+        // Cancel would only stop the catch-up, not the switch: it returns after the swap.
+        supportsCancel = false;
     }
 
     if (progress?.mode === 'complete' && !isInvokeCancelling && !isInvokeSettling) {
@@ -341,6 +417,7 @@ export const ActivityDock: React.FC = () => {
     const isCompleteProgress = mode === 'complete' || isInvokeResult;
     const showIndeterminateProgress =
         !isInvokeResult &&
+        !isBackgroundPausedShown &&
         (liveWatchPresentation.isActiveWork ||
             mode === 'indeterminate' ||
             (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
@@ -384,7 +461,12 @@ export const ActivityDock: React.FC = () => {
               ? formatMetadataRefreshMessage(progress, percent)
               : progress?.message || progress?.phase || '';
     const showCounts =
-        total > 0 && !isLiveWatchVisible && !isBackgroundActive && !isRefreshActive && !showIndeterminateProgress && !isCompleteProgress;
+        total > 0 &&
+        !isLiveWatchVisible &&
+        !isSmartThumbnailsShown &&
+        !isRefreshActive &&
+        !showIndeterminateProgress &&
+        !isCompleteProgress;
     const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
     const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
     const visibleFooterMessage = smartThumbnailHasFailures
@@ -400,10 +482,11 @@ export const ActivityDock: React.FC = () => {
         ? []
         : [
               ...splitDetailItems(progress?.detail),
-              ...(isInvokePresentation && typeof invokeOperation?.imported === 'number'
+              // A zero count says nothing the message does not already say, so only non-zero counts show.
+              ...(isInvokePresentation && typeof invokeOperation?.imported === 'number' && invokeOperation.imported > 0
                   ? [`${formatProgressNumber(invokeOperation.imported)} added`]
                   : []),
-              ...(isInvokePresentation && typeof invokeOperation?.updated === 'number'
+              ...(isInvokePresentation && typeof invokeOperation?.updated === 'number' && invokeOperation.updated > 0
                   ? [`${formatProgressNumber(invokeOperation.updated)} updated`]
                   : []),
               ...(isInvokePresentation && typeof invokeOperation?.pathsRepaired === 'number' && invokeOperation.pathsRepaired > 0
@@ -413,7 +496,7 @@ export const ActivityDock: React.FC = () => {
           ].filter((item): item is string => Boolean(item));
     const hasMultipleSecondaryDetails = secondaryDetails.length > 1;
     const shouldUseSparkles = isLiveWatchTone || isLowPriority;
-    const shouldPulseSparkles = isLowPriority && !isLiveWatchTone;
+    const shouldPulseSparkles = isLowPriority && !isLiveWatchTone && !isBackgroundPausedShown;
     const accentClasses = isLiveWatchTone
         ? {
               iconText: 'text-sage-600 dark:text-sage-300',
@@ -464,13 +547,14 @@ export const ActivityDock: React.FC = () => {
         // Observe a committed display on a paint opportunity, independently of
         // the coordinator callback. Tracing never changes focus or presentation.
         const frame = window.requestAnimationFrame(() =>
-            invokeSyncTrace.dockCommitted(invokeOperation, isInvokePresentation && shouldShow && !isActivityDockMinimized)
+            invokeSyncTrace.dockCommitted(invokeOperation, isInvokePresentation && shouldShow && !isCompact)
         );
         return () => window.cancelAnimationFrame(frame);
-    }, [invokeOperation, isInvokePresentation, shouldShow, isActivityDockMinimized]);
+    }, [invokeOperation, isInvokePresentation, shouldShow, isCompact]);
     const invokeResultInteractions = useInvokeResultDismissal(
         invokeOperation,
-        isInvokeResult && shouldShow && !isActivityDockMinimized,
+        // A held switch keeps its result, and with it "Switch now", until the swap.
+        isInvokeResult && shouldShow && !isCompact && !isOwnerSwitchHeldShown,
         shouldShow,
         invokePresentation.isDocumentVisible
     );
@@ -484,7 +568,9 @@ export const ActivityDock: React.FC = () => {
         )
     ) : null;
 
-    return (
+    // The dock lives in document.body: the library workspace's backdrop blur would otherwise trap its z-index
+    // under every viewer and dialog. Ordinary activities stay below context menus, dialogs and viewers (S8).
+    return createPortal(
         <AnimatePresence>
             {shouldShow && (
                 <motion.div
@@ -494,14 +580,19 @@ export const ActivityDock: React.FC = () => {
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    className="fixed bottom-8 right-8 z-[100]"
+                    data-testid="activity-dock"
+                    data-activity-dock=""
+                    className={`fixed bottom-11 right-11 ${isOverViewer ? 'z-[110]' : 'z-[40]'}`}
                 >
-                    {isActivityDockMinimized ? (
+                    {isCompact ? (
                         <motion.div layoutId="dock-content">
                             <TooltipButton
                                 label="Expand Activity Details"
                                 content="Expand Activity Details"
-                                onClick={() => setIsActivityDockMinimized(false)}
+                                onClick={() => {
+                                    if (isOverViewer) setIsExpandedOverViewer(true);
+                                    else setIsActivityDockMinimized(false);
+                                }}
                                 className={`group bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/20 dark:border-white/10 p-2.5 rounded-full shadow-xl flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform ${accentClasses.pillHover}`}
                             >
                                 <motion.div layout="position" className={accentClasses.iconText}>
@@ -572,7 +663,10 @@ export const ActivityDock: React.FC = () => {
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                                     <button
                                         type="button"
-                                        onClick={() => setIsActivityDockMinimized(true)}
+                                        onClick={() => {
+                                            if (isOverViewer) setIsExpandedOverViewer(false);
+                                            else setIsActivityDockMinimized(true);
+                                        }}
                                         aria-label="Minimize Activity Details"
                                         className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:scale-105 active:scale-95"
                                     >
@@ -623,7 +717,7 @@ export const ActivityDock: React.FC = () => {
                                     </p>
                                     {!showIndeterminateProgress &&
                                         !isLiveWatchActive &&
-                                        !isBackgroundActive &&
+                                        !isSmartThumbnailsShown &&
                                         !isRefreshActive &&
                                         !isCompleteProgress && (
                                             <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
@@ -687,6 +781,15 @@ export const ActivityDock: React.FC = () => {
                                         {isInvokeCancelling ? 'Cancelling…' : isInvokeSettling ? 'Finishing…' : 'Cancel'}
                                     </button>
                                 )}
+                                {isOwnerSwitchHeldShown && retainedOwnerScope && (
+                                    <button
+                                        type="button"
+                                        onClick={() => requestOwnerSwitchSwap(retainedOwnerScope.operationId)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-sage-500/10 px-2 py-1 text-xs font-bold text-sage-600 hover:bg-sage-500/20 dark:text-sage-300"
+                                    >
+                                        Switch now
+                                    </button>
+                                )}
                                 {isInvokeResult && invokeOperation?.retry && invokeOperation.phase !== 'completed' && (
                                     <button
                                         type="button"
@@ -701,6 +804,7 @@ export const ActivityDock: React.FC = () => {
                     )}
                 </motion.div>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 };

@@ -51,6 +51,8 @@ export interface RetainedOwnerScope {
     scope: InvokeSyncScope;
     label: string;
     targetLabel: string;
+    /** Set by "Switch now": swap to the target once it is admitted, even with the viewer or a modal open. */
+    swapRequested?: boolean;
 }
 
 interface InvokeOwnerScopeStore {
@@ -60,6 +62,7 @@ interface InvokeOwnerScopeStore {
     retainOwnerScope: (retained: RetainedOwnerScope) => void;
     /** Releases only the given operation's retained scope, so a stale operation cannot release a newer one. */
     releaseRetainedOwnerScope: (operationId: symbol) => void;
+    requestOwnerSwitchSwap: (operationId: symbol) => void;
     setOperation: (update: InvokeOperationState | null | ((previous: InvokeOperationState | null) => InvokeOperationState | null)) => void;
     setOwnerScopeState: (update: InvokeOwnerScopeStateUpdate) => void;
     resetOwnerScopeState: () => void;
@@ -79,6 +82,22 @@ export const isInvokeOwnerScopeAdmitted = (configuredPath: string | null | undef
 export const isOwnerSwitchPending = (state: Pick<InvokeOwnerScopeStore, 'retainedOwnerScope'>): boolean =>
     state.retainedOwnerScope !== null;
 
+const ownerScopeKey = (scope: InvokeSyncScope | undefined): string =>
+    scope?.mode === 'owner' ? `owner:${scope.ownerId}` : (scope?.mode ?? 'none');
+
+/**
+ * True while a user owner switch's target is admitted but the screen still shows the previous owner (the
+ * swap is held), whichever operation is current: a retried catch-up runs under a new operation.
+ */
+export const isOwnerSwitchHeld = (state: Pick<InvokeOwnerScopeStore, 'retainedOwnerScope' | 'ownerScopeState'>): boolean => {
+    const { retainedOwnerScope, ownerScopeState } = state;
+    return (
+        retainedOwnerScope !== null &&
+        (ownerScopeState.status === 'ready' || ownerScopeState.status === 'offline_ready') &&
+        ownerScopeKey(ownerScopeState.scope) !== ownerScopeKey(retainedOwnerScope.scope)
+    );
+};
+
 // Fail closed: states that need the gate never keep a retained view.
 const releasesRetainedScope = (status: InvokeOwnerScopeState['status']): boolean =>
     status === 'error' || status === 'selection_required' || status === 'idle' || status === 'discovering';
@@ -90,6 +109,12 @@ export const useInvokeOwnerScopeStore = create<InvokeOwnerScopeStore>((set) => (
     retainOwnerScope: (retained) => set({ retainedOwnerScope: retained }),
     releaseRetainedOwnerScope: (operationId) =>
         set((current) => (current.retainedOwnerScope?.operationId === operationId ? { retainedOwnerScope: null } : {})),
+    requestOwnerSwitchSwap: (operationId) =>
+        set((current) =>
+            current.retainedOwnerScope?.operationId === operationId
+                ? { retainedOwnerScope: { ...current.retainedOwnerScope, swapRequested: true } }
+                : {}
+        ),
     setOperation: (update) =>
         set((current) => ({
             operation: typeof update === 'function' ? update(current.operation) : update,
