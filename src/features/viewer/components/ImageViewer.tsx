@@ -348,8 +348,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             const key = e.key.toLowerCase();
 
             if (e.key === ' ') {
-                // A focused button, such as Cancel on the owner-switch dock above the viewer, owns Space.
-                if (e.target instanceof Element && e.target.closest('button')) return;
+                // A focused button on the owner-switch dock above the viewer owns Space. Only the dock's: the grid
+                // card that opened the viewer keeps focus, and Space must still close the viewer then.
+                if (e.target instanceof Element && e.target.closest('[data-activity-dock] button')) return;
                 e.preventDefault();
                 onClose();
                 return;

@@ -581,6 +581,7 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
                     exit={{ y: 50, opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     data-testid="activity-dock"
+                    data-activity-dock=""
                     className={`fixed bottom-11 right-11 ${isOverViewer ? 'z-[110]' : 'z-[40]'}`}
                 >
                     {isCompact ? (

@@ -516,17 +516,20 @@ describe('ImageViewer full metadata loading', () => {
         input.remove();
     });
 
-    it('leaves Space to a focused button, such as Cancel on the owner-switch dock above the viewer', async () => {
+    it('leaves Space to a focused button on the owner-switch dock above the viewer', async () => {
         const onClose = vi.fn();
         renderViewer({ onClose });
         await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
 
         // The dock is portalled to document.body, outside the viewer, while a switch prepares.
+        const dock = document.createElement('div');
+        dock.setAttribute('data-activity-dock', '');
         const cancel = document.createElement('button');
         cancel.textContent = 'Cancel';
         const inner = document.createElement('span');
         cancel.appendChild(inner);
-        document.body.appendChild(cancel);
+        dock.appendChild(cancel);
+        document.body.appendChild(dock);
         cancel.focus();
 
         const onButton = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
@@ -538,7 +541,27 @@ describe('ImageViewer full metadata loading', () => {
         expect(onButton.defaultPrevented).toBe(false);
         expect(onButtonChild.defaultPrevented).toBe(false);
         expect(onClose).not.toHaveBeenCalled();
-        cancel.remove();
+        dock.remove();
+    });
+
+    // B1 of the #529 closure review: a grid card opens the viewer through a full-card button that keeps focus.
+    // Space must still close the viewer, not press that card (or a toolbar button) behind it.
+    it('closes on Space while the grid card that opened the viewer keeps focus', async () => {
+        const onClose = vi.fn();
+        renderViewer({ onClose });
+        await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
+
+        const card = document.createElement('button');
+        card.setAttribute('aria-label', 'Open light.png');
+        document.body.appendChild(card);
+        card.focus();
+
+        const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        act(() => card.dispatchEvent(space));
+
+        expect(space.defaultPrevented).toBe(true);
+        expect(onClose).toHaveBeenCalledOnce();
+        card.remove();
     });
 
     it('lets the AI modal own shortcuts and closes it before the viewer on Escape', () => {

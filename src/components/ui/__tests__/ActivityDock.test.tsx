@@ -716,6 +716,8 @@ describe('ActivityDock', () => {
             expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
             fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
             expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            // The image viewer leaves Space to buttons inside this marker only (B1 of the #529 closure review).
+            expect(screen.getByRole('button', { name: 'Cancel' }).closest('[data-activity-dock] button')).toBeTruthy();
             fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
             expect(operation.cancel).toHaveBeenCalledOnce();
 
