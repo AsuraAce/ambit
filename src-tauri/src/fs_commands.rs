@@ -1,5 +1,6 @@
 use crate::db::commands::maintenance::lock_removed_lifecycle;
 use crate::db::{configure_connection, resolve_db_path};
+use crate::scanner::utils::path_is_known_media_file;
 use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::fs;
@@ -293,33 +294,6 @@ fn open_configured_app_db(app: &tauri::AppHandle<Wry>) -> Result<Connection, Str
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     configure_connection(&conn).map_err(|e| e.to_string())?;
     Ok(conn)
-}
-
-fn path_is_known_media_file(
-    conn: &Connection,
-    requested_path: &str,
-    canonical_path: &Path,
-) -> Result<bool, String> {
-    let requested = normalize_path_string(requested_path);
-    let canonical = normalize_path_for_frontend(canonical_path);
-
-    let is_known: i64 = conn
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM scoped_images
-                WHERE invoke_scope_hidden = 0
-                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
-                UNION ALL
-                SELECT 1 FROM scoped_removed_images
-                WHERE invoke_scope_hidden = 0
-                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
-            )",
-            params![requested, canonical],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
-    Ok(is_known != 0)
 }
 
 fn resolve_eligible_thumbnail_file(
@@ -759,6 +733,10 @@ mod tests {
         let _ = fs::remove_dir_all(temp_root);
     }
 
+    // The known-file check `move_to_trash` uses: a tracked path is accepted, an
+    // untracked or `invoke_scope_hidden` one is refused. The fixture views only
+    // filter on that flag; the Invoke source/owner scoping of the real views is
+    // not exercised here.
     #[test]
     fn known_media_file_matches_images_and_removed_images_only() {
         let conn = Connection::open_in_memory().unwrap();
