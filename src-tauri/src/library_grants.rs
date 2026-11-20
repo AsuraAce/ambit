@@ -832,15 +832,21 @@ pub(crate) fn record_dropped_files<R: Runtime>(
     Ok(failed)
 }
 
+/// An absolute identifier puts a mock app's data folders in `directory`, not in
+/// the developer's real AppData.
+#[cfg(test)]
+pub(crate) fn app_data_identifier(directory: &Path) -> String {
+    let identifier = directory.to_str().unwrap();
+    #[cfg(windows)]
+    let identifier = identifier.strip_prefix(r"\\?\").unwrap_or(identifier);
+    identifier.to_owned()
+}
+
 /// A mock app with an empty registry already loaded, saving inside `directory`.
 #[cfg(test)]
 pub(crate) fn test_app(directory: &Path) -> tauri::App<tauri::test::MockRuntime> {
     let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-    // An absolute identifier puts the app's data folders in the test's own directory.
-    let identifier = directory.to_str().unwrap();
-    #[cfg(windows)]
-    let identifier = identifier.strip_prefix(r"\\?\").unwrap_or(identifier);
-    context.config_mut().identifier = identifier.to_owned();
+    context.config_mut().identifier = app_data_identifier(directory);
     let app = tauri::test::mock_builder().build(context).unwrap();
     let state = LibraryGrantState::default();
     *state.registry.lock().unwrap() = Some(GrantRegistry::default());
@@ -1396,8 +1402,9 @@ mod tests {
         fs::create_dir_all(&beside).unwrap();
         // The mock's empty identifier would make AppLocalData the whole local
         // profile, which holds the temp folder and so every folder above.
+        let app_dir = temp_dir("register-command-app");
         let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-        context.config_mut().identifier = "com.ambit.grant-test".to_string();
+        context.config_mut().identifier = app_data_identifier(&app_dir);
         let app = tauri::test::mock_builder()
             .plugin(tauri_plugin_fs::init())
             .build(context)
@@ -1448,6 +1455,7 @@ mod tests {
             assert_eq!(readable(&beside), (false, false));
         });
         let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(app_dir);
     }
 
     // #415: every backend check of a path the webview names reads the grants
@@ -1516,9 +1524,12 @@ mod tests {
         let root = temp_dir("file-scope");
         let file = root.join("picked.png");
         fs::write(&file, b"png").unwrap();
+        let app_dir = temp_dir("file-scope-app");
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().identifier = app_data_identifier(&app_dir);
         let app = tauri::test::mock_builder()
             .plugin(tauri_plugin_fs::init())
-            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .build(context)
             .unwrap();
         let handle = app.handle().clone();
 
@@ -1527,6 +1538,7 @@ mod tests {
         assert!(!handle.fs_scope().is_allowed(&file));
 
         let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(app_dir);
     }
 
     // #427 review: a snapshot is taken on every command call, some on the main
@@ -1549,8 +1561,9 @@ mod tests {
         }
         // What the start's restore notes for the folder it could resolve.
         registry.remember_resolved(&alias.to_string_lossy(), &fs::canonicalize(&alias).unwrap());
+        let app_dir = temp_dir("snapshot-keys-app");
         let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-        context.config_mut().identifier = "com.ambit.grant-test".to_string();
+        context.config_mut().identifier = app_data_identifier(&app_dir);
         let app = tauri::test::mock_builder().build(context).unwrap();
         let state = LibraryGrantState::default();
         *state.registry.lock().unwrap() = Some(registry);
@@ -1573,6 +1586,7 @@ mod tests {
 
         let _ = fs::remove_dir(&alias).or_else(|_| fs::remove_file(&alias));
         let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(app_dir);
     }
 
     // #415: video import and playback check a picked file by its canonical path.
@@ -1588,9 +1602,8 @@ mod tests {
         fs::write(real.join("other.mp4"), b"video").unwrap();
         let alias = root.join("alias");
         link_dir(&real, &alias);
-        let app = tauri::test::mock_builder()
-            .build(tauri::test::mock_context(tauri::test::noop_assets()))
-            .unwrap();
+        let app_dir = temp_dir("picked-spelling-app");
+        let app = test_app(&app_dir);
 
         let recorded = grant_picked_files(
             app.handle(),
@@ -1607,6 +1620,7 @@ mod tests {
 
         let _ = fs::remove_dir(&alias);
         let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(app_dir);
     }
 
     // #415: the hole itself. tauri-plugin-fs admits a webview call when either its
@@ -1626,8 +1640,9 @@ mod tests {
         fs::write(&image, b"png").unwrap();
 
         let mut context = tauri::generate_context!(test = true);
-        // Its own AppLocalData, not the real app's.
-        context.config_mut().identifier = "com.ambit.webview-fs-test".to_string();
+        // Its own AppLocalData, in a temp folder apart from the library.
+        let app_dir = temp_dir("webview-fs-app");
+        context.config_mut().identifier = app_data_identifier(&app_dir);
         let app = tauri::test::mock_builder()
             .plugin(tauri_plugin_fs::init())
             .build(context)
@@ -1683,6 +1698,7 @@ mod tests {
         assert!(removed.is_err() && !refused(removed), "reaches the disk");
 
         let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(app_dir);
     }
 
     // #423 review: applying a new root revokes the previous one. When both name the
