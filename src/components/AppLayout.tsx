@@ -40,6 +40,7 @@ import { PrivacyProtectionGate } from './ui/PrivacyProtectionGate';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import LibraryLoadError from '../features/library/components/LibraryLoadError';
 import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { OwnerSwitchPill } from './ui/OwnerSwitchPill';
 
 setupGlobalLogging();
 
@@ -517,6 +518,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </div>
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
+                    <OwnerSwitchPill />
                     <div
                         ref={scrollContainerRef}
                         className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}
