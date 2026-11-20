@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvokeSyncScope } from '../../services/invoke/syncScope';
 import type { InvokeOwnerScopeState, RetainedOwnerScope } from '../../stores/invokeOwnerScopeStore';
-import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { isOwnerSwitchPending, useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { useOwnerScopeTransitionPresentation } from '../useOwnerScopeTransitionPresentation';
 
 interface Props {
@@ -154,6 +154,23 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
         expect(view.onClearStaleView).toHaveBeenCalledOnce();
         view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: null, canSwapOwnerView: true });
         expect(view.result.current.shown).toBe('odin');
+    });
+
+    // N2: the swap's stale-view clear calls the guarded Clear filters, which refuses while a switch is pending.
+    // The swap must release the retained owner first, or Freya's filters would survive into Odin's view.
+    it.each([
+        ['when the view can swap', false],
+        ['on "Switch now"', true],
+    ])('releases the retained owner before it clears the stale view %s', (_, swapRequested) => {
+        const switching = retained({ swapRequested });
+        useInvokeOwnerScopeStore.getState().retainOwnerScope(switching);
+        const view = renderSwitch({ ownerScopeState: admittedFreya, retainedOwnerScope: null, canSwapOwnerView: !swapRequested });
+        const pendingAtClear: boolean[] = [];
+        view.onClearStaleView.mockImplementation(() => pendingAtClear.push(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())));
+
+        view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: switching, canSwapOwnerView: !swapRequested });
+
+        expect(pendingAtClear).toEqual([false]);
     });
 
     it('swaps at once on "Switch now", even with the viewer open', () => {

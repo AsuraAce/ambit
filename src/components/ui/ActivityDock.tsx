@@ -251,8 +251,12 @@ export const ActivityDock: React.FC = () => {
     const isInvokeSettling = isInvokePresentation && invokeOperation?.phase === 'settling';
     // Q2 of #527: the target owner is admitted, but the gallery keeps the previous owner while the viewer or
     // a modal is open. "Switch now" swaps anyway, whichever operation is current (a Retry starts a new one).
-    const isOwnerSwitchHeldShown = isInvokePresentation && isSwapHeld;
-    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult;
+    const isOwnerSwitchHeldShown = isSwapHeld;
+    // The held swap outranks every other activity: once its catch-up ended, or another activity outranks
+    // that, the dock still offers "Switch now" on its own entry.
+    const isOwnerSwitchHeldEntry = isOwnerSwitchHeldShown && !isInvokePresentation;
+    const active =
+        isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult || isOwnerSwitchHeldEntry;
 
     let progress: SyncProgress | null = null;
     let label = '';
@@ -261,7 +265,15 @@ export const ActivityDock: React.FC = () => {
     let supportsCancel = false;
     let footerMessage = 'Tracking continues in the top header.';
 
-    if (isImporting) {
+    if (isOwnerSwitchHeldEntry && retainedOwnerScope) {
+        progress = {
+            current: 0,
+            total: 0,
+            mode: 'complete',
+            message: `Close the viewer or dialog to show ${retainedOwnerScope.targetLabel}'s images.`,
+        };
+        label = `InvokeAI · ${retainedOwnerScope.targetLabel}`;
+    } else if (isImporting) {
         progress = importProgress;
         label = 'Importing';
         supportsCancel = !!importAbortController;

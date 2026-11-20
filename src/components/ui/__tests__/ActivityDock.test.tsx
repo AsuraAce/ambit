@@ -653,6 +653,25 @@ describe('ActivityDock', () => {
             expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
         });
 
+        // N1: background thumbnail work outranks a finished catch-up's result; the held swap must still offer
+        // "Switch now", ahead of it.
+        it('keeps "Switch now" ahead of background work once the held catch-up finished', () => {
+            startSwitch({ phase: 'syncing', viewCommitted: true });
+            admitOdin();
+            useLibraryStore.setState({
+                isBackgroundHealingActive: true,
+                backgroundHealingProgress: { current: 3, total: 10, message: 'Optimized 3 thumbnails' },
+            });
+            render(<ActivityDock />);
+            act(() => completeInvokeOperation());
+
+            expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+            expect(screen.getByText('Odin is ready.')).toBeTruthy();
+            expect(screen.queryByText('Smart Thumbnails')).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
+            expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
+        });
+
         // R2: Retry runs the catch-up under a new operation; the swap is still held, so "Switch now" stays.
         it('keeps "Switch now" when a retried catch-up is the current operation', () => {
             const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
