@@ -19,6 +19,7 @@ import { useLibraryStore } from './libraryStore';
 import { startupDiagnostics } from '../utils/startupDiagnostics';
 import { getCollectionCount } from '../utils/collectionCount';
 import { isBrowserMockMode } from '../services/runtime';
+import { throwIfInvokeAborted } from '../services/invoke/abort';
 
 let preparationPromise: Promise<void> | null = null;
 let initPromise: Promise<boolean> | null = null;
@@ -226,6 +227,8 @@ interface RefreshSmartCountsOptions {
     includePromptSearch?: boolean;
     markPending?: boolean;
     consistency?: 'best_effort' | 'authoritative';
+    /** Stops the refresh at its next collection and rejects it, even when it is not authoritative. */
+    signal?: AbortSignal;
 }
 
 export interface CollectionRefreshOptions {
@@ -238,6 +241,8 @@ export interface CollectionRefreshOptions {
     retainThumbnails?: boolean;
     scheduleSmartRefresh?: boolean;
     consistency?: 'best_effort' | 'authoritative';
+    /** Stops a thumbnail refresh at its next batch and rejects it, even when it is not authoritative. */
+    signal?: AbortSignal;
 }
 
 export interface CollectionInitializationOptions {
@@ -527,12 +532,14 @@ export const useCollectionStore = create<CollectionState>()(
                         // the whole set at once instead of changing the sidebar batch by batch.
                         const forcedSummaries: Awaited<ReturnType<typeof getCollectionThumbnailSummaries>> = {};
                         for (const collectionBatch of chunk(currentCollections, COLLECTION_THUMBNAIL_CHUNK_SIZE)) {
+                            throwIfInvokeAborted(options.signal);
                             if (isSuperseded()) {
                                 wasSuperseded = true;
                                 break;
                             }
 
                             const summaries = await getCollectionThumbnailSummaries(collectionBatch);
+                            throwIfInvokeAborted(options.signal);
                             if (isSuperseded()) {
                                 wasSuperseded = true;
                                 break;
@@ -584,6 +591,7 @@ export const useCollectionStore = create<CollectionState>()(
                         if (runId === thumbnailRefreshRunId) {
                             set({ thumbnailHydrationPendingIds: {} });
                         }
+                        if (options.signal?.aborted) throw e;
                         console.error('[CollectionStore] Failed to refresh collection thumbnails', e);
                         if (isAuthoritative) throw e;
                     }
@@ -689,6 +697,7 @@ export const useCollectionStore = create<CollectionState>()(
 
                     let wasSuperseded = false;
                     for (const smartCol of smartCols) {
+                        throwIfInvokeAborted(options.signal);
                         if (
                             refreshGeneration !== initializationGeneration ||
                             smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
@@ -698,6 +707,7 @@ export const useCollectionStore = create<CollectionState>()(
                         }
 
                         const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
+                        throwIfInvokeAborted(options.signal);
                         if (
                             refreshGeneration !== initializationGeneration ||
                             smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
@@ -783,6 +793,7 @@ export const useCollectionStore = create<CollectionState>()(
                             ownedIds.forEach((id) => smartCountRunsByCollection.delete(id));
                         }
                     }
+                    if (options.signal?.aborted) throw e;
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
                     if (isAuthoritative) throw e;
                 }
