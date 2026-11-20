@@ -924,6 +924,48 @@ describe('ActivityDock', () => {
         expect(screen.getByText('Cancel')).toBeTruthy();
     });
 
+    // P2 of the #529 owner smoke: Smart Thumbnails starts at an owner switch's swap and outranks its result. It
+    // pauses for work that has no dock entry of its own (an owner's filter repair, a pending metadata refresh),
+    // and the dock emptied once the result's time ran out, then sprang back when the thumbnails resumed.
+    it('never leaves the dock empty while Smart Thumbnails pauses after an InvokeAI result', () => {
+        vi.useFakeTimers();
+        try {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation());
+            const empty: string[] = [];
+            const check = (step: string) => {
+                if (!document.body.querySelector('[data-testid="activity-dock"]')) empty.push(step);
+            };
+            render(<ActivityDock />);
+            act(() => completeInvokeOperation());
+            act(() =>
+                useLibraryStore.setState({
+                    isBackgroundHealingActive: true,
+                    backgroundHealingProgress: { current: 3, total: 10, message: 'Optimized 3 thumbnails' },
+                })
+            );
+            expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
+            check('thumbnails running');
+
+            act(() => useLibraryStore.setState({ backgroundHealingPaused: true }));
+            // A finished result outranks the paused thumbnails while it lasts.
+            expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
+            check('paused, result shown');
+            act(() => vi.advanceTimersByTime(5000));
+            expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+            check('paused, result over');
+            expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
+            expect(screen.getByText('Paused while other work finishes.')).toBeTruthy();
+            expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+
+            act(() => useLibraryStore.setState({ backgroundHealingPaused: false }));
+            expect(screen.getByText('Optimized 3 thumbnails')).toBeTruthy();
+            check('resumed');
+            expect(empty).toEqual([]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('renders completed smart thumbnail progress without generic count or percent chrome', () => {
         useLibraryStore.setState({
             isBackgroundHealingActive: true,

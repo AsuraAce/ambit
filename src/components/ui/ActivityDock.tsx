@@ -261,8 +261,26 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
     // The held swap outranks every other activity: once its catch-up ended, or another activity outranks
     // that, the dock still offers "Switch now" on its own entry.
     const isOwnerSwitchHeldEntry = isOwnerSwitchHeldShown && !isInvokePresentation;
+    // P2 of the #529 owner smoke: Smart Thumbnails pauses for work that has no dock entry of its own (a filter
+    // repair, a pending metadata refresh). With nothing else to show it keeps its entry, marked paused, so the
+    // dock does not empty and come back when the thumbnails resume.
+    const isBackgroundPausedShown =
+        isBackgroundHealingActive &&
+        backgroundHealingPaused &&
+        !isHighPriorityActive &&
+        !isRefreshActive &&
+        !isLiveWatchVisible &&
+        !isInvokeResult &&
+        !isOwnerSwitchHeldEntry;
+    const isSmartThumbnailsShown = isBackgroundActive || isBackgroundPausedShown;
     const active =
-        isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult || isOwnerSwitchHeldEntry;
+        isHighPriorityActive ||
+        isBackgroundActive ||
+        isRefreshActive ||
+        isLiveWatchVisible ||
+        isInvokeResult ||
+        isOwnerSwitchHeldEntry ||
+        isBackgroundPausedShown;
     // S8 of #527: an owner switch's progress, Cancel and "Switch now" stay reachable while a viewer is open.
     // Over the viewer the entry starts compact, in the dock's usual spot, and expands on click.
     const isOwnerSwitchEntryShown =
@@ -369,6 +387,15 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
         progress = invokeOperation!.progress;
         label = `InvokeAI · ${invokeOperation!.targetLabel}`;
         footerMessage = 'Existing images and collections are kept.';
+    } else if (isBackgroundPausedShown) {
+        progress = {
+            current: backgroundHealingProgress?.current ?? 0,
+            total: backgroundHealingProgress?.total ?? 0,
+            message: 'Paused while other work finishes.',
+        };
+        label = 'Smart Thumbnails';
+        isLowPriority = true;
+        footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     }
     if (isOwnerSwitchHeldShown && retainedOwnerScope) {
         // The switch is done; the catch-up's own result (and a failure's message) stays in the message line.
@@ -390,6 +417,7 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
     const isCompleteProgress = mode === 'complete' || isInvokeResult;
     const showIndeterminateProgress =
         !isInvokeResult &&
+        !isBackgroundPausedShown &&
         (liveWatchPresentation.isActiveWork ||
             mode === 'indeterminate' ||
             (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
@@ -433,7 +461,12 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
               ? formatMetadataRefreshMessage(progress, percent)
               : progress?.message || progress?.phase || '';
     const showCounts =
-        total > 0 && !isLiveWatchVisible && !isBackgroundActive && !isRefreshActive && !showIndeterminateProgress && !isCompleteProgress;
+        total > 0 &&
+        !isLiveWatchVisible &&
+        !isSmartThumbnailsShown &&
+        !isRefreshActive &&
+        !showIndeterminateProgress &&
+        !isCompleteProgress;
     const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
     const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
     const visibleFooterMessage = smartThumbnailHasFailures
@@ -683,7 +716,7 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
                                     </p>
                                     {!showIndeterminateProgress &&
                                         !isLiveWatchActive &&
-                                        !isBackgroundActive &&
+                                        !isSmartThumbnailsShown &&
                                         !isRefreshActive &&
                                         !isCompleteProgress && (
                                             <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
