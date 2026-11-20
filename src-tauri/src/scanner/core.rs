@@ -345,50 +345,6 @@ pub fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     Ok(None)
 }
 
-pub fn read_image_metadata(
-    path: String,
-    default_tool: Option<String>,
-) -> Result<metadata::ImageMetadata, String> {
-    let path_obj = std::path::Path::new(&path);
-    if !path_obj.exists() {
-        return Err("File not found".to_string());
-    }
-
-    let chunks = scan_metadata_chunks_for_path(path_obj, true)?;
-
-    let mut parsed_metadata = metadata::ImageMetadata::default();
-
-    // 1. A1111/Forge (Compatibility)
-    if let Some(params) = chunks
-        .get("parameters")
-        .or_else(|| chunks.get("Parameters"))
-    {
-        parsed_metadata = metadata::extract_a1111_metadata(params, default_tool.clone());
-    }
-
-    // 2. InvokeAI (Cumulative Merge)
-    if let Some(content) = chunks
-        .get("invokeai_metadata")
-        .or_else(|| chunks.get("sd-metadata"))
-        .or_else(|| chunks.get("dream_metadata"))
-    {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-            let invoke_meta = metadata::extract_invokeai_metadata(&json);
-            metadata::merge_metadata(&mut parsed_metadata, invoke_meta);
-        }
-    }
-
-    // 3. ComfyUI (Cumulative Merge & Tool Finalization)
-    if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-        metadata::comfyui::merge_comfyui_metadata(&mut parsed_metadata, &chunks);
-
-        // Finalize tool label: ComfyUI chunks exist, so it's a ComfyUI generation
-        parsed_metadata.tool = "ComfyUI".to_string();
-    }
-
-    Ok(parsed_metadata)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -225,52 +225,6 @@ fn flush_image_candidates(
     candidates.clear();
 }
 
-pub fn collect_images_recursive_absolute(root: &Path, current: &Path, files: &mut Vec<String>) {
-    let Some(root_canonical) = canonical_root(root) else {
-        return;
-    };
-    let mut visited = HashSet::new();
-    collect_images_recursive_absolute_inner(&root_canonical, current, files, &mut visited);
-}
-
-fn collect_images_recursive_absolute_inner(
-    root_canonical: &Path,
-    current: &Path,
-    files: &mut Vec<String>,
-    visited: &mut HashSet<PathBuf>,
-) {
-    if files.len() > 300_000 {
-        return;
-    }
-
-    let Some(current_canonical) = canonical_inside_root(root_canonical, current) else {
-        return;
-    };
-    if !visited.insert(current_canonical) {
-        return;
-    }
-
-    if let Ok(entries) = std::fs::read_dir(current) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-
-            if safe_dir(root_canonical, &p, file_type) {
-                if !is_thumbnail_dir(&p) {
-                    collect_images_recursive_absolute_inner(root_canonical, &p, files, visited);
-                }
-            } else if safe_file(root_canonical, &p, file_type)
-                && is_image_path(&p)
-                && !is_thumbnail_file(&p)
-            {
-                files.push(p.to_string_lossy().replace("\\", "/"));
-            }
-        }
-    }
-}
-
 pub fn collect_images_with_stats_recursive(current: &Path, files: &mut Vec<FileEntry>) {
     let Some(root_canonical) = canonical_root(current) else {
         return;
@@ -681,11 +635,6 @@ mod tests {
         relative.sort();
         assert_eq!(relative, vec!["inside.png", "nested/inner.webp"]);
 
-        let mut absolute = Vec::new();
-        collect_images_recursive_absolute(root, root, &mut absolute);
-        absolute.sort();
-        assert_eq!(absolute, expected_absolute);
-
         let mut with_stats = Vec::new();
         collect_images_with_stats_recursive(root, &mut with_stats);
         let mut with_stats_paths: Vec<_> =
@@ -731,10 +680,6 @@ mod tests {
         collect_images_recursive(&root.path, &outside.path, &mut relative);
         assert!(relative.is_empty());
         assert_relative_scan_matches_serial(&root.path, &outside.path, Vec::new());
-
-        let mut absolute = Vec::new();
-        collect_images_recursive_absolute(&root.path, &outside.path, &mut absolute);
-        assert!(absolute.is_empty());
     }
 
     #[test]
