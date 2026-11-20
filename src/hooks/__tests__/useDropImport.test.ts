@@ -219,4 +219,20 @@ describe('useDropImport', () => {
             expect(importWebFiles).not.toHaveBeenCalled();
         });
     });
+
+    // A folder saved now could not get its first scan, and would be left looking scanned (A3 in the #528 review).
+    it('saves no folder when the switch starts while Rust grants a folder drop', async () => {
+        const { result } = renderDropImport();
+        act(() => result.current.handleDropFiles([file('art')]));
+        startOwnerSwitchForTest();
+        try {
+            await act(async () => listeners.get('library-drop-result')?.({ payload: dropResult({ folders: ['C:/art'] }) }));
+        } finally {
+            endOwnerSwitchForTest();
+        }
+
+        expect(mocks.addToast).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(importFolders).not.toHaveBeenCalled();
+    });
 });

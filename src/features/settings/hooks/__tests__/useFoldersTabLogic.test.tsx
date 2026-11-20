@@ -1,10 +1,11 @@
 ﻿import React from 'react';
 import { act, renderHook, waitFor } from '../../../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppSettings, GeneratorTool } from '../../../../types';
 import { useLibraryStore } from '../../../../stores/libraryStore';
 import { useSettingsStore } from '../../../../stores/settingsStore';
 import { useFoldersTabLogic } from '../useFoldersTabLogic';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 import { commands } from '../../../../bindings';
 import { processNativePaths, type ImportResult } from '../../../../services/importService';
 
@@ -1003,5 +1004,81 @@ describe('useFoldersTabLogic', () => {
         await runCase(emptyImportResult({ failedPaths: ['elsewhere'], completedSourcePaths: ['C:/Added'] }));
         await runCase(new Error('failed'));
         vi.useRealTimers();
+    });
+    // #527: user-started library work waits for an owner switch; the scope already belongs to the target owner.
+    describe('while an InvokeAI owner switch is pending', () => {
+        afterEach(endOwnerSwitchForTest);
+
+        it('refuses a rescan before any scan or import starts', async () => {
+            const settings = {
+                ...baseSettings,
+                monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10 }],
+            };
+            const onScanFolder = vi.fn();
+            const { result } = renderFoldersHook(settings, onScanFolder);
+            startOwnerSwitchForTest();
+
+            await act(async () => result.current.handleRescan('one', 'C:/Watch', GeneratorTool.COMFYUI));
+
+            expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(commands.scanDirectorySince).not.toHaveBeenCalled();
+            expect(processNativePaths).not.toHaveBeenCalled();
+            expect(onScanFolder).not.toHaveBeenCalled();
+        });
+
+        // A folder saved now could not get its first scan and would be left looking scanned.
+        it('refuses to add a folder, saving nothing', async () => {
+            const { result, setSettings } = renderFoldersHook(baseSettings, vi.fn());
+            act(() => result.current.setNewFolderPath('D:/Art'));
+            startOwnerSwitchForTest();
+
+            await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+
+            expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(commands.requestLibraryFolderGrant).not.toHaveBeenCalled();
+            expect(setSettings).not.toHaveBeenCalled();
+        });
+
+        it('saves nothing when the switch starts while Rust asks to confirm the folder', async () => {
+            let grant!: (value: { status: 'ok'; data: boolean }) => void;
+            vi.mocked(commands.requestLibraryFolderGrant).mockReturnValueOnce(new Promise((resolve) => (grant = resolve)));
+            const { result, setSettings } = renderFoldersHook(baseSettings, vi.fn());
+            act(() => result.current.setNewFolderPath('D:/Art'));
+            act(() => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+            expect(commands.requestLibraryFolderGrant).toHaveBeenCalled();
+
+            startOwnerSwitchForTest();
+            await act(async () => grant({ status: 'ok', data: true }));
+
+            expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(setSettings).not.toHaveBeenCalled();
+        });
+
+        it('leaves an added folder queued for its first scan when the switch starts before the scan', async () => {
+            vi.useFakeTimers();
+            try {
+                const onScanFolder = vi.fn();
+                const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
+                act(() => result.current.setNewFolderPath('D:/Art'));
+                await act(async () => result.current.handleAddFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+                expect(setSettings).toHaveBeenCalledOnce();
+
+                startOwnerSwitchForTest();
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(500);
+                });
+
+                expect(onScanFolder).not.toHaveBeenCalled();
+                expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+                expect(addToastMock).not.toHaveBeenCalledWith('Folder scan completed with import errors', 'warning');
+                // Only the add was saved: the folder keeps initialScanPending and no cursor, so startup or Rescan scans it.
+                expect(setSettings).toHaveBeenCalledOnce();
+                const added = (setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings)(baseSettings);
+                expect(added.monitoredFolders[0]).toMatchObject({ path: 'D:/Art', initialScanPending: true });
+                expect(added.monitoredFolders[0].lastScanned).toBeUndefined();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
     });
 });

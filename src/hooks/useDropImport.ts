@@ -117,6 +117,7 @@ export const useDropImport = ({ importPaths, importFolders, importWebFiles, moni
 
             const problems = describeDropProblems(result, droppedNames);
             if (problems) toast(problems, 'warning');
+            if ((result.files.length > 0 || result.folders.length > 0) && refuseWriteDuringOwnerSwitch(toast)) return;
 
             // Another import may have started while Rust granted the drop: say so plainly
             // rather than letting the import guard turn it away or add an unscanned folder.

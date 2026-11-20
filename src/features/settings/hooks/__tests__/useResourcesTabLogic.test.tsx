@@ -1,11 +1,12 @@
 import React from 'react';
 import { act, renderHook } from '../../../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppSettings } from '../../../../types';
 import { commands, type ResolutionResult, type ThumbnailScanResult } from '../../../../bindings';
 import { useLibraryStore, type SyncProgress } from '../../../../stores/libraryStore';
 import { useResourceRemovalStore } from '../../../../stores/resourceRemovalStore';
 import { useResourcesTabLogic } from '../useResourcesTabLogic';
+import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
 
 const addToastMock = vi.hoisted(() => vi.fn());
 const scanResourceThumbnailsMock = vi.hoisted(() => vi.fn());
@@ -721,5 +722,33 @@ describe('useResourcesTabLogic', () => {
         await act(async () => result.current.cancelResolveOnline());
         expect(consoleError).toHaveBeenCalled();
         consoleError.mockRestore();
+    });
+    // #527: user-started library, maintenance and network work waits for an owner switch.
+    describe('while an InvokeAI owner switch is pending', () => {
+        afterEach(endOwnerSwitchForTest);
+
+        it('refuses to remove a resource folder, purging and saving nothing', async () => {
+            const settings = { ...baseSettings, resourceFolders: ['D:/AmbitFixtures/Models'] };
+            const { result, setSettings } = renderResourcesHook(settings);
+            startOwnerSwitchForTest();
+
+            await act(async () => result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models'));
+
+            expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(commands.purgeResourceFolderAssets).not.toHaveBeenCalled();
+            expect(setSettings).not.toHaveBeenCalled();
+        });
+
+        it('refuses a confirmed Resolve Online without calling CivitAI', async () => {
+            const { result } = renderResourcesHook();
+            act(() => result.current.requestResolveOnline());
+            startOwnerSwitchForTest();
+
+            await act(async () => result.current.confirmResolveOnline());
+
+            expect(addToastMock).toHaveBeenCalledWith(OWNER_SWITCH_TOAST, 'info');
+            expect(commands.resolveHashesOnline).not.toHaveBeenCalled();
+            expect(result.current.isResolveConfirmOpen).toBe(false);
+        });
     });
 });

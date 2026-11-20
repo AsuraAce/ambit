@@ -14,6 +14,7 @@ import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
 import { createEmptyTouchedFacetResources, hasTouchedFacetResources, type TouchedFacetResources } from '../../../utils/touchedFacetTypes';
 import { formatHashResolutionMessage, isHashResolutionPartial } from '../utils/hashResolution';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 const RESOURCE_TOUCH_KEYS = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'] as const;
 
@@ -303,6 +304,7 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
     const handleRemoveResourceFolder = React.useCallback(
         async (path: string) => {
             if (isScanningDiscovery || isPopulatingThumbnails || useResourceRemovalStore.getState().removingResourcePath) return;
+            if (refuseWriteDuringOwnerSwitch(addToast)) return;
 
             const normalizedPath = normalizePath(path);
             const remainingPaths = (settings.resourceFolders || [])
@@ -372,6 +374,7 @@ export const useResourcesTabLogic = ({ settings, setSettings }: UseResourcesTabL
 
     const confirmResolveOnline = React.useCallback(async () => {
         setIsResolveConfirmOpen(false);
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         if (isLibraryBusyForHashResolution()) {
             setResolutionResult({
                 success: false,

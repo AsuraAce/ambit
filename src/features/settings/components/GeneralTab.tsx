@@ -6,6 +6,7 @@ import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 import { useLibraryStore, type ThumbnailOptimizationDetails, type ThumbnailOptimizationRunSummary } from '../../../stores/libraryStore';
 import { AppSettings } from '../../../types';
 import { unwrap } from '../../../utils/spectaUtils';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 interface TabProps {
     settings: AppSettings;
@@ -131,6 +132,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     };
 
     const handleRetryFailedThumbnails = async () => {
+        if (refuseWriteDuringOwnerSwitch(addToast)) return;
         setIsRetryingFailures(true);
 
         try {

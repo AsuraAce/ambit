@@ -2,6 +2,7 @@ import type * as React from 'react';
 import { AppSettings, GeneratorTool, MonitoredFolder } from '../../../types';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import type { ImportResult } from '../../../services/importService';
+import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
 
 // Adding a library folder and running its first scan, shared by Settings → Folders
 // and a folder dropped onto the window (#493).
@@ -50,6 +51,9 @@ export const scanAddedFolders = async (
     foldersToScan: AddedFolder[],
     { onScanFolder, setSettings, addToast, afterScan }: ScanAddedFoldersOptions
 ): Promise<void> => {
+    // A switch that started after the folder was saved: leave it queued (initialScanPending) rather than
+    // recording a scan that never ran. The next startup scan or a Rescan picks it up.
+    if (refuseWriteDuringOwnerSwitch(addToast)) return;
     try {
         const result = await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
         if (isCompleteImport(result)) {
