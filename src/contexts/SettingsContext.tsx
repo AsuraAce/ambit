@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, ReactNode } from 'react';
 import { AppSettings, AppSettingsUpdate } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isTauriRuntime } from '../services/runtime';
@@ -98,7 +98,10 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // Maintain ref for backward compat
     const settingsRef = useRef<AppSettings>(settings);
-    settingsRef.current = settings;
+    // Sync before paint; all readers are SyncContext callbacks that run after commit.
+    useLayoutEffect(() => {
+        settingsRef.current = settings;
+    }, [settings]);
 
     // Note: Auto-save logic is now inside the Store.
 

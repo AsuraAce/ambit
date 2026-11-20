@@ -723,4 +723,55 @@ describe('VirtualGrid gallery motion', () => {
         fireEvent.mouseDown(container.firstElementChild as Element, { button: 0 });
         expect(container.firstElementChild).toBeTruthy();
     });
+
+    // Scrolling is the hot path for large libraries: one commit per scroll frame, plus one when
+    // scroll-motion suppression ends. A change that adds renders per frame fails here.
+    it('commits once per scroll frame in a 10,000-item library', async () => {
+        const { container: scrollContainer } = createScrollContainer(600, 1_000_000);
+        const scrollContainerRef = { current: scrollContainer };
+        const renderCounts = { commits: 0, items: 0 };
+        const countingRenderItem = (item: TestItem, style: React.CSSProperties) => {
+            renderCounts.items += 1;
+            return renderItem(item, style);
+        };
+        const wait = (ms: number) => act(() => new Promise<void>((resolve) => window.setTimeout(resolve, ms)));
+
+        render(
+            <React.Profiler
+                id="grid"
+                onRender={() => {
+                    renderCounts.commits += 1;
+                }}
+            >
+                <VirtualGrid<TestItem>
+                    items={createItems(10_000)}
+                    layout="grid"
+                    minItemWidth={100}
+                    gap={0}
+                    padding={0}
+                    scrollContainerRef={scrollContainerRef}
+                    renderItem={countingRenderItem}
+                    transitionKey="layout:grid"
+                />
+            </React.Profiler>
+        );
+        await screen.findByTestId('grid-item-item-0');
+        await wait(300);
+
+        renderCounts.commits = 0;
+        renderCounts.items = 0;
+        const scrollFrames = 5;
+        for (let frame = 1; frame <= scrollFrames; frame += 1) {
+            act(() => {
+                scrollContainer.scrollTop = frame * 1000;
+                scrollContainer.dispatchEvent(new Event('scroll'));
+            });
+            await wait(20);
+        }
+        await wait(300);
+
+        expect(screen.getByTestId('grid-item-item-200')).toBeTruthy();
+        // Baseline measured on main before #407 part 2: five scroll frames plus the end of suppression.
+        expect({ commits: renderCounts.commits, items: renderCounts.items }).toEqual({ commits: scrollFrames + 1, items: 844 });
+    });
 });

@@ -43,8 +43,14 @@ export default tseslint.config(
             '@typescript-eslint/require-await': 'off',
             'react-hooks/exhaustive-deps': 'error',
             // React Compiler rules with existing findings; fixing them restructures components (#407).
-            'react-hooks/refs': 'off',
             'react-hooks/set-state-in-effect': 'off',
+        },
+    },
+    {
+        // These files still read refs during render; they are fixed one by one under #407.
+        files: ['src/contexts/SearchContext.tsx', 'src/features/library/components/ViewControls.tsx', 'src/App.tsx'],
+        rules: {
+            'react-hooks/refs': 'off',
         },
     }
 );

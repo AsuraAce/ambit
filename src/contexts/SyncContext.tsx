@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useEffect, useLayoutEffect, useRef, useState, ReactNode } from 'react';
 import { useSettings } from './SettingsContext';
 import { useToast } from '../hooks/useToast';
 import { getLiveWatchSummaryMessage, useLibraryStore, type SyncProgress } from '../stores/libraryStore';
@@ -1568,7 +1568,10 @@ export const SyncProvider: React.FC<{
             startPendingInvokeLiveRerun,
         ]
     );
-    applyInvokeConnectionRef.current = applyInvokeConnection;
+    // Callbacks declared above call through this ref; it is synced before any of them can run.
+    useLayoutEffect(() => {
+        applyInvokeConnectionRef.current = applyInvokeConnection;
+    }, [applyInvokeConnection]);
 
     const retryInvokeOwnerScope = useCallback(async (): Promise<boolean> => {
         if (
@@ -2610,7 +2613,9 @@ export const SyncProvider: React.FC<{
         ]
     );
 
-    runInvokeSyncRef.current = runInvokeSync;
+    useLayoutEffect(() => {
+        runInvokeSyncRef.current = runInvokeSync;
+    }, [runInvokeSync]);
 
     const startInvokeSync = useCallback(
         async (options?: StartInvokeSyncOptions): Promise<InvokeSyncOutcome> => {

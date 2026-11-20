@@ -34,7 +34,7 @@ export const useOwnerScopeTransitionPresentation = <T>({
     const wasRuntimeTransitionRef = React.useRef(false);
     const cleanupPendingRef = React.useRef(false);
     const cleanupPerformedRef = React.useRef(false);
-    const lastAdmittedRootRef = React.useRef<string | null>(null);
+    const [lastAdmittedRoot, setLastAdmittedRoot] = React.useState<string | null>(null);
     const retainedPresentationRef = React.useRef<T | null>(null);
 
     const normalizedConfiguredRoot = normalizeInvokeRoot(configuredRoot);
@@ -42,12 +42,17 @@ export const useOwnerScopeTransitionPresentation = <T>({
     // An accepted first connection can still be persisting its path. Keep it gated until admission.
     const isOwnerScopeAdmitted = !isExplicitPreparation && isInvokeOwnerScopeAdmitted(configuredRoot, ownerScopeState);
     const isOwnerScopeBlocking = !isOwnerScopeAdmitted;
+    // Remember the last admitted root during render. Admission (ready) and a runtime transition
+    // (applying) never hold in the same render, so this matches the previous after-commit update.
+    if (isOwnerScopeAdmitted && normalizedConfiguredRoot !== null && normalizedConfiguredRoot !== lastAdmittedRoot) {
+        setLastAdmittedRoot(normalizedConfiguredRoot);
+    }
     const isRuntimeTransition =
         !isInitialStartupPresentation &&
         ownerScopeState.status === 'applying' &&
         normalizedConfiguredRoot !== null &&
         applyingRoot === normalizedConfiguredRoot &&
-        lastAdmittedRootRef.current === normalizedConfiguredRoot;
+        lastAdmittedRoot === normalizedConfiguredRoot;
     const scopeIdentity = ownerScopeState.scope?.mode === 'owner' ? ownerScopeState.scope.ownerId : (ownerScopeState.scope?.mode ?? 'none');
     const isDelayedGateVisible = useDelayedBusyPresentation(isRuntimeTransition && !isExplicitPreparation, {
         revealDelayMs: RUNTIME_OWNER_SCOPE_GRACE_MS,
@@ -57,12 +62,6 @@ export const useOwnerScopeTransitionPresentation = <T>({
     // Settings has closed for an explicit action: do not briefly expose the old gallery during the grace period.
     const isGateVisible = isExplicitPreparation || isDelayedGateVisible;
     const isRetainingPreviousView = isRuntimeTransition && !isGateVisible;
-
-    React.useEffect(() => {
-        if (isOwnerScopeAdmitted && normalizedConfiguredRoot !== null) {
-            lastAdmittedRootRef.current = normalizedConfiguredRoot;
-        }
-    }, [isOwnerScopeAdmitted, normalizedConfiguredRoot]);
 
     React.useLayoutEffect(() => {
         const wasBlocking = wasBlockingRef.current;
