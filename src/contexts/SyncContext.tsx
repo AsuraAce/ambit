@@ -1435,6 +1435,8 @@ export const SyncProvider: React.FC<{
             );
             let published = false;
             let viewCommitted = false;
+            // The admitted view was shown before its repair (#530); recovery then repairs it behind the view too.
+            let cacheRepairDeferred = false;
             let discovery: InvokeOwnerDiscovery | undefined;
             let outcome: InvokeSyncOutcome = { status: 'failed' };
             let targetSnapshot: InvokeDbSnapshotState | undefined;
@@ -1606,6 +1608,7 @@ export const SyncProvider: React.FC<{
                       );
                 assertSubmittedConnection();
                 if (!admission.allowed) throw new Error(admission.reason ?? 'The selected InvokeAI view is unavailable.');
+                cacheRepairDeferred = admission.cacheRepairDeferred === true;
                 // Live Watch can advance this admitted scope beyond its last foreground snapshot.
                 if (settingsRef.current.lastSyncedAt !== targetCursor) await publish({ lastSyncedAt: targetCursor });
                 assertSubmittedConnection();
@@ -1650,7 +1653,7 @@ export const SyncProvider: React.FC<{
                 if (outcome.status !== 'completed')
                     throw new Error(('message' in outcome && outcome.message) || 'Synchronization did not complete.');
                 // Chains after any repair the catch-up started; one that already committed finds the cache restored.
-                if (admission.cacheRepairDeferred) startBackgroundOwnerCacheRepair();
+                if (cacheRepairDeferred) startBackgroundOwnerCacheRepair();
                 updateInvokeOperation(token, { phase: 'completed', cancel: undefined, message: 'Synchronization complete.' });
                 return { ...outcome, viewCommitted };
             } catch (error) {
@@ -1761,7 +1764,10 @@ export const SyncProvider: React.FC<{
                             );
                         if (targetSnapshot) snapshots = upsertInvokeDbSnapshot(snapshots, targetSnapshot);
                         await publish({ lastSyncedAt: targetCursor, invokeDbSnapshot: targetSnapshot, invokeDbSnapshots: snapshots });
-                        await refreshAfterOwnerScopeChange();
+                        // A deferred view is the target's own restored cache: repair it behind the view,
+                        // where a later switch can stop it, instead of recounting it in the foreground.
+                        if (cacheRepairDeferred) startBackgroundOwnerCacheRepair();
+                        else await refreshAfterOwnerScopeChange();
                     } catch (recoveryError) {
                         message += ` Recovery needs attention: ${String(recoveryError)}`;
                         ownerScopeAdmissionRef.current = null;

@@ -4000,6 +4000,53 @@ describe('Library Integration (Provider Stack)', () => {
                 expectNothingOfOwnerAShown();
             });
 
+            it('holds the filter counts during the catch-up and repairs behind the view when the catch-up is cancelled', async () => {
+                const { getSync } = await startOwnerA();
+                // B's source changed, so its catch-up runs; it stays open until cancelled.
+                mocks.getInvokeDbSnapshot.mockResolvedValue({
+                    status: 'ok',
+                    data: { dbPath: discovery.dbPath, files: [{ path: discovery.dbPath, exists: true, size: 2000, modifiedMs: 200 }] },
+                });
+                mocks.syncImages.mockImplementationOnce(
+                    (_rootPath: string, _onProgress: unknown, signal: AbortSignal) =>
+                        new Promise((_, reject) => {
+                            signal.addEventListener('abort', () => reject(new Error('Aborted')), { once: true });
+                        })
+                );
+                const gate = holdNextClaim();
+                applyOwnerB(planOf('selective', true));
+
+                let switching!: Promise<boolean>;
+                act(() => {
+                    switching = selectOwnerB(getSync());
+                });
+                await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledOnce());
+                // The restored view is on screen while its catch-up runs, with its counts held.
+                expect(getSync().invokeOwnerScopeState.status).toBe('ready');
+                expect(isRepairing()).toBe(true);
+
+                act(() => getSync().cancelSync());
+                // The recovery leaves the restored view and repairs it in the background, so the
+                // cancelled switch ends while that repair still waits for its claim.
+                const settled = await act(async () =>
+                    Promise.race([switching.then(() => 'settled'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 200))])
+                );
+                expect(settled).toBe('settled');
+                expect(await switching).toBe(true);
+                await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+                expect(isRepairing()).toBe(true);
+
+                await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 6)));
+
+                await waitFor(() =>
+                    expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 })
+                );
+                // A foreground recovery would have cleared the saved counts and recounted before ending.
+                expect(mocks.clearCollectionOwnerScopeCaches).not.toHaveBeenCalled();
+                await waitFor(() => expect(isRepairing()).toBe(false));
+                expectNothingOfOwnerAShown();
+            });
+
             it('makes a switch to an owner with a full plan wait for its rebuild', async () => {
                 // A full plan restores nothing, so the live tables still hold owner A's values.
                 const { getSync } = await startOwnerA();
