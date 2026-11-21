@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.16.0](https://github.com/AsuraAce/ambit/compare/v0.15.0...v0.16.0) (2026-11-21)
+
+
+### Features
+
+* **invoke:** browse the previous owner during a user owner switch ([#529](https://github.com/AsuraAce/ambit/issues/529)) ([425be5f](https://github.com/AsuraAce/ambit/commit/425be5fa255c83cf63f6685ab107603ee0507140))
+* **invoke:** track the retained owner and refuse writes during an owner switch ([#528](https://github.com/AsuraAce/ambit/issues/528)) ([a58e1d9](https://github.com/AsuraAce/ambit/commit/a58e1d974ba91aca69cf17668508fb4d282cdd13))
+
+
+### Bug Fixes
+
+* **import:** import dropped files and folders in place ([#508](https://github.com/AsuraAce/ambit/issues/508)) ([c2d1e53](https://github.com/AsuraAce/ambit/commit/c2d1e53cfac2accd4448829a1e4c4b5550fead3f))
+* **logging:** log unhandled promise rejections ([#515](https://github.com/AsuraAce/ambit/issues/515)) ([edec64b](https://github.com/AsuraAce/ambit/commit/edec64b8b58e2056c071603df983a8fe70afc382))
+* **metadata:** pause the reparse during owner switches and keep late startup events ([#555](https://github.com/AsuraAce/ambit/issues/555)) ([262f6ae](https://github.com/AsuraAce/ambit/commit/262f6ae2223aea02a6d12086657d5e3eb9960d2d))
+* **metadata:** recount the reparse total after a pause ([#560](https://github.com/AsuraAce/ambit/issues/560)) ([5e8533a](https://github.com/AsuraAce/ambit/commit/5e8533a0e15e9ccffabd0f9801969c50bf46b8d2))
+* **viewer:** copy the image itself to the clipboard ([#507](https://github.com/AsuraAce/ambit/issues/507)) ([5e82a84](https://github.com/AsuraAce/ambit/commit/5e82a8470bb16cfc872efe79ea81288a6bb68314))
+
+
+### Performance Improvements
+
+* **invoke:** show the gallery at once for a single InvokeAI user while the cache repairs ([#543](https://github.com/AsuraAce/ambit/issues/543)) ([c8fa5ca](https://github.com/AsuraAce/ambit/commit/c8fa5cac39de5aa511064a9fc1114f2f179dd9d1))
+* **invoke:** stop superseded cache work when switching InvokeAI users ([#550](https://github.com/AsuraAce/ambit/issues/550)) ([d012fb7](https://github.com/AsuraAce/ambit/commit/d012fb7999b0c70146994511432c7229c76a085e))
+
 ## [0.15.0](https://github.com/AsuraAce/ambit/compare/v0.14.2...v0.15.0) (2026-11-19)
 
 
