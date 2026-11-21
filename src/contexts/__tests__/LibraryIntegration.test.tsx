@@ -1377,7 +1377,9 @@ describe('Library Integration (Provider Stack)', () => {
 
             await act(async () => releaseClaim(createInvokeScopeCacheClaim(importedPlan, 4)));
             await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 4 }));
-            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(importedPlan.resources);
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(importedPlan.resources, {
+                signal: expect.any(AbortSignal),
+            });
         });
 
         it('logs a failed filter repair and leaves the cache uncommitted for the next start', async () => {
@@ -1566,7 +1568,7 @@ describe('Library Integration (Provider Stack)', () => {
             await hook?.startInvokeSync({ mode: 'startup' });
         });
 
-        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedFacetResources);
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedFacetResources, { signal: expect.any(AbortSignal) });
         expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().syncStatus).toBe('complete');
@@ -2674,7 +2676,9 @@ describe('Library Integration (Provider Stack)', () => {
             await syncHook!.startInvokeSync({ mode: 'startup' });
         });
         expect(libraryHook?.settings.invokeDbSnapshot).toMatchObject({ dbPath, lastSyncedAt: 200, sourceFingerprint: changedFingerprint });
-        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(expect.objectContaining({ loras: ['OdinDetail'] }));
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(expect.objectContaining({ loras: ['OdinDetail'] }), {
+            signal: expect.any(AbortSignal),
+        });
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         repairDecisionSpy.mockRestore();
     });
@@ -3090,7 +3094,9 @@ describe('Library Integration (Provider Stack)', () => {
             await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
 
             await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 }));
-            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(dirtyPlan.resources);
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(dirtyPlan.resources, {
+                signal: expect.any(AbortSignal),
+            });
         });
 
         it('queues Live Watch work during the repair and loses none of it', async () => {
@@ -3164,7 +3170,9 @@ describe('Library Integration (Provider Stack)', () => {
             });
 
             await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 }));
-            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(combinedPlan.resources);
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(combinedPlan.resources, {
+                signal: expect.any(AbortSignal),
+            });
             warn.mockRestore();
         });
 
@@ -3216,7 +3224,9 @@ describe('Library Integration (Provider Stack)', () => {
             await act(async () => releaseClaim(createInvokeScopeCacheClaim(dirtyPlan, 3)));
 
             await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 4 }));
-            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenLastCalledWith(afterImportPlan.resources);
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenLastCalledWith(afterImportPlan.resources, {
+                signal: expect.any(AbortSignal),
+            });
             expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
         });
     });
@@ -3513,6 +3523,154 @@ describe('Library Integration (Provider Stack)', () => {
             await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 3)));
 
             await expectSwitchWaitsForRecounts(getSync(), stuck);
+        });
+
+        // The native facet build (#533) never finishes on its own here: only a stop through its
+        // signal ends it, as `stopFacetBuild` does in the app.
+        const holdFacetBuild = () => {
+            const release = createDeferred<number>();
+            let signal: AbortSignal | undefined;
+            mocks.refreshFacetCacheForResourcesStrict.mockImplementationOnce(
+                (_resources: unknown, options?: { signal?: AbortSignal }) =>
+                    new Promise<number>((resolve, reject) => {
+                        signal = options?.signal;
+                        void release.promise.then(resolve);
+                        signal?.addEventListener('abort', () => reject(new Error('Aborted')));
+                    })
+            );
+            return { release: () => release.resolve(1), wasStopped: () => signal?.aborted === true };
+        };
+        const startViewWithRepairInFacets = async () => {
+            const facets = holdFacetBuild();
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 3));
+            const view = await startView({ cacheRepair: planOf('selective') });
+            await waitFor(() => expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledOnce());
+            mocks.applyInvokeOwnerScope.mockClear();
+            return { ...view, facets };
+        };
+
+        it('stops the repair inside its facet build when a switch to another owner starts (#533)', async () => {
+            // Waiting out the old owner's build cost minutes on a large library.
+            const { getSync, facets } = await startViewWithRepairInFacets();
+            mocks.applyInvokeOwnerScope.mockResolvedValue(switchedApplyResult);
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+
+            await waitFor(() =>
+                expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(
+                    expect.objectContaining({ selection: expect.objectContaining({ ownerId: 'owner-b' }) })
+                )
+            );
+            await act(async () => {
+                await expect(switching).resolves.toBe(true);
+            });
+            expect(facets.wasStopped()).toBe(true);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+        });
+
+        it('lets a repair of the same owner view finish and reuses it instead of stopping it (#533)', async () => {
+            const { getSync, facets } = await startViewWithRepairInFacets();
+            mocks.applyInvokeOwnerScope.mockResolvedValue({ ...switchedApplyResult, cacheRepair: planOf('restored') });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('restored'), 4));
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = getSync().selectInvokeOwnerScope({ dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' });
+            });
+            await act(async () => {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            });
+            expect(facets.wasStopped()).toBe(false);
+            expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+
+            await act(async () => {
+                facets.release();
+                await expect(switching).resolves.toBe(true);
+            });
+            expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+            expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(
+                expect.objectContaining({ selection: expect.objectContaining({ ownerId: 'owner-a' }) })
+            );
+            // The switch found the cache restored, so it built nothing of its own.
+            expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledOnce();
+        });
+
+        it('stops a repair of the same owner when the apply changes its options (#533)', async () => {
+            // The cache identity includes the options: a repair built with the old ones is not reusable.
+            const { getSync, getLibrary, facets } = await startViewWithRepairInFacets();
+            mocks.applyInvokeOwnerScope.mockResolvedValue({ ...switchedApplyResult, cacheRepair: planOf('restored') });
+
+            let applying!: ReturnType<SyncHook['applyInvokeConnection']>;
+            act(() => {
+                applying = getSync().applyInvokeConnection({
+                    ...getInvokeConnectionDraft(getLibrary().settings),
+                    invokeSyncFavorites: false,
+                });
+            });
+
+            await waitFor(() => expect(mocks.applyInvokeOwnerScope).toHaveBeenCalled());
+            await act(async () => {
+                await applying;
+            });
+            expect(facets.wasStopped()).toBe(true);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+        });
+
+        it("stops the switch's own facet build when the switch is cancelled (#531)", async () => {
+            const { getSync } = await startView({ cacheRepair: planOf('restored') });
+            const facets = holdFacetBuild();
+            mocks.applyInvokeOwnerScope.mockClear();
+            mocks.applyInvokeOwnerScope.mockResolvedValue({ ...switchedApplyResult, cacheRepair: planOf('selective') });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 5));
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+            await waitFor(() => expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalled());
+
+            act(() => useInvokeOwnerScopeStore.getState().operation?.cancel?.());
+            await act(async () => {
+                await expect(switching).resolves.toBe(false);
+            });
+            expect(facets.wasStopped()).toBe(true);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 });
+            expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 });
+        });
+
+        it('makes the startup catch-up wait for a user switch started from Settings (#533)', async () => {
+            // A catch-up import during the switch dirties the new owner's cache and gets its commit rejected.
+            const { getSync } = await startView({ cacheRepair: planOf('restored') });
+            const apply = createDeferred<typeof switchedApplyResult>();
+            mocks.applyInvokeOwnerScope.mockClear();
+            mocks.applyInvokeOwnerScope.mockReturnValueOnce(apply.promise).mockResolvedValue(switchedApplyResult);
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+            await waitFor(() => expect(mocks.applyInvokeOwnerScope).toHaveBeenCalled());
+
+            let catchUpMayRun = false;
+            const waiting = getSync()
+                .waitForOwnerCacheRepair()
+                .then(() => {
+                    catchUpMayRun = true;
+                });
+            await act(async () => {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            });
+            expect(catchUpMayRun).toBe(false);
+
+            await act(async () => {
+                apply.resolve(switchedApplyResult);
+                await switching;
+                await waiting;
+            });
+            expect(catchUpMayRun).toBe(true);
         });
 
         // Starts a restored owner view and lets one live import schedule the idle repair.
@@ -5139,15 +5297,18 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.clearCollectionOwnerScopeCaches).not.toHaveBeenCalled();
         expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
-        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith({
-            checkpoints: [],
-            loras: ['NewDetailer'],
-            embeddings: [],
-            hypernetworks: [],
-            controlNets: [],
-            ipAdapters: [],
-            tools: [],
-        });
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(
+            {
+                checkpoints: [],
+                loras: ['NewDetailer'],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            },
+            { signal: expect.any(AbortSignal) }
+        );
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         expect(refreshSmartCounts).not.toHaveBeenCalled();
         expect(refreshCollectionThumbnails).not.toHaveBeenCalled();

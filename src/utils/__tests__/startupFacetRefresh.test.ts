@@ -47,7 +47,7 @@ describe('refreshStartupFacetCache', () => {
 
         expect(result.strategy).toBe('resource-incremental');
         expect(result.reason).toBe('small-known-delta');
-        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedResources);
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedResources, { signal: undefined });
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         expect(onRefreshApplied).toHaveBeenCalledTimes(1);
     });
@@ -134,6 +134,28 @@ describe('refreshStartupFacetCache', () => {
         expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledTimes(1);
         expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledTimes(1);
         expect(onRefreshApplied).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops instead of falling back to a full rebuild when its signal aborted the incremental refresh', async () => {
+        // A stopped repair (#533) must not start a second, full build for a scope that was switched away.
+        const controller = new AbortController();
+        mocks.refreshFacetCacheForResourcesStrict.mockImplementationOnce(async () => {
+            controller.abort();
+            throw new Error('Aborted');
+        });
+
+        await expect(
+            refreshStartupFacetCache({
+                source: 'invoke',
+                totalProcessed: 1,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: touchedResources,
+                signal: controller.signal,
+                onRefreshApplied: vi.fn(),
+            })
+        ).rejects.toThrow('Aborted');
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedResources, { signal: controller.signal });
+        expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
     });
 
     it('uses a full rebuild when touched resource details are missing or empty', async () => {
