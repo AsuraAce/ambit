@@ -10,7 +10,8 @@ use std::{
 };
 
 const MAX_LAUNCH_IDS: usize = 8;
-const MAX_EVENTS_PER_LAUNCH: usize = 256;
+/// Ordinary startup events kept per launch. A cold owner switch logs several hundred (#552).
+pub(crate) const MAX_EVENTS_PER_LAUNCH: usize = 2048;
 const MAX_DIAGNOSTIC_TIME_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_REPAIR_COUNT: u64 = 1_000_000_000;
 

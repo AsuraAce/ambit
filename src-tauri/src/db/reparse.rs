@@ -119,16 +119,42 @@ fn replace_generated_resource_links(
     Ok(())
 }
 
-/// State for tracking reparse job cancellation.
+/// State for tracking reparse job cancellation and pausing.
 pub struct ReparseState {
     pub is_cancelled: Arc<AtomicBool>,
+    /// Set while an InvokeAI owner switch or owner-cache repair runs (#552).
+    pub is_paused: Arc<AtomicBool>,
 }
 
 impl Default for ReparseState {
     fn default() -> Self {
         Self {
             is_cancelled: Arc::new(AtomicBool::new(false)),
+            is_paused: Arc::new(AtomicBool::new(false)),
         }
+    }
+}
+
+const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Blocks between batches while metadata refresh is paused, holding no transaction.
+/// Its image writes would mark the owner cache being built dirty and get that commit refused (#552).
+/// Returns early when the job is cancelled.
+fn wait_while_paused(is_paused: &AtomicBool, is_cancelled: &AtomicBool) {
+    let mut logged = false;
+    while is_paused.load(Ordering::SeqCst) && !is_cancelled.load(Ordering::SeqCst) {
+        if !logged {
+            log::info!("[Refresh] Paused while an InvokeAI owner cache is prepared");
+            logged = true;
+        }
+        std::thread::sleep(PAUSE_POLL);
+    }
+}
+
+/// The async form of [`wait_while_paused`], for the video metadata refresh.
+pub(crate) async fn wait_while_paused_async(is_paused: &AtomicBool, is_cancelled: &AtomicBool) {
+    while is_paused.load(Ordering::SeqCst) && !is_cancelled.load(Ordering::SeqCst) {
+        tokio::time::sleep(PAUSE_POLL).await;
     }
 }
 
@@ -174,241 +200,352 @@ pub async fn start_reparse_job(
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
     let is_cancelled = state.is_cancelled.clone();
+    let is_paused = state.is_paused.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let start_time = std::time::Instant::now();
-        log::info!("[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}, Tool: {:?}", force_reparse, filter_root, filter_tool);
+        log::info!(
+            "[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}, Tool: {:?}",
+            force_reparse,
+            filter_root,
+            filter_tool
+        );
 
         log::info!("[Reparse] Thread started, opening connection...");
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
 
-        // Normalize filter_root to forward slashes for consistency with frontend/DB
-        let normalized_filter_root = filter_root.as_ref().map(|r| r.replace('\\', "/"));
-
         // Use shared configuration
         crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
-        conn.execute_batch("PRAGMA synchronous = NORMAL;").map_err(|e| e.to_string())?;
-        conn.busy_timeout(std::time::Duration::from_secs(60)).map_err(|e| e.to_string())?; // Longer timeout
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")
+            .map_err(|e| e.to_string())?;
+        conn.busy_timeout(std::time::Duration::from_secs(60))
+            .map_err(|e| e.to_string())?; // Longer timeout
 
-        log::info!("[Reparse] Connection ready, counting total images...");
-        // Signal FE that we are actually in the backend
-        let _ = app.emit("refresh-progress", ReparseProgress {
-            current: 0,
-            total: 0,
-            updated: 0,
-            errors: 0,
-            phase: "counting".to_string(),
-            message: "Calculating total images...".to_string(),
-        });
+        run_reparse_job(
+            &mut conn,
+            ReparseJobOptions {
+                force_reparse,
+                filter_root,
+                filter_tool,
+                refresh_photo_metadata,
+            },
+            &is_paused,
+            &is_cancelled,
+            &|progress| {
+                let _ = app.emit("refresh-progress", progress);
+            },
+            &|result| {
+                let _ = app.emit("refresh-complete", result);
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
-        // Helper to build WHERE clause
-        let build_filters = |force: bool, root: Option<&String>, tool: Option<&String>| -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
-            let mut clauses = vec![
-                "invoke_scope_hidden = 0".to_string(),
-                "is_deleted = 0".to_string(),
-                "COALESCE(media_type, 'image') != 'video'".to_string(),
-                "original_metadata_json IS NOT NULL".to_string(),
-                "original_metadata_json != ''".to_string()
-            ];
-            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+/// What one reparse job refreshes.
+struct ReparseJobOptions {
+    force_reparse: bool,
+    filter_root: Option<String>,
+    filter_tool: Option<String>,
+    refresh_photo_metadata: bool,
+}
 
-            if !force {
-                clauses.push(format!("(parser_version IS NULL OR parser_version < {})", CURRENT_PARSER_VERSION));
-            }
+/// Runs one reparse job on `conn`, pausing between batches while `is_paused` is set (#552).
+fn run_reparse_job(
+    conn: &mut rusqlite::Connection,
+    options: ReparseJobOptions,
+    is_paused: &AtomicBool,
+    is_cancelled: &AtomicBool,
+    emit_progress: &dyn Fn(ReparseProgress),
+    emit_complete: &dyn Fn(ReparseJobResult),
+) -> Result<ReparseJobResult, String> {
+    let ReparseJobOptions {
+        force_reparse,
+        filter_root,
+        filter_tool,
+        refresh_photo_metadata,
+    } = options;
+    let start_time = std::time::Instant::now();
+    // Normalize filter_root to forward slashes for consistency with frontend/DB
+    let normalized_filter_root = filter_root.as_ref().map(|r| r.replace('\\', "/"));
 
-            if let Some(r) = root {
-                // Already normalized to forward slashes at the start of the thread
-                let r_fwd = r.replace('\\', "/").trim_end_matches('/').to_string();
-                let r_back = r.replace('/', "\\").trim_end_matches('\\').to_string();
+    log::info!("[Reparse] Connection ready, counting total images...");
+    // Signal FE that we are actually in the backend
+    emit_progress(ReparseProgress {
+        current: 0,
+        total: 0,
+        updated: 0,
+        errors: 0,
+        phase: "counting".to_string(),
+        message: "Calculating total images...".to_string(),
+    });
 
-                // Match exact path OR subfolders with either slash type
-                clauses.push("(path = ? OR path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%' OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
-                params.push(Box::new(r_fwd.clone()));
-                params.push(Box::new(r_back.clone()));
-                params.push(Box::new(r_fwd.clone()));
-                params.push(Box::new(r_fwd.clone()));
-                params.push(Box::new(r_back.clone()));
-                params.push(Box::new(r_back.clone()));
-            }
+    // Helper to build WHERE clause
+    let build_filters = |force: bool,
+                         root: Option<&String>,
+                         tool: Option<&String>|
+     -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+        let mut clauses = vec![
+            "invoke_scope_hidden = 0".to_string(),
+            "is_deleted = 0".to_string(),
+            "COALESCE(media_type, 'image') != 'video'".to_string(),
+            "original_metadata_json IS NOT NULL".to_string(),
+            "original_metadata_json != ''".to_string(),
+        ];
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
-            // Filter by generator tool (e.g. "ComfyUI", "InvokeAI")
-            if let Some(t) = tool {
-                clauses.push("LOWER(tool) LIKE LOWER(?)".to_string());
-                params.push(Box::new(format!("%{}%", t)));
-            }
-
-            (clauses.join(" AND "), params)
-        };
-
-        // Count total work upfront
-        let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
-        let count_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", where_sql);
-
-        let generated_total: usize = conn.query_row(
-            &count_query,
-            rusqlite::params_from_iter(count_params.iter()),
-            |r| r.get::<_, i64>(0)
-        ).unwrap_or(0) as usize;
-
-        let photo_total = if refresh_photo_metadata && filter_tool.is_none() {
-            let (photo_where, photo_params) =
-                build_photo_filters(force_reparse, normalized_filter_root.as_deref());
-            conn.query_row(
-                &format!("SELECT COUNT(*) FROM scoped_images WHERE {}", photo_where),
-                rusqlite::params_from_iter(photo_params.iter()),
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0) as usize
-        } else {
-            0
-        };
-        let total = generated_total + photo_total;
-
-        log::info!("[Reparse] Total query complete: {} generated + {} photo candidates", generated_total, photo_total);
-
-        if total == 0 {
-            log::info!("[Reparse] No images need refreshing");
-            let _ = app.emit("refresh-complete", ReparseJobResult {
-                processed: 0,
-                updated: 0,
-                errors: 0,
-                was_cancelled: false,
-            });
-            return Ok(ReparseJobResult {
-                processed: 0,
-                updated: 0,
-                errors: 0,
-                was_cancelled: false,
-            });
+        if !force {
+            clauses.push(format!(
+                "(parser_version IS NULL OR parser_version < {})",
+                CURRENT_PARSER_VERSION
+            ));
         }
 
-        log::info!("[Refresh] Found {} images to process", total);
-        let _ = app.emit("refresh-progress", ReparseProgress {
-            current: 0,
-            total,
+        if let Some(r) = root {
+            // Already normalized to forward slashes at the start of the thread
+            let r_fwd = r.replace('\\', "/").trim_end_matches('/').to_string();
+            let r_back = r.replace('/', "\\").trim_end_matches('\\').to_string();
+
+            // Match exact path OR subfolders with either slash type
+            clauses.push("(path = ? OR path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%' OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
+            params.push(Box::new(r_fwd.clone()));
+            params.push(Box::new(r_back.clone()));
+            params.push(Box::new(r_fwd.clone()));
+            params.push(Box::new(r_fwd.clone()));
+            params.push(Box::new(r_back.clone()));
+            params.push(Box::new(r_back.clone()));
+        }
+
+        // Filter by generator tool (e.g. "ComfyUI", "InvokeAI")
+        if let Some(t) = tool {
+            clauses.push("LOWER(tool) LIKE LOWER(?)".to_string());
+            params.push(Box::new(format!("%{}%", t)));
+        }
+
+        (clauses.join(" AND "), params)
+    };
+
+    // Count total work upfront
+    let (where_sql, count_params) = build_filters(
+        force_reparse,
+        normalized_filter_root.as_ref(),
+        filter_tool.as_ref(),
+    );
+    let count_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", where_sql);
+
+    let generated_total: usize = conn
+        .query_row(
+            &count_query,
+            rusqlite::params_from_iter(count_params.iter()),
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0) as usize;
+
+    let photo_total = if refresh_photo_metadata && filter_tool.is_none() {
+        let (photo_where, photo_params) =
+            build_photo_filters(force_reparse, normalized_filter_root.as_deref());
+        conn.query_row(
+            &format!("SELECT COUNT(*) FROM scoped_images WHERE {}", photo_where),
+            rusqlite::params_from_iter(photo_params.iter()),
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0) as usize
+    } else {
+        0
+    };
+    let total = generated_total + photo_total;
+
+    log::info!(
+        "[Reparse] Total query complete: {} generated + {} photo candidates",
+        generated_total,
+        photo_total
+    );
+
+    if total == 0 {
+        log::info!("[Reparse] No images need refreshing");
+        emit_complete(ReparseJobResult {
+            processed: 0,
             updated: 0,
             errors: 0,
-            phase: "starting".to_string(),
-            message: format!("Found {} images to refresh", total),
+            was_cancelled: false,
         });
+        return Ok(ReparseJobResult {
+            processed: 0,
+            updated: 0,
+            errors: 0,
+            was_cancelled: false,
+        });
+    }
 
-        let mut processed = 0;
-        let mut updated = 0;
-        let mut errors = 0;
-        let batch_size = 500;
-        let progress_interval = 50;
-        let mut last_emit_time = std::time::Instant::now();
-        let min_emit_interval = std::time::Duration::from_millis(50);
+    log::info!("[Refresh] Found {} images to process", total);
+    emit_progress(ReparseProgress {
+        current: 0,
+        total,
+        updated: 0,
+        errors: 0,
+        phase: "starting".to_string(),
+        message: format!("Found {} images to refresh", total),
+    });
 
-        #[cfg(feature = "qa-profile")]
-        let qa_batch_delay = std::time::Duration::from_millis(
-            std::env::var("AMBIT_QA_REFRESH_BATCH_DELAY_MS")
-                .ok()
-                .and_then(|value| value.parse::<u64>().ok())
-                .unwrap_or(400)
-                .min(10_000),
-        );
-        let mut was_cancelled = false;
+    let mut processed = 0;
+    let mut updated = 0;
+    let mut errors = 0;
+    let batch_size = 500;
+    let progress_interval = 50;
+    let mut last_emit_time = std::time::Instant::now();
+    let min_emit_interval = std::time::Duration::from_millis(50);
 
-        let should_use_prefetch = filter_root.is_some();
+    #[cfg(feature = "qa-profile")]
+    let qa_batch_delay = std::time::Duration::from_millis(
+        std::env::var("AMBIT_QA_REFRESH_BATCH_DELAY_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(400)
+            .min(10_000),
+    );
+    let mut was_cancelled = false;
 
-        // SHARED UPDATE LOGIC CLOSURE
-        // We define this locally to avoid borrowing issues or duplicating complex update code.
-        // It takes a batch of rows, processes them, and updates the DB.
-        let mut process_and_update_batch = |conn: &mut rusqlite::Connection, batch: Vec<(String, String, String, String)>, fetch_ms: u128| -> Result<(), String> {
-            let parse_start = std::time::Instant::now();
+    let should_use_prefetch = filter_root.is_some();
 
-            // PARALLEL PHASE: Parse structure on all cores
-            let batch_results: Vec<(String, String, String, String, Option<crate::metadata::reparse::ReparseResult>)> = batch
-                .par_iter()
-                .map(|(id, tool, original_json, old_meta_json,)| {
-                    let result = reparse_from_json(original_json, tool);
-                    (id.clone(), tool.clone(), original_json.clone(), old_meta_json.clone(), result)
-                })
-                .collect();
+    // SHARED UPDATE LOGIC CLOSURE
+    // We define this locally to avoid borrowing issues or duplicating complex update code.
+    // It takes a batch of rows, processes them, and updates the DB.
+    let mut process_and_update_batch = |conn: &mut rusqlite::Connection,
+                                        batch: Vec<(String, String, String, String)>,
+                                        fetch_ms: u128|
+     -> Result<(), String> {
+        let parse_start = std::time::Instant::now();
 
-            let parse_duration = parse_start.elapsed();
-            let update_start = std::time::Instant::now();
+        // PARALLEL PHASE: Parse structure on all cores
+        let batch_results: Vec<(
+            String,
+            String,
+            String,
+            String,
+            Option<crate::metadata::reparse::ReparseResult>,
+        )> = batch
+            .par_iter()
+            .map(|(id, tool, original_json, old_meta_json)| {
+                let result = reparse_from_json(original_json, tool);
+                (
+                    id.clone(),
+                    tool.clone(),
+                    original_json.clone(),
+                    old_meta_json.clone(),
+                    result,
+                )
+            })
+            .collect();
 
-            // SERIAL PHASE: Update database in a single transaction
-            let tx = conn.transaction().map_err(|e| e.to_string())?;
-            let _hold = crate::db::write_hold::WriteHold::begin("reparse.job_batch");
-            {
-                let mut update_stmt = tx.prepare_cached(
+        let parse_duration = parse_start.elapsed();
+        let update_start = std::time::Instant::now();
+
+        // SERIAL PHASE: Update database in a single transaction
+        // A pause set while this batch was parsing holds its write too (#552).
+        wait_while_paused(is_paused, is_cancelled);
+        if is_cancelled.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let _hold = crate::db::write_hold::WriteHold::begin("reparse.job_batch");
+        {
+            let mut update_stmt = tx
+                .prepare_cached(
                     "UPDATE images SET
-                        metadata_json = ?1,
-                        original_parsed_json = ?1,
-                        model_hash = ?2,
-                        model_name = ?3,
-                        tool = ?4,
-                        resolved_model_name = ?3,
-                        steps = ?5,
-                        seed = ?6,
-                        cfg = ?7,
-                        sampler = ?8,
-                        generation_type = ?9,
-                        parser_version = ?10,
-                        positive_prompt = ?11,
-                        negative_prompt = ?12
-                     WHERE id = ?13"
-                ).map_err(|e| e.to_string())?;
+                    metadata_json = ?1,
+                    original_parsed_json = ?1,
+                    model_hash = ?2,
+                    model_name = ?3,
+                    tool = ?4,
+                    resolved_model_name = ?3,
+                    steps = ?5,
+                    seed = ?6,
+                    cfg = ?7,
+                    sampler = ?8,
+                    generation_type = ?9,
+                    parser_version = ?10,
+                    positive_prompt = ?11,
+                    negative_prompt = ?12
+                 WHERE id = ?13",
+                )
+                .map_err(|e| e.to_string())?;
 
-                let mut skip_stmt = tx.prepare_cached(
-                    "UPDATE images SET parser_version = ?1 WHERE id = ?2"
-                ).map_err(|e| e.to_string())?;
+            let mut skip_stmt = tx
+                .prepare_cached("UPDATE images SET parser_version = ?1 WHERE id = ?2")
+                .map_err(|e| e.to_string())?;
 
-                // Helpers for diffing lists
-                fn lists_changed(old: &[String], new: &[String]) -> bool {
-                    if old.len() != new.len() { return true; }
-                    old != new
+            // Helpers for diffing lists
+            fn lists_changed(old: &[String], new: &[String]) -> bool {
+                if old.len() != new.len() {
+                    return true;
                 }
+                old != new
+            }
 
-                // Prepare junction table statements
-                let mut lora_del = tx.prepare_cached("DELETE FROM image_loras WHERE image_id = ?1").map_err(|e| e.to_string())?;
-                let mut lora_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_loras (image_id, lora_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            // Prepare junction table statements
+            let mut lora_del = tx
+                .prepare_cached("DELETE FROM image_loras WHERE image_id = ?1")
+                .map_err(|e| e.to_string())?;
+            let mut lora_ins = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO image_loras (image_id, lora_name) VALUES (?1, ?2)",
+                )
+                .map_err(|e| e.to_string())?;
 
-                let mut emb_del = tx.prepare_cached("DELETE FROM image_embeddings WHERE image_id = ?1").map_err(|e| e.to_string())?;
-                let mut emb_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            let mut emb_del = tx
+                .prepare_cached("DELETE FROM image_embeddings WHERE image_id = ?1")
+                .map_err(|e| e.to_string())?;
+            let mut emb_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
 
-                let mut hn_del = tx.prepare_cached("DELETE FROM image_hypernetworks WHERE image_id = ?1").map_err(|e| e.to_string())?;
-                let mut hn_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            let mut hn_del = tx
+                .prepare_cached("DELETE FROM image_hypernetworks WHERE image_id = ?1")
+                .map_err(|e| e.to_string())?;
+            let mut hn_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
 
-                let mut cn_del = tx.prepare_cached("DELETE FROM image_controlnets WHERE image_id = ?1").map_err(|e| e.to_string())?;
-                let mut cn_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            let mut cn_del = tx
+                .prepare_cached("DELETE FROM image_controlnets WHERE image_id = ?1")
+                .map_err(|e| e.to_string())?;
+            let mut cn_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
 
-                let mut ip_del = tx.prepare_cached("DELETE FROM image_ipadapters WHERE image_id = ?1").map_err(|e| e.to_string())?;
-                let mut ip_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            let mut ip_del = tx
+                .prepare_cached("DELETE FROM image_ipadapters WHERE image_id = ?1")
+                .map_err(|e| e.to_string())?;
+            let mut ip_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
 
-                for (id, _tool, _original_json, old_meta_json, parse_result) in batch_results {
-                    processed += 1;
+            for (id, _tool, _original_json, old_meta_json, parse_result) in batch_results {
+                processed += 1;
 
-                    match parse_result {
-                        Some(result) => {
-                            // Smart Diffing: skip updates if metadata is identical
-                            // BUT: if filter_root and force_reparse are both set, we bypass this to force update
-                            let mut meta_changed = force_reparse || result.metadata_json != *old_meta_json;
+                match parse_result {
+                    Some(result) => {
+                        // Smart Diffing: skip updates if metadata is identical
+                        // BUT: if filter_root and force_reparse are both set, we bypass this to force update
+                        let mut meta_changed =
+                            force_reparse || result.metadata_json != *old_meta_json;
 
-                            // Deep Object Diffing (only if not forced)
-                            if meta_changed && !force_reparse {
-                                if let Ok(old_meta) = serde_json::from_str::<ImageMetadata>(&old_meta_json) {
-                                    if old_meta == result.metadata {
-                                        meta_changed = false;
-                                    }
+                        // Deep Object Diffing (only if not forced)
+                        if meta_changed && !force_reparse {
+                            if let Ok(old_meta) =
+                                serde_json::from_str::<ImageMetadata>(&old_meta_json)
+                            {
+                                if old_meta == result.metadata {
+                                    meta_changed = false;
                                 }
                             }
+                        }
 
-                            if !meta_changed {
-                                let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
-                            } else {
-                                let old_meta: Option<ImageMetadata> = serde_json::from_str(&old_meta_json).ok();
-                                updated += 1;
-                                let meta = &result.metadata;
-                                let sampler_normalized = meta.sampler
-                                    .to_lowercase()
-                                    .replace(['_', '-'], " ");
+                        if !meta_changed {
+                            let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
+                        } else {
+                            let old_meta: Option<ImageMetadata> =
+                                serde_json::from_str(&old_meta_json).ok();
+                            updated += 1;
+                            let meta = &result.metadata;
+                            let sampler_normalized =
+                                meta.sampler.to_lowercase().replace(['_', '-'], " ");
 
-                                update_stmt.execute(params![
+                            update_stmt
+                                .execute(params![
                                     result.metadata_json,
                                     meta.model_hash,
                                     meta.model,
@@ -422,371 +559,417 @@ pub async fn start_reparse_job(
                                     meta.positive_prompt,
                                     meta.negative_prompt,
                                     id
-                                ]).map_err(|e| e.to_string())?;
+                                ])
+                                .map_err(|e| e.to_string())?;
 
-                                // Smart Sidecar Diffing
-                                let mut update_loras = true;
-                                let mut update_embs = true;
-                                let mut update_hns = true;
-                                let mut update_cns = true;
-                                let mut update_ips = true;
+                            // Smart Sidecar Diffing
+                            let mut update_loras = true;
+                            let mut update_embs = true;
+                            let mut update_hns = true;
+                            let mut update_cns = true;
+                            let mut update_ips = true;
 
-                                if !force_reparse {
-                                    if let Some(old) = &old_meta {
-                                        if !lists_changed(&old.loras, &meta.loras) { update_loras = false; }
-                                        if !lists_changed(&old.embeddings, &meta.embeddings) { update_embs = false; }
-                                        if !lists_changed(&old.hypernetworks, &meta.hypernetworks) { update_hns = false; }
-                                        if !lists_changed(&old.control_nets, &meta.control_nets) { update_cns = false; }
-                                        if !lists_changed(&old.ip_adapters, &meta.ip_adapters) { update_ips = false; }
+                            if !force_reparse {
+                                if let Some(old) = &old_meta {
+                                    if !lists_changed(&old.loras, &meta.loras) {
+                                        update_loras = false;
+                                    }
+                                    if !lists_changed(&old.embeddings, &meta.embeddings) {
+                                        update_embs = false;
+                                    }
+                                    if !lists_changed(&old.hypernetworks, &meta.hypernetworks) {
+                                        update_hns = false;
+                                    }
+                                    if !lists_changed(&old.control_nets, &meta.control_nets) {
+                                        update_cns = false;
+                                    }
+                                    if !lists_changed(&old.ip_adapters, &meta.ip_adapters) {
+                                        update_ips = false;
                                     }
                                 }
+                            }
 
-                                if update_loras {
-                                    lora_del.execute(params![id]).ok();
-                                    for item in &meta.loras { lora_ins.execute(params![id, item]).ok(); }
+                            if update_loras {
+                                lora_del.execute(params![id]).ok();
+                                for item in &meta.loras {
+                                    lora_ins.execute(params![id, item]).ok();
                                 }
-                                if update_embs {
-                                    emb_del.execute(params![id]).ok();
-                                    for item in &meta.embeddings { emb_ins.execute(params![id, item]).ok(); }
+                            }
+                            if update_embs {
+                                emb_del.execute(params![id]).ok();
+                                for item in &meta.embeddings {
+                                    emb_ins.execute(params![id, item]).ok();
                                 }
-                                if update_hns {
-                                    hn_del.execute(params![id]).ok();
-                                    for item in &meta.hypernetworks { hn_ins.execute(params![id, item]).ok(); }
+                            }
+                            if update_hns {
+                                hn_del.execute(params![id]).ok();
+                                for item in &meta.hypernetworks {
+                                    hn_ins.execute(params![id, item]).ok();
                                 }
-                                if update_cns {
-                                    cn_del.execute(params![id]).ok();
-                                    for item in &meta.control_nets { cn_ins.execute(params![id, item]).ok(); }
+                            }
+                            if update_cns {
+                                cn_del.execute(params![id]).ok();
+                                for item in &meta.control_nets {
+                                    cn_ins.execute(params![id, item]).ok();
                                 }
-                                if update_ips {
-                                    ip_del.execute(params![id]).ok();
-                                    for item in &meta.ip_adapters { ip_ins.execute(params![id, item]).ok(); }
+                            }
+                            if update_ips {
+                                ip_del.execute(params![id]).ok();
+                                for item in &meta.ip_adapters {
+                                    ip_ins.execute(params![id, item]).ok();
                                 }
                             }
                         }
-                        None => {
-                            let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
-                            errors += 1;
-                        }
                     }
+                    None => {
+                        let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
+                        errors += 1;
+                    }
+                }
 
-                    // Emit progress periodically
-                    if processed % progress_interval == 0 && last_emit_time.elapsed() >= min_emit_interval {
-                        let update_ms = update_start.elapsed().as_millis();
-                        let _ = app.emit("refresh-progress", ReparseProgress {
-                            current: processed,
-                            total,
-                            updated,
-                            errors,
-                            phase: "processing".to_string(),
-                            message: format!("Processed {}/{} (Updated: {}). Timings: Fetch {}ms, Parse {}ms, DB {}ms",
-                                processed, total, updated, fetch_ms, parse_duration.as_millis(), update_ms),
-                        });
-                        last_emit_time = std::time::Instant::now();
+                // Emit progress periodically
+                if processed % progress_interval == 0
+                    && last_emit_time.elapsed() >= min_emit_interval
+                {
+                    let update_ms = update_start.elapsed().as_millis();
+                    emit_progress(ReparseProgress {
+                        current: processed,
+                        total,
+                        updated,
+                        errors,
+                        phase: "processing".to_string(),
+                        message: format!("Processed {}/{} (Updated: {}). Timings: Fetch {}ms, Parse {}ms, DB {}ms",
+                            processed, total, updated, fetch_ms, parse_duration.as_millis(), update_ms),
+                    });
+                    last_emit_time = std::time::Instant::now();
+                }
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    };
+
+    if should_use_prefetch {
+        // === STRATEGY 1: ID PRE-FETCHING (Filtered) ===
+        log::info!("[Reparse] Strategy: ID Pre-fetching (Targeted)");
+        let prefetch_start = std::time::Instant::now();
+
+        // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
+        let (where_sql, params_vec) = build_filters(
+            force_reparse,
+            normalized_filter_root.as_ref(),
+            filter_tool.as_ref(),
+        );
+
+        let query = format!("SELECT id FROM scoped_images WHERE {}", where_sql);
+
+        let ids: Vec<String> = {
+            let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(params_vec.iter()), |row| {
+                    row.get(0)
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+
+        let prefetch_duration = prefetch_start.elapsed();
+        log::info!(
+            "[Reparse] Pre-fetched {} IDs in {:.2}ms. Starting batched processing...",
+            ids.len(),
+            prefetch_duration.as_millis()
+        );
+
+        // 2. Loop through chunks
+        for chunk in ids.chunks(batch_size) {
+            wait_while_paused(is_paused, is_cancelled);
+            if is_cancelled.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let fetch_start = std::time::Instant::now();
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let batch_query = format!(
+                "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
+                 FROM scoped_images
+                 WHERE id IN ({})",
+                placeholders
+             );
+
+            let batch: Vec<(String, String, String, String)> = {
+                let mut stmt = conn.prepare(&batch_query).map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()
+                    .map_err(|e| e.to_string())?;
+                rows
+            };
+            let fetch_duration = fetch_start.elapsed();
+
+            process_and_update_batch(conn, batch, fetch_duration.as_millis())?;
+        }
+    } else {
+        // === STRATEGY 2: KEYSET PAGINATION (Global) ===
+        log::info!("[Refresh] Strategy: Keyset Pagination (Global)");
+        let mut last_seen_id: String = String::new();
+
+        loop {
+            wait_while_paused(is_paused, is_cancelled);
+            if is_cancelled.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let fetch_start = std::time::Instant::now();
+            let batch: Vec<(String, String, String, String)> = {
+                let (base_filters, mut params) =
+                    build_filters(force_reparse, filter_root.as_ref(), filter_tool.as_ref());
+                params.push(Box::new(last_seen_id.clone()));
+
+                let query = format!(
+                    "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
+                     FROM scoped_images
+                     WHERE {} AND id > ?
+                     ORDER BY id ASC
+                     LIMIT {}",
+                    base_filters, batch_size
+                );
+
+                let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()
+                    .map_err(|e| e.to_string())?;
+
+                rows
+            };
+            let fetch_duration = fetch_start.elapsed();
+
+            if batch.is_empty() {
+                break;
+            }
+            if let Some(last) = batch.last() {
+                last_seen_id = last.0.clone();
+            }
+
+            process_and_update_batch(conn, batch, fetch_duration.as_millis())?;
+        }
+    }
+
+    if photo_total > 0 && !is_cancelled.load(Ordering::SeqCst) {
+        log::info!("[Refresh] Starting restart-safe photo metadata phase");
+        let mut last_photo_id = String::new();
+        let photo_batch_size = 100;
+
+        loop {
+            wait_while_paused(is_paused, is_cancelled);
+            if is_cancelled.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let batch: Vec<(String, String)> = {
+                let (photo_where, mut photo_params) =
+                    build_photo_filters(force_reparse, normalized_filter_root.as_deref());
+                photo_params.push(Box::new(last_photo_id.clone()));
+                let query = format!(
+                    "SELECT id, path
+                     FROM scoped_images
+                     WHERE {} AND id > ?
+                     ORDER BY id ASC
+                     LIMIT {}",
+                    photo_where, photo_batch_size
+                );
+                let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(rusqlite::params_from_iter(photo_params.iter()), |row| {
+                        Ok((row.get(0)?, row.get(1)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()
+                    .map_err(|e| e.to_string())?;
+                rows
+            };
+
+            if batch.is_empty() {
+                break;
+            }
+            last_photo_id = batch.last().map(|row| row.0.clone()).unwrap_or_default();
+
+            let scan_results: Vec<(String, Result<crate::scanner::models::ScanResult, String>)> =
+                batch
+                    .par_iter()
+                    .map(|(id, path)| {
+                        (
+                            id.clone(),
+                            crate::scanner::core::scan_image_internal(
+                                path.clone(),
+                                None,
+                                true,
+                                true,
+                                None,
+                            ),
+                        )
+                    })
+                    .collect();
+
+            // A pause set during the file scan holds its write too (#552).
+            wait_while_paused(is_paused, is_cancelled);
+            if is_cancelled.load(Ordering::SeqCst) {
+                break;
+            }
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            let _hold = crate::db::write_hold::WriteHold::begin("reparse.photo_batch");
+            {
+                let mut update_photo = tx
+                    .prepare_cached(UPDATE_PHOTO_METADATA_SQL)
+                    .map_err(|e| e.to_string())?;
+                let mut update_discovered_generated = tx
+                    .prepare_cached(
+                        "UPDATE images
+                         SET metadata_json = ?1,
+                             original_parsed_json = ?1,
+                             original_metadata_json = ?2,
+                             model_hash = ?3,
+                             model_name = ?4,
+                             tool = ?5,
+                             resolved_model_name = ?4,
+                             steps = ?6,
+                             seed = ?7,
+                             cfg = ?8,
+                             sampler = ?9,
+                             generation_type = ?10,
+                             positive_prompt = ?11,
+                             negative_prompt = ?12,
+                             parser_version = 0
+                         WHERE id = ?13",
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                for (id, scan_result) in scan_results {
+                    processed += 1;
+                    match scan_result {
+                        Ok(scan) => {
+                            let photo_json = scan
+                                .photo_metadata
+                                .as_ref()
+                                .and_then(|photo| serde_json::to_string(photo).ok());
+                            if scan.detected_source_kind
+                                == crate::metadata::photo::SourceKind::Generated
+                            {
+                                if let Some(meta) = scan.metadata.as_ref() {
+                                    let metadata_json = serde_json::to_string(meta)
+                                        .map_err(|error| error.to_string())?;
+                                    let original_metadata_json =
+                                        serde_json::to_string(&scan.chunks)
+                                            .map_err(|error| error.to_string())?;
+                                    update_discovered_generated
+                                        .execute(params![
+                                            metadata_json,
+                                            original_metadata_json,
+                                            meta.model_hash,
+                                            meta.model,
+                                            meta.tool,
+                                            meta.steps,
+                                            meta.seed,
+                                            meta.cfg,
+                                            meta.sampler.to_lowercase().replace(['_', '-'], " "),
+                                            meta.generation_type,
+                                            meta.positive_prompt,
+                                            meta.negative_prompt,
+                                            id,
+                                        ])
+                                        .map_err(|error| error.to_string())?;
+                                    replace_generated_resource_links(&tx, &id, meta)?;
+                                }
+                            }
+                            if scan.error.is_some() || scan.photo_metadata_error.is_some() {
+                                errors += 1;
+                            }
+                            if !can_checkpoint_photo_refresh(scan.photo_metadata_error.as_deref()) {
+                                continue;
+                            }
+                            updated += update_photo
+                                .execute(params![
+                                    scan.detected_source_kind.as_str(),
+                                    photo_json,
+                                    scan.capture_wall_time_ms,
+                                    i64::from(scan.width),
+                                    i64::from(scan.height),
+                                    CURRENT_PHOTO_REFRESH_VERSION,
+                                    id,
+                                ])
+                                .map_err(|e| e.to_string())?;
+                        }
+                        Err(error) => {
+                            errors += 1;
+                            log::warn!(
+                                "[Refresh] Photo metadata scan failed for {}: {}",
+                                id,
+                                error
+                            );
+                        }
                     }
                 }
             }
             tx.commit().map_err(|e| e.to_string())?;
-            Ok(())
-        };
 
-        if should_use_prefetch {
-            // === STRATEGY 1: ID PRE-FETCHING (Filtered) ===
-            log::info!("[Reparse] Strategy: ID Pre-fetching (Targeted)");
-            let prefetch_start = std::time::Instant::now();
+            emit_progress(ReparseProgress {
+                current: processed,
+                total,
+                updated,
+                errors,
+                phase: "processing".to_string(),
+                message: format!("Refreshing photo metadata {}/{}", processed, total),
+            });
 
-            // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
-            let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
-
-             let query = format!("SELECT id FROM scoped_images WHERE {}", where_sql);
-
-             let ids: Vec<String> = {
-                 let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-                 let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), |row| row.get(0))
-                     .map_err(|e| e.to_string())?;
-                 rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-             };
-
-             let prefetch_duration = prefetch_start.elapsed();
-             log::info!("[Reparse] Pre-fetched {} IDs in {:.2}ms. Starting batched processing...",
-                ids.len(), prefetch_duration.as_millis());
-
-             // 2. Loop through chunks
-             for chunk in ids.chunks(batch_size) {
-                 if is_cancelled.load(Ordering::SeqCst) {
-                     break;
-                 }
-
-                 let fetch_start = std::time::Instant::now();
-                 let placeholders = std::iter::repeat_n("?", chunk.len()).collect::<Vec<_>>().join(",");
-                 let batch_query = format!(
-                    "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
-                     FROM scoped_images
-                     WHERE id IN ({})",
-                    placeholders
-                 );
-
-                 let batch: Vec<(String, String, String, String)> = {
-                     let mut stmt = conn.prepare(&batch_query).map_err(|e| e.to_string())?;
-                     let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
-                        Ok((
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                        ))
-                     }).map_err(|e| e.to_string())?
-                     .collect::<Result<Vec<_>, rusqlite::Error>>()
-                     .map_err(|e| e.to_string())?;
-                     rows
-                 };
-                 let fetch_duration = fetch_start.elapsed();
-
-                 process_and_update_batch(&mut conn, batch, fetch_duration.as_millis())?;
-             }
-
-        } else {
-            // === STRATEGY 2: KEYSET PAGINATION (Global) ===
-            log::info!("[Refresh] Strategy: Keyset Pagination (Global)");
-            let mut last_seen_id: String = String::new();
-
-            loop {
-                if is_cancelled.load(Ordering::SeqCst) {
-                    break;
-                }
-
-                let fetch_start = std::time::Instant::now();
-                let batch: Vec<(String, String, String, String)> = {
-                    let (base_filters, mut params) = build_filters(force_reparse, filter_root.as_ref(), filter_tool.as_ref());
-                    params.push(Box::new(last_seen_id.clone()));
-
-                    let query = format!(
-                        "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
-                         FROM scoped_images
-                         WHERE {} AND id > ?
-                         ORDER BY id ASC
-                         LIMIT {}",
-                        base_filters, batch_size
-                    );
-
-                    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-                     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                        Ok((
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                        ))
-                    }).map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, rusqlite::Error>>()
-                    .map_err(|e| e.to_string())?;
-
-                    rows
-                };
-                let fetch_duration = fetch_start.elapsed();
-
-                if batch.is_empty() { break; }
-                if let Some(last) = batch.last() { last_seen_id = last.0.clone(); }
-
-                process_and_update_batch(&mut conn, batch, fetch_duration.as_millis())?;
-            }
+            #[cfg(feature = "qa-profile")]
+            std::thread::sleep(qa_batch_delay);
         }
+    }
 
-        if photo_total > 0 && !is_cancelled.load(Ordering::SeqCst) {
-            log::info!("[Refresh] Starting restart-safe photo metadata phase");
-            let mut last_photo_id = String::new();
-            let photo_batch_size = 100;
+    if is_cancelled.load(Ordering::SeqCst) {
+        log::info!("[Refresh] Job cancelled by user");
+        was_cancelled = true;
+    }
 
-            loop {
-                if is_cancelled.load(Ordering::SeqCst) {
-                    break;
-                }
+    // Final progress update
+    emit_progress(ReparseProgress {
+        current: processed,
+        total,
+        updated,
+        errors,
+        phase: "complete".to_string(),
+        message: format!("Completed {} / {} images", processed, total),
+    });
 
-                let batch: Vec<(String, String)> = {
-                    let (photo_where, mut photo_params) =
-                        build_photo_filters(force_reparse, normalized_filter_root.as_deref());
-                    photo_params.push(Box::new(last_photo_id.clone()));
-                    let query = format!(
-                        "SELECT id, path
-                         FROM scoped_images
-                         WHERE {} AND id > ?
-                         ORDER BY id ASC
-                         LIMIT {}",
-                        photo_where, photo_batch_size
-                    );
-                    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-                    let rows = stmt
-                        .query_map(rusqlite::params_from_iter(photo_params.iter()), |row| {
-                            Ok((row.get(0)?, row.get(1)?))
-                        })
-                        .map_err(|e| e.to_string())?
-                        .collect::<Result<Vec<_>, rusqlite::Error>>()
-                        .map_err(|e| e.to_string())?;
-                    rows
-                };
+    let duration = start_time.elapsed();
+    log::info!(
+        "[Refresh] Job complete in {:.2}s: {} processed, {} updated, {} errors, cancelled: {}",
+        duration.as_secs_f64(),
+        processed,
+        updated,
+        errors,
+        was_cancelled
+    );
 
-                if batch.is_empty() {
-                    break;
-                }
-                last_photo_id = batch.last().map(|row| row.0.clone()).unwrap_or_default();
+    let result = ReparseJobResult {
+        processed,
+        updated,
+        errors,
+        was_cancelled,
+    };
 
-                let scan_results: Vec<(String, Result<crate::scanner::models::ScanResult, String>)> =
-                    batch
-                        .par_iter()
-                        .map(|(id, path)| {
-                            (
-                                id.clone(),
-                                crate::scanner::core::scan_image_internal(
-                                    path.clone(),
-                                    None,
-                                    true,
-                                    true,
-                                    None,
-                                ),
-                            )
-                        })
-                        .collect();
+    emit_complete(result.clone());
 
-                let tx = conn.transaction().map_err(|e| e.to_string())?;
-                let _hold = crate::db::write_hold::WriteHold::begin("reparse.photo_batch");
-                {
-                    let mut update_photo = tx
-                        .prepare_cached(UPDATE_PHOTO_METADATA_SQL)
-                        .map_err(|e| e.to_string())?;
-                    let mut update_discovered_generated = tx
-                        .prepare_cached(
-                            "UPDATE images
-                             SET metadata_json = ?1,
-                                 original_parsed_json = ?1,
-                                 original_metadata_json = ?2,
-                                 model_hash = ?3,
-                                 model_name = ?4,
-                                 tool = ?5,
-                                 resolved_model_name = ?4,
-                                 steps = ?6,
-                                 seed = ?7,
-                                 cfg = ?8,
-                                 sampler = ?9,
-                                 generation_type = ?10,
-                                 positive_prompt = ?11,
-                                 negative_prompt = ?12,
-                                 parser_version = 0
-                             WHERE id = ?13",
-                        )
-                        .map_err(|e| e.to_string())?;
-
-                    for (id, scan_result) in scan_results {
-                        processed += 1;
-                        match scan_result {
-                            Ok(scan) => {
-                                let photo_json = scan
-                                    .photo_metadata
-                                    .as_ref()
-                                    .and_then(|photo| serde_json::to_string(photo).ok());
-                                if scan.detected_source_kind
-                                    == crate::metadata::photo::SourceKind::Generated
-                                {
-                                    if let Some(meta) = scan.metadata.as_ref() {
-                                        let metadata_json = serde_json::to_string(meta)
-                                            .map_err(|error| error.to_string())?;
-                                        let original_metadata_json = serde_json::to_string(&scan.chunks)
-                                            .map_err(|error| error.to_string())?;
-                                        update_discovered_generated
-                                            .execute(params![
-                                                metadata_json,
-                                                original_metadata_json,
-                                                meta.model_hash,
-                                                meta.model,
-                                                meta.tool,
-                                                meta.steps,
-                                                meta.seed,
-                                                meta.cfg,
-                                                meta.sampler.to_lowercase().replace(['_', '-'], " "),
-                                                meta.generation_type,
-                                                meta.positive_prompt,
-                                                meta.negative_prompt,
-                                                id,
-                                            ])
-                                            .map_err(|error| error.to_string())?;
-                                        replace_generated_resource_links(&tx, &id, meta)?;
-                                    }
-                                }
-                                if scan.error.is_some() || scan.photo_metadata_error.is_some() {
-                                    errors += 1;
-                                }
-                                if !can_checkpoint_photo_refresh(
-                                    scan.photo_metadata_error.as_deref(),
-                                ) {
-                                    continue;
-                                }
-                                updated += update_photo
-                                    .execute(params![
-                                        scan.detected_source_kind.as_str(),
-                                        photo_json,
-                                        scan.capture_wall_time_ms,
-                                        i64::from(scan.width),
-                                        i64::from(scan.height),
-                                        CURRENT_PHOTO_REFRESH_VERSION,
-                                        id,
-                                    ])
-                                    .map_err(|e| e.to_string())?;
-                            }
-                            Err(error) => {
-                                errors += 1;
-                                log::warn!("[Refresh] Photo metadata scan failed for {}: {}", id, error);
-                            }
-                        }
-                    }
-                }
-                tx.commit().map_err(|e| e.to_string())?;
-
-                let _ = app.emit("refresh-progress", ReparseProgress {
-                    current: processed,
-                    total,
-                    updated,
-                    errors,
-                    phase: "processing".to_string(),
-                    message: format!("Refreshing photo metadata {}/{}", processed, total),
-                });
-
-                #[cfg(feature = "qa-profile")]
-                std::thread::sleep(qa_batch_delay);
-            }
-        }
-
-        if is_cancelled.load(Ordering::SeqCst) {
-            log::info!("[Refresh] Job cancelled by user");
-            was_cancelled = true;
-        }
-
-        // Final progress update
-        let _ = app.emit("refresh-progress", ReparseProgress {
-            current: processed,
-            total,
-            updated,
-            errors,
-            phase: "complete".to_string(),
-            message: format!("Completed {} / {} images", processed, total),
-        });
-
-        let duration = start_time.elapsed();
-        log::info!(
-            "[Refresh] Job complete in {:.2}s: {} processed, {} updated, {} errors, cancelled: {}",
-            duration.as_secs_f64(), processed, updated, errors, was_cancelled
-        );
-
-        let result = ReparseJobResult {
-            processed,
-            updated,
-            errors,
-            was_cancelled,
-        };
-
-        let _ = app.emit("refresh-complete", result.clone());
-
-        Ok(result)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    Ok(result)
 }
 
 /// Cancel the currently running reparse job.
@@ -797,10 +980,160 @@ pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
 
+/// Pause or resume metadata refresh between batches. The app pauses it while an InvokeAI owner
+/// switch or owner-cache repair runs, so its writes cannot get that cache's commit refused (#552).
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn set_metadata_refresh_paused(state: tauri::State<'_, ReparseState>, paused: bool) {
+    if state.is_paused.swap(paused, Ordering::SeqCst) != paused {
+        log::info!(
+            "[Refresh] Metadata refresh {}",
+            if paused { "paused" } else { "resumed" }
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusqlite::{params, Connection};
+
+    // A paused refresh must not write its next batch until the owner cache is committed (#552).
+    #[test]
+    fn a_paused_refresh_waits_until_resumed_or_cancelled() {
+        for release_by_cancel in [false, true] {
+            let state = ReparseState::default();
+            state.is_paused.store(true, Ordering::SeqCst);
+            let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+            let waiter = std::thread::spawn(move || wait_while_paused(&paused, &cancelled));
+            std::thread::sleep(PAUSE_POLL * 3);
+            assert!(!waiter.is_finished(), "the next batch ran while paused");
+            if release_by_cancel {
+                state.is_cancelled.store(true, Ordering::SeqCst);
+            } else {
+                state.is_paused.store(false, Ordering::SeqCst);
+            }
+            let started = std::time::Instant::now();
+            while !waiter.is_finished() {
+                assert!(started.elapsed() < std::time::Duration::from_secs(5));
+                std::thread::sleep(PAUSE_POLL / 4);
+            }
+            waiter.join().unwrap();
+        }
+    }
+
+    fn reparse_test_database(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "ambit-reparse-{name}-{}-{:?}.db",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let conn = Connection::open(&path).expect("test database");
+        conn.execute_batch("PRAGMA journal_mode = WAL;")
+            .expect("wal");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql).expect("apply migrations");
+        }
+        for index in 0..3 {
+            conn.execute(
+                "INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version, original_metadata_json)
+                 VALUES (?1, ?2, 100, 0, 0, '{\"parameters\":\"a cat\nSteps: 20, Sampler: Euler\"}')",
+                params![format!("img-{index}"), format!("D:/lib/img-{index}.png")],
+            )
+            .expect("image row");
+        }
+        path
+    }
+
+    fn stale_rows(path: &std::path::Path) -> i64 {
+        Connection::open(path)
+            .expect("observer")
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE parser_version < ?1",
+                params![CURRENT_PARSER_VERSION],
+                |row| row.get(0),
+            )
+            .expect("stale count")
+    }
+
+    // An owner switch pauses the refresh. A batch written during the switch's cache build marks
+    // that cache dirty and gets its commit refused, so nothing may be written until it resumes (#552).
+    #[test]
+    fn a_paused_reparse_job_writes_nothing_until_resumed() {
+        for filter_root in [None, Some("D:/lib".to_string())] {
+            let path = reparse_test_database(if filter_root.is_some() {
+                "prefetch"
+            } else {
+                "keyset"
+            });
+            let state = ReparseState::default();
+            state.is_paused.store(true, Ordering::SeqCst);
+            let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+            let job_path = path.clone();
+            let job = std::thread::spawn(move || {
+                let mut conn = Connection::open(&job_path).expect("job connection");
+                run_reparse_job(
+                    &mut conn,
+                    ReparseJobOptions {
+                        force_reparse: false,
+                        filter_root,
+                        filter_tool: None,
+                        refresh_photo_metadata: false,
+                    },
+                    &paused,
+                    &cancelled,
+                    &|_| {},
+                    &|_| {},
+                )
+            });
+            std::thread::sleep(PAUSE_POLL * 5);
+            assert!(!job.is_finished(), "the job finished while paused");
+            assert_eq!(stale_rows(&path), 3, "a batch was written while paused");
+
+            state.is_paused.store(false, Ordering::SeqCst);
+            let result = job.join().unwrap().expect("reparse job");
+            assert_eq!(result.processed, 3);
+            assert_eq!(stale_rows(&path), 0);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn a_reparse_job_cancelled_while_paused_writes_nothing() {
+        for filter_root in [None, Some("D:/lib".to_string())] {
+            let path = reparse_test_database(if filter_root.is_some() {
+                "cancel-prefetch"
+            } else {
+                "cancel-keyset"
+            });
+            let state = ReparseState::default();
+            state.is_paused.store(true, Ordering::SeqCst);
+            let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+            let job_path = path.clone();
+            let job = std::thread::spawn(move || {
+                let mut conn = Connection::open(&job_path).expect("job connection");
+                run_reparse_job(
+                    &mut conn,
+                    ReparseJobOptions {
+                        force_reparse: false,
+                        filter_root,
+                        filter_tool: None,
+                        refresh_photo_metadata: false,
+                    },
+                    &paused,
+                    &cancelled,
+                    &|_| {},
+                    &|_| {},
+                )
+            });
+            std::thread::sleep(PAUSE_POLL * 3);
+            state.is_cancelled.store(true, Ordering::SeqCst);
+            job.join().unwrap().expect("reparse job");
+            assert_eq!(stale_rows(&path), 3, "a cancelled job wrote a batch");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 
     #[test]
     fn progress_payload_serializes_structured_counters() {

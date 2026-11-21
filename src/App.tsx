@@ -49,7 +49,7 @@ import { useAppActions } from './hooks/useAppActions';
 import { useAppUpdater } from './hooks/useAppUpdater';
 import { useAppVersion } from './hooks/useAppVersion';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
-import { useMetadataRefresh } from './hooks/useMetadataRefresh';
+import { useMetadataRefresh, useMetadataRefreshPause } from './hooks/useMetadataRefresh';
 import { useOwnerScopeTransitionPresentation } from './hooks/useOwnerScopeTransitionPresentation';
 import { useDelayedBusyPresentation } from './hooks/useDelayedBusyPresentation';
 import { useSync } from './contexts/SyncContext';
@@ -508,6 +508,8 @@ export default function App() {
     // Collection counts wait for an owner-cache repair: their long scans compete with it for the
     // database pool, and collections show a pending count until then.
     const isOwnerCacheRepairing = useLibraryStore((s) => s.isOwnerCacheRepairing);
+    // Owner switches clear backgroundStartupReady; background owner-cache repairs set isOwnerCacheRepairing.
+    useMetadataRefreshPause(!backgroundStartupReady || isOwnerCacheRepairing);
     useEffect(() => {
         setOrdinaryCountsReady(
             backgroundStartupReady && !isOwnerCacheRepairing && document.getElementById('static-loading')?.dataset.ambitFatal !== 'true'

@@ -13,13 +13,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-const FILE_LIMIT: usize = 256 * 1024;
+use crate::startup::MAX_EVENTS_PER_LAUNCH;
+
+// About 300 bytes per event: room for every ordinary event plus both reserves.
+const FILE_LIMIT: usize = 1024 * 1024;
 const TERMINAL_RESERVE: usize = 32 * 1024;
 const REPAIR_RESERVE: usize = 8 * 1024;
 const RETAIN_LAUNCHES: usize = 20;
-// StartupState admits at most 256 ordinary + 8*4 reserved + 7 repair events.
+// StartupState admits at most MAX_EVENTS_PER_LAUNCH ordinary + 8*4 reserved + 7 repair events.
 // Even a completely blocked writer cannot let ordinary events consume reserves.
-const RENDERER_QUEUE_LIMIT: usize = 320;
+const RENDERER_QUEUE_LIMIT: usize = MAX_EVENTS_PER_LAUNCH + 8 * 4 + 7;
 static ACTIVE: OnceLock<Arc<StartupJournal>> = OnceLock::new();
 const OBSERVATION_TIMES: [u64; 4] = [15_000, 30_000, 60_000, 120_000];
 const WEBVIEW_OBSERVATIONS: &[&str] = &[
@@ -398,7 +401,7 @@ impl StartupJournal {
             "lastRendererMilestone":inner.last_renderer_milestone,
             "lastRepairStage":inner.last_repair_stage,
             "outstandingPhases":outstanding,"outstandingPhasesTruncated":inner.outstanding_phases.len() > 16,
-            "phaseEvidenceMayBeIncomplete":inner.ordinary_events >= 256});
+            "phaseEvidenceMayBeIncomplete":inner.ordinary_events >= MAX_EVENTS_PER_LAUNCH});
         append(&mut inner, &observation, JournalRecordKind::Terminal);
     }
 
@@ -554,7 +557,7 @@ impl StartupJournal {
                 inner.last_repair_stage = event["repairStage"].as_str().map(str::to_owned);
             }
         } else {
-            if inner.ordinary_events >= 256 {
+            if inner.ordinary_events >= MAX_EVENTS_PER_LAUNCH {
                 return;
             }
             inner.ordinary_events += 1;
@@ -890,7 +893,7 @@ mod tests {
     #[test]
     fn validated_queue_reserves_terminal_and_repair_records_under_saturation() {
         use tauri::Manager;
-        const { assert!(RENDERER_QUEUE_LIMIT >= 256 + 8 * 4 + 7) };
+        const { assert!(RENDERER_QUEUE_LIMIT >= MAX_EVENTS_PER_LAUNCH + 8 * 4 + 7) };
         let directory = TestLogs::new();
         let journal = Arc::new(StartupJournal::new(Instant::now(), Some(&directory.0)));
         let app = tauri::test::mock_builder()
@@ -913,14 +916,17 @@ mod tests {
         malformed.elapsed_ms = u64::MAX;
         assert!(dispatch(malformed).is_err());
         assert!(journal.renderer_pending.lock().unwrap().is_empty());
-        for _ in 0..256 {
+        for _ in 0..MAX_EVENTS_PER_LAUNCH {
             dispatch(renderer_event(&journal, "collection-counts", "completed")).unwrap();
         }
         assert!(dispatch(renderer_event(&journal, "collection-counts", "completed")).is_err());
         dispatch(repair_report_event(&journal, "completed")).unwrap();
         dispatch(renderer_event(&journal, "ready", "completed")).unwrap();
         assert!(dispatch(renderer_event(&journal, "ready", "completed")).is_err());
-        assert_eq!(journal.renderer_pending.lock().unwrap().len(), 258);
+        assert_eq!(
+            journal.renderer_pending.lock().unwrap().len(),
+            MAX_EVENTS_PER_LAUNCH + 2
+        );
         journal.end();
         let records = events(&directory.0);
         assert_eq!(
@@ -1146,7 +1152,9 @@ mod tests {
     fn ordinary_saturation_preserves_terminal_summary_and_milestones() {
         let directory = TestLogs::new();
         let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
-        for _ in 0..1000 {
+        // A long session's late phases must still be recorded: the cap was once 256 (#552).
+        const { assert!(MAX_EVENTS_PER_LAUNCH >= 2048) };
+        for _ in 0..MAX_EVENTS_PER_LAUNCH + 100 {
             journal.renderer(&renderer_event(&journal, "collection-counts", "completed"));
         }
         journal.renderer(&renderer_event(&journal, "splash", "completed"));
@@ -1158,7 +1166,7 @@ mod tests {
                 .iter()
                 .filter(|event| event["event"]["phase"] == "collection-counts")
                 .count(),
-            256
+            MAX_EVENTS_PER_LAUNCH
         );
         let summary = records.last().unwrap();
         assert_eq!(summary["outcome"], "ready");

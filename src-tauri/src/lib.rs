@@ -111,6 +111,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             // db reparse commands
             db::reparse::start_reparse_job,
             db::reparse::cancel_reparse_job,
+            db::reparse::set_metadata_refresh_paused,
             db::commands::reparse_commands::get_images_needing_reparse,
             db::commands::reparse_commands::get_reparse_count,
             db::commands::reparse_commands::reparse_metadata_batch,
