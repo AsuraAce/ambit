@@ -2,6 +2,7 @@ import { FacetType } from '../types';
 import { hasTouchedFacetResources, orderFacetTypes, TouchedFacetResources, touchedFacetResourcesToTypes } from './touchedFacetTypes';
 import { elapsedMs, liveWatchNow } from './liveWatchPerf';
 import { rebuildFacetCacheStrict, refreshFacetCacheForResourcesStrict } from '../services/db/imageRepo';
+import { throwIfInvokeAborted } from '../services/invoke/abort';
 
 export const STARTUP_INCREMENTAL_MAX_PROCESSED = 500;
 export const STARTUP_INCREMENTAL_MAX_TOUCHED_RESOURCES = 64;
@@ -18,6 +19,8 @@ export interface StartupFacetRefreshOptions {
     orphanScanEnabled?: boolean;
     maxProcessed?: number;
     maxTouchedResources?: number;
+    /** Aborting stops the native facet build in progress (#533) and skips the full-rebuild fallback. */
+    signal?: AbortSignal;
     onRefreshApplied: () => void | Promise<void>;
 }
 
@@ -76,7 +79,7 @@ const runFullRefresh = async (
     incrementalMs?: number
 ): Promise<StartupFacetRefreshResult> => {
     const fullRefreshStartedAt = liveWatchNow();
-    const entryCount = await rebuildFacetCacheStrict();
+    const entryCount = await rebuildFacetCacheStrict({ signal: options.signal });
     const fullRefreshMs = elapsedMs(fullRefreshStartedAt);
     await options.onRefreshApplied();
 
@@ -150,7 +153,7 @@ export const refreshStartupFacetCache = async (options: StartupFacetRefreshOptio
     const incrementalStartedAt = liveWatchNow();
 
     try {
-        const entryCount = await refreshFacetCacheForResourcesStrict(options.touchedFacetResources);
+        const entryCount = await refreshFacetCacheForResourcesStrict(options.touchedFacetResources, { signal: options.signal });
         const incrementalMs = elapsedMs(incrementalStartedAt);
         await options.onRefreshApplied();
 
@@ -174,6 +177,7 @@ export const refreshStartupFacetCache = async (options: StartupFacetRefreshOptio
             incrementalMs,
         };
     } catch (incrementalError) {
+        throwIfInvokeAborted(options.signal);
         const incrementalMs = elapsedMs(incrementalStartedAt);
         const fallbackReason = 'incremental-failure';
         console.warn('[Startup Facets] Incremental refresh failed; falling back to full rebuild.', {

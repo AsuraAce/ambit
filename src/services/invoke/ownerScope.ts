@@ -10,6 +10,7 @@ import { isSameInvokePath } from './pathIdentity';
 import { measureStartupPhase, startupDiagnostics } from '../../utils/startupDiagnostics';
 import { throwIfInvokeAborted } from './abort';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
+import { createStartupRepairCollector } from '../../utils/startupRepairDiagnostics';
 
 export interface ApplyInvokeOwnerScopeOptions {
     discovery: InvokeOwnerDiscovery;
@@ -89,7 +90,16 @@ export const applyInvokeOwnerScope = async ({
     let sourceFactsUpdated = 0;
     if (scope && reconcileSourceFacts) {
         await measureStartupPhase('owner-source-repair', async () => {
-            const diagnostics = startupDiagnostics.claimRepair() ?? invokeSyncTrace.claimRepair(traceOperationId);
+            // Startup and traced runs keep their own reports; any other repair (a user switch after
+            // startup) logs its stage timings so a slow repair shows where its time went (#533).
+            const diagnostics =
+                startupDiagnostics.claimRepair() ??
+                invokeSyncTrace.claimRepair(traceOperationId) ??
+                createStartupRepairCollector({
+                    now: () => performance.now(),
+                    stage: () => undefined,
+                    report: (report) => console.info('[InvokeAI] Owner source repair report', report),
+                });
             diagnostics?.stage('setup');
             const setupDone = diagnostics?.start('setup');
             try {

@@ -306,9 +306,9 @@ async backfillParameterColumns() : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async rebuildFacetCache() : Promise<Result<number, string>> {
+async rebuildFacetCache(buildId: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };
+    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache", { buildId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -322,21 +322,29 @@ async rebuildFacetCacheIncremental(facetType: string) : Promise<Result<number, s
     else return { status: "error", error: e  as any };
 }
 },
-async rebuildFacetCacheIncrementalBatch(facetTypes: string[]) : Promise<Result<number, string>> {
+async rebuildFacetCacheIncrementalBatch(facetTypes: string[], buildId: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache_incremental_batch", { facetTypes }) };
+    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache_incremental_batch", { facetTypes, buildId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async refreshFacetCacheForResources(touches: FacetResourceTouches) : Promise<Result<number, string>> {
+async refreshFacetCacheForResources(touches: FacetResourceTouches, buildId: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("refresh_facet_cache_for_resources", { touches }) };
+    return { status: "ok", data: await TAURI_INVOKE("refresh_facet_cache_for_resources", { touches, buildId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Stops the facet build started with `build_id`, or the one about to start with it.
+ * The page sends this only for a build it is still waiting for. The build rolls
+ * back, so the live facet cache keeps its last state.
+ */
+async stopFacetBuild(buildId: string) : Promise<void> {
+    await TAURI_INVOKE("stop_facet_build", { buildId });
 },
 /**
  * Get distinct facet names that exist in the current filtered result set.

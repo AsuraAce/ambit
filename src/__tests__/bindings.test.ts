@@ -313,7 +313,7 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     { name: 'backfillParameterColumns', invokeName: 'backfill_parameter_columns', args: [], returnsResult: true },
-    { name: 'rebuildFacetCache', invokeName: 'rebuild_facet_cache', args: [], returnsResult: true },
+    { name: 'rebuildFacetCache', invokeName: 'rebuild_facet_cache', args: [null], payload: { buildId: null }, returnsResult: true },
     {
         name: 'rebuildFacetCacheIncremental',
         invokeName: 'rebuild_facet_cache_incremental',
@@ -324,17 +324,18 @@ const commandCases: CommandCase[] = [
     {
         name: 'rebuildFacetCacheIncrementalBatch',
         invokeName: 'rebuild_facet_cache_incremental_batch',
-        args: [['loras']],
-        payload: { facetTypes: ['loras'] },
+        args: [['loras'], 'build-1'],
+        payload: { facetTypes: ['loras'], buildId: 'build-1' },
         returnsResult: true,
     },
     {
         name: 'refreshFacetCacheForResources',
         invokeName: 'refresh_facet_cache_for_resources',
-        args: [{ loras: ['a'] }],
-        payload: { touches: { loras: ['a'] } },
+        args: [{ loras: ['a'] }, null],
+        payload: { touches: { loras: ['a'] }, buildId: null },
         returnsResult: true,
     },
+    { name: 'stopFacetBuild', invokeName: 'stop_facet_build', args: ['build-1'], payload: { buildId: 'build-1' }, returnsResult: false },
     {
         name: 'getValidFacetNames',
         invokeName: 'get_valid_facet_names',

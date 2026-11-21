@@ -25,6 +25,7 @@ vi.mock('../../../bindings', () => ({
         deleteThumbnail: vi.fn(),
         rebuildFacetCache: vi.fn(),
         rebuildFacetCacheIncremental: vi.fn(),
+        stopFacetBuild: vi.fn(),
         purgeDatabase: vi.fn(),
     },
 }));
@@ -954,7 +955,67 @@ describe('imageRepo batch removal', () => {
 
         expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
             facetTypes: ['loras', 'controlNets', 'ipAdapters'],
+            buildId: null,
         });
+    });
+
+    // #533: a switch or Cancel must stop the native build, not wait for it to finish.
+    it('stops a pending facet build by its id when its signal aborts, and reports the stop as Aborted', async () => {
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.stopFacetBuild).mockResolvedValue(undefined);
+        let rejectBuild: (error: Error) => void = () => undefined;
+        invokeMock.mockImplementationOnce(
+            () =>
+                new Promise((_resolve, reject) => {
+                    rejectBuild = reject;
+                })
+        );
+        const { rebuildFacetCacheIncrementalBatchStrict } = await import('../imageRepo');
+        const controller = new AbortController();
+
+        const build = rebuildFacetCacheIncrementalBatchStrict(['loras'], { signal: controller.signal });
+        await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+        const buildId = (invokeMock.mock.calls[0][1] as { buildId: string }).buildId;
+        expect(buildId).toEqual(expect.any(String));
+        expect(commands.stopFacetBuild).not.toHaveBeenCalled();
+
+        controller.abort();
+        expect(commands.stopFacetBuild).toHaveBeenCalledWith(buildId);
+        rejectBuild(new Error('Facet build was stopped.'));
+        await expect(build).rejects.toThrow('Aborted');
+    });
+
+    it('sends no stop for a facet build that already finished, and none without a signal', async () => {
+        const { commands } = await import('../../../bindings');
+        invokeMock.mockResolvedValue(4);
+        const { refreshFacetCacheForResourcesStrict, rebuildFacetCacheIncrementalBatchStrict } = await import('../imageRepo');
+        const controller = new AbortController();
+        const resources = {
+            checkpoints: ['Model'],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: [],
+        };
+
+        await expect(refreshFacetCacheForResourcesStrict(resources, { signal: controller.signal })).resolves.toBe(4);
+        controller.abort();
+        expect(commands.stopFacetBuild).not.toHaveBeenCalled();
+
+        await expect(rebuildFacetCacheIncrementalBatchStrict(['loras'])).resolves.toBe(4);
+        expect(invokeMock).toHaveBeenLastCalledWith('rebuild_facet_cache_incremental_batch', { facetTypes: ['loras'], buildId: null });
+    });
+
+    it('does not start a facet build whose signal has already aborted', async () => {
+        const { commands } = await import('../../../bindings');
+        const { rebuildFacetCacheStrict } = await import('../imageRepo');
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(rebuildFacetCacheStrict({ signal: controller.signal })).rejects.toThrow('Aborted');
+        expect(commands.rebuildFacetCache).not.toHaveBeenCalled();
     });
 
     it('does not invoke incremental cache rebuilds when all requested facet types are invalid', async () => {
@@ -1219,6 +1280,7 @@ describe('imageRepo batch removal', () => {
 
         expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
             facetTypes: ['controlNets'],
+            buildId: null,
         });
         expect(invokeMock).toHaveBeenCalledWith('refresh_facet_cache_for_resources', {
             touches: {
@@ -1230,6 +1292,7 @@ describe('imageRepo batch removal', () => {
                 ipAdapters: [],
                 tools: [],
             },
+            buildId: null,
         });
     });
 
@@ -2510,6 +2573,7 @@ describe('rebuildThumbnailFacetCache', () => {
         expect(invokeMock).toHaveBeenCalledTimes(2);
         expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
             facetTypes: expect.arrayContaining(['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters']),
+            buildId: null,
         });
 
         // With nothing running, the next mask starts its own rebuild at once.

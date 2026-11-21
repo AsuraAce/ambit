@@ -2,7 +2,8 @@ use super::{configure_connection, resolve_db_path, ProgressPayload};
 use regex::Regex;
 use rusqlite::{params, types::Value, OptionalExtension};
 use std::collections::BTreeSet;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError};
 use std::time::Instant;
 use tauri::Emitter;
 
@@ -109,169 +110,31 @@ fn with_active_scope_model_invalidation_suppressed<T>(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
+pub async fn rebuild_facet_cache(
+    app: tauri::AppHandle,
+    build_id: Option<String>,
+) -> Result<usize, String> {
     let epoch = super::background_work::current_epoch();
     tauri::async_runtime::spawn_blocking(move || {
-        let _coordinator = lock_facet_builds()?;
+        let job = build_id
+            .as_deref()
+            .map(super::background_work::register_job);
+        let stop = job.as_ref().map(|job| job.flag());
+        let _coordinator = lock_facet_builds_unless_stopped("full rebuild", stop.as_ref())?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
-        // A reload or exit stops this rebuild; its open transaction rolls back.
-        super::background_work::stop_when_epoch_changes(&conn, epoch);
+        // A reload, exit or stop request ends this rebuild; its open transaction rolls back.
+        super::background_work::stop_when_epoch_changes_or_job_stopped(&conn, epoch, stop.clone());
 
-        println!("[FacetCache] Starting rebuild...");
-        let _ = app.emit(
-            "facet_cache_progress",
-            ProgressPayload {
-                current: 0,
-                total: 8,
-                message: "Starting facet cache build...".into(),
-            },
-        );
-
-        // --- PHASE 1: HARVEST ---
-        {
-            println!("[FacetCache] Harvesting models from images...");
-            let start_harvest = std::time::Instant::now();
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 1,
-                    total: 8,
-                    message: "Harvesting models from library...".into(),
-                },
-            );
-
-            harvest_models_staged(&mut conn)?;
-            println!(
-                "[FacetCache] Harvest completed in {:?}.",
-                start_harvest.elapsed()
-            );
-        }
-
-        // --- PHASE 2: BUILD CACHE ---
-        // A TEMP table shadows the live cache on this connection. The expensive build
-        // therefore keeps only a WAL read snapshot; normal library writes remain available.
-        create_facet_staging_table(&conn)?;
-        let count_result = {
-            let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-            // Clear existing cache
-            tx.execute("DELETE FROM facet_cache", [])
-                .map_err(|e| e.to_string())?;
-
-            // 1. Checkpoints
-            println!("[FacetCache] Building checkpoints...");
-            let start_cp = std::time::Instant::now();
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 2,
-                    total: 8,
-                    message: "Building checkpoints cache...".into(),
-                },
-            );
-            build_checkpoint_facets(&tx)?;
-            println!(
-                "[FacetCache] Checkpoints built in {:?}.",
-                start_cp.elapsed()
-            );
-
-            // 2. LoRAs
-            println!("[FacetCache] Building LoRAs...");
-            let start_lora = std::time::Instant::now();
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 3,
-                    total: 8,
-                    message: "Building LoRAs cache...".into(),
-                },
-            );
-            build_resource_facets(&tx, "loras", "loras")?;
-            println!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
-
-            // 3. Embeddings
-            println!("[FacetCache] Building Embeddings...");
-            let start_emb = std::time::Instant::now();
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 4,
-                    total: 8,
-                    message: "Building Embeddings cache...".into(),
-                },
-            );
-            build_resource_facets(&tx, "embeddings", "embeddings")?;
-            println!(
-                "[FacetCache] Embeddings built in {:?}.",
-                start_emb.elapsed()
-            );
-
-            // 4. Hypernetworks
-            println!("[FacetCache] Building Hypernetworks...");
-            let start_hyper = std::time::Instant::now();
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 5,
-                    total: 8,
-                    message: "Building Hypernetworks cache...".into(),
-                },
-            );
-            build_resource_facets(&tx, "hypernetworks", "hypernetworks")?;
-            println!(
-                "[FacetCache] Hypernetworks built in {:?}.",
-                start_hyper.elapsed()
-            );
-
-            // 5. Tools
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 6,
-                    total: 8,
-                    message: "Building tools cache...".into(),
-                },
-            );
-            build_tool_facets(&tx)?;
-
-            // 6. ControlNets
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 7,
-                    total: 8,
-                    message: "Building ControlNet cache...".into(),
-                },
-            );
-            build_resource_facets(&tx, "control_nets", "control_nets")?;
-
-            // 7. IP-Adapters
-            let _ = app.emit(
-                "facet_cache_progress",
-                ProgressPayload {
-                    current: 8,
-                    total: 8,
-                    message: "Building IP-Adapter cache...".into(),
-                },
-            );
-            build_resource_facets(&tx, "ip_adapters", "ip_adapters")?;
-
-            sanitize_owner_hidden_facet_thumbnails(&tx)?;
-
-            tx.commit().map_err(|e| e.to_string())?;
-
-            // Replace the live cache in one short transaction after the staged build.
-            let count = swap_staged_facet_cache(&mut conn)?;
-
-            // Update stats after rebuild
-            let _ = conn.execute("ANALYZE facet_cache", []);
-            let _ = conn.execute("ANALYZE models", []);
-
-            count
-        };
+        let count_result = build_full_facet_cache(&mut conn, stop.as_ref(), |payload| {
+            let _ = app.emit("facet_cache_progress", payload);
+        })
+        .map_err(|error| {
+            super::background_work::clean_up_stopped_connection(&conn, STAGING_TABLES);
+            stopped_error(stop.as_ref(), error)
+        })?;
 
         println!(
             "[FacetCache] Rebuild complete in {:?}. Total entries: {}",
@@ -293,13 +156,222 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
     .map_err(|e| e.to_string())?
 }
 
+/// Stops the facet build started with `build_id`, or the one about to start with it.
+/// The page sends this only for a build it is still waiting for. The build rolls
+/// back, so the live facet cache keeps its last state.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn stop_facet_build(build_id: String) {
+    super::background_work::stop_job(&build_id);
+}
+
+/// TEMP tables a facet build stages into; a stopped build drops them.
+const STAGING_TABLES: &[&str] = &["facet_cache", "harvested_models"];
+
+/// The message a facet build fails with when it was asked to stop.
+pub(crate) const FACET_BUILD_STOPPED: &str = "Facet build was stopped.";
+
+fn is_stop_requested(stop: Option<&Arc<AtomicBool>>) -> bool {
+    stop.is_some_and(|stopped| stopped.load(Ordering::SeqCst))
+}
+
+fn ensure_not_stopped(stop: Option<&Arc<AtomicBool>>) -> Result<(), String> {
+    if is_stop_requested(stop) {
+        Err(FACET_BUILD_STOPPED.to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// A statement interrupted by the stop handler reports SQLite's own message; say why instead.
+fn stopped_error(stop: Option<&Arc<AtomicBool>>, error: String) -> String {
+    if is_stop_requested(stop) {
+        FACET_BUILD_STOPPED.to_string()
+    } else {
+        error
+    }
+}
+
+/// Takes the facet build lock. A build with a stop flag gives up waiting once it is
+/// stopped, so a stopped build queued behind another holder returns at once (#533).
+/// A wait longer than a second is logged with `label`, to show what a slow step waited for.
+pub(crate) fn lock_facet_builds_unless_stopped(
+    label: &str,
+    stop: Option<&Arc<AtomicBool>>,
+) -> Result<MutexGuard<'static, ()>, String> {
+    let started = Instant::now();
+    let guard = match stop {
+        None => lock_facet_builds()?,
+        Some(_) => {
+            let coordinator = FACET_BUILD_COORDINATOR.get_or_init(|| Mutex::new(()));
+            loop {
+                ensure_not_stopped(stop)?;
+                match coordinator.try_lock() {
+                    Ok(guard) => break guard,
+                    Err(TryLockError::WouldBlock) => {
+                        std::thread::sleep(std::time::Duration::from_millis(50))
+                    }
+                    Err(TryLockError::Poisoned(_)) => {
+                        return Err("Facet build coordinator is unavailable".to_string())
+                    }
+                }
+            }
+        }
+    };
+    let waited = started.elapsed();
+    if waited.as_millis() >= 1_000 {
+        log::info!(
+            "[FacetCache] {label} waited {} ms for the facet build lock",
+            waited.as_millis()
+        );
+    }
+    Ok(guard)
+}
+
+fn build_full_facet_cache(
+    conn: &mut rusqlite::Connection,
+    stop: Option<&Arc<AtomicBool>>,
+    mut emit: impl FnMut(ProgressPayload),
+) -> Result<usize, String> {
+    ensure_not_stopped(stop)?;
+    println!("[FacetCache] Starting rebuild...");
+    emit(ProgressPayload {
+        current: 0,
+        total: 8,
+        message: "Starting facet cache build...".into(),
+    });
+
+    // --- PHASE 1: HARVEST ---
+    {
+        println!("[FacetCache] Harvesting models from images...");
+        let start_harvest = std::time::Instant::now();
+        emit(ProgressPayload {
+            current: 1,
+            total: 8,
+            message: "Harvesting models from library...".into(),
+        });
+
+        harvest_models_staged(conn)?;
+        println!(
+            "[FacetCache] Harvest completed in {:?}.",
+            start_harvest.elapsed()
+        );
+    }
+    ensure_not_stopped(stop)?;
+
+    // --- PHASE 2: BUILD CACHE ---
+    // A TEMP table shadows the live cache on this connection. The expensive build
+    // therefore keeps only a WAL read snapshot; normal library writes remain available.
+    create_facet_staging_table(conn)?;
+    let count_result = {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        // Clear existing cache
+        tx.execute("DELETE FROM facet_cache", [])
+            .map_err(|e| e.to_string())?;
+
+        // 1. Checkpoints
+        println!("[FacetCache] Building checkpoints...");
+        let start_cp = std::time::Instant::now();
+        emit(ProgressPayload {
+            current: 2,
+            total: 8,
+            message: "Building checkpoints cache...".into(),
+        });
+        build_checkpoint_facets(&tx)?;
+        println!(
+            "[FacetCache] Checkpoints built in {:?}.",
+            start_cp.elapsed()
+        );
+
+        // 2. LoRAs
+        println!("[FacetCache] Building LoRAs...");
+        let start_lora = std::time::Instant::now();
+        emit(ProgressPayload {
+            current: 3,
+            total: 8,
+            message: "Building LoRAs cache...".into(),
+        });
+        build_resource_facets(&tx, "loras", "loras")?;
+        println!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
+
+        // 3. Embeddings
+        println!("[FacetCache] Building Embeddings...");
+        let start_emb = std::time::Instant::now();
+        emit(ProgressPayload {
+            current: 4,
+            total: 8,
+            message: "Building Embeddings cache...".into(),
+        });
+        build_resource_facets(&tx, "embeddings", "embeddings")?;
+        println!(
+            "[FacetCache] Embeddings built in {:?}.",
+            start_emb.elapsed()
+        );
+
+        // 4. Hypernetworks
+        println!("[FacetCache] Building Hypernetworks...");
+        let start_hyper = std::time::Instant::now();
+        emit(ProgressPayload {
+            current: 5,
+            total: 8,
+            message: "Building Hypernetworks cache...".into(),
+        });
+        build_resource_facets(&tx, "hypernetworks", "hypernetworks")?;
+        println!(
+            "[FacetCache] Hypernetworks built in {:?}.",
+            start_hyper.elapsed()
+        );
+
+        // 5. Tools
+        emit(ProgressPayload {
+            current: 6,
+            total: 8,
+            message: "Building tools cache...".into(),
+        });
+        build_tool_facets(&tx)?;
+
+        // 6. ControlNets
+        emit(ProgressPayload {
+            current: 7,
+            total: 8,
+            message: "Building ControlNet cache...".into(),
+        });
+        build_resource_facets(&tx, "control_nets", "control_nets")?;
+
+        // 7. IP-Adapters
+        emit(ProgressPayload {
+            current: 8,
+            total: 8,
+            message: "Building IP-Adapter cache...".into(),
+        });
+        build_resource_facets(&tx, "ip_adapters", "ip_adapters")?;
+
+        sanitize_owner_hidden_facet_thumbnails(&tx)?;
+
+        tx.commit().map_err(|e| e.to_string())?;
+        ensure_not_stopped(stop)?;
+
+        // Replace the live cache in one short transaction after the staged build.
+        let count = swap_staged_facet_cache(conn)?;
+
+        // Update stats after rebuild
+        let _ = conn.execute("ANALYZE facet_cache", []);
+        let _ = conn.execute("ANALYZE models", []);
+
+        count
+    };
+
+    Ok(count_result)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn rebuild_facet_cache_incremental(
     app: tauri::AppHandle,
     facet_type: String,
 ) -> Result<usize, String> {
-    rebuild_facet_cache_incremental_batch(app, vec![facet_type]).await
+    rebuild_facet_cache_incremental_batch(app, vec![facet_type], None).await
 }
 
 fn normalize_facet_type(facet_type: &str) -> Result<&'static str, String> {
@@ -1542,20 +1614,31 @@ where
 pub async fn refresh_facet_cache_for_resources(
     app: tauri::AppHandle,
     touches: FacetResourceTouches,
+    build_id: Option<String>,
 ) -> Result<usize, String> {
     let epoch = super::background_work::current_epoch();
     tauri::async_runtime::spawn_blocking(move || {
-        let _coordinator = lock_facet_builds()?;
+        let job = build_id
+            .as_deref()
+            .map(super::background_work::register_job);
+        let stop = job.as_ref().map(|job| job.flag());
+        let _coordinator = lock_facet_builds_unless_stopped("resource refresh", stop.as_ref())?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
-        // A reload or exit stops this rebuild; its open transaction rolls back.
-        super::background_work::stop_when_epoch_changes(&conn, epoch);
+        // A reload, exit or stop request ends this rebuild; its open transaction rolls back.
+        super::background_work::stop_when_epoch_changes_or_job_stopped(&conn, epoch, stop.clone());
 
-        let refreshed =
-            refresh_live_facet_resources_with_progress(&mut conn, &touches, |payload| {
-                let _ = app.emit("discovery_scan_progress", payload);
+        let refreshed = ensure_not_stopped(stop.as_ref())
+            .and_then(|()| {
+                refresh_live_facet_resources_with_progress(&mut conn, &touches, |payload| {
+                    let _ = app.emit("discovery_scan_progress", payload);
+                })
+            })
+            .map_err(|error| {
+                super::background_work::clean_up_stopped_connection(&conn, STAGING_TABLES);
+                stopped_error(stop.as_ref(), error)
             })?;
         println!(
             "[FacetCache] Resource incremental refresh complete in {:?}. Rows refreshed: {}",
@@ -1569,10 +1652,20 @@ pub async fn refresh_facet_cache_for_resources(
     .map_err(|e| e.to_string())?
 }
 
+#[cfg(test)]
 fn rebuild_incremental_facet_types(
     conn: &mut rusqlite::Connection,
     facet_types: &[String],
 ) -> Result<Vec<String>, String> {
+    rebuild_incremental_facet_types_unless_stopped(conn, facet_types, None)
+}
+
+fn rebuild_incremental_facet_types_unless_stopped(
+    conn: &mut rusqlite::Connection,
+    facet_types: &[String],
+    stop: Option<&Arc<AtomicBool>>,
+) -> Result<Vec<String>, String> {
+    ensure_not_stopped(stop)?;
     let mut normalized_types: Vec<String> = Vec::new();
 
     for facet_type in facet_types {
@@ -1588,14 +1681,17 @@ fn rebuild_incremental_facet_types(
 
     // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
     harvest_models_staged(conn)?;
+    ensure_not_stopped(stop)?;
 
     // Build into a TEMP table that shadows the live cache on this connection, under a read
     // snapshot only, then swap the rows in one short write transaction. Building in place
     // held the write lock for the whole build, 30-40 s on a large library, and every user
     // write in that window failed (#464).
     create_facet_staging_table(conn)?;
-    let staged = stage_incremental_facet_types(conn, &normalized_types)
-        .and_then(|marker| swap_staged_facet_types(conn, &normalized_types, &marker));
+    let staged = stage_incremental_facet_types(conn, &normalized_types).and_then(|marker| {
+        ensure_not_stopped(stop)?;
+        swap_staged_facet_types(conn, &normalized_types, &marker)
+    });
     if staged.is_err() {
         let _ = conn.execute("DROP TABLE IF EXISTS temp.facet_cache", []);
     }
@@ -1742,18 +1838,28 @@ fn mark_owner_cache_dirty_if_changed(
 pub async fn rebuild_facet_cache_incremental_batch(
     app: tauri::AppHandle,
     facet_types: Vec<String>,
+    build_id: Option<String>,
 ) -> Result<usize, String> {
     let epoch = super::background_work::current_epoch();
     tauri::async_runtime::spawn_blocking(move || {
-        let _coordinator = lock_facet_builds()?;
+        let job = build_id
+            .as_deref()
+            .map(super::background_work::register_job);
+        let stop = job.as_ref().map(|job| job.flag());
+        let _coordinator = lock_facet_builds_unless_stopped("incremental rebuild", stop.as_ref())?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
-        // A reload or exit stops this rebuild; its open transaction rolls back.
-        super::background_work::stop_when_epoch_changes(&conn, epoch);
+        // A reload, exit or stop request ends this rebuild; its open transaction rolls back.
+        super::background_work::stop_when_epoch_changes_or_job_stopped(&conn, epoch, stop.clone());
 
-        let normalized_types = rebuild_incremental_facet_types(&mut conn, &facet_types)?;
+        let normalized_types =
+            rebuild_incremental_facet_types_unless_stopped(&mut conn, &facet_types, stop.as_ref())
+                .map_err(|error| {
+                    super::background_work::clean_up_stopped_connection(&conn, STAGING_TABLES);
+                    stopped_error(stop.as_ref(), error)
+                })?;
 
         let mut total_count = 0_i64;
         for db_facet_type in &normalized_types {
@@ -2871,6 +2977,113 @@ mod tests {
             )
             .unwrap();
         assert_eq!(live_after_swap, ("StagedReplacement".to_string(), 2));
+    }
+
+    fn live_facet_rows(conn: &rusqlite::Connection) -> Vec<(String, String, i64)> {
+        let mut statement = conn
+            .prepare(
+                "SELECT facet_type, resource_name, count FROM main.facet_cache
+                 ORDER BY facet_type, resource_name",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    // A switch stops the previous scope's build (#533). The stopped build must leave the
+    // live cache as it was, and its connection fit for the next build.
+    #[test]
+    fn stopped_full_build_keeps_the_live_cache_and_leaves_its_connection_usable() {
+        let mut expected_conn = create_valid_facet_conn();
+        build_full_facet_cache(&mut expected_conn, None, |_| {}).unwrap();
+        let expected = live_facet_rows(&expected_conn);
+
+        let mut conn = create_valid_facet_conn();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'StaleBeforeStop', 9)",
+            [],
+        )
+        .unwrap();
+        let before = live_facet_rows(&conn);
+        assert_ne!(before, expected, "the seed differs from a fresh build");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        crate::db::background_work::stop_when_epoch_changes_or_job_stopped(
+            &conn,
+            crate::db::background_work::current_epoch(),
+            Some(stop.clone()),
+        );
+        // Stop partway, while the LoRAs are being staged.
+        let stop_in_build = stop.clone();
+        let result = build_full_facet_cache(&mut conn, Some(&stop), |payload| {
+            if payload.current == 3 {
+                stop_in_build.store(true, Ordering::SeqCst);
+            }
+        });
+        assert!(result.is_err(), "a stopped build fails");
+        crate::db::background_work::clean_up_stopped_connection(&conn, STAGING_TABLES);
+        assert_eq!(live_facet_rows(&conn), before, "nothing was swapped in");
+
+        assert_eq!(
+            build_full_facet_cache(&mut conn, None, |_| {}).unwrap(),
+            expected.len()
+        );
+        assert_eq!(live_facet_rows(&conn), expected);
+    }
+
+    #[test]
+    fn stopped_incremental_build_keeps_the_live_cache() {
+        let mut conn = create_valid_facet_conn();
+        let before = live_facet_rows(&conn);
+        let stop = Arc::new(AtomicBool::new(true));
+        let error = rebuild_incremental_facet_types_unless_stopped(
+            &mut conn,
+            &["loras".to_string()],
+            Some(&stop),
+        )
+        .expect_err("a stopped build fails");
+        assert_eq!(error, FACET_BUILD_STOPPED);
+        assert_eq!(live_facet_rows(&conn), before);
+    }
+
+    // A stopped build still queued behind another lock holder returns without the lock.
+    #[test]
+    fn a_stopped_build_gives_up_waiting_for_the_facet_build_lock() {
+        let (held, release) = (
+            std::sync::mpsc::channel::<()>(),
+            std::sync::mpsc::channel::<()>(),
+        );
+        let (held_sender, held_receiver) = held;
+        let (release_sender, release_receiver) = release;
+        let holder = std::thread::spawn(move || {
+            let _guard = lock_facet_builds().unwrap();
+            held_sender.send(()).unwrap();
+            let _ = release_receiver.recv_timeout(std::time::Duration::from_secs(5));
+        });
+        held_receiver.recv().unwrap();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let waiter_stop = stop.clone();
+        let waiter = std::thread::spawn(move || {
+            let started = Instant::now();
+            let result = lock_facet_builds_unless_stopped("test", Some(&waiter_stop)).map(|_| ());
+            (result, started.elapsed())
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        stop.store(true, Ordering::SeqCst);
+        let (result, elapsed) = waiter.join().unwrap();
+        release_sender.send(()).unwrap();
+        holder.join().unwrap();
+
+        assert_eq!(result, Err(FACET_BUILD_STOPPED.to_string()));
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "gave up after {elapsed:?}"
+        );
     }
 
     #[test]

@@ -21,6 +21,7 @@ import { isBrowserMockMode } from '../runtime';
 import { deleteBrowserMockImages, getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 import { clearLibraryStatsCache } from './searchRepo';
 import { assertMutationMatched } from './mutationGuard';
+import { throwIfInvokeAborted } from '../invoke/abort';
 import {
     clearAllCollectionThumbnailCaches,
     clearCollectionThumbnailCacheForCollections,
@@ -185,25 +186,61 @@ const normalizeFacetType = (type: string): FacetType | null => {
     }
 };
 
-const runRebuildFacetCache = async (): Promise<number> => {
-    const count = await unwrap(commands.rebuildFacetCache());
+export interface FacetBuildOptions {
+    /** Aborting stops the native build at its next database step (#533); the call then rejects with `Aborted`. */
+    signal?: AbortSignal;
+}
+
+// Runs one native facet build. With a signal the build gets an id, and an abort while the
+// build is still pending asks Rust to stop it. Nothing is sent once the call has settled.
+const runStoppableFacetBuild = async (
+    options: FacetBuildOptions | undefined,
+    run: (buildId: string | null) => Promise<number>
+): Promise<number> => {
+    const signal = options?.signal;
+    if (!signal) return run(null);
+    throwIfInvokeAborted(signal);
+    const buildId = crypto.randomUUID();
+    const stop = () => {
+        void commands.stopFacetBuild(buildId).catch((error: unknown) => {
+            console.warn('[DB] Failed to stop a facet build.', error);
+        });
+    };
+    signal.addEventListener('abort', stop, { once: true });
+    try {
+        return await run(buildId);
+    } catch (error) {
+        // A stopped build reports its interruption; callers handle a cancellation as `Aborted`.
+        throwIfInvokeAborted(signal);
+        throw error;
+    } finally {
+        signal.removeEventListener('abort', stop);
+    }
+};
+
+const runRebuildFacetCache = async (options?: FacetBuildOptions): Promise<number> => {
+    const count = await runStoppableFacetBuild(options, (buildId) => unwrap(commands.rebuildFacetCache(buildId)));
     await clearFacetRelatedStatsCache();
     return count;
 };
 
-const runRebuildFacetCacheIncrementalBatch = async (types: string[]): Promise<number> => {
+const runRebuildFacetCacheIncrementalBatch = async (types: string[], options?: FacetBuildOptions): Promise<number> => {
     const facetTypes = orderFacetTypes(types.map(normalizeFacetType).filter((type): type is FacetType => type !== null));
     if (facetTypes.length === 0) {
         return 0;
     }
 
-    const count = await invoke<number>('rebuild_facet_cache_incremental_batch', { facetTypes });
+    const count = await runStoppableFacetBuild(options, (buildId) =>
+        invoke<number>('rebuild_facet_cache_incremental_batch', { facetTypes, buildId })
+    );
     await clearFacetRelatedStatsCache();
     return count;
 };
 
-const runRefreshFacetCacheForResources = async (resources: TouchedFacetResources): Promise<number> => {
-    const count = await invoke<number>('refresh_facet_cache_for_resources', { touches: resources });
+const runRefreshFacetCacheForResources = async (resources: TouchedFacetResources, options?: FacetBuildOptions): Promise<number> => {
+    const count = await runStoppableFacetBuild(options, (buildId) =>
+        invoke<number>('refresh_facet_cache_for_resources', { touches: resources, buildId })
+    );
     await clearFacetRelatedStatsCache();
     return count;
 };
@@ -361,8 +398,8 @@ export const rebuildFacetCache = async (): Promise<number> => {
     }
 };
 
-export const rebuildFacetCacheStrict = async (): Promise<number> => {
-    const count = await runRebuildFacetCache();
+export const rebuildFacetCacheStrict = async (options?: FacetBuildOptions): Promise<number> => {
+    const count = await runRebuildFacetCache(options);
     console.log(`[DB] Rebuilt facet cache with ${count} entries`);
     return count;
 };
@@ -396,16 +433,19 @@ export const rebuildFacetCacheIncrementalBatch = async (types: string[]): Promis
     }
 };
 
-export const rebuildFacetCacheIncrementalBatchStrict = async (types: string[]): Promise<number> => {
-    const count = await runRebuildFacetCacheIncrementalBatch(types);
+export const rebuildFacetCacheIncrementalBatchStrict = async (types: string[], options?: FacetBuildOptions): Promise<number> => {
+    const count = await runRebuildFacetCacheIncrementalBatch(types, options);
     console.log(`[DB] Rebuilt incremental facet cache for ${types.join(', ')}: ${count} entries`);
     return count;
 };
 
-export const refreshFacetCacheForResourcesStrict = async (resources: TouchedFacetResources): Promise<number> => {
+export const refreshFacetCacheForResourcesStrict = async (
+    resources: TouchedFacetResources,
+    options?: FacetBuildOptions
+): Promise<number> => {
     if (isBrowserMockMode()) return 0;
 
-    const count = await runRefreshFacetCacheForResources(resources);
+    const count = await runRefreshFacetCacheForResources(resources, options);
     console.log('[DB] Refreshed live facet cache resources:', count);
     return count;
 };

@@ -54,6 +54,7 @@ import {
 } from '../services/invoke/connection';
 import {
     getInvokeConnectionDraft,
+    isSameInvokeConnectionDraft,
     isSameInvokeConnectionSource,
     isSameInvokeOwnerSelection,
     type InvokeConnectionDraft,
@@ -152,6 +153,8 @@ interface InvokeOwnerTransition {
     rootPath: string;
     token: symbol;
     appliesConfiguration?: boolean;
+    // Settles when the switch has finished, whatever its outcome.
+    done: Promise<void>;
 }
 
 const mergePendingInvokePerfContext = (
@@ -325,10 +328,13 @@ export const SyncProvider: React.FC<{
     // A startup cache repair that runs after the library is shown (#430). Work that claims the
     // cache or writes images waits for it; an owner-scope change aborts it first.
     // `idle` repairs follow imports and give way to them; `startup` repairs follow the startup preparation.
+    // `scope` and `draft` identify the cache it builds, so a switch to that same cache can reuse it (#533).
     const backgroundOwnerCacheRepairRef = useRef<{
         promise: Promise<void>;
         controller: AbortController;
         kind: 'startup' | 'idle';
+        scope?: InvokeSyncScope;
+        draft: InvokeConnectionDraft;
     } | null>(null);
     const ownerCacheIdleRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Set while an owner-cache repair has failed this session. Its dirty items are still in the
@@ -531,18 +537,20 @@ export const SyncProvider: React.FC<{
                             await clearCollectionOwnerScopeCaches();
                             assertCurrentCollections();
                             await invokeSyncTrace.measure(traceOperationId, 'facet-cache', () =>
-                                measureStartupPhase('facets', () => rebuildFacetCacheStrict())
+                                measureStartupPhase('facets', () => rebuildFacetCacheStrict({ signal }))
                             );
                         } else {
                             if (resourceCount > 0 && resourceCount <= 64) {
                                 await invokeSyncTrace.measure(traceOperationId, 'facet-cache', () =>
-                                    measureStartupPhase('facets', () => refreshFacetCacheForResourcesStrict(cacheRepair.resources))
+                                    measureStartupPhase('facets', () =>
+                                        refreshFacetCacheForResourcesStrict(cacheRepair.resources, { signal })
+                                    )
                                 );
                                 assertCurrentCollections();
                             }
                             if (facetTypes.length > 0) {
                                 await invokeSyncTrace.measure(traceOperationId, 'facet-cache', () =>
-                                    measureStartupPhase('facets', () => rebuildFacetCacheIncrementalBatchStrict(facetTypes))
+                                    measureStartupPhase('facets', () => rebuildFacetCacheIncrementalBatchStrict(facetTypes, { signal }))
                                 );
                                 assertCurrentCollections();
                             }
@@ -672,9 +680,15 @@ export const SyncProvider: React.FC<{
                     startPendingInvokeLiveRerun();
                 }
             });
-            backgroundOwnerCacheRepairRef.current = { promise, controller, kind };
+            backgroundOwnerCacheRepairRef.current = {
+                promise,
+                controller,
+                kind,
+                scope: useInvokeOwnerScopeStore.getState().ownerScopeState.scope,
+                draft: getInvokeConnectionDraft(settingsRef.current),
+            };
         },
-        [refreshAfterOwnerScopeChange, startPendingInvokeLiveRerun, withThumbnailsPausedForRepair]
+        [refreshAfterOwnerScopeChange, settingsRef, startPendingInvokeLiveRerun, withThumbnailsPausedForRepair]
     );
 
     // Imports and syncs dirty the owner cache. One repair runs once they have been quiet for a
@@ -738,12 +752,14 @@ export const SyncProvider: React.FC<{
     // For startup catch-ups: owner preparation and its background repair both claim the cache that
     // an import would invalidate. Never call this from inside owner preparation.
     const waitForOwnerCacheRepair = useCallback(async () => {
-        while (ownerScopePromiseRef.current || backgroundOwnerCacheRepairRef.current) {
+        while (ownerScopePromiseRef.current || ownerTransitionRef.current || backgroundOwnerCacheRepairRef.current) {
             try {
                 await ownerScopePromiseRef.current?.promise;
             } catch {
                 // A failed preparation reports itself; the catch-up only needs it settled.
             }
+            // A user switch from Settings builds the new user's cache; an import now would get its commit rejected.
+            await ownerTransitionRef.current?.done;
             await waitForBackgroundOwnerCacheRepair();
         }
     }, [waitForBackgroundOwnerCacheRepair]);
@@ -922,6 +938,26 @@ export const SyncProvider: React.FC<{
                 isSameInvokePath(settingsRef.current.invokeOwnerSelection.dbPath, discovery.dbPath)
                     ? settingsRef.current.invokeOwnerSelection
                     : undefined;
+            const runningRepair = backgroundOwnerCacheRepairRef.current;
+            if (
+                runningRepair &&
+                !forceRefresh &&
+                // A source that changed is reconciled and its cache rebuilt anyway, so waiting would only add the repair's time.
+                !reconcileSourceFacts &&
+                isSameInvokeSyncScope(runningRepair.scope, scope) &&
+                isSameInvokeConnectionDraft(runningRepair.draft, getInvokeConnectionDraft(settingsRef.current))
+            ) {
+                // The repair is building this same cache: let it commit and reuse it, so the claim
+                // below finds it restored (#533). A Cancel stops the repair instead of waiting it out.
+                const stopRepair = () => runningRepair.controller.abort();
+                signal?.addEventListener('abort', stopRepair, { once: true });
+                try {
+                    await waitForBackgroundOwnerCacheRepair();
+                } finally {
+                    signal?.removeEventListener('abort', stopRepair);
+                }
+                throwIfInvokeAborted(signal);
+            }
             useCollectionStore.getState().invalidateInitialization();
             // A repair for the previous scope must stop before this scope is applied: its smart
             // count writes would otherwise land after the new scope's snapshot was restored.
@@ -1339,7 +1375,11 @@ export const SyncProvider: React.FC<{
             const previousRoot = previousSettings.invokeAiPath?.trim();
             const token = Symbol('invoke-connection-application');
             const controller = new AbortController();
-            ownerTransitionRef.current = { rootPath: draft.invokeAiPath, token, appliesConfiguration: true };
+            let finishTransition = () => undefined as void;
+            const done = new Promise<void>((resolve) => {
+                finishTransition = resolve;
+            });
+            ownerTransitionRef.current = { rootPath: draft.invokeAiPath, token, appliesConfiguration: true, done };
             setIsInvokeSyncActive(true);
             setSyncAbortController(controller);
             useInvokeOwnerScopeStore.getState().setOperation({
@@ -1710,6 +1750,7 @@ export const SyncProvider: React.FC<{
                     useLibraryStore.getState().markInvokeSyncCancelled();
                 }
                 if (ownerTransitionRef.current?.token === token) ownerTransitionRef.current = null;
+                finishTransition();
                 // Once the target is admitted, the presentation releases the retained owner at its swap
                 // (useOwnerScopeTransitionPresentation). Otherwise the switch rolled back or failed closed.
                 if (!viewCommitted) useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(token);
@@ -2500,6 +2541,7 @@ export const SyncProvider: React.FC<{
                                     touchedFacetTypes,
                                     touchedFacetResources,
                                     orphanScanEnabled: shouldImportOrphans,
+                                    signal,
                                     onRefreshApplied: incrementFacetCacheVersion,
                                 });
                                 throwIfInvokeAborted(signal);
