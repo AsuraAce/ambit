@@ -667,6 +667,8 @@ export const SyncProvider: React.FC<{
             // Run after a repair already in progress rather than competing with it for the claim;
             // the newer one then sees whether that repair failed.
             const previous = backgroundOwnerCacheRepairRef.current;
+            // The ref holds only the newest repair, so stopping it must stop the repairs it waits on.
+            if (previous) controller.signal.addEventListener('abort', () => previous.controller.abort(), { once: true });
             const promise = hold(async () => {
                 try {
                     await previous?.promise;

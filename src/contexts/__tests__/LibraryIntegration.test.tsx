@@ -4111,6 +4111,47 @@ describe('Library Integration (Provider Stack)', () => {
                 expect(events.slice(0, 2)).toEqual(['recount', 'commit']);
             });
 
+            it("stops the catch-up's repair too when a later switch stops the repair chained after it", async () => {
+                // The catch-up starts its own repair and the switch chains one after it; the ref holds
+                // only the second, so stopping it must reach the first one's native facet build.
+                const { getSync } = await startOwnerA();
+                mocks.getInvokeDbSnapshot.mockResolvedValue({
+                    status: 'ok',
+                    data: { dbPath: discovery.dbPath, files: [{ path: discovery.dbPath, exists: true, size: 2000, modifiedMs: 200 }] },
+                });
+                mocks.syncImages.mockResolvedValueOnce({
+                    ...createNoopInvokeSyncResult(),
+                    imported: 2,
+                    maxTimestamp: 200,
+                    touchedFacetTypes: ['loras'],
+                    touchedFacetResources: resources,
+                });
+                mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective', true), 6));
+                const facets = holdFacetBuild();
+                applyOwnerB(planOf('selective', true));
+                await act(async () => {
+                    expect(await selectOwnerB(getSync())).toBe(true);
+                });
+                await waitFor(() => expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalled());
+
+                mocks.applyInvokeOwnerScope.mockImplementation(async () => {
+                    live = 'owner-a';
+                    return { ...switchedApplyResult, changed: true };
+                });
+                let switching!: Promise<boolean>;
+                act(() => {
+                    switching = getSync().selectInvokeOwnerScope({ dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' });
+                });
+                const settled = await act(async () =>
+                    Promise.race([switching.then(() => 'settled'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 500))])
+                );
+
+                expect(facets.wasStopped()).toBe(true);
+                expect(settled).toBe('settled');
+                facets.release();
+                expect(await switching).toBe(true);
+            });
+
             it('stops the deferred repair when another switch starts, and it writes nothing after', async () => {
                 const { getSync } = await startOwnerA();
                 const gate = holdNextClaim();
