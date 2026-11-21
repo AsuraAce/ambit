@@ -335,7 +335,7 @@ const commandCases: CommandCase[] = [
         payload: { touches: { loras: ['a'] }, buildId: null },
         returnsResult: true,
     },
-    { name: 'stopFacetBuild', invokeName: 'stop_facet_build', args: ['build-1'], payload: { buildId: 'build-1' } },
+    { name: 'stopFacetBuild', invokeName: 'stop_facet_build', args: ['build-1'], payload: { buildId: 'build-1' }, returnsResult: false },
     {
         name: 'getValidFacetNames',
         invokeName: 'get_valid_facet_names',
