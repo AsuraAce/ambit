@@ -444,6 +444,9 @@ fn run_reparse_job(
         // SERIAL PHASE: Update database in a single transaction
         // A pause set while this batch was parsing holds its write too (#552).
         wait_while_paused(is_paused, is_cancelled);
+        if is_cancelled.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let _hold = crate::db::write_hold::WriteHold::begin("reparse.job_batch");
         {
@@ -819,6 +822,9 @@ fn run_reparse_job(
 
             // A pause set during the file scan holds its write too (#552).
             wait_while_paused(is_paused, is_cancelled);
+            if is_cancelled.load(Ordering::SeqCst) {
+                break;
+            }
             let tx = conn.transaction().map_err(|e| e.to_string())?;
             let _hold = crate::db::write_hold::WriteHold::begin("reparse.photo_batch");
             {
@@ -1089,6 +1095,42 @@ mod tests {
             let result = job.join().unwrap().expect("reparse job");
             assert_eq!(result.processed, 3);
             assert_eq!(stale_rows(&path), 0);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn a_reparse_job_cancelled_while_paused_writes_nothing() {
+        for filter_root in [None, Some("D:/lib".to_string())] {
+            let path = reparse_test_database(if filter_root.is_some() {
+                "cancel-prefetch"
+            } else {
+                "cancel-keyset"
+            });
+            let state = ReparseState::default();
+            state.is_paused.store(true, Ordering::SeqCst);
+            let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+            let job_path = path.clone();
+            let job = std::thread::spawn(move || {
+                let mut conn = Connection::open(&job_path).expect("job connection");
+                run_reparse_job(
+                    &mut conn,
+                    ReparseJobOptions {
+                        force_reparse: false,
+                        filter_root,
+                        filter_tool: None,
+                        refresh_photo_metadata: false,
+                    },
+                    &paused,
+                    &cancelled,
+                    &|_| {},
+                    &|_| {},
+                )
+            });
+            std::thread::sleep(PAUSE_POLL * 3);
+            state.is_cancelled.store(true, Ordering::SeqCst);
+            job.join().unwrap().expect("reparse job");
+            assert_eq!(stale_rows(&path), 3, "a cancelled job wrote a batch");
             let _ = std::fs::remove_file(&path);
         }
     }
