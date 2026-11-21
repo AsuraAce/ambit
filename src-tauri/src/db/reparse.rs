@@ -137,6 +137,61 @@ impl Default for ReparseState {
 
 const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
+/// Stamps the current parser version on rows whose metadata did not change. Nothing a filter,
+/// collection or statistic reads changes, so the stamp must not mark InvokeAI owner caches
+/// dirty: on a re-run that would make every user's next switch recount all smart collections
+/// (#530). The triggers stay off only inside this transaction, as in the thumbnail optimizer.
+fn stamp_parser_version(tx: &rusqlite::Transaction, ids: &[String]) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let has_scope_cache: bool = tx
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master
+                            WHERE type = 'table' AND name = 'invoke_scope_cache_control')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let previous_suppression: Option<i64> = if has_scope_cache {
+        let value = tx
+            .query_row(
+                "SELECT suppress_invalidation FROM invoke_scope_cache_control
+                 WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE invoke_scope_cache_control SET suppress_invalidation = 1
+             WHERE state_key = 'current'",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        Some(value)
+    } else {
+        None
+    };
+    {
+        let mut stamp = tx
+            .prepare_cached("UPDATE images SET parser_version = ?1 WHERE id = ?2")
+            .map_err(|e| e.to_string())?;
+        for id in ids {
+            // As before, a row that cannot be stamped is simply tried again by the next refresh.
+            let _ = stamp.execute(params![CURRENT_PARSER_VERSION, id]);
+        }
+    }
+    if let Some(previous) = previous_suppression {
+        tx.execute(
+            "UPDATE invoke_scope_cache_control SET suppress_invalidation = ?1
+             WHERE state_key = 'current'",
+            [previous],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Blocks between batches while metadata refresh is paused, holding no transaction.
 /// Its image writes would mark the owner cache being built dirty and get that commit refused (#552).
 /// Returns early when the job is cancelled, and returns whether it paused.
@@ -512,9 +567,8 @@ fn run_reparse_job(
                 )
                 .map_err(|e| e.to_string())?;
 
-            let mut skip_stmt = tx
-                .prepare_cached("UPDATE images SET parser_version = ?1 WHERE id = ?2")
-                .map_err(|e| e.to_string())?;
+            // Rows whose metadata did not change only get the new parser version, after the loop.
+            let mut stamp_ids: Vec<String> = Vec::new();
 
             // Helpers for diffing lists
             fn lists_changed(old: &[String], new: &[String]) -> bool {
@@ -576,7 +630,7 @@ fn run_reparse_job(
                         }
 
                         if !meta_changed {
-                            let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
+                            stamp_ids.push(id);
                         } else {
                             let old_meta: Option<ImageMetadata> =
                                 serde_json::from_str(&old_meta_json).ok();
@@ -663,7 +717,7 @@ fn run_reparse_job(
                         }
                     }
                     None => {
-                        let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
+                        stamp_ids.push(id);
                         errors += 1;
                     }
                 }
@@ -685,6 +739,7 @@ fn run_reparse_job(
                     last_emit_time = std::time::Instant::now();
                 }
             }
+            stamp_parser_version(&tx, &stamp_ids)?;
         }
         tx.commit().map_err(|e| e.to_string())?;
         Ok(())
@@ -1112,6 +1167,87 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("stale count")
+    }
+
+    fn run_unpaused_reparse(path: &std::path::Path) -> ReparseJobResult {
+        let state = ReparseState::default();
+        let mut conn = Connection::open(path).expect("job connection");
+        run_reparse_job(
+            &mut conn,
+            ReparseJobOptions {
+                force_reparse: false,
+                filter_root: None,
+                filter_tool: None,
+                refresh_photo_metadata: false,
+            },
+            &state.is_paused,
+            &state.is_cancelled,
+            &|_| {},
+            &|_| {},
+        )
+        .expect("reparse job")
+    }
+
+    // A refresh re-run mostly finds unchanged metadata and only stamps the parser version. That
+    // changes nothing a filter, collection or statistic reads, so a prepared InvokeAI view must
+    // stay restorable; otherwise every user's next switch recounts all smart collections (#530).
+    // A row whose metadata did change must still mark the view for repair.
+    #[test]
+    fn a_stamp_only_refresh_leaves_prepared_owner_caches_ready() {
+        let path = reparse_test_database("stamp-only");
+        assert_eq!(run_unpaused_reparse(&path).updated, 3);
+        let conn = Connection::open(&path).expect("setup connection");
+        let set_stale = |sql: &str| {
+            conn.execute_batch(&format!(
+                "UPDATE invoke_scope_cache_control SET suppress_invalidation = 1 WHERE state_key = 'current';
+                 {sql}
+                 UPDATE invoke_scope_cache_control SET suppress_invalidation = 0 WHERE state_key = 'current';"
+            ))
+            .expect("stale rows");
+        };
+        set_stale(
+            "UPDATE images SET parser_version = 0;
+             INSERT INTO invoke_scope_cache_state
+                 (scope_key, db_path, images_root, scope_mode, owner_id, status, generation, built_generation, updated_at)
+             VALUES ('all-users', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'all', NULL, 'ready', 4, 4, 0);",
+        );
+        let cache = || {
+            conn.query_row(
+                "SELECT status, generation,
+                        (SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = 'all-users'),
+                        (SELECT COUNT(*) FROM invoke_scope_cache_dirty_items
+                         WHERE scope_key = 'all-users' AND domain = 'collections')
+                 FROM invoke_scope_cache_state WHERE scope_key = 'all-users'",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?)),
+            )
+            .expect("scope cache")
+        };
+
+        let stamped = run_unpaused_reparse(&path);
+        assert_eq!((stamped.processed, stamped.updated), (3, 0));
+        assert_eq!(
+            stale_rows(&path),
+            0,
+            "every row carries the new parser version"
+        );
+        assert_eq!(
+            cache(),
+            ("ready".to_string(), 4, 0, 0),
+            "a stamp left the view dirty"
+        );
+
+        set_stale("UPDATE images SET metadata_json = '{}', parser_version = 0 WHERE id = 'img-0';");
+        assert_eq!(run_unpaused_reparse(&path).updated, 1);
+        let (status, generation, _, collections) = cache();
+        assert_eq!(
+            status, "dirty",
+            "a changed row must mark the view for repair"
+        );
+        assert!(generation > 4);
+        assert_eq!(collections, 1);
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
     }
 
     // An owner switch pauses the refresh. A batch written during the switch's cache build marks

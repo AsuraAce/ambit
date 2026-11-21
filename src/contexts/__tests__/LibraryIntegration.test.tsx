@@ -3296,11 +3296,14 @@ describe('Library Integration (Provider Stack)', () => {
             changed = false,
             mode = 'owner',
             waitUntilReady = true,
+            ownerBSnapshot = false,
         }: {
             cacheRepair: ReturnType<typeof planOf>;
             changed?: boolean;
             mode?: 'owner' | 'all';
             waitUntilReady?: boolean;
+            // Saves a current snapshot for owner B too, so a switch to B needs no source reconciliation.
+            ownerBSnapshot?: boolean;
         }) => {
             let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
             let syncHook: SyncHook | undefined;
@@ -3325,33 +3328,36 @@ describe('Library Integration (Provider Stack)', () => {
             await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
             const dbPath = discovery.dbPath.toLowerCase();
             const selection = mode === 'owner' ? { dbPath, mode: 'owner' as const, ownerId: 'owner-a' } : { dbPath, mode: 'all' as const };
+            const snapshotOf = (ownerId: string | null): InvokeDbSnapshotState => ({
+                dbPath,
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                scopeMode: mode,
+                scopeOwnerId: ownerId,
+                pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                files: [],
+                sourceFingerprint: {
+                    schemaVersion: 1,
+                    imageCount: 0,
+                    imageUpdatedAt: null,
+                    boardCount: 0,
+                    boardUpdatedAt: null,
+                    membershipCount: 0,
+                    membershipMaxRowId: null,
+                },
+            });
+            const shownSnapshot = snapshotOf(mode === 'owner' ? 'owner-a' : null);
             await act(async () =>
                 libraryHook?.setSettings({
                     invokeAiPath: 'D:/Invoke',
                     lastSyncedAt: 100,
                     invokeSyncBoards: false,
                     invokeOwnerSelection: selection,
-                    invokeDbSnapshot: {
-                        dbPath,
-                        lastSyncedAt: 100,
-                        importIntermediates: false,
-                        importOrphans: false,
-                        syncBoardsToCollections: false,
-                        scopeMode: mode,
-                        scopeOwnerId: mode === 'owner' ? 'owner-a' : null,
-                        pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
-                        importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
-                        files: [],
-                        sourceFingerprint: {
-                            schemaVersion: 1,
-                            imageCount: 0,
-                            imageUpdatedAt: null,
-                            boardCount: 0,
-                            boardUpdatedAt: null,
-                            membershipCount: 0,
-                            membershipMaxRowId: null,
-                        },
-                    },
+                    invokeDbSnapshot: shownSnapshot,
+                    ...(ownerBSnapshot ? { invokeDbSnapshots: [shownSnapshot, snapshotOf('owner-b')] } : {}),
                 })
             );
             if (waitUntilReady) await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
@@ -3888,6 +3894,216 @@ describe('Library Integration (Provider Stack)', () => {
             });
 
             expect(seen).toEqual([true, false]);
+        });
+        describe('a user switch to a prepared owner (#530)', () => {
+            // What the live cache tables hold. Rust restores the target's own snapshot into them in
+            // the transaction that read the plan, unless the plan is full; a full rebuild clears them.
+            let live: 'owner-a' | 'owner-b';
+            let applied: boolean;
+            const shown: string[] = [];
+            let unsubscribeShown: (() => void) | undefined;
+            beforeEach(() => {
+                live = 'owner-a';
+                applied = false;
+                shown.length = 0;
+                mocks.getAllCollectionsWithStats.mockImplementation(async () => [
+                    {
+                        id: 'board-1',
+                        name: 'Board',
+                        source: 'ambit',
+                        count: live === 'owner-a' ? 11 : 22,
+                        thumbnail: `C:/thumbs/${live}.webp`,
+                    },
+                ]);
+                mocks.clearCollectionOwnerScopeCaches.mockImplementation(async () => {
+                    live = 'owner-b';
+                });
+                // Every collection value put on screen once owner B's visibility was applied.
+                unsubscribeShown = useCollectionStore.subscribe((state) => {
+                    if (!applied) return;
+                    for (const collection of state.collections) shown.push(`${collection.count}:${collection.thumbnail}`);
+                });
+            });
+            afterEach(() => {
+                unsubscribeShown?.();
+                mocks.clearCollectionOwnerScopeCaches.mockReset().mockResolvedValue(undefined);
+                mocks.commitActiveInvokeScopeCache.mockReset().mockResolvedValue({
+                    status: 'ok',
+                    data: { state: 'ready', generation: 0, builtGeneration: 0, facetCount: 0, collectionCount: 0 },
+                });
+            });
+            const applyOwnerB = (cacheRepair: ReturnType<typeof planOf>) => {
+                mocks.applyInvokeOwnerScope.mockImplementation(async () => {
+                    applied = true;
+                    if (cacheRepair.action !== 'full') live = 'owner-b';
+                    return {
+                        changed: true,
+                        sourceFactsUpdated: 0,
+                        activeVisibilityUpdated: 1,
+                        removedVisibilityUpdated: 0,
+                        boardCollectionsUpdated: 0,
+                        mode: 'owner',
+                        cacheRepair,
+                        cacheStatus: { state: 'dirty', generation: 6, builtGeneration: 5, facetCount: 10, collectionCount: 1 },
+                    };
+                });
+            };
+            const startOwnerA = async () => {
+                const view = await startView({ cacheRepair: planOf('restored'), ownerBSnapshot: true });
+                await waitFor(() => expect(isRepairing()).toBe(false));
+                mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+                mocks.commitActiveInvokeScopeCache.mockClear();
+                mocks.abortActiveInvokeScopeCacheBuild.mockClear();
+                mocks.clearCollectionOwnerScopeCaches.mockClear();
+                mocks.getInvokeDbSnapshot.mockClear();
+                return view;
+            };
+            const expectNothingOfOwnerAShown = () => {
+                expect(shown.length).toBeGreaterThan(0);
+                expect(shown.filter((value) => value.includes('owner-a') || value.startsWith('11:'))).toEqual([]);
+            };
+
+            it('shows a selective owner from its restored snapshot at once and repairs it after the catch-up', async () => {
+                const { getSync } = await startOwnerA();
+                // B's source is unchanged since its snapshot, so its catch-up imports nothing.
+                mocks.getInvokeDbSnapshot.mockResolvedValue({ status: 'ok', data: { dbPath: discovery.dbPath, files: [] } });
+                const gate = holdNextClaim();
+                applyOwnerB(planOf('selective', true));
+
+                const seen = await recordRepairingDuring(async () => {
+                    await act(async () => {
+                        expect(await selectOwnerB(getSync())).toBe(true);
+                    });
+
+                    // Ready with the repair still waiting for its claim: the gallery did not wait for it.
+                    expect(getSync().invokeOwnerScopeState.status).toBe('ready');
+                    await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+                    expect(mocks.getInvokeDbSnapshot.mock.invocationCallOrder.at(-1)).toBeLessThan(
+                        mocks.beginActiveInvokeScopeCacheBuild.mock.invocationCallOrder[0]
+                    );
+                    expect(mocks.syncImages).not.toHaveBeenCalled();
+                    // B's saved collection counts stay on screen until the recount replaces them.
+                    expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
+                    expect(mocks.clearCollectionOwnerScopeCaches).not.toHaveBeenCalled();
+                    expectNothingOfOwnerAShown();
+
+                    await act(async () => gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 6)));
+
+                    await waitFor(() =>
+                        expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 })
+                    );
+                    await waitFor(() => expect(isRepairing()).toBe(false));
+                });
+
+                // The filter counts were held from the switch's publish until the commit, without a gap.
+                expect(seen).toEqual([true, false]);
+                expectNothingOfOwnerAShown();
+            });
+
+            it('makes a switch to an owner with a full plan wait for its rebuild', async () => {
+                // A full plan restores nothing, so the live tables still hold owner A's values.
+                const { getSync } = await startOwnerA();
+                const gate = holdNextClaim();
+                applyOwnerB(planOf('full', true));
+
+                let switching!: Promise<boolean>;
+                act(() => {
+                    switching = selectOwnerB(getSync());
+                });
+                await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+                expect(getSync().invokeOwnerScopeState.status).not.toBe('ready');
+
+                await act(async () => {
+                    gate.resolve(createInvokeScopeCacheClaim(planOf('full', true), 6));
+                    await switching;
+                });
+
+                expect(getSync().invokeOwnerScopeState.status).toBe('ready');
+                expect(mocks.clearCollectionOwnerScopeCaches).toHaveBeenCalled();
+                expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 });
+                expectNothingOfOwnerAShown();
+            });
+
+            it("repairs the whole plan when the switch's catch-up imports images", async () => {
+                // The catch-up's own refresh covers only its imports; committing it would save the
+                // restored, unrepaired collection counts as current.
+                const { getSync } = await startOwnerA();
+                const events: string[] = [];
+                useCollectionStore.setState({
+                    refreshSmartCounts: vi.fn(async (input?: Parameters<typeof defaultRefreshSmartCounts>[0]) => {
+                        if (!Array.isArray(input) && input?.signal) events.push('recount');
+                    }),
+                });
+                mocks.commitActiveInvokeScopeCache.mockImplementation(async () => {
+                    events.push('commit');
+                    return {
+                        status: 'ok',
+                        data: { state: 'ready', generation: 6, builtGeneration: 6, facetCount: 10, collectionCount: 1 },
+                    };
+                });
+                mocks.getInvokeDbSnapshot.mockResolvedValue({
+                    status: 'ok',
+                    data: { dbPath: discovery.dbPath, files: [{ path: discovery.dbPath, exists: true, size: 2000, modifiedMs: 200 }] },
+                });
+                mocks.syncImages.mockResolvedValueOnce({
+                    ...createNoopInvokeSyncResult(),
+                    imported: 2,
+                    maxTimestamp: 200,
+                    touchedFacetTypes: ['loras'],
+                    touchedFacetResources: resources,
+                });
+                mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective', true), 6));
+                applyOwnerB(planOf('selective', true));
+
+                await act(async () => {
+                    expect(await selectOwnerB(getSync())).toBe(true);
+                });
+
+                await waitFor(() => expect(events).toContain('commit'));
+                expect(mocks.syncImages).toHaveBeenCalled();
+                expect(events.slice(0, 2)).toEqual(['recount', 'commit']);
+            });
+
+            it('stops the deferred repair when another switch starts, and it writes nothing after', async () => {
+                const { getSync } = await startOwnerA();
+                const gate = holdNextClaim();
+                applyOwnerB(planOf('selective', true));
+                await act(async () => {
+                    expect(await selectOwnerB(getSync())).toBe(true);
+                });
+                await waitFor(() => expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce());
+
+                const events: string[] = [];
+                useCollectionStore.setState({
+                    refreshSmartCounts: vi.fn(async (input?: Parameters<typeof defaultRefreshSmartCounts>[0]) => {
+                        if (!Array.isArray(input) && input?.signal) events.push('recount');
+                    }),
+                    refreshCollectionThumbnails: vi.fn(
+                        async (_debounced?: boolean, _force?: boolean, options?: { signal?: AbortSignal }) => {
+                            if (options?.signal) events.push('covers');
+                        }
+                    ),
+                });
+                mocks.commitActiveInvokeScopeCache.mockClear();
+                mocks.applyInvokeOwnerScope.mockImplementation(async () => {
+                    events.push('apply-A');
+                    live = 'owner-a';
+                    return { ...switchedApplyResult, changed: true };
+                });
+
+                let switching!: Promise<boolean>;
+                act(() => {
+                    switching = getSync().selectInvokeOwnerScope({ dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' });
+                });
+                await act(async () => {
+                    gate.resolve(createInvokeScopeCacheClaim(planOf('selective', true), 6));
+                    await switching;
+                });
+
+                expect(events).toEqual(['apply-A']);
+                expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 });
+                expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 6 });
+            });
         });
     });
 
@@ -5397,6 +5613,9 @@ describe('Library Integration (Provider Stack)', () => {
                 collectionCount: 2,
             },
         });
+        // An unreadable source fingerprint reconciles the source, so this switch repairs before it
+        // shows; a switch that skips reconciliation repairs behind the view instead (#530).
+        mocks.readInvokeSourceFingerprint.mockResolvedValueOnce(undefined);
 
         await expect(
             syncHook!.selectInvokeOwnerScope({

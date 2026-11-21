@@ -222,6 +222,9 @@ interface InvokeOwnerAdmission {
     boardScopeWarning?: string;
     cacheRepair?: InvokeScopeCacheRepairPlan;
     offline?: boolean;
+    // A user switch showed the target's restored cache before repairing it (#530); the repair
+    // starts once the switch's catch-up has finished.
+    cacheRepairDeferred?: boolean;
 }
 
 interface SyncContextType {
@@ -344,6 +347,9 @@ export const SyncProvider: React.FC<{
     // thumbnail healing pauses while any repair after the library is shown runs. Counted because
     // repairs can overlap; always released in `finally`, and reset on unmount.
     const ownerCacheRepairCountRef = useRef(0);
+    // Holds the filter counts and thumbnail healing from a deferred switch's publish until its
+    // repair takes its own hold (#530).
+    const deferredOwnerRepairHoldRef = useRef<(() => void) | null>(null);
     // Returns the release, which is safe to call more than once.
     const holdThumbnailsForRepair = useCallback((): (() => void) => {
         ownerCacheRepairCountRef.current += 1;
@@ -633,9 +639,10 @@ export const SyncProvider: React.FC<{
     );
 
     // Shows the library on its current caches and repairs them afterwards (#430). The caller
-    // decides this only when nobody's visibility changed, so only derived counts can lag.
+    // decides this only when the live caches hold the shown scope's own values, so only derived
+    // counts can lag. A user switch keeps no covers: the store still holds the previous scope's.
     const publishOwnerScopeWithBackgroundRepair = useCallback(
-        async (signal?: AbortSignal) => {
+        async (signal?: AbortSignal, retainThumbnails = true) => {
             const traceOperationId = useInvokeOwnerScopeStore.getState().operation?.id;
             const generation = useCollectionStore.getState().getInitializationGeneration();
             const assertCurrentCollections = () => {
@@ -645,7 +652,7 @@ export const SyncProvider: React.FC<{
                 }
             };
             clearLibraryStatsCache();
-            await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId, true);
+            await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId, retainThumbnails);
             useCollectionStore.getState().finishInitializationHydration(generation, false);
         },
         [publishOwnerScopeView]
@@ -854,7 +861,8 @@ export const SyncProvider: React.FC<{
             rootPath: string = discovery.imagesRoot,
             forceRefresh: boolean = false,
             deferReady: boolean = false,
-            signal?: AbortSignal
+            signal?: AbortSignal,
+            repairAfterCatchUp: boolean = false
         ): Promise<InvokeOwnerAdmission> => {
             const expectedSelection = settingsRef.current.invokeOwnerSelection;
             const isPreparationCurrent = () => {
@@ -1017,10 +1025,31 @@ export const SyncProvider: React.FC<{
                 !forceRefresh &&
                 !persistSelection &&
                 !deferReady;
+            // A user switch changes the active scope, but a selective plan was restored from the
+            // target's own snapshot in the transaction that read the plan, so its live rows hold
+            // only that scope's values (#530). Its catch-up runs next, and the repair after it.
+            const deferRepairToCatchUp =
+                repairAfterCatchUp &&
+                persistSelection &&
+                deferReady &&
+                cacheRepair.action === 'selective' &&
+                (result.cacheStatus?.builtGeneration ?? null) !== null &&
+                result.boardCollectionsUpdated === 0 &&
+                !reconcileSourceFacts &&
+                !forceRefresh;
             try {
-                if (repairInBackground) {
+                if (repairInBackground || deferRepairToCatchUp) {
+                    if (deferRepairToCatchUp) {
+                        deferredOwnerRepairHoldRef.current?.();
+                        deferredOwnerRepairHoldRef.current = holdThumbnailsForRepair();
+                        // The plan holds items the catch-up's targeted refresh does not cover, so the
+                        // catch-up must repair the whole plan or not commit.
+                        ownerCacheRepairFailedRef.current = true;
+                    }
                     reportProgress(0, 0, 'Opening your library...');
-                    await invokeSyncTrace.measure(traceOperationId, 'scope-cache', () => publishOwnerScopeWithBackgroundRepair(signal));
+                    await invokeSyncTrace.measure(traceOperationId, 'scope-cache', () =>
+                        publishOwnerScopeWithBackgroundRepair(signal, !deferRepairToCatchUp)
+                    );
                 } else if (
                     (scope !== null || useCollectionStore.getState().isLoaded) &&
                     (result.changed || result.boardCollectionsUpdated > 0 || forceRefresh || reconcileSourceFacts || needsCachePreparation)
@@ -1085,12 +1114,14 @@ export const SyncProvider: React.FC<{
                 hasPreparationChanges: result.sourceFactsUpdated > 0 || result.boardCollectionsUpdated > 0,
                 boardScopeWarning: result.boardScopeWarning,
                 cacheRepair,
+                ...(deferRepairToCatchUp ? { cacheRepairDeferred: true } : {}),
             };
             ownerScopeAdmissionRef.current = admission;
             if (repairInBackground) startBackgroundOwnerCacheRepair();
             return admission;
         },
         [
+            holdThumbnailsForRepair,
             persistOwnerSelection,
             publishOwnerScopeWithBackgroundRepair,
             refreshAfterOwnerScopeChange,
@@ -1569,7 +1600,8 @@ export const SyncProvider: React.FC<{
                               draft.invokeAiPath,
                               false,
                               true,
-                              controller.signal
+                              controller.signal,
+                              sameSource && !sameOwner
                           )
                       );
                 assertSubmittedConnection();
@@ -1617,6 +1649,8 @@ export const SyncProvider: React.FC<{
                 });
                 if (outcome.status !== 'completed')
                     throw new Error(('message' in outcome && outcome.message) || 'Synchronization did not complete.');
+                // Chains after any repair the catch-up started; one that already committed finds the cache restored.
+                if (admission.cacheRepairDeferred) startBackgroundOwnerCacheRepair();
                 updateInvokeOperation(token, { phase: 'completed', cancel: undefined, message: 'Synchronization complete.' });
                 return { ...outcome, viewCommitted };
             } catch (error) {
@@ -1749,6 +1783,9 @@ export const SyncProvider: React.FC<{
                     pendingInvokeLivePerfRef.current = null;
                     useLibraryStore.getState().markInvokeSyncCancelled();
                 }
+                // A started repair holds on its own by now; a failed catch-up left its repair to recovery.
+                deferredOwnerRepairHoldRef.current?.();
+                deferredOwnerRepairHoldRef.current = null;
                 if (ownerTransitionRef.current?.token === token) ownerTransitionRef.current = null;
                 finishTransition();
                 // Once the target is admitted, the presentation releases the retained owner at its swap
@@ -1766,6 +1803,7 @@ export const SyncProvider: React.FC<{
             setInvokeOwnerScopeState,
             setSyncAbortController,
             settingsRef,
+            startBackgroundOwnerCacheRepair,
             startPendingInvokeLiveRerun,
         ]
     );
