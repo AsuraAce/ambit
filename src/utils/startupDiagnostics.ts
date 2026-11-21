@@ -89,6 +89,9 @@ const classifyFailure = (error: unknown): StartupFailureKind => {
     return 'other';
 };
 
+/** Ordinary events kept per launch; matches the native `MAX_EVENTS_PER_LAUNCH`. A cold owner switch logs several hundred (#552). */
+export const STARTUP_ORDINARY_EVENT_LIMIT = 2048;
+
 const terminalPhases = new Set<StartupPhase>([
     'ready',
     'splash',
@@ -113,7 +116,7 @@ export function createStartupDiagnosticBridge({
     now,
     send,
     getLaunch,
-    maxBufferedEvents = 256,
+    maxBufferedEvents = STARTUP_ORDINARY_EVENT_LIMIT,
     originMs = 0,
     onMark,
 }: StartupDiagnosticBridgeOptions) {
@@ -368,7 +371,7 @@ export function createStartupDiagnostics(send: DiagnosticSink, now: () => number
         attempt = 1
     ) => {
         const isTerminal = terminalPhases.has(phase);
-        if (!isTerminal && emittedNonTerminal >= 256) return;
+        if (!isTerminal && emittedNonTerminal >= STARTUP_ORDINARY_EVENT_LIMIT) return;
         if (!isTerminal) emittedNonTerminal += 1;
         try {
             const databaseRole = databaseRoles[phase];

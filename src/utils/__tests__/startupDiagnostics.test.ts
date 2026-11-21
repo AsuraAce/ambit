@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createStartupDiagnostics } from '../startupDiagnostics';
+import { createStartupDiagnostics, STARTUP_ORDINARY_EVENT_LIMIT } from '../startupDiagnostics';
 import type { StartupPhase } from '../../bindings';
 
 describe('startup diagnostics', () => {
@@ -49,8 +49,10 @@ describe('startup diagnostics', () => {
         trace.mark('ready');
         trace.mark('ready');
         expect(send).toHaveBeenCalledTimes(1);
-        for (let i = 0; i < 300; i += 1) trace.start('facets')();
-        expect(send).toHaveBeenCalledTimes(257);
+        // Each start/finish pair is two events. A cold owner switch logs several hundred; they must survive (#552).
+        expect(STARTUP_ORDINARY_EVENT_LIMIT).toBeGreaterThanOrEqual(2048);
+        for (let i = 0; i < STARTUP_ORDINARY_EVENT_LIMIT; i += 1) trace.start('facets')();
+        expect(send).toHaveBeenCalledTimes(STARTUP_ORDINARY_EVENT_LIMIT + 1);
     });
 
     it.each([
