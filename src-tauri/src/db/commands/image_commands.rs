@@ -2602,7 +2602,9 @@ pub async fn reconcile_invoke_owner_inventory(
     input: InvokeImageOwnerInventoryInput,
 ) -> Result<InvokeImageSourceReconcileResult, String> {
     run_blocking(app, move |conn| {
-        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        // Logs a long wait: an owner switch's source repair can queue here behind a facet build (#533).
+        let _coordinator =
+            crate::db::facets::lock_facet_builds_unless_stopped("owner inventory", None)?;
         reconcile_invoke_owner_inventory_inner(conn, &input)
     })
     .await
