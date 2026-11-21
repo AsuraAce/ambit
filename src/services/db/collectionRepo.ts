@@ -8,6 +8,7 @@ import {
 import { getDb } from './connection';
 import { selectReadonly } from './readonlySelect';
 import { isSameInvokePath } from '../invoke/pathIdentity';
+import { throwIfInvokeAborted } from '../invoke/abort';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
@@ -161,6 +162,7 @@ export interface ScopedCollectionRow {
 
 interface SmartCollectionSummaryOptions {
     includeThumbnails?: boolean;
+    signal?: AbortSignal;
 }
 
 interface CollectionThumbnailInput {
@@ -248,11 +250,18 @@ const getCachedDynamicThumbnailSummary = (collection: DbCollection): CollectionT
     };
 };
 
-const writeDynamicThumbnailCache = async (db: Awaited<ReturnType<typeof getDb>>, updates: DynamicThumbnailCacheUpdate[]) => {
+// An aborted refresh belongs to a scope that may already have been replaced, so each write
+// re-checks the signal right before it runs, however late the query behind it finished.
+const writeDynamicThumbnailCache = async (
+    db: Awaited<ReturnType<typeof getDb>>,
+    updates: DynamicThumbnailCacheUpdate[],
+    signal?: AbortSignal
+) => {
     if (updates.length === 0) return;
 
     const cachedAt = Date.now();
     for (const update of updates) {
+        throwIfInvokeAborted(signal);
         const hasThumbnail = !!update.thumbnailPath;
         await db.execute(
             `UPDATE collections
@@ -273,7 +282,12 @@ const writeDynamicThumbnailCache = async (db: Awaited<ReturnType<typeof getDb>>,
     }
 };
 
-export const cacheSmartCollectionCount = async (collectionId: string, count: number, collectionUpdatedAt: number): Promise<void> => {
+export const cacheSmartCollectionCount = async (
+    collectionId: string,
+    count: number,
+    collectionUpdatedAt: number,
+    signal?: AbortSignal
+): Promise<void> => {
     if (isBrowserMockMode()) return;
 
     const previousWrite = dynamicCountCacheWriteTails.get(collectionId) ?? Promise.resolve();
@@ -281,6 +295,8 @@ export const cacheSmartCollectionCount = async (collectionId: string, count: num
     const write = previousWrite.then(async () => {
         try {
             const db = await getDb();
+            // Skipped rather than thrown: a rejected write would reject the writers queued behind it.
+            if (signal?.aborted) return;
             await db.execute(
                 `UPDATE collections
                  SET dynamic_count = ?
@@ -1230,7 +1246,10 @@ export const getScopedCollectionRows = async (): Promise<ScopedCollectionRow[]> 
     return readScopedCollectionRows(db);
 };
 
-export const getCollectionThumbnailSummaries = async (collections: Collection[]): Promise<Record<string, CollectionThumbnailSummary>> => {
+export const getCollectionThumbnailSummaries = async (
+    collections: Collection[],
+    options: { signal?: AbortSignal } = {}
+): Promise<Record<string, CollectionThumbnailSummary>> => {
     if (isBrowserMockMode()) {
         const mockCollections = new Map(getBrowserMockCollections().map((collection) => [collection.id, collection]));
         return Object.fromEntries(
@@ -1259,7 +1278,7 @@ export const getCollectionThumbnailSummaries = async (collections: Collection[])
                 custom_thumbnail: collection.customThumbnail ?? null,
             }))
         );
-        await writeDynamicThumbnailCache(db, cacheUpdates);
+        await writeDynamicThumbnailCache(db, cacheUpdates, options.signal);
         return summaries;
     });
 };
@@ -1343,6 +1362,7 @@ export const getSmartCollectionSummaries = async (
         if (!includeThumbnails) return summaries;
 
         for (const query of queries) {
+            throwIfInvokeAborted(options.signal);
             const normalRows = await timeDbCall('smartCollectionSummaries.thumbnail', query.id, () =>
                 selectReadonly<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
                     `SELECT thumbnail_path, privacy_hidden
@@ -1390,8 +1410,9 @@ export const getSmartCollectionSummaries = async (
             }
         }
 
-        await writeDynamicThumbnailCache(db, cacheUpdates);
+        await writeDynamicThumbnailCache(db, cacheUpdates, options.signal);
     } catch (e) {
+        if (options.signal?.aborted) throw e;
         console.error('[DB] Failed smart collection summaries', e);
     }
 

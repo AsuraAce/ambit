@@ -848,6 +848,65 @@ describe('collectionStore smart count refresh', () => {
         );
     });
 
+    it('stops a smart count refresh at the next collection, and drops the count it was waiting for, once its signal aborts', async () => {
+        // A repair for a previous owner scope must not write counts after the new scope's restore (#539).
+        const smart = (id: string) => ({
+            id,
+            name: id,
+            createdAt: 1,
+            updatedAt: 1,
+            source: 'ambit' as const,
+            count: 0,
+            imageIds: [],
+            filters: createDefaultFilters({ dateRange: 'today' }),
+        });
+        let resolveFirst: ((summaries: Record<string, { count: number }>) => void) | undefined;
+        mockGetSmartCollectionSummaries.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveFirst = resolve;
+                })
+        );
+        act(() => {
+            useCollectionStore.setState({ collections: [smart('smart-a'), smart('smart-b')], isLoaded: true });
+        });
+        const controller = new AbortController();
+
+        const refresh = useCollectionStore.getState().refreshSmartCounts({ signal: controller.signal });
+        const rejected = expect(refresh).rejects.toThrow('Aborted');
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
+        controller.abort();
+        resolveFirst?.({ 'smart-a': { count: 12 } });
+        await rejected;
+
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1);
+        expect(collectionRepoMocks.mockCacheSmartCollectionCount).not.toHaveBeenCalled();
+    });
+
+    it('stops a thumbnail refresh and keeps its stale thumbnails out of the view once its signal aborts', async () => {
+        let resolveSummaries: ((summaries: Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>) => void) | undefined;
+        mockGetCollectionThumbnailSummaries.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveSummaries = resolve;
+                })
+        );
+        act(() => {
+            useCollectionStore.setState({ collections: [makeStaticCollection({ id: 'static-a', count: 1 })], isLoaded: true });
+        });
+        const controller = new AbortController();
+
+        const refresh = useCollectionStore.getState().refreshCollectionThumbnails(false, true, { signal: controller.signal });
+        const rejected = expect(refresh).rejects.toThrow('Aborted');
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
+        controller.abort();
+        resolveSummaries?.({ 'static-a': { thumbnail: 'asset://stale-scope.webp', thumbnailSourceKind: 'dynamic' } });
+        await rejected;
+
+        expect(useCollectionStore.getState().collections[0].thumbnail).toBeUndefined();
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({});
+    });
+
     it('automatically refreshes pinned prompt-search smart collections', async () => {
         mockGetSmartCollectionSummaries.mockResolvedValue({
             'smart-prompt': {

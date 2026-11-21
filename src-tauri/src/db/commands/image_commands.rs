@@ -5398,6 +5398,113 @@ mod tests {
         );
     }
 
+    /// The background owner repair (#539) shows the live cache before it is repaired, which is
+    /// safe only because a selective plan has just restored this owner's own snapshot. Rows
+    /// that exist only for another owner must not survive that restore.
+    #[test]
+    fn selective_owner_start_restores_only_its_own_snapshot() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        for (id, owner) in [("owner-a", "a"), ("owner-b", "b")] {
+            let mut image = create_image_record(id, 100, 10, "{}");
+            image.path = format!("C:/Invoke/outputs/images/{id}.png");
+            image.invoke_image_name = Some(format!("{id}.png"));
+            image.invoke_owner_id = Some(owner.to_string());
+            super::save_images_batch_inner(&conn, &[image]).expect("insert owner row");
+        }
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at, source, filter_state)
+             VALUES ('known', 'Known', 1, 'ambit', NULL),
+                    ('smart-known', 'Smart known', 1, 'ambit', '{}')",
+            [],
+        )
+        .expect("insert collections");
+
+        super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("activate owner a");
+        let claim = super::begin_active_scope_cache_build_inner(&conn).expect("begin owner a");
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Owner A', 11)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE collections
+             SET dynamic_count = 11, dynamic_thumbnail_path = 'C:/thumbs/owner-a.webp'
+             WHERE id IN ('known', 'smart-known')",
+            [],
+        )
+        .unwrap();
+        super::commit_active_scope_cache_inner(&conn, &claim.ticket()).expect("commit owner a");
+
+        // A collection created after the snapshot and a new LoRA make the plan selective.
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at, source, filter_state)
+             VALUES ('late', 'Late', 2, 'ambit', NULL),
+                    ('smart-late', 'Smart late', 2, 'ambit', '{}')",
+            [],
+        )
+        .expect("insert collections after the snapshot");
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('owner-a', 'NewDetailer')",
+            [],
+        )
+        .expect("change one owner-a resource");
+        // What a view of another owner left in the live tables: a facet only b has, a count and
+        // a thumbnail of b's image for a collection a's snapshot does not hold, and b's values
+        // for the one it does.
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Only Owner B', 22)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE collections
+             SET dynamic_count = 22, dynamic_thumbnail_path = 'C:/thumbs/owner-b.webp'
+             WHERE id IN ('known', 'late', 'smart-known', 'smart-late')",
+            [],
+        )
+        .unwrap();
+
+        let restart = super::refresh_invoke_owner_scope_inner(&conn, &owner_scope_input("a"))
+            .expect("restart on owner a");
+        assert_eq!(
+            restart.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        assert!(restart.cache_repair.collections_dirty);
+
+        let facets: Vec<(String, i64)> = conn
+            .prepare("SELECT resource_name, count FROM facet_cache ORDER BY resource_name")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(facets, vec![("Owner A".to_string(), 11)]);
+        let collection = |id: &str| -> (Option<i64>, Option<String>) {
+            conn.query_row(
+                "SELECT dynamic_count, dynamic_thumbnail_path FROM collections WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            collection("known"),
+            (Some(11), Some("C:/thumbs/owner-a.webp".to_string()))
+        );
+        assert_eq!(
+            collection("smart-known"),
+            (Some(11), Some("C:/thumbs/owner-a.webp".to_string()))
+        );
+        assert_eq!(collection("late"), (None, None));
+        assert_eq!(collection("smart-late"), (None, None));
+    }
+
     #[test]
     fn unfinished_repair_still_rebuilds_fully_when_selective_would_be_wrong() {
         // A full-rebuild reason recorded before the claim keeps the full rebuild.

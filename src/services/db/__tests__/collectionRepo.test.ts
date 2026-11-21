@@ -963,6 +963,107 @@ describe('collectionRepo thumbnail hydration', () => {
         ]);
     });
 
+    // A refresh that was aborted belongs to a scope that may be gone: a query that finishes after the
+    // abort must not write that scope's cover or count into the collection rows now showing another one.
+    it('writes no cover to the collection cache when the refresh was aborted while its query ran', async () => {
+        const controller = new AbortController();
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('ranked_thumbnails')) {
+                controller.abort();
+                return [{ collection_id: 'c1', dynamic_thumb: 'C:/thumbs/old-scope.webp', dynamic_privacy: 0, safe_thumb: null }];
+            }
+            return [];
+        });
+        const { getCollectionThumbnailSummaries } = await import('../collectionRepo');
+
+        await expect(
+            getCollectionThumbnailSummaries([makeCollection({ id: 'c1', count: 1 })], { signal: controller.signal })
+        ).rejects.toThrow();
+
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), expect.anything());
+    });
+
+    it('writes no smart cover to the collection cache when the refresh was aborted while its query ran', async () => {
+        const controller = new AbortController();
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('COUNT(*) FROM scoped_images')) return [{ id: 'smart-1', count: 2 }];
+            if (query.includes('SELECT thumbnail_path, privacy_hidden')) {
+                controller.abort();
+                return [{ thumbnail_path: 'C:/thumbs/old-scope.webp', privacy_hidden: 0 }];
+            }
+            return [];
+        });
+        const { getSmartCollectionSummaries } = await import('../collectionRepo');
+
+        await expect(
+            getSmartCollectionSummaries([makeCollection({ id: 'smart-1', filters: makeFilters() })], { signal: controller.signal })
+        ).rejects.toThrow();
+
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), expect.anything());
+    });
+
+    it('does not query a smart cover once the refresh has aborted', async () => {
+        const controller = new AbortController();
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('COUNT(*) FROM scoped_images')) {
+                controller.abort();
+                return [{ id: 'smart-1', count: 2 }];
+            }
+            return [];
+        });
+        const { getSmartCollectionSummaries } = await import('../collectionRepo');
+
+        await expect(
+            getSmartCollectionSummaries([makeCollection({ id: 'smart-1', filters: makeFilters() })], { signal: controller.signal })
+        ).rejects.toThrow();
+
+        expect(dbMocks.select).not.toHaveBeenCalledWith(
+            expect.stringContaining('SELECT thumbnail_path, privacy_hidden'),
+            expect.anything()
+        );
+    });
+
+    it('writes no smart count when the refresh aborted while the database was being opened', async () => {
+        const controller = new AbortController();
+        dbMocks.getDb.mockImplementation(async () => {
+            controller.abort();
+            return { execute: dbMocks.execute, select: dbMocks.select };
+        });
+        const { cacheSmartCollectionCount } = await import('../collectionRepo');
+
+        await cacheSmartCollectionCount('smart-1', 5, 1, controller.signal);
+
+        expect(dbMocks.execute).not.toHaveBeenCalled();
+    });
+
+    it('writes no smart count when the refresh aborted while an earlier write for the collection was still running', async () => {
+        const controller = new AbortController();
+        let releaseEarlier!: () => void;
+        const earlierDone = new Promise<void>((resolve) => (releaseEarlier = resolve));
+        dbMocks.getDb.mockResolvedValue({ execute: dbMocks.execute, select: dbMocks.select });
+        dbMocks.execute.mockImplementationOnce(() => earlierDone);
+        const { cacheSmartCollectionCount } = await import('../collectionRepo');
+
+        const earlier = cacheSmartCollectionCount('smart-1', 4, 1);
+        const later = cacheSmartCollectionCount('smart-1', 5, 1, controller.signal);
+        controller.abort();
+        releaseEarlier();
+        await Promise.all([earlier, later]);
+
+        expect(dbMocks.execute).toHaveBeenCalledTimes(1);
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_count'), expect.arrayContaining([4]));
+    });
+
+    it('still writes a smart count for a refresh that has not aborted', async () => {
+        const controller = new AbortController();
+        dbMocks.getDb.mockResolvedValue({ execute: dbMocks.execute, select: dbMocks.select });
+        const { cacheSmartCollectionCount } = await import('../collectionRepo');
+
+        await cacheSmartCollectionCount('smart-1', 5, 1, controller.signal);
+
+        expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_count'), expect.arrayContaining([5, 'smart-1']));
+    });
+
     it('returns empty smart thumbnail data and skips cache writes for custom thumbnails', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('COUNT(*) FROM scoped_images')) {
