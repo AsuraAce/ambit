@@ -1588,8 +1588,12 @@ fn persist_thumbnail_results(
          CREATE TEMP TABLE IF NOT EXISTS thumbnail_optimizer_affected_scopes (
              scope_key TEXT PRIMARY KEY
          ) WITHOUT ROWID;
+         CREATE TEMP TABLE IF NOT EXISTS thumbnail_optimizer_cache_changes (
+             id TEXT PRIMARY KEY
+         ) WITHOUT ROWID;
          DELETE FROM thumbnail_optimizer_results;
-         DELETE FROM thumbnail_optimizer_affected_scopes;",
+         DELETE FROM thumbnail_optimizer_affected_scopes;
+         DELETE FROM thumbnail_optimizer_cache_changes;",
     )
     .map_err(|e| e.to_string())?;
 
@@ -1726,12 +1730,25 @@ fn persist_thumbnail_results(
                 |row| row.get::<_, i64>(0),
             )
             .map_err(|e| e.to_string())?;
+        // Facet and collection caches keep only the thumbnail path. A regenerated thumbnail
+        // usually keeps its path (the name is a hash of the source), so only a new path or a
+        // missing file changes what those caches show (#530).
+        tx.execute(
+            "INSERT OR IGNORE INTO thumbnail_optimizer_cache_changes (id)
+             SELECT result.id
+             FROM thumbnail_optimizer_results result
+             JOIN images ON images.id = result.id
+             WHERE result.outcome = 'missing'
+                OR (result.outcome = 'success' AND images.thumbnail_path IS NOT result.thumbnail_path)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
         tx.execute(
             "INSERT OR IGNORE INTO thumbnail_optimizer_affected_scopes (scope_key)
              SELECT DISTINCT visible.scope_key
              FROM thumbnail_optimizer_results result
              CROSS JOIN invoke_scope_cache_visible_image_scopes visible
-             WHERE result.outcome IN ('success', 'missing')
+             WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
                AND visible.image_id = result.id",
             [],
         )
@@ -1784,7 +1801,7 @@ fn persist_thumbnail_results(
              JOIN images ON images.id = result.id
              JOIN invoke_scope_cache_visible_image_scopes visible
                ON visible.image_id = result.id
-             WHERE result.outcome IN ('success', 'missing')
+             WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
              ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
 
              INSERT INTO invoke_scope_cache_dirty_items
@@ -1795,7 +1812,7 @@ fn persist_thumbnail_results(
              JOIN images ON images.id = result.id
              JOIN invoke_scope_cache_visible_image_scopes visible
                ON visible.image_id = result.id
-             WHERE result.outcome IN ('success', 'missing')
+             WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
              ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
 
              INSERT INTO invoke_scope_cache_dirty_items
@@ -1807,27 +1824,27 @@ fn persist_thumbnail_results(
                         resource.lora_name AS resource_name
                  FROM thumbnail_optimizer_results result
                  JOIN image_loras resource ON resource.image_id = result.id
-                 WHERE result.outcome IN ('success', 'missing')
+                 WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
                  UNION
                  SELECT result.id, 'embeddings', resource.embedding_name
                  FROM thumbnail_optimizer_results result
                  JOIN image_embeddings resource ON resource.image_id = result.id
-                 WHERE result.outcome IN ('success', 'missing')
+                 WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
                  UNION
                  SELECT result.id, 'hypernetworks', resource.hypernetwork_name
                  FROM thumbnail_optimizer_results result
                  JOIN image_hypernetworks resource ON resource.image_id = result.id
-                 WHERE result.outcome IN ('success', 'missing')
+                 WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
                  UNION
                  SELECT result.id, 'control_nets', resource.controlnet_name
                  FROM thumbnail_optimizer_results result
                  JOIN image_controlnets resource ON resource.image_id = result.id
-                 WHERE result.outcome IN ('success', 'missing')
+                 WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
                  UNION
                  SELECT result.id, 'ip_adapters', resource.ipadapter_name
                  FROM thumbnail_optimizer_results result
                  JOIN image_ipadapters resource ON resource.image_id = result.id
-                 WHERE result.outcome IN ('success', 'missing')
+                 WHERE result.id IN (SELECT id FROM thumbnail_optimizer_cache_changes)
              ) resources
              JOIN invoke_scope_cache_visible_image_scopes visible
                ON visible.image_id = resources.image_id
@@ -1859,7 +1876,8 @@ fn persist_thumbnail_results(
 
     tx.execute_batch(
         "DELETE FROM thumbnail_optimizer_results;
-         DELETE FROM thumbnail_optimizer_affected_scopes;",
+         DELETE FROM thumbnail_optimizer_affected_scopes;
+         DELETE FROM thumbnail_optimizer_cache_changes;",
     )
     .map_err(|e| e.to_string())?;
 
@@ -3897,6 +3915,105 @@ mod tests {
             .collect::<Vec<_>>();
         expected_dirty_items.sort();
         assert_eq!(dirty_items, expected_dirty_items);
+    }
+
+    // Thumbnail names are a hash of the source, so an upgrade usually rewrites the same path.
+    // Facet and collection caches keep only that path, so a prepared InvokeAI view stays
+    // restorable; marking it would make the next switch recount every smart collection (#530).
+    // A new path still marks every scope that shows the image.
+    #[test]
+    fn same_path_thumbnail_upgrade_leaves_prepared_scopes_ready() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql)
+                .expect("apply production migration");
+        }
+        conn.execute_batch(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                       'owner', 'owner-a', 1);
+             INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             ) VALUES
+                 ('all', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                  'all', NULL, 'ready', 4, 4, 1),
+                 ('owner-a', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                  'owner', 'owner-a', 'ready', 4, 4, 1);
+             INSERT INTO images (
+                 id, path, timestamp, invoke_source_id, invoke_owner_id, thumbnail_path
+             ) VALUES
+                 ('upgraded', 'D:/Invoke/outputs/images/upgraded.png', 3,
+                  'D:/Invoke/databases/invokeai.db', 'owner-a', 'C:/thumbs/upgraded.webp');
+             UPDATE invoke_scope_cache_state
+             SET status = 'ready', generation = 4, built_generation = 4;
+             DELETE FROM invoke_scope_cache_dirty_items;",
+        )
+        .expect("seed scoped cache fixture");
+        let scopes = |conn: &Connection| {
+            conn.prepare(
+                "SELECT scope_key, status,
+                        (SELECT COUNT(*) FROM invoke_scope_cache_dirty_items items
+                         WHERE items.scope_key = state.scope_key)
+                 FROM invoke_scope_cache_state state ORDER BY scope_key",
+            )
+            .expect("scope query")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .expect("scopes")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect scopes")
+        };
+        let upgrade = |conn: &mut Connection, thumbnail_path: &str| {
+            persist_thumbnail_results(
+                conn,
+                &[ThumbnailItemResult::Success {
+                    id: "upgraded".to_string(),
+                    thumbnail_path: thumbnail_path.to_string(),
+                    micro_thumbnail: Some("micro".to_string()),
+                    reused: false,
+                    processing_ms: 1,
+                }],
+                100,
+            )
+            .expect("persist upgrade")
+        };
+
+        assert_eq!(upgrade(&mut conn, "C:/thumbs/upgraded.webp").optimized, 1);
+        assert_eq!(
+            scopes(&conn),
+            vec![
+                ("all".to_string(), "ready".to_string(), 0),
+                ("owner-a".to_string(), "ready".to_string(), 0),
+            ],
+            "a same-path upgrade left a prepared view dirty"
+        );
+        let version: i64 = conn
+            .query_row(
+                "SELECT thumbnail_version FROM images WHERE id = 'upgraded'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("thumbnail version");
+        assert_eq!(
+            version, CURRENT_THUMBNAIL_VERSION,
+            "the upgrade itself was saved"
+        );
+
+        upgrade(&mut conn, "C:/thumbs/upgraded.replacement.webp");
+        let marked = scopes(&conn);
+        assert!(
+            marked
+                .iter()
+                .all(|(_, status, items)| status == "dirty" && *items > 0),
+            "a new path must mark every scope that shows it: {marked:?}"
+        );
     }
 
     #[test]
