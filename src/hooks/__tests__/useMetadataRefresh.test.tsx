@@ -183,7 +183,7 @@ describe('useMetadataRefresh', () => {
         expect(mockAddToast).toHaveBeenCalledTimes(1);
     });
 
-    it('counts a lock failure that arrives after readiness was withdrawn', async () => {
+    it('counts a lock failure that arrives after readiness was withdrawn, up to the last attempt', async () => {
         const rejections: Array<(reason: string) => void> = [];
         vi.mocked(invoke).mockImplementation((command) => {
             if (command === 'get_reparse_count') return Promise.resolve(12);
@@ -195,16 +195,31 @@ describe('useMetadataRefresh', () => {
             return Promise.resolve(undefined);
         });
         const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
-        for (let cycle = 0; cycle < 20; cycle += 1) {
+        for (let cycle = 0; cycle < 25; cycle += 1) {
             await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            if (rejections.length <= cycle) break;
             view.rerender({ ready: false });
             await act(async () => rejections[cycle]('database is locked'));
             view.rerender({ ready: true });
         }
-        await act(async () => vi.advanceTimersByTimeAsync(3_000));
-        await act(async () => rejections[20]('database is locked'));
-        expect(rejections).toHaveLength(21);
+        await act(async () => vi.advanceTimersByTimeAsync(60_000));
+        expect(rejections).toHaveLength(20);
         expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: database is locked', 'error');
+    });
+
+    it('stops the startup count check for the session after its last locked attempt', async () => {
+        vi.mocked(invoke).mockImplementation((command) => {
+            if (command === 'get_reparse_count') return Promise.reject('database is locked');
+            return Promise.resolve(undefined);
+        });
+        const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
+        for (let cycle = 0; cycle < 30; cycle += 1) {
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            view.rerender({ ready: false });
+            view.rerender({ ready: true });
+        }
+        await act(async () => vi.advanceTimersByTimeAsync(60_000));
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(20);
     });
 
     it('pauses native metadata refresh while the app asks it to', async () => {

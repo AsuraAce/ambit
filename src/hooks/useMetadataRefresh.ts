@@ -356,6 +356,17 @@ export function useMetadataRefresh(startupReady = false) {
         let isCancelled = false;
         let retryTimer: number | undefined;
 
+        // Records a lock failure on `attempt`. Returns whether another attempt is allowed; after
+        // the last one the startup refresh stops for this session.
+        const countLockFailure = (attempt: number): boolean => {
+            if (attempt >= STARTUP_REFRESH_MAX_ATTEMPTS) {
+                startupRefreshCompletedRef.current = true;
+                return false;
+            }
+            startupRefreshAttemptRef.current = attempt + 1;
+            return true;
+        };
+
         const runStartupRefresh = async (attempt: number) => {
             if (isCancelled || startupRefreshCompletedRef.current) return;
             if (startupRefreshInFlightRef.current) {
@@ -394,11 +405,11 @@ export function useMetadataRefresh(startupReady = false) {
                 });
                 if (result.ok) startupRefreshCompletedRef.current = true;
                 if (result.ok) return;
-                // Counts even when readiness changed during the run, as it does when a switch starts.
-                if (isTransientDatabaseLock(result.error)) startupRefreshAttemptRef.current = attempt + 1;
-                if (isCancelled) return;
+                // Counted even when readiness changed during the run, as it does when a switch starts.
+                const retryStart = isTransientDatabaseLock(result.error) && countLockFailure(attempt);
+                if (isCancelled && (retryStart || !isTransientDatabaseLock(result.error))) return;
 
-                if (isTransientDatabaseLock(result.error) && attempt < STARTUP_REFRESH_MAX_ATTEMPTS) {
+                if (retryStart) {
                     setMetadataRefreshPending(true);
                     console.info(
                         `[Refresh] Startup refresh is waiting for the database lock to clear (attempt ${attempt + 1}/${STARTUP_REFRESH_MAX_ATTEMPTS})`
@@ -417,9 +428,9 @@ export function useMetadataRefresh(startupReady = false) {
                 deferStartupVisibilityUntilProcessingRef.current = false;
                 addToast(`Failed to start refresh: ${getErrorMessage(result.error)}`, 'error');
             } catch (err) {
-                if (isTransientDatabaseLock(err)) startupRefreshAttemptRef.current = attempt + 1;
+                const retryCount = isTransientDatabaseLock(err) && countLockFailure(attempt);
                 if (isCancelled) return;
-                if (isTransientDatabaseLock(err) && attempt < STARTUP_REFRESH_MAX_ATTEMPTS) {
+                if (retryCount) {
                     setMetadataRefreshPending(true);
                     console.info(
                         `[Refresh] Startup refresh count check is waiting for the database lock to clear (attempt ${attempt + 1}/${STARTUP_REFRESH_MAX_ATTEMPTS})`

@@ -1437,6 +1437,45 @@ describe('App orchestration', () => {
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
     });
 
+    // A metadata refresh batch written during the switch's cache build gets its commit refused (#552).
+    it('pauses metadata refresh while an owner switch applies, with no repair running', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.images = [image('previous-owner-image')];
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(true);
+        expect(mocks.metadataRefreshPause).toHaveBeenLastCalledWith(false);
+
+        mocks.invokeOwnerScopeState = {
+            status: 'applying',
+            rootPath: 'D:/Invoke',
+            scope: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                mode: 'owner',
+                ownerId: 'owner-b',
+            },
+        };
+        view.rerender(<App />);
+        expect(useLibraryStore.getState().isOwnerCacheRepairing).toBe(false);
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(false);
+        expect(mocks.metadataRefreshPause).toHaveBeenLastCalledWith(true);
+
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        expect(mocks.metadataRefreshPause).toHaveBeenLastCalledWith(false);
+    });
+
     it('never shows the gate for a switch that completes within the grace period', async () => {
         vi.useFakeTimers();
         const previousImage = image('previous-owner-image');

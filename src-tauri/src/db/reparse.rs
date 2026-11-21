@@ -442,6 +442,8 @@ fn run_reparse_job(
         let update_start = std::time::Instant::now();
 
         // SERIAL PHASE: Update database in a single transaction
+        // A pause set while this batch was parsing holds its write too (#552).
+        wait_while_paused(is_paused, is_cancelled);
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let _hold = crate::db::write_hold::WriteHold::begin("reparse.job_batch");
         {
@@ -815,6 +817,8 @@ fn run_reparse_job(
                     })
                     .collect();
 
+            // A pause set during the file scan holds its write too (#552).
+            wait_while_paused(is_paused, is_cancelled);
             let tx = conn.transaction().map_err(|e| e.to_string())?;
             let _hold = crate::db::write_hold::WriteHold::begin("reparse.photo_batch");
             {
@@ -1009,6 +1013,83 @@ mod tests {
                 std::thread::sleep(PAUSE_POLL / 4);
             }
             waiter.join().unwrap();
+        }
+    }
+
+    fn reparse_test_database(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "ambit-reparse-{name}-{}-{:?}.db",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let conn = Connection::open(&path).expect("test database");
+        conn.execute_batch("PRAGMA journal_mode = WAL;")
+            .expect("wal");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(migration.sql).expect("apply migrations");
+        }
+        for index in 0..3 {
+            conn.execute(
+                "INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version, original_metadata_json)
+                 VALUES (?1, ?2, 100, 0, 0, '{\"parameters\":\"a cat\nSteps: 20, Sampler: Euler\"}')",
+                params![format!("img-{index}"), format!("D:/lib/img-{index}.png")],
+            )
+            .expect("image row");
+        }
+        path
+    }
+
+    fn stale_rows(path: &std::path::Path) -> i64 {
+        Connection::open(path)
+            .expect("observer")
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE parser_version < ?1",
+                params![CURRENT_PARSER_VERSION],
+                |row| row.get(0),
+            )
+            .expect("stale count")
+    }
+
+    // An owner switch pauses the refresh. A batch written during the switch's cache build marks
+    // that cache dirty and gets its commit refused, so nothing may be written until it resumes (#552).
+    #[test]
+    fn a_paused_reparse_job_writes_nothing_until_resumed() {
+        for filter_root in [None, Some("D:/lib".to_string())] {
+            let path = reparse_test_database(if filter_root.is_some() {
+                "prefetch"
+            } else {
+                "keyset"
+            });
+            let state = ReparseState::default();
+            state.is_paused.store(true, Ordering::SeqCst);
+            let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+            let job_path = path.clone();
+            let job = std::thread::spawn(move || {
+                let mut conn = Connection::open(&job_path).expect("job connection");
+                run_reparse_job(
+                    &mut conn,
+                    ReparseJobOptions {
+                        force_reparse: false,
+                        filter_root,
+                        filter_tool: None,
+                        refresh_photo_metadata: false,
+                    },
+                    &paused,
+                    &cancelled,
+                    &|_| {},
+                    &|_| {},
+                )
+            });
+            std::thread::sleep(PAUSE_POLL * 5);
+            assert!(!job.is_finished(), "the job finished while paused");
+            assert_eq!(stale_rows(&path), 3, "a batch was written while paused");
+
+            state.is_paused.store(false, Ordering::SeqCst);
+            let result = job.join().unwrap().expect("reparse job");
+            assert_eq!(result.processed, 3);
+            assert_eq!(stale_rows(&path), 0);
+            let _ = std::fs::remove_file(&path);
         }
     }
 
