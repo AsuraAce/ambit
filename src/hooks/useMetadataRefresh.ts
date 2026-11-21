@@ -13,6 +13,7 @@ import { isBrowserMockMode } from '../services/runtime';
 import { listenWithCleanup } from '../utils/tauriListener';
 import { rebuildFacetCacheIncrementalBatchStrict } from '../services/db/imageRepo';
 import { measureStartupPhase } from '../utils/startupDiagnostics';
+import { commands } from '../bindings';
 
 interface RefreshProgress {
     current: number;
@@ -62,6 +63,21 @@ const isTransientDatabaseLock = (err: unknown): boolean => {
     );
 };
 
+/**
+ * Pauses metadata refresh between batches while `paused` is true. Its image writes mark an
+ * InvokeAI owner cache that is being built dirty, which gets that cache's commit refused (#552).
+ * Call it once, from the app shell.
+ */
+export function useMetadataRefreshPause(paused: boolean) {
+    const browserMockMode = isBrowserMockMode();
+    useEffect(() => {
+        if (browserMockMode) return;
+        commands.setMetadataRefreshPaused(paused).catch((err: unknown) => {
+            console.error('[Refresh] Failed to set the metadata refresh pause', err);
+        });
+    }, [browserMockMode, paused]);
+}
+
 export function useMetadataRefresh(startupReady = false) {
     const { addToast } = useToast();
     const browserMockMode = isBrowserMockMode();
@@ -72,6 +88,9 @@ export function useMetadataRefresh(startupReady = false) {
     const combinedRefreshInFlightRef = useRef(false);
     const startupRefreshCompletedRef = useRef(false);
     const startupRefreshInFlightRef = useRef(false);
+    // Lock retries count across readiness changes, so an owner switch or failed switch
+    // never restarts the startup refresh from its first attempt (#552).
+    const startupRefreshAttemptRef = useRef(1);
 
     const { setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress } = useLibraryStore();
 
@@ -374,7 +393,10 @@ export function useMetadataRefresh(startupReady = false) {
                     deferActiveUntilProgress: true,
                 });
                 if (result.ok) startupRefreshCompletedRef.current = true;
-                if (result.ok || isCancelled) return;
+                if (result.ok) return;
+                // Counts even when readiness changed during the run, as it does when a switch starts.
+                if (isTransientDatabaseLock(result.error)) startupRefreshAttemptRef.current = attempt + 1;
+                if (isCancelled) return;
 
                 if (isTransientDatabaseLock(result.error) && attempt < STARTUP_REFRESH_MAX_ATTEMPTS) {
                     setMetadataRefreshPending(true);
@@ -387,12 +409,15 @@ export function useMetadataRefresh(startupReady = false) {
                     return;
                 }
 
+                // Out of attempts: stay stopped for this session instead of retrying on the next readiness change.
+                startupRefreshCompletedRef.current = true;
                 setMetadataRefreshPending(false);
                 startupAnnouncementCountRef.current = null;
                 startupAnnouncementShownRef.current = false;
                 deferStartupVisibilityUntilProcessingRef.current = false;
                 addToast(`Failed to start refresh: ${getErrorMessage(result.error)}`, 'error');
             } catch (err) {
+                if (isTransientDatabaseLock(err)) startupRefreshAttemptRef.current = attempt + 1;
                 if (isCancelled) return;
                 if (isTransientDatabaseLock(err) && attempt < STARTUP_REFRESH_MAX_ATTEMPTS) {
                     setMetadataRefreshPending(true);
@@ -417,7 +442,7 @@ export function useMetadataRefresh(startupReady = false) {
 
         // Run after a short delay to allow app to settle after startup maintenance.
         const timer = window.setTimeout(() => {
-            void runStartupRefresh(1);
+            void runStartupRefresh(startupRefreshAttemptRef.current);
         }, STARTUP_REFRESH_INITIAL_DELAY_MS);
 
         return () => {

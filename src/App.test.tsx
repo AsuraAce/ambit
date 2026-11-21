@@ -253,6 +253,7 @@ const mocks = vi.hoisted(() => ({
     shortcuts: vi.fn(),
     thumbnailQueue: vi.fn(),
     metadataRefresh: vi.fn(),
+    metadataRefreshPause: vi.fn(),
     updater: {
         update: null as null | { version: string; body?: string; date?: string },
         canCheckForUpdates: true,
@@ -405,7 +406,10 @@ vi.mock('./contexts/SearchContext', () => ({
 }));
 vi.mock('./hooks/useAppUpdater', () => ({ useAppUpdater: () => mocks.updater }));
 vi.mock('./hooks/useThumbnailQueue', () => ({ useThumbnailQueue: mocks.thumbnailQueue }));
-vi.mock('./hooks/useMetadataRefresh', () => ({ useMetadataRefresh: mocks.metadataRefresh }));
+vi.mock('./hooks/useMetadataRefresh', () => ({
+    useMetadataRefresh: mocks.metadataRefresh,
+    useMetadataRefreshPause: mocks.metadataRefreshPause,
+}));
 vi.mock('./hooks/useTheme', () => ({ useTheme: () => ({ toggleTheme: mocks.toggleTheme }) }));
 vi.mock('./hooks/useSelection', () => ({
     useSelection: (list: AIImage[]) => {
@@ -1040,11 +1044,15 @@ describe('App orchestration', () => {
         });
         expect(document.getElementById('static-loading')).toBeNull();
         expect(mocks.setOrdinaryCountsReady).not.toHaveBeenCalledWith(true);
+        // Metadata refresh writes would get the repair's commit refused (#552).
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(true);
+        expect(mocks.metadataRefreshPause).toHaveBeenLastCalledWith(true);
 
         await act(async () => {
             useLibraryStore.setState({ isOwnerCacheRepairing: false });
         });
         expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(true);
+        expect(mocks.metadataRefreshPause).toHaveBeenLastCalledWith(false);
     });
 
     it('keeps a fatal bootstrap fallback and does not admit background startup work', async () => {

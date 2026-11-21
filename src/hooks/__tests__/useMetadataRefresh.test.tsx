@@ -1,7 +1,7 @@
 import { act, renderHook } from '../../test/testUtils';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { useMetadataRefresh } from '../useMetadataRefresh';
+import { useMetadataRefresh, useMetadataRefreshPause } from '../useMetadataRefresh';
 import { useLibraryStore } from '../../stores/libraryStore';
 
 const { mockAddToast, mockRebuildFacetCacheIncrementalBatchStrict, listenerCallbacks, listenerCleanups, runtimeMock } = vi.hoisted(() => ({
@@ -161,6 +161,63 @@ describe('useMetadataRefresh', () => {
 
         expect(startAttempts).toBe(2);
         expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed to start refresh'), 'error');
+    });
+
+    // An owner switch clears readiness. Restarting the lock retries at attempt 1 after every switch
+    // kept a failing reparse running, and writing, through each later switch (#552).
+    it('keeps counting lock retries across readiness changes and stops after the last attempt', async () => {
+        vi.mocked(invoke).mockImplementation((command) => {
+            if (command === 'get_reparse_count') return Promise.resolve(12);
+            if (command === 'start_reparse_job') return Promise.reject('database is locked');
+            return Promise.resolve(undefined);
+        });
+        const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
+        for (let cycle = 0; cycle < 30; cycle += 1) {
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            view.rerender({ ready: false });
+            view.rerender({ ready: true });
+        }
+        await act(async () => vi.advanceTimersByTimeAsync(60_000));
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'start_reparse_job')).toHaveLength(20);
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: database is locked', 'error');
+        expect(mockAddToast).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts a lock failure that arrives after readiness was withdrawn', async () => {
+        const rejections: Array<(reason: string) => void> = [];
+        vi.mocked(invoke).mockImplementation((command) => {
+            if (command === 'get_reparse_count') return Promise.resolve(12);
+            if (command === 'start_reparse_job') {
+                return new Promise((_, reject) => {
+                    rejections.push(reject);
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
+        for (let cycle = 0; cycle < 20; cycle += 1) {
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            view.rerender({ ready: false });
+            await act(async () => rejections[cycle]('database is locked'));
+            view.rerender({ ready: true });
+        }
+        await act(async () => vi.advanceTimersByTimeAsync(3_000));
+        await act(async () => rejections[20]('database is locked'));
+        expect(rejections).toHaveLength(21);
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: database is locked', 'error');
+    });
+
+    it('pauses native metadata refresh while the app asks it to', async () => {
+        vi.mocked(invoke).mockResolvedValue(undefined);
+        const view = renderHook(({ paused }) => useMetadataRefreshPause(paused), { initialProps: { paused: false } });
+        view.rerender({ paused: true });
+        view.rerender({ paused: false });
+        await flushAsyncWork();
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'set_metadata_refresh_paused')).toEqual([
+            ['set_metadata_refresh_paused', { paused: false }],
+            ['set_metadata_refresh_paused', { paused: true }],
+            ['set_metadata_refresh_paused', { paused: false }],
+        ]);
     });
 
     it('keeps automatic startup refresh pending while startup catch-up is still checking', async () => {

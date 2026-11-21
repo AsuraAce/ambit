@@ -409,6 +409,13 @@ async startReparseJob(forceReparse: boolean, filterRoot: string | null, filterTo
 async cancelReparseJob() : Promise<void> {
     await TAURI_INVOKE("cancel_reparse_job");
 },
+/**
+ * Pause or resume metadata refresh between batches. The app pauses it while an InvokeAI owner
+ * switch or owner-cache repair runs, so its writes cannot get that cache's commit refused (#552).
+ */
+async setMetadataRefreshPaused(paused: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_metadata_refresh_paused", { paused });
+},
 async getImagesNeedingReparse(limit: number | null) : Promise<Result<ImageToReparse[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_images_needing_reparse", { limit }) };

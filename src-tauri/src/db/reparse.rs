@@ -119,16 +119,42 @@ fn replace_generated_resource_links(
     Ok(())
 }
 
-/// State for tracking reparse job cancellation.
+/// State for tracking reparse job cancellation and pausing.
 pub struct ReparseState {
     pub is_cancelled: Arc<AtomicBool>,
+    /// Set while an InvokeAI owner switch or owner-cache repair runs (#552).
+    pub is_paused: Arc<AtomicBool>,
 }
 
 impl Default for ReparseState {
     fn default() -> Self {
         Self {
             is_cancelled: Arc::new(AtomicBool::new(false)),
+            is_paused: Arc::new(AtomicBool::new(false)),
         }
+    }
+}
+
+const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Blocks between batches while metadata refresh is paused, holding no transaction.
+/// Its image writes would mark the owner cache being built dirty and get that commit refused (#552).
+/// Returns early when the job is cancelled.
+fn wait_while_paused(is_paused: &AtomicBool, is_cancelled: &AtomicBool) {
+    let mut logged = false;
+    while is_paused.load(Ordering::SeqCst) && !is_cancelled.load(Ordering::SeqCst) {
+        if !logged {
+            log::info!("[Refresh] Paused while an InvokeAI owner cache is prepared");
+            logged = true;
+        }
+        std::thread::sleep(PAUSE_POLL);
+    }
+}
+
+/// The async form of [`wait_while_paused`], for the video metadata refresh.
+pub(crate) async fn wait_while_paused_async(is_paused: &AtomicBool, is_cancelled: &AtomicBool) {
+    while is_paused.load(Ordering::SeqCst) && !is_cancelled.load(Ordering::SeqCst) {
+        tokio::time::sleep(PAUSE_POLL).await;
     }
 }
 
@@ -174,6 +200,7 @@ pub async fn start_reparse_job(
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
     let is_cancelled = state.is_cancelled.clone();
+    let is_paused = state.is_paused.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
@@ -512,6 +539,7 @@ pub async fn start_reparse_job(
 
              // 2. Loop through chunks
              for chunk in ids.chunks(batch_size) {
+                 wait_while_paused(&is_paused, &is_cancelled);
                  if is_cancelled.load(Ordering::SeqCst) {
                      break;
                  }
@@ -550,6 +578,7 @@ pub async fn start_reparse_job(
             let mut last_seen_id: String = String::new();
 
             loop {
+                wait_while_paused(&is_paused, &is_cancelled);
                 if is_cancelled.load(Ordering::SeqCst) {
                     break;
                 }
@@ -597,6 +626,7 @@ pub async fn start_reparse_job(
             let photo_batch_size = 100;
 
             loop {
+                wait_while_paused(&is_paused, &is_cancelled);
                 if is_cancelled.load(Ordering::SeqCst) {
                     break;
                 }
@@ -797,10 +827,47 @@ pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
 
+/// Pause or resume metadata refresh between batches. The app pauses it while an InvokeAI owner
+/// switch or owner-cache repair runs, so its writes cannot get that cache's commit refused (#552).
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn set_metadata_refresh_paused(state: tauri::State<'_, ReparseState>, paused: bool) {
+    if state.is_paused.swap(paused, Ordering::SeqCst) != paused {
+        log::info!(
+            "[Refresh] Metadata refresh {}",
+            if paused { "paused" } else { "resumed" }
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusqlite::{params, Connection};
+
+    // A paused refresh must not write its next batch until the owner cache is committed (#552).
+    #[test]
+    fn a_paused_refresh_waits_until_resumed_or_cancelled() {
+        for release_by_cancel in [false, true] {
+            let state = ReparseState::default();
+            state.is_paused.store(true, Ordering::SeqCst);
+            let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+            let waiter = std::thread::spawn(move || wait_while_paused(&paused, &cancelled));
+            std::thread::sleep(PAUSE_POLL * 3);
+            assert!(!waiter.is_finished(), "the next batch ran while paused");
+            if release_by_cancel {
+                state.is_cancelled.store(true, Ordering::SeqCst);
+            } else {
+                state.is_paused.store(false, Ordering::SeqCst);
+            }
+            let started = std::time::Instant::now();
+            while !waiter.is_finished() {
+                assert!(started.elapsed() < std::time::Duration::from_secs(5));
+                std::thread::sleep(PAUSE_POLL / 4);
+            }
+            waiter.join().unwrap();
+        }
+    }
 
     #[test]
     fn progress_payload_serializes_structured_counters() {

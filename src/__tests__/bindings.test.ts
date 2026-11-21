@@ -353,6 +353,13 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     { name: 'cancelReparseJob', invokeName: 'cancel_reparse_job', args: [], returnsResult: false },
+    {
+        name: 'setMetadataRefreshPaused',
+        invokeName: 'set_metadata_refresh_paused',
+        args: [true],
+        payload: { paused: true },
+        returnsResult: false,
+    },
     { name: 'getImagesNeedingReparse', invokeName: 'get_images_needing_reparse', args: [25], payload: { limit: 25 }, returnsResult: true },
     { name: 'getReparseCount', invokeName: 'get_reparse_count', args: [], returnsResult: true },
     { name: 'reparseMetadataBatch', invokeName: 'reparse_metadata_batch', args: [[]], payload: { images: [] }, returnsResult: true },

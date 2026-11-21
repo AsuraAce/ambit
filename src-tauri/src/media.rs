@@ -381,6 +381,12 @@ pub async fn refresh_video_metadata(
     };
     let access = LibraryAccess::snapshot(&app);
     for (path, parser_version, original_evidence_json) in paths {
+        // Paused while an InvokeAI owner cache is prepared (#552).
+        crate::db::reparse::wait_while_paused_async(
+            &reparse_state.is_paused,
+            &reparse_state.is_cancelled,
+        )
+        .await;
         if reparse_state.is_cancelled.load(Ordering::SeqCst) {
             result.was_cancelled = true;
             break;
