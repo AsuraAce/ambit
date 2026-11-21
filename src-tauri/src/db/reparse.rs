@@ -139,8 +139,8 @@ const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Blocks between batches while metadata refresh is paused, holding no transaction.
 /// Its image writes would mark the owner cache being built dirty and get that commit refused (#552).
-/// Returns early when the job is cancelled.
-fn wait_while_paused(is_paused: &AtomicBool, is_cancelled: &AtomicBool) {
+/// Returns early when the job is cancelled, and returns whether it paused.
+fn wait_while_paused(is_paused: &AtomicBool, is_cancelled: &AtomicBool) -> bool {
     let mut logged = false;
     while is_paused.load(Ordering::SeqCst) && !is_cancelled.load(Ordering::SeqCst) {
         if !logged {
@@ -149,6 +149,7 @@ fn wait_while_paused(is_paused: &AtomicBool, is_cancelled: &AtomicBool) {
         }
         std::thread::sleep(PAUSE_POLL);
     }
+    logged
 }
 
 /// The async form of [`wait_while_paused`], for the video metadata refresh.
@@ -354,7 +355,7 @@ fn run_reparse_job(
     } else {
         0
     };
-    let total = generated_total + photo_total;
+    let mut total = generated_total + photo_total;
 
     log::info!(
         "[Reparse] Total query complete: {} generated + {} photo candidates",
@@ -408,6 +409,41 @@ fn run_reparse_job(
 
     let should_use_prefetch = filter_root.is_some();
 
+    // `scoped_images` follows the current InvokeAI scope, so a pause that spans a user switch
+    // can change the rows left to walk. After a pause the keyset and photo phases recount what
+    // remains past their position, so the total matches the rows the job walks (#558).
+    let paused_in_batch = std::cell::Cell::new(false);
+    let pending_total = std::cell::Cell::new(None::<usize>);
+    let count_remaining =
+        |conn: &rusqlite::Connection, generated_after: Option<&str>, photo_after: &str| -> usize {
+            let count =
+                |where_sql: String, mut params: Vec<Box<dyn rusqlite::ToSql>>, after: &str| {
+                    params.push(Box::new(after.to_string()));
+                    conn.query_row(
+                        &format!(
+                            "SELECT COUNT(*) FROM scoped_images WHERE {} AND id > ?",
+                            where_sql
+                        ),
+                        rusqlite::params_from_iter(params.iter()),
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap_or(0) as usize
+                };
+            let generated = generated_after.map_or(0, |after| {
+                let (where_sql, params) =
+                    build_filters(force_reparse, filter_root.as_ref(), filter_tool.as_ref());
+                count(where_sql, params, after)
+            });
+            let photos = if photo_total > 0 {
+                let (where_sql, params) =
+                    build_photo_filters(force_reparse, normalized_filter_root.as_deref());
+                count(where_sql, params, photo_after)
+            } else {
+                0
+            };
+            generated + photos
+        };
+
     // SHARED UPDATE LOGIC CLOSURE
     // We define this locally to avoid borrowing issues or duplicating complex update code.
     // It takes a batch of rows, processes them, and updates the DB.
@@ -415,6 +451,9 @@ fn run_reparse_job(
                                         batch: Vec<(String, String, String, String)>,
                                         fetch_ms: u128|
      -> Result<(), String> {
+        if let Some(remaining) = pending_total.take() {
+            total = processed + remaining;
+        }
         let parse_start = std::time::Instant::now();
 
         // PARALLEL PHASE: Parse structure on all cores
@@ -443,7 +482,9 @@ fn run_reparse_job(
 
         // SERIAL PHASE: Update database in a single transaction
         // A pause set while this batch was parsing holds its write too (#552).
-        wait_while_paused(is_paused, is_cancelled);
+        if wait_while_paused(is_paused, is_cancelled) {
+            paused_in_batch.set(true);
+        }
         if is_cancelled.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -683,7 +724,10 @@ fn run_reparse_job(
 
         // 2. Loop through chunks
         for chunk in ids.chunks(batch_size) {
-            wait_while_paused(is_paused, is_cancelled);
+            // The fixed id list needs no recount; the flag makes the photo phase recount.
+            if wait_while_paused(is_paused, is_cancelled) {
+                paused_in_batch.set(true);
+            }
             if is_cancelled.load(Ordering::SeqCst) {
                 break;
             }
@@ -720,9 +764,12 @@ fn run_reparse_job(
         let mut last_seen_id: String = String::new();
 
         loop {
-            wait_while_paused(is_paused, is_cancelled);
+            let paused = wait_while_paused(is_paused, is_cancelled);
             if is_cancelled.load(Ordering::SeqCst) {
                 break;
+            }
+            if paused | paused_in_batch.take() {
+                pending_total.set(Some(count_remaining(conn, Some(&last_seen_id), "")));
             }
 
             let fetch_start = std::time::Instant::now();
@@ -764,15 +811,23 @@ fn run_reparse_job(
         }
     }
 
+    // A recount from the last generated batch's pause applies even when no batch followed it.
+    if let Some(remaining) = pending_total.take() {
+        total = processed + remaining;
+    }
+
     if photo_total > 0 && !is_cancelled.load(Ordering::SeqCst) {
         log::info!("[Refresh] Starting restart-safe photo metadata phase");
         let mut last_photo_id = String::new();
         let photo_batch_size = 100;
 
         loop {
-            wait_while_paused(is_paused, is_cancelled);
+            let paused = wait_while_paused(is_paused, is_cancelled);
             if is_cancelled.load(Ordering::SeqCst) {
                 break;
+            }
+            if paused | paused_in_batch.take() {
+                total = processed + count_remaining(conn, None, &last_photo_id);
             }
 
             let batch: Vec<(String, String)> = {
@@ -821,7 +876,9 @@ fn run_reparse_job(
                     .collect();
 
             // A pause set during the file scan holds its write too (#552).
-            wait_while_paused(is_paused, is_cancelled);
+            if wait_while_paused(is_paused, is_cancelled) {
+                paused_in_batch.set(true);
+            }
             if is_cancelled.load(Ordering::SeqCst) {
                 break;
             }
@@ -1097,6 +1154,146 @@ mod tests {
             assert_eq!(stale_rows(&path), 0);
             let _ = std::fs::remove_file(&path);
         }
+    }
+
+    // A job counted in one InvokeAI user's scope often resumes in another after a switch, and
+    // `scoped_images` then shows different rows. Its total must match the rows it walks (#558).
+    #[test]
+    fn a_reparse_job_recounts_its_total_after_a_pause_that_changes_scope() {
+        let path = reparse_test_database("scope-change");
+        {
+            let conn = Connection::open(&path).expect("setup connection");
+            conn.execute(
+                "INSERT INTO invoke_owner_scope_state (state_key, db_path, images_root, scope_mode, owner_id, updated_at)
+                 VALUES ('current', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'owner', 'odin', 0)",
+                [],
+            )
+            .expect("owner scope");
+            for index in 0..2 {
+                conn.execute(
+                    "INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version, original_metadata_json, invoke_source_id, invoke_owner_id)
+                     VALUES (?1, ?2, 100, 0, 0, '{\"parameters\":\"a cat
+Steps: 20, Sampler: Euler\"}', 'D:/Invoke/invokeai.db', 'system')",
+                    params![format!("inv-{index}"), format!("D:/Invoke/outputs/inv-{index}.png")],
+                )
+                .expect("shared InvokeAI row");
+            }
+        }
+        let state = ReparseState::default();
+        state.is_paused.store(true, Ordering::SeqCst);
+        let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+        let job_path = path.clone();
+        let job = std::thread::spawn(move || {
+            let mut conn = Connection::open(&job_path).expect("job connection");
+            let progress = std::sync::Mutex::new(Vec::new());
+            let result = run_reparse_job(
+                &mut conn,
+                ReparseJobOptions {
+                    force_reparse: false,
+                    filter_root: None,
+                    filter_tool: None,
+                    refresh_photo_metadata: false,
+                },
+                &paused,
+                &cancelled,
+                &|event| progress.lock().unwrap().push((event.current, event.total)),
+                &|_| {},
+            );
+            (result, progress.into_inner().unwrap())
+        });
+        std::thread::sleep(PAUSE_POLL * 3);
+        // The switch to All shows the shared user's rows the job did not count.
+        Connection::open(&path)
+            .expect("switch connection")
+            .execute(
+                "UPDATE invoke_owner_scope_state SET scope_mode = 'all', owner_id = NULL",
+                [],
+            )
+            .expect("switch to All");
+        state.is_paused.store(false, Ordering::SeqCst);
+
+        let (result, progress) = job.join().unwrap();
+        assert_eq!(result.expect("reparse job").processed, 5);
+        // The first event is the "counting" placeholder; the second carries the up-front count.
+        assert_eq!(progress.get(1), Some(&(0, 3)), "counted in Odin's scope");
+        assert_eq!(
+            progress.last(),
+            Some(&(5, 5)),
+            "total follows the rows walked"
+        );
+        assert!(progress.iter().all(|(current, total)| current <= total));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_reparse_job_recounts_its_total_when_a_scope_change_leaves_nothing_to_do() {
+        let path = reparse_test_database("scope-shrink");
+        {
+            let conn = Connection::open(&path).expect("setup connection");
+            conn.execute(
+                "INSERT INTO invoke_owner_scope_state (state_key, db_path, images_root, scope_mode, owner_id, updated_at)
+                 VALUES ('current', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'all', NULL, 0)",
+                [],
+            )
+            .expect("All scope");
+            // The folder rows are current, so only the shared InvokeAI user's rows are stale.
+            conn.execute(
+                "UPDATE images SET parser_version = ?1",
+                params![CURRENT_PARSER_VERSION],
+            )
+            .expect("current folder rows");
+            for index in 0..2 {
+                conn.execute(
+                    "INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version, original_metadata_json, invoke_source_id, invoke_owner_id)
+                     VALUES (?1, ?2, 100, 0, 0, '{\"parameters\":\"a cat
+Steps: 20, Sampler: Euler\"}', 'D:/Invoke/invokeai.db', 'system')",
+                    params![format!("inv-{index}"), format!("D:/Invoke/outputs/inv-{index}.png")],
+                )
+                .expect("shared InvokeAI row");
+            }
+        }
+        let state = ReparseState::default();
+        state.is_paused.store(true, Ordering::SeqCst);
+        let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+        let job_path = path.clone();
+        let job = std::thread::spawn(move || {
+            let mut conn = Connection::open(&job_path).expect("job connection");
+            let progress = std::sync::Mutex::new(Vec::new());
+            let result = run_reparse_job(
+                &mut conn,
+                ReparseJobOptions {
+                    force_reparse: false,
+                    filter_root: None,
+                    filter_tool: None,
+                    refresh_photo_metadata: false,
+                },
+                &paused,
+                &cancelled,
+                &|event| progress.lock().unwrap().push((event.current, event.total)),
+                &|_| {},
+            );
+            (result, progress.into_inner().unwrap())
+        });
+        std::thread::sleep(PAUSE_POLL * 3);
+        // The switch to Odin hides the shared user's rows, leaving nothing stale in scope.
+        Connection::open(&path)
+            .expect("switch connection")
+            .execute(
+                "UPDATE invoke_owner_scope_state SET scope_mode = 'owner', owner_id = 'odin'",
+                [],
+            )
+            .expect("switch to Odin");
+        state.is_paused.store(false, Ordering::SeqCst);
+
+        let (result, progress) = job.join().unwrap();
+        assert_eq!(result.expect("reparse job").processed, 0);
+        assert_eq!(progress.get(1), Some(&(0, 2)), "counted in All");
+        assert_eq!(
+            progress.last(),
+            Some(&(0, 0)),
+            "total follows the rows left"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
