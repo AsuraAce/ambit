@@ -724,7 +724,10 @@ fn run_reparse_job(
 
         // 2. Loop through chunks
         for chunk in ids.chunks(batch_size) {
-            wait_while_paused(is_paused, is_cancelled);
+            // The fixed id list needs no recount; the flag makes the photo phase recount.
+            if wait_while_paused(is_paused, is_cancelled) {
+                paused_in_batch.set(true);
+            }
             if is_cancelled.load(Ordering::SeqCst) {
                 break;
             }
@@ -808,14 +811,15 @@ fn run_reparse_job(
         }
     }
 
+    // A recount from the last generated batch's pause applies even when no batch followed it.
+    if let Some(remaining) = pending_total.take() {
+        total = processed + remaining;
+    }
+
     if photo_total > 0 && !is_cancelled.load(Ordering::SeqCst) {
         log::info!("[Refresh] Starting restart-safe photo metadata phase");
         let mut last_photo_id = String::new();
         let photo_batch_size = 100;
-
-        if let Some(remaining) = pending_total.take() {
-            total = processed + remaining;
-        }
 
         loop {
             let paused = wait_while_paused(is_paused, is_cancelled);
@@ -1218,6 +1222,77 @@ Steps: 20, Sampler: Euler\"}', 'D:/Invoke/invokeai.db', 'system')",
             "total follows the rows walked"
         );
         assert!(progress.iter().all(|(current, total)| current <= total));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_reparse_job_recounts_its_total_when_a_scope_change_leaves_nothing_to_do() {
+        let path = reparse_test_database("scope-shrink");
+        {
+            let conn = Connection::open(&path).expect("setup connection");
+            conn.execute(
+                "INSERT INTO invoke_owner_scope_state (state_key, db_path, images_root, scope_mode, owner_id, updated_at)
+                 VALUES ('current', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'all', NULL, 0)",
+                [],
+            )
+            .expect("All scope");
+            // The folder rows are current, so only the shared InvokeAI user's rows are stale.
+            conn.execute(
+                "UPDATE images SET parser_version = ?1",
+                params![CURRENT_PARSER_VERSION],
+            )
+            .expect("current folder rows");
+            for index in 0..2 {
+                conn.execute(
+                    "INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version, original_metadata_json, invoke_source_id, invoke_owner_id)
+                     VALUES (?1, ?2, 100, 0, 0, '{\"parameters\":\"a cat
+Steps: 20, Sampler: Euler\"}', 'D:/Invoke/invokeai.db', 'system')",
+                    params![format!("inv-{index}"), format!("D:/Invoke/outputs/inv-{index}.png")],
+                )
+                .expect("shared InvokeAI row");
+            }
+        }
+        let state = ReparseState::default();
+        state.is_paused.store(true, Ordering::SeqCst);
+        let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+        let job_path = path.clone();
+        let job = std::thread::spawn(move || {
+            let mut conn = Connection::open(&job_path).expect("job connection");
+            let progress = std::sync::Mutex::new(Vec::new());
+            let result = run_reparse_job(
+                &mut conn,
+                ReparseJobOptions {
+                    force_reparse: false,
+                    filter_root: None,
+                    filter_tool: None,
+                    refresh_photo_metadata: false,
+                },
+                &paused,
+                &cancelled,
+                &|event| progress.lock().unwrap().push((event.current, event.total)),
+                &|_| {},
+            );
+            (result, progress.into_inner().unwrap())
+        });
+        std::thread::sleep(PAUSE_POLL * 3);
+        // The switch to Odin hides the shared user's rows, leaving nothing stale in scope.
+        Connection::open(&path)
+            .expect("switch connection")
+            .execute(
+                "UPDATE invoke_owner_scope_state SET scope_mode = 'owner', owner_id = 'odin'",
+                [],
+            )
+            .expect("switch to Odin");
+        state.is_paused.store(false, Ordering::SeqCst);
+
+        let (result, progress) = job.join().unwrap();
+        assert_eq!(result.expect("reparse job").processed, 0);
+        assert_eq!(progress.get(1), Some(&(0, 2)), "counted in All");
+        assert_eq!(
+            progress.last(),
+            Some(&(0, 0)),
+            "total follows the rows left"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
