@@ -3598,6 +3598,35 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledOnce();
         });
 
+        it('stops a repair of the same owner when its source changed and must be reconciled (#533)', async () => {
+            // Reconciling the changed source rebuilds the cache anyway; waiting out the repair first only adds its time.
+            const { getSync, facets } = await startViewWithRepairInFacets();
+            mocks.applyInvokeOwnerScope.mockResolvedValue({ ...switchedApplyResult, cacheRepair: planOf('restored') });
+            mocks.readInvokeSourceFingerprint.mockResolvedValue({
+                schemaVersion: 1,
+                imageCount: 7,
+                imageUpdatedAt: null,
+                boardCount: 0,
+                boardUpdatedAt: null,
+                membershipCount: 0,
+                membershipMaxRowId: null,
+            });
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = getSync().selectInvokeOwnerScope({ dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' });
+            });
+
+            await waitFor(() =>
+                expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({ reconcileSourceFacts: true }))
+            );
+            await act(async () => {
+                await switching;
+            });
+            expect(facets.wasStopped()).toBe(true);
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+        });
+
         it('stops a repair of the same owner when the apply changes its options (#533)', async () => {
             // The cache identity includes the options: a repair built with the old ones is not reusable.
             const { getSync, getLibrary, facets } = await startViewWithRepairInFacets();

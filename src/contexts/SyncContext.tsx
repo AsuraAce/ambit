@@ -942,6 +942,8 @@ export const SyncProvider: React.FC<{
             if (
                 runningRepair &&
                 !forceRefresh &&
+                // A source that changed is reconciled and its cache rebuilt anyway, so waiting would only add the repair's time.
+                !reconcileSourceFacts &&
                 isSameInvokeSyncScope(runningRepair.scope, scope) &&
                 isSameInvokeConnectionDraft(runningRepair.draft, getInvokeConnectionDraft(settingsRef.current))
             ) {

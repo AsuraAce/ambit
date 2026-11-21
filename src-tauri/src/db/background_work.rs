@@ -215,20 +215,29 @@ mod tests {
         assert_eq!(job_entry(id), None, "a finished job forgets its id");
     }
 
+    // Prunes its own map: pruning the process-wide registry with no expiry would drop
+    // the early stop that a parallel test is about to claim.
     #[test]
     fn a_stop_for_a_job_that_never_registers_is_dropped_after_its_expiry() {
-        let id = "test-unclaimed-stop";
-        stop_job(id);
-        assert_eq!(job_entry(id), Some((false, true)));
-        let running = register_job("test-registered-survives-prune");
-        prune_unclaimed_stops_older_than(&mut jobs().lock().unwrap(), Duration::ZERO);
-        assert_eq!(job_entry(id), None);
-        assert_eq!(
-            job_entry("test-registered-survives-prune"),
-            Some((true, false)),
+        let entry = |registered| JobEntry {
+            stopped: Arc::new(AtomicBool::new(true)),
+            registered,
+            created: Instant::now(),
+        };
+        let mut registry = HashMap::from([
+            ("unclaimed".to_string(), entry(false)),
+            ("running".to_string(), entry(true)),
+        ]);
+
+        prune_unclaimed_stops_older_than(&mut registry, Duration::from_secs(60));
+        assert_eq!(registry.len(), 2, "a stop younger than its expiry stays");
+
+        prune_unclaimed_stops_older_than(&mut registry, Duration::ZERO);
+        assert!(!registry.contains_key("unclaimed"));
+        assert!(
+            registry.contains_key("running"),
             "a running job is never pruned"
         );
-        drop(running);
     }
 
     // Called from the epoch test below, which owns the process-wide epoch: a parallel
