@@ -13,16 +13,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::startup::MAX_EVENTS_PER_LAUNCH;
+use crate::startup::{MAX_EVENTS_PER_LAUNCH, MAX_REPAIR_REPORTS};
 
 // About 300 bytes per event: room for every ordinary event plus both reserves.
 const FILE_LIMIT: usize = 1024 * 1024;
 const TERMINAL_RESERVE: usize = 32 * 1024;
-const REPAIR_RESERVE: usize = 8 * 1024;
+// Startup repair records (about 3.5 KB) plus up to MAX_REPAIR_REPORTS - 1 later repair reports (about 1.5 KB each).
+// The reserve is carved out of the ordinary budget, so the file's total cap is unchanged.
+const REPAIR_RESERVE: usize = 24 * 1024;
 const RETAIN_LAUNCHES: usize = 20;
-// StartupState admits at most MAX_EVENTS_PER_LAUNCH ordinary + 8*4 reserved + 7 repair events.
+// StartupState admits at most MAX_EVENTS_PER_LAUNCH ordinary + 8*4 reserved + 7 repair events
+// + (MAX_REPAIR_REPORTS - 1) later repair reports.
 // Even a completely blocked writer cannot let ordinary events consume reserves.
-const RENDERER_QUEUE_LIMIT: usize = MAX_EVENTS_PER_LAUNCH + 8 * 4 + 7;
+const RENDERER_QUEUE_LIMIT: usize = MAX_EVENTS_PER_LAUNCH + 8 * 4 + 7 + (MAX_REPAIR_REPORTS - 1);
 static ACTIVE: OnceLock<Arc<StartupJournal>> = OnceLock::new();
 const OBSERVATION_TIMES: [u64; 4] = [15_000, 30_000, 60_000, 120_000];
 const WEBVIEW_OBSERVATIONS: &[&str] = &[
@@ -547,6 +550,18 @@ impl StartupJournal {
                     .as_str()
                     .map(|stage| format!("{phase}:{stage}"))
                     .unwrap_or_else(|| phase.to_owned())
+            } else if phase == "owner-repair-report" {
+                // One report per repair, in arrival order: the startup repair first, then any
+                // runtime owner switch, up to MAX_REPAIR_REPORTS a launch.
+                let taken = inner
+                    .repair_events
+                    .iter()
+                    .filter(|key| key.starts_with(phase))
+                    .count();
+                if taken >= MAX_REPAIR_REPORTS {
+                    return;
+                }
+                format!("{phase}:{taken}")
             } else {
                 phase.to_owned()
             };
@@ -893,7 +908,12 @@ mod tests {
     #[test]
     fn validated_queue_reserves_terminal_and_repair_records_under_saturation() {
         use tauri::Manager;
-        const { assert!(RENDERER_QUEUE_LIMIT >= MAX_EVENTS_PER_LAUNCH + 8 * 4 + 7) };
+        const {
+            assert!(
+                RENDERER_QUEUE_LIMIT
+                    >= MAX_EVENTS_PER_LAUNCH + 8 * 4 + 7 + (MAX_REPAIR_REPORTS - 1)
+            )
+        };
         let directory = TestLogs::new();
         let journal = Arc::new(StartupJournal::new(Instant::now(), Some(&directory.0)));
         let app = tauri::test::mock_builder()
@@ -1206,7 +1226,6 @@ mod tests {
         }
         let report = repair_report_event(&journal, "completed");
         journal.renderer(&report);
-        journal.renderer(&report);
         journal.renderer(&renderer_event(&journal, "ready", "completed"));
         journal.end();
         let records = events(&directory.0);
@@ -1236,26 +1255,70 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_report_survives_readiness_and_journal_deduplicates_later_outcomes() {
+    fn repair_reports_after_ready_are_kept_in_arrival_order() {
         let directory = TestLogs::new();
         let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
         journal.renderer(&renderer_event(&journal, "ready", "completed"));
         journal.renderer(&repair_report_event(&journal, "failed"));
         journal.renderer(&repair_report_event(&journal, "cancelled"));
+        let statuses: Vec<_> = events(&directory.0)
+            .iter()
+            .filter(|record| record["event"]["phase"] == "owner-repair-report")
+            .map(|record| record["event"]["status"].clone())
+            .collect();
+        assert_eq!(statuses, [json!("failed"), json!("cancelled")]);
+    }
+
+    #[test]
+    fn a_ninth_repair_report_is_dropped_without_displacing_startup_or_terminal_records() {
+        let directory = TestLogs::new();
+        let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
+        // The startup repair's records first, then one report per later owner switch.
+        journal.renderer(&repair_report_event(&journal, "completed"));
+        journal.renderer(&renderer_event(&journal, "ready", "completed"));
+        for _ in 1..=MAX_REPAIR_REPORTS {
+            journal.renderer(&repair_report_event(&journal, "completed"));
+        }
+        {
+            let inner = journal.inner.lock().unwrap();
+            assert!(inner.repair_bytes <= REPAIR_RESERVE);
+            assert!(inner.bytes <= FILE_LIMIT - TERMINAL_RESERVE);
+        }
+        journal.end();
         let records = events(&directory.0);
-        assert_eq!(
-            records
-                .iter()
-                .filter(|record| record["event"]["phase"] == "owner-repair-report")
-                .count(),
-            1
+        let reports: Vec<_> = records
+            .iter()
+            .filter(|record| record["event"]["phase"] == "owner-repair-report")
+            .collect();
+        assert_eq!(reports.len(), MAX_REPAIR_REPORTS);
+        assert!(records
+            .iter()
+            .any(|record| record["event"]["phase"] == "ready"));
+        assert_eq!(records.last().unwrap()["outcome"], "ready");
+        assert!(journal.inner.lock().unwrap().bytes <= FILE_LIMIT);
+    }
+
+    #[test]
+    fn eight_full_repair_reports_fit_inside_the_repair_reserve() {
+        let directory = TestLogs::new();
+        let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
+        for _ in 0..MAX_REPAIR_REPORTS {
+            journal.renderer(&repair_report_event(&journal, "completed"));
+        }
+        let inner = journal.inner.lock().unwrap();
+        // A report that does not fit would be dropped silently; all eight must be on disk.
+        assert!(
+            inner.repair_bytes * 2 < REPAIR_RESERVE,
+            "reports use {} bytes",
+            inner.repair_bytes
         );
         assert_eq!(
-            records
+            inner
+                .repair_events
                 .iter()
-                .find(|record| record["event"]["phase"] == "owner-repair-report")
-                .unwrap()["event"]["status"],
-            "failed"
+                .filter(|key| key.starts_with("owner-repair-report"))
+                .count(),
+            MAX_REPAIR_REPORTS
         );
     }
     #[test]

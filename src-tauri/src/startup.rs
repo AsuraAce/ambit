@@ -12,6 +12,8 @@ use std::{
 const MAX_LAUNCH_IDS: usize = 8;
 /// Ordinary startup events kept per launch. A cold owner switch logs several hundred (#552).
 pub(crate) const MAX_EVENTS_PER_LAUNCH: usize = 2048;
+/// Repair reports kept per launch: the startup repair and later owner switches, in arrival order.
+pub(crate) const MAX_REPAIR_REPORTS: usize = 8;
 const MAX_DIAGNOSTIC_TIME_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_REPAIR_COUNT: u64 = 1_000_000_000;
 
@@ -373,8 +375,16 @@ impl StartupState {
                 StartupPhase::OwnerRepairStage => {
                     format!("{:?}:{:?}", event.phase, event.repair_stage)
                 }
-                StartupPhase::OwnerRepairDecision | StartupPhase::OwnerRepairReport => {
-                    format!("{:?}", event.phase)
+                StartupPhase::OwnerRepairDecision => format!("{:?}", event.phase),
+                StartupPhase::OwnerRepairReport => {
+                    let taken = repair_events
+                        .iter()
+                        .filter(|key| key.starts_with("OwnerRepairReport"))
+                        .count();
+                    if taken >= MAX_REPAIR_REPORTS {
+                        return Err("Startup repair report limit reached".to_string());
+                    }
+                    format!("OwnerRepairReport:{taken}")
                 }
                 _ => unreachable!("repair phase was checked"),
             };
@@ -844,8 +854,12 @@ mod tests {
         let event: StartupDiagnosticEvent = serde_json::from_value(overflow).unwrap();
         assert!(validate_diagnostic(&event).is_err());
 
+        // Each repair (the startup one, then owner switches after ready) reports once, in arrival
+        // order; the ninth report of a launch is refused so a long session cannot grow the journal.
         let state = StartupState::new(Instant::now());
-        state.record_diagnostic(&event_from(&payload)).unwrap();
+        for _ in 0..super::MAX_REPAIR_REPORTS {
+            state.record_diagnostic(&event_from(&payload)).unwrap();
+        }
         let mut failed = payload;
         failed["status"] = serde_json::json!("failed");
         failed["repairReport"]["status"] = serde_json::json!("failed");

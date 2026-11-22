@@ -124,6 +124,52 @@ describe('startup repair aggregate evidence', () => {
         expect(send).toHaveBeenCalledTimes(2);
     });
 
+    it('sends one report, and no stage events, for a repair after ready', async () => {
+        const send = vi.fn();
+        const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const bridge = createStartupDiagnosticBridge({
+            now: () => 0,
+            send,
+            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }),
+        });
+        await bridge.connect();
+        expect(bridge.claimRuntimeRepair()).toBeUndefined();
+        bridge.mark('ready');
+        send.mockClear();
+        expect(bridge.claimRepair()).toBeUndefined();
+
+        const switchRepair = bridge.claimRuntimeRepair()!;
+        switchRepair.stage('identity');
+        switchRepair.finish('completed');
+        const cancelledRepair = bridge.claimRuntimeRepair()!;
+        cancelledRepair.finish('cancelled');
+
+        expect(send.mock.calls.map(([event]) => [event.phase, event.status, event.launchId])).toEqual([
+            ['owner-repair-report', 'completed', 'ab'],
+            ['owner-repair-report', 'cancelled', 'ab'],
+        ]);
+        expect(send.mock.calls[0][0].repairReport.status).toBe('completed');
+        expect(info).toHaveBeenCalledWith('[InvokeAI] Owner source repair report', expect.objectContaining({ status: 'completed' }));
+        info.mockRestore();
+    });
+
+    it('logs once when the journal refuses a later repair report', async () => {
+        const send = vi.fn(async () => ({ status: 'error', error: 'Startup repair report limit reached' }));
+        const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const bridge = createStartupDiagnosticBridge({
+            now: () => 0,
+            send,
+            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }),
+        });
+        await bridge.connect();
+        bridge.mark('ready');
+        bridge.claimRuntimeRepair()!.finish('completed');
+        bridge.claimRuntimeRepair()!.finish('completed');
+        await vi.waitFor(() => expect(info.mock.calls.filter(([line]) => String(line).includes('was not recorded'))).toHaveLength(1));
+        expect(send).toHaveBeenCalledTimes(3);
+        info.mockRestore();
+    });
+
     it('does not claim runtime repair after startup failure, or fabricate timing after clock failure', () => {
         const bridge = createStartupDiagnosticBridge({
             now: () => 0,

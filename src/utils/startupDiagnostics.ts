@@ -133,6 +133,7 @@ export function createStartupDiagnosticBridge({
     const repairEvents = new Map<string, PendingDiagnosticEvent>();
     const deliveredRepairEvents = new Set<string>();
     let repairClaimed = false;
+    let runtimeReportDropLogged = false;
 
     const deliverRepair = (key: string, event: PendingDiagnosticEvent) => {
         if (!launchId || deliveredRepairEvents.has(key)) return;
@@ -262,6 +263,41 @@ export function createStartupDiagnosticBridge({
                         ...makeEvent('owner-repair-report', repairReport.status, repairReport.durationMs, null),
                         repairReport,
                     }),
+            });
+        },
+        /**
+         * A repair after `ready` (an owner switch) sends one report and no stage events; the native
+         * journal keeps at most 8 reports a launch and refuses the rest, which logs one console line.
+         */
+        claimRuntimeRepair() {
+            if (!marks.has('ready') || startupFailureObserved) return undefined;
+            return createStartupRepairCollector({
+                now,
+                stage: () => undefined,
+                report: (repairReport) => {
+                    console.info('[InvokeAI] Owner source repair report', repairReport);
+                    if (!launchId) return;
+                    const event = {
+                        ...makeEvent('owner-repair-report', repairReport.status, repairReport.durationMs, null),
+                        repairReport,
+                        launchId,
+                    };
+                    try {
+                        void Promise.resolve(send(event))
+                            .then((result) => {
+                                const refused =
+                                    typeof result === 'object' && result !== null && 'status' in result && result.status === 'error';
+                                if (!refused || runtimeReportDropLogged) return;
+                                runtimeReportDropLogged = true;
+                                console.info(
+                                    '[Startup] An owner source repair report was not recorded: the startup journal keeps at most 8 per launch.'
+                                );
+                            })
+                            .catch(() => undefined);
+                    } catch {
+                        /* Best effort; never retry a failed transport. */
+                    }
+                },
             });
         },
         subscribe(listener: (resolvedLaunchId: string) => void) {
@@ -413,7 +449,8 @@ export function createStartupDiagnostics(send: DiagnosticSink, now: () => number
 export const startupDiagnostics = createStartupDiagnosticBridge({
     send: (event) => {
         if (!isTauriRuntime()) return;
-        void commands.recordStartupDiagnostic(event).catch(() => undefined);
+        // The result is returned so a runtime repair report can tell when the journal refused it.
+        return commands.recordStartupDiagnostic(event).catch(() => undefined);
     },
     getLaunch: async () => {
         if (!isTauriRuntime()) throw new Error('Native startup diagnostics are unavailable');
