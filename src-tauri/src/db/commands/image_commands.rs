@@ -1355,6 +1355,14 @@ fn read_scope_cache_status(
 /// the last built snapshot. Every caller that gets a selective plan must start from that
 /// snapshot: the owner-scope gate restores it, and the claim plans with the same session,
 /// so the two always agree.
+/// A full rebuild of a user's view costs minutes, so the log says why one was planned (#530).
+/// The scope key holds local paths and owner ids, so it stays out of the log; the startup
+/// journal's timing shows which switch it was.
+fn full_scope_cache_repair(reason: &str) -> Result<InvokeScopeCacheRepairPlan, String> {
+    log::info!("[OwnerCache] the view needs a full rebuild: {reason}");
+    Ok(InvokeScopeCacheRepairPlan::default())
+}
+
 fn read_scope_cache_repair_plan(
     conn: &Connection,
     scope_key: &str,
@@ -1386,8 +1394,17 @@ fn read_scope_cache_repair_plan(
         }
         _ => false,
     };
-    if !plans_like_dirty || status.built_generation.is_none() {
-        return Ok(InvokeScopeCacheRepairPlan::default());
+    if status.built_generation.is_none() {
+        return full_scope_cache_repair("it was never built");
+    }
+    if !plans_like_dirty {
+        return full_scope_cache_repair(match status.state {
+            FacetScopeCacheState::Building if status.facet_count == 0 => {
+                "a repair claimed it before it had a snapshot"
+            }
+            FacetScopeCacheState::Building => "this session's own repair still claims it",
+            _ => "it has no usable snapshot",
+        });
     }
 
     let mut statement = conn
@@ -1406,8 +1423,11 @@ fn read_scope_cache_repair_plan(
         .collect::<Result<_, _>>()
         .map_err(|error| error.to_string())?;
 
-    if rows.is_empty() || rows.iter().any(|(domain, _, _)| domain == "full") {
-        return Ok(InvokeScopeCacheRepairPlan::default());
+    if rows.is_empty() {
+        return full_scope_cache_repair("it is dirty with no recorded changes");
+    }
+    if rows.iter().any(|(domain, _, _)| domain == "full") {
+        return full_scope_cache_repair("a recorded change needs a full rebuild");
     }
 
     let mut resources = FacetResourceTouches::default();
@@ -1427,9 +1447,9 @@ fn read_scope_cache_repair_plan(
                 "control_nets" => resources.control_nets.push(resource_name),
                 "ip_adapters" => resources.ip_adapters.push(resource_name),
                 "tools" => resources.tools.push(resource_name),
-                _ => return Ok(InvokeScopeCacheRepairPlan::default()),
+                _ => return full_scope_cache_repair("a change names an unknown filter"),
             },
-            _ => return Ok(InvokeScopeCacheRepairPlan::default()),
+            _ => return full_scope_cache_repair("a change has no filter or name"),
         }
     }
 
