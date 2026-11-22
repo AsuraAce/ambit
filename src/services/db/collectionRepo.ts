@@ -1431,8 +1431,9 @@ export const getSmartCollectionSummaries = async (
             return { id: c.id, where, params };
         });
 
-        for (const chunk of chunkSmartSummaryQueries(queries)) {
-            throwIfInvokeAborted(options.signal);
+        // Nothing is recorded until a chunk's read has succeeded, so a chunk that fails leaves no
+        // partial result behind.
+        const readChunk = async (chunk: SmartSummaryQuery[]) => {
             const { sql, params } = buildSmartSummaryChunkQuery(chunk, includeThumbnails);
             const rows = await timeDbCall('smartCollectionSummaries.onePass', `${chunk.length} collections`, () =>
                 selectReadonly<SmartSummaryRow[]>(sql, params)
@@ -1473,6 +1474,28 @@ export const getSmartCollectionSummaries = async (
                     });
                 }
             });
+        };
+
+        for (const chunk of chunkSmartSummaryQueries(queries)) {
+            throwIfInvokeAborted(options.signal);
+            try {
+                await readChunk(chunk);
+            } catch (e) {
+                if (options.signal?.aborted) throw e;
+                console.error('[DB] Failed smart collection summaries', e);
+                // One collection's failure (a filter that cannot run) must not blank the others:
+                // read the chunk's collections one by one, as before the one-pass read.
+                if (chunk.length === 1) continue;
+                for (const single of chunk) {
+                    throwIfInvokeAborted(options.signal);
+                    try {
+                        await readChunk([single]);
+                    } catch (singleError) {
+                        if (options.signal?.aborted) throw singleError;
+                        console.error('[DB] Failed smart collection summary', single.id, singleError);
+                    }
+                }
+            }
         }
 
         if (!includeThumbnails) return summaries;

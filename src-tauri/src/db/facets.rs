@@ -200,8 +200,10 @@ impl FacetSource {
 }
 
 /// Reads the visible rows of `scoped_images` once, with the columns the facet builders need.
-/// `metadata_model` is filled only where the first two name columns are empty, which is
-/// the only place the builders read it.
+/// Every builder filters `is_deleted = 0`, so deleted rows are left out.
+/// `metadata_model` is filled only for the rows the checkpoint thumbnail statements read
+/// (`cp_thumbs`, `cp_safe_thumbs`) and only where the first two name columns are empty, so a
+/// malformed `metadata_json` on any other row cannot fail the build, as before.
 fn create_facet_source(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(
         "DROP TABLE IF EXISTS temp.facet_source;
@@ -209,9 +211,11 @@ fn create_facet_source(conn: &rusqlite::Connection) -> Result<(), String> {
          SELECT id, timestamp, is_pinned, is_deleted, invoke_scope_hidden, is_invoke_asset_gen,
                 privacy_hidden, thumbnail_path, model_hash, resolved_model_name, model_name, tool,
                 CASE WHEN NULLIF(resolved_model_name, '') IS NULL AND model_name IS NULL
+                          AND is_deleted = 0 AND IFNULL(is_invoke_asset_gen, 0) = 0
+                          AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
                      THEN json_extract(metadata_json, '$.model') END AS metadata_model
          FROM scoped_images
-         WHERE invoke_scope_hidden = 0;
+         WHERE invoke_scope_hidden = 0 AND is_deleted = 0;
          CREATE INDEX temp.facet_source_id ON facet_source(id);",
     )
     .map_err(|error| format!("Failed to extract the facet source rows: {}", error))
@@ -3247,6 +3251,51 @@ mod tests {
             .find(|line| line.starts_with("'checkpoints'|'SharedModel'"))
             .expect("SharedModel is listed");
         assert!(shared.contains("|1|'t/a-2.webp'"), "{shared}");
+    }
+
+    // Only the rows the checkpoint thumbnail statements read have their `metadata_json` parsed
+    // (the schema cannot store malformed JSON, so the domain is checked by value): an asset, or
+    // a row with no thumbnail, keeps `metadata_model` empty, as the old statements never read
+    // it for them. A deleted row is not extracted at all: every builder skips it (#565).
+    #[test]
+    fn extraction_reads_the_metadata_model_only_for_the_thumbnail_rows() {
+        let conn = create_two_owner_conn("owner", Some("owner-a"));
+        conn.execute_batch(
+            "INSERT INTO images (
+                id, path, timestamp, is_deleted, invoke_scope_hidden, invoke_image_category,
+                thumbnail_path, resolved_model_name, model_name, metadata_json,
+                invoke_source_id, invoke_owner_id
+             ) VALUES
+             ('m-thumb','m1.png',10,0,0,'general','t/m1.webp',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-asset','m2.png',11,0,0,'user','t/m2.webp',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-no-thumb','m3.png',12,0,0,'general',NULL,NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-empty-thumb','m4.png',13,0,0,'general','',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-deleted','m6.png',15,1,0,'general','t/m6.webp',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-named','m5.png',14,0,0,'general','t/m5.webp',NULL,'Named','{\"model\":\"FromJson\"}','invoke.db','owner-a');",
+        )
+        .unwrap();
+        create_facet_source(&conn).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT id, metadata_model FROM temp.facet_source WHERE id LIKE 'm-%' ORDER BY id",
+            )
+            .unwrap();
+        let rows: Vec<(String, Option<String>)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let expected = |model: Option<&str>| model.map(str::to_string);
+        assert_eq!(
+            rows,
+            vec![
+                ("m-asset".to_string(), expected(None)),
+                ("m-empty-thumb".to_string(), expected(None)),
+                ("m-named".to_string(), expected(None)),
+                ("m-no-thumb".to_string(), expected(None)),
+                ("m-thumb".to_string(), expected(Some("FromJson"))),
+            ]
+        );
     }
 
     // The builders read the extraction, not the library: with `scoped_images` emptied after

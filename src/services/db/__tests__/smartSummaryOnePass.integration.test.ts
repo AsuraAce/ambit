@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     getDb: vi.fn(),
     execute: vi.fn(),
     selects: [] as string[],
+    failWhenParam: null as string | null,
 }));
 
 vi.mock('../../../bindings', () => ({ commands: {} }));
@@ -54,6 +55,7 @@ describe('smart collection summaries in one pass over SQLite', () => {
         vi.resetModules();
         mocks.execute.mockReset();
         mocks.selects.length = 0;
+        mocks.failWhenParam = null;
         sqlite = new DatabaseSync(':memory:');
         sqlite.exec(`
             CREATE TABLE images (
@@ -90,6 +92,7 @@ describe('smart collection summaries in one pass over SQLite', () => {
         mocks.getDb.mockResolvedValue({
             select: async (sql: string, params: SQLInputValue[] = []) => {
                 mocks.selects.push(sql);
+                if (mocks.failWhenParam && params.includes(mocks.failWhenParam)) throw new Error('this filter cannot run');
                 return sqlite.prepare(sql).all(...params);
             },
             execute: mocks.execute,
@@ -248,8 +251,8 @@ describe('smart collection summaries in one pass over SQLite', () => {
         expect(mocks.selects).toHaveLength(1);
     });
 
-    // SQLite binds at most 32,766 variables per statement, and each manual exclusion binds one.
-    it('puts a collection with thousands of manual exclusions in its own query', async () => {
+    // A chunk holds at most 30,000 bound parameters, and each manual exclusion binds one.
+    it('puts a collection whose exclusions fill the parameter budget in its own query', async () => {
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
         const exclusions = Array.from({ length: 31_000 }, (_, index) => `gone-${index}`);
         exclusions.push('i1');
@@ -263,5 +266,46 @@ describe('smart collection summaries in one pass over SQLite', () => {
         expect(summaries['big'].count).toBe(expectedSummary(big).count);
         expect(summaries['big'].count).toBe(summaries['small-before'].count - 1);
         expect(summaries['small-after']).toEqual(expectedSummary(smallAfter));
+    });
+
+    // SQLite binds at most 32,766 variables per statement: a collection beyond that cannot run at
+    // all, and must lose only itself.
+    it('loses only the collection whose manual exclusions exceed the variable limit', async () => {
+        const { getSmartCollectionSummaries } = await import('../collectionRepo');
+        const exclusions = Array.from({ length: 33_000 }, (_, index) => `gone-${index}`);
+        const before = makeSmart('small-before', { searchQuery: 'portrait' });
+        const over = makeSmart('over-the-limit', { searchQuery: 'portrait' }, { manualExclusions: exclusions });
+        const after = makeSmart('small-after', { searchQuery: 'cat' });
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const summaries = await getSmartCollectionSummaries([before, over, after]);
+
+        expect(Object.keys(summaries).sort()).toEqual(['small-after', 'small-before']);
+        expect(summaries['small-before']).toEqual(expectedSummary(before));
+        expect(summaries['small-after']).toEqual(expectedSummary(after));
+    });
+
+    // One filter that cannot run must not blank the collections read with it (the read was one
+    // query per collection before the one-pass read).
+    it('keeps the counts and covers of the other collections when one collection fails', async () => {
+        const { getSmartCollectionSummaries } = await import('../collectionRepo');
+        const first = makeSmart('first', { searchQuery: 'cat' });
+        const broken = makeSmart('broken', { searchQuery: 'brokenterm' });
+        const last = makeSmart('last', { searchQuery: 'portrait' });
+        mocks.failWhenParam = '%brokenterm%';
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const summaries = await getSmartCollectionSummaries([first, broken, last]);
+
+        expect(Object.keys(summaries).sort()).toEqual(['first', 'last']);
+        expect(summaries['first']).toEqual(expectedSummary(first));
+        expect(summaries['last']).toEqual(expectedSummary(last));
+        // The chunk, then each collection alone.
+        expect(mocks.selects).toHaveLength(4);
+        // The covers of the collections that succeeded are cached; the failed one writes nothing.
+        const cached = mocks.execute.mock.calls
+            .filter(([sql]) => String(sql).includes('dynamic_thumbnail_path'))
+            .map(([, params]) => (params as unknown[]).at(-1));
+        expect(cached.sort()).toEqual(['first', 'last']);
     });
 });
