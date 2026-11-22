@@ -32,7 +32,13 @@ interface ReconcileInvokeSourceFactsOptions {
     diagnostics?: StartupRepairCollector;
 }
 
+// Fact batches carry metadata blobs and each one is a write transaction, so they stay small.
 const BATCH_SIZE = 500;
+// The identity pass reads only names and owners of every source row, and the legacy check only
+// paths, so they run in large steps: one step is still well under a second, and the switch panel
+// reports progress after each.
+const IDENTITY_BATCH_SIZE = 10_000;
+const VERIFY_BATCH_SIZE = 5_000;
 
 const pathKey = (path: string): string => getInvokePathIdentity(path);
 
@@ -136,7 +142,7 @@ export const reconcileInvokeSourceFacts = async ({
             FROM images i
             ${useRowId ? 'WHERE i.rowid > ?' : ''}
             ORDER BY ${useRowId ? 'i.rowid ASC' : fallbackOrderBy}
-            LIMIT ${BATCH_SIZE}${useRowId ? '' : ` OFFSET ${identityOffset}`}
+            LIMIT ${IDENTITY_BATCH_SIZE}${useRowId ? '' : ` OFFSET ${identityOffset}`}
         `,
             useRowId ? [identityCursor] : []
         );
@@ -169,7 +175,7 @@ export const reconcileInvokeSourceFacts = async ({
 
         identityProcessed += rows.length;
         onProgress(Math.min(identityProcessed, identityTotal), identityTotal, 'Mapping InvokeAI image locations...');
-        if (rows.length < BATCH_SIZE) break;
+        if (rows.length < IDENTITY_BATCH_SIZE) break;
         if (useRowId) {
             const nextCursor = rows.at(-1)?.source_rowid;
             if (typeof nextCursor !== 'number') {
@@ -216,15 +222,15 @@ export const reconcileInvokeSourceFacts = async ({
     if (pathsToVerify.length > 0) {
         onProgress(0, pathsToVerify.length, 'Checking legacy image locations...');
     }
-    for (let offset = 0; offset < pathsToVerify.length; offset += BATCH_SIZE) {
+    for (let offset = 0; offset < pathsToVerify.length; offset += VERIFY_BATCH_SIZE) {
         throwIfInvokeAborted(signal);
-        diagnostics?.count('pathsChecked', Math.min(BATCH_SIZE, pathsToVerify.length - offset));
+        diagnostics?.count('pathsChecked', Math.min(VERIFY_BATCH_SIZE, pathsToVerify.length - offset));
         const verifyDone = diagnostics?.start('legacy-paths');
-        const missingPaths = await unwrap(commands.verifyImagePaths(pathsToVerify.slice(offset, offset + BATCH_SIZE)));
+        const missingPaths = await unwrap(commands.verifyImagePaths(pathsToVerify.slice(offset, offset + VERIFY_BATCH_SIZE)));
         verifyDone?.();
         throwIfInvokeAborted(signal);
         missingPaths.forEach((path) => missingPathKeys.add(pathKey(path)));
-        onProgress(Math.min(offset + BATCH_SIZE, pathsToVerify.length), pathsToVerify.length, 'Checking legacy image locations...');
+        onProgress(Math.min(offset + VERIFY_BATCH_SIZE, pathsToVerify.length), pathsToVerify.length, 'Checking legacy image locations...');
     }
 
     diagnostics?.stage('inventory');

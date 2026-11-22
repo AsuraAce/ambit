@@ -204,6 +204,9 @@ describe('reconcileInvokeSourceFacts', () => {
         expect(reconcileInvokeOwnerInventory.mock.calls[0][0].images).toHaveLength(2);
     });
 
+    // The mock honours the LIMIT the query asks for, as SQLite does.
+    const limitOf = (sql: string): number => Number(/LIMIT (\d+)/.exec(sql)?.[1] ?? Number.POSITIVE_INFINITY);
+
     it('uses rowid keyset pagination across both source passes and reports truthful phases', async () => {
         const rows = Array.from({ length: 501 }, (_, index) => ({
             source_rowid: index + 1,
@@ -216,7 +219,7 @@ describe('reconcileInvokeSourceFacts', () => {
                 if (sql.includes('SELECT count(*)')) return [{ count: rows.length }];
                 if (sql.includes('FROM images i')) {
                     const cursor = Number(params.at(-1) ?? 0);
-                    return rows.filter((row) => row.source_rowid > cursor).slice(0, 500);
+                    return rows.filter((row) => row.source_rowid > cursor).slice(0, limitOf(sql));
                 }
                 return [];
             }),
@@ -231,16 +234,107 @@ describe('reconcileInvokeSourceFacts', () => {
         });
 
         const batchCalls = db.select.mock.calls.filter(([sql]) => sql.includes('ORDER BY i.rowid ASC'));
-        expect(batchCalls).toHaveLength(4);
-        expect(batchCalls.map(([, params]) => params)).toEqual([[0], [500], [0], [500]]);
+        expect(batchCalls).toHaveLength(3);
+        expect(batchCalls.map(([, params]) => params)).toEqual([[0], [0], [500]]);
         batchCalls.forEach(([sql]) => {
             expect(sql).toContain('i.rowid > ?');
             expect(sql).not.toContain('OFFSET');
         });
         expect(onProgress).toHaveBeenCalledWith(0, 0, 'Indexing InvokeAI image files...');
-        expect(onProgress).toHaveBeenCalledWith(500, 501, 'Mapping InvokeAI image locations...');
+        expect(onProgress).toHaveBeenCalledWith(501, 501, 'Mapping InvokeAI image locations...');
         expect(onProgress).toHaveBeenCalledWith(0, 501, 'Updating InvokeAI image details...');
         expect(onProgress).toHaveBeenCalledWith(501, 501, 'Updating InvokeAI image details...');
+    });
+
+    // #568: the identity pass read 156k rows in 313 calls of 500. It reads 10,000 per call and
+    // reports progress after each; the detail pass keeps 500-row write batches.
+    it('reads identities in 10,000-row batches, reports progress after each and keeps 500-row fact batches', async () => {
+        const rows = Array.from({ length: 25_001 }, (_, index) => ({
+            source_rowid: index + 1,
+            image_name: `image-${index + 1}.png`,
+            user_id: index < 700 ? 'owner-a' : 'owner-b',
+            metadata_blob: null,
+        }));
+        const db = {
+            select: vi.fn(async (sql: string, params: unknown[] = []) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) return [{ source_rowid: 1 }];
+                if (sql.includes('SELECT count(*)')) {
+                    return [{ count: sql.includes('user_id = ?') ? 700 : rows.length }];
+                }
+                if (sql.includes('FROM images i')) {
+                    const selected = sql.includes('user_id = ?') ? rows.filter((row) => row.user_id === 'owner-a') : rows;
+                    const cursor = Number(params.at(-1) ?? 0);
+                    return selected.filter((row) => row.source_rowid > cursor).slice(0, limitOf(sql));
+                }
+                return [];
+            }),
+        };
+        const onProgress = vi.fn();
+
+        await reconcileInvokeSourceFactsImpl({
+            db: db as never,
+            columns: new Set(['user_id']),
+            pathResolver: createInvokeImagePathResolver(root, async () => rows.map((row) => `outputs/images/${row.image_name}`)),
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: `${root}/databases/invokeai.db`,
+                imagesRoot: root,
+            },
+            onProgress,
+        });
+
+        const batches = db.select.mock.calls.filter(([sql]) => sql.includes('ORDER BY i.rowid ASC'));
+        const identityBatches = batches.filter(([sql]) => !sql.includes('metadata_blob'));
+        const factBatches = batches.filter(([sql]) => sql.includes('metadata_blob'));
+        expect(identityBatches.map(([, params]) => params)).toEqual([[0], [10_000], [20_000]]);
+        expect(identityBatches.every(([sql]) => sql.includes('LIMIT 10000'))).toBe(true);
+        expect(factBatches.map(([, params]) => params)).toEqual([
+            ['owner-a', 0],
+            ['owner-a', 500],
+        ]);
+        expect(factBatches.every(([sql]) => sql.includes('LIMIT 500'))).toBe(true);
+        const mapping = onProgress.mock.calls.filter(([, , message]) => message === 'Mapping InvokeAI image locations...');
+        expect(mapping.map(([current]) => current)).toEqual([10_000, 20_000, 25_001]);
+        expect(reconcileInvokeOwnerInventory.mock.calls[0][0].images).toHaveLength(25_001);
+    });
+
+    // Cancel must stay as quick as with small batches: it is checked between identity batches,
+    // and nothing is written once it fires.
+    it('stops reading identities and writes nothing when cancelled between 10,000-row batches', async () => {
+        const rows = Array.from({ length: 25_001 }, (_, index) => ({
+            source_rowid: index + 1,
+            image_name: `image-${index + 1}.png`,
+        }));
+        const controller = new AbortController();
+        const db = {
+            select: vi.fn(async (sql: string, params: unknown[] = []) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) return [{ source_rowid: 1 }];
+                if (sql.includes('SELECT count(*)')) return [{ count: rows.length }];
+                if (sql.includes('FROM images i')) {
+                    const cursor = Number(params.at(-1) ?? 0);
+                    const batch = rows.filter((row) => row.source_rowid > cursor).slice(0, limitOf(sql));
+                    if (cursor === 10_000) controller.abort();
+                    return batch;
+                }
+                return [];
+            }),
+        };
+
+        await expect(
+            reconcileInvokeSourceFacts({
+                db: db as never,
+                columns: new Set(),
+                pathResolver: createInvokeImagePathResolver(root, async () => rows.map((row) => `outputs/images/${row.image_name}`)),
+                onProgress: vi.fn(),
+                signal: controller.signal,
+            })
+        ).rejects.toThrow('Aborted');
+
+        const identityReads = db.select.mock.calls.filter(([sql]) => sql.includes('ORDER BY i.rowid ASC'));
+        expect(identityReads.map(([, params]) => params)).toEqual([[0], [10_000]]);
+        expect(reconcileInvokeOwnerInventory).not.toHaveBeenCalled();
+        expect(reconcileInvokeImageSources).not.toHaveBeenCalled();
     });
 
     it('uses ordered offset pagination only when the source table has no rowid', async () => {
