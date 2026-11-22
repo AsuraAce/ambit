@@ -964,6 +964,58 @@ fn reconcile_invoke_image_sources_inner(
     Ok(result)
 }
 
+/// How the owner inventory finds a source's rows. Windows compares the spelled path folded.
+fn invoke_source_match_sql() -> &'static str {
+    if cfg!(windows) {
+        "LOWER(RTRIM(REPLACE(invoke_source_id, '\', '/'), '/')) = LOWER(?1)"
+    } else {
+        "invoke_source_id = ?1"
+    }
+}
+
+/// The reads and the write of one table's owner inventory (#568). Each read is answered from an
+/// index, so no row's wide columns are read; the write names the rows that change by rowid.
+///
+/// - `current`: every row of the source with its stored owner, from
+///   `idx_images_invoke_source_owner` (`idx_removed_images_invoke_source_owner` for removed rows).
+/// - `target`: the inventory's owner for each row it names, found through the unique `id` index.
+/// - `update`: rewrites only the rows whose stored owner differs from the target. A row of the
+///   source that the inventory does not name gets `NULL`, as before.
+struct OwnerInventorySql {
+    current: String,
+    target: String,
+    update: String,
+}
+
+fn owner_inventory_sql(table: &str) -> OwnerInventorySql {
+    OwnerInventorySql {
+        current: format!(
+            "INSERT INTO temp_invoke_owner_current (rid, owner_id)
+             SELECT rowid, invoke_owner_id FROM {table} WHERE {}",
+            invoke_source_match_sql()
+        ),
+        target: format!(
+            "INSERT INTO temp_invoke_owner_target (rid, owner_id)
+             SELECT image.rowid, inventory.owner_id
+             FROM temp_invoke_owner_inventory inventory
+             JOIN {table} image ON image.id = inventory.id"
+        ),
+        update: format!(
+            "UPDATE {table}
+             SET invoke_owner_id = (
+                 SELECT target.owner_id FROM temp_invoke_owner_target target
+                 WHERE target.rid = {table}.rowid
+             )
+             WHERE rowid IN (
+                 SELECT current.rid
+                 FROM temp_invoke_owner_current current
+                 LEFT JOIN temp_invoke_owner_target target ON target.rid = current.rid
+                 WHERE current.owner_id IS NOT target.owner_id
+             )"
+        ),
+    }
+}
+
 fn reconcile_invoke_owner_inventory_inner(
     conn: &rusqlite::Connection,
     input: &InvokeImageOwnerInventoryInput,
@@ -973,77 +1025,85 @@ fn reconcile_invoke_owner_inventory_inner(
         return Err("InvokeAI database path is required".to_string());
     }
 
-    let tx = conn
-        .unchecked_transaction()
+    // The inventory goes into a temp table first. That touches no table of the library, so it
+    // takes no write lock and holds none while the 150k-row insert runs.
+    {
+        let fill = conn
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        fill.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_inventory (
+                 id TEXT PRIMARY KEY,
+                 owner_id TEXT
+             );
+             DELETE FROM temp_invoke_owner_inventory;",
+        )
+        .map_err(|error| error.to_string())?;
+        {
+            let mut insert = fill
+                .prepare_cached(
+                    "INSERT INTO temp_invoke_owner_inventory (id, owner_id)
+                     VALUES (?1, ?2)
+                     ON CONFLICT(id) DO UPDATE SET
+                         owner_id = CASE
+                             WHEN temp_invoke_owner_inventory.owner_id IS excluded.owner_id
+                             THEN excluded.owner_id
+                             ELSE NULL
+                         END",
+                )
+                .map_err(|error| error.to_string())?;
+            for item in &input.images {
+                let id = item.id.trim();
+                if id.is_empty() {
+                    return Err("InvokeAI owner inventory paths cannot be empty".to_string());
+                }
+                insert
+                    .execute(params![
+                        id,
+                        item.invoke_owner_id
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                    ])
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        fill.commit().map_err(|error| error.to_string())?;
+    }
+
+    // IMMEDIATE: the reads below come before the writes, so a deferred transaction could fail at
+    // its first write when another connection committed in between, without waiting for the lock.
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
     let _hold = crate::db::write_hold::WriteHold::begin("invoke.reconcile_owner_inventory");
     tx.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_inventory (
-             id TEXT PRIMARY KEY,
+        "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_current (
+             rid INTEGER PRIMARY KEY,
              owner_id TEXT
          );
-         DELETE FROM temp_invoke_owner_inventory;",
+         CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_target (
+             rid INTEGER PRIMARY KEY,
+             owner_id TEXT
+         );",
     )
     .map_err(|error| error.to_string())?;
 
-    {
-        let mut insert = tx
-            .prepare_cached(
-                "INSERT INTO temp_invoke_owner_inventory (id, owner_id)
-                 VALUES (?1, ?2)
-                 ON CONFLICT(id) DO UPDATE SET
-                     owner_id = CASE
-                         WHEN temp_invoke_owner_inventory.owner_id IS excluded.owner_id
-                         THEN excluded.owner_id
-                         ELSE NULL
-                     END",
-            )
-            .map_err(|error| error.to_string())?;
-        for item in &input.images {
-            let id = item.id.trim();
-            if id.is_empty() {
-                return Err("InvokeAI owner inventory paths cannot be empty".to_string());
-            }
-            insert
-                .execute(params![
-                    id,
-                    item.invoke_owner_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                ])
-                .map_err(|error| error.to_string())?;
-        }
-    }
-
-    let source_match = if cfg!(windows) {
-        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
-    } else {
-        "invoke_source_id = ?1"
-    };
     let mut result = InvokeImageSourceReconcileResult::default();
     for (table, count) in [
         ("images", &mut result.active_updated),
         ("removed_images", &mut result.removed_updated),
     ] {
+        let sql = owner_inventory_sql(table);
+        tx.execute_batch(
+            "DELETE FROM temp_invoke_owner_current; DELETE FROM temp_invoke_owner_target;",
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(&sql.current, [&db_path])
+            .map_err(|error| error.to_string())?;
+        tx.execute(&sql.target, [])
+            .map_err(|error| error.to_string())?;
         *count = tx
-            .execute(
-                &format!(
-                    "UPDATE {table}
-                     SET invoke_owner_id = (
-                         SELECT inventory.owner_id
-                         FROM temp_invoke_owner_inventory inventory
-                         WHERE inventory.id = {table}.id
-                     )
-                     WHERE {source_match}
-                       AND invoke_owner_id IS NOT (
-                           SELECT inventory.owner_id
-                           FROM temp_invoke_owner_inventory inventory
-                           WHERE inventory.id = {table}.id
-                       )"
-                ),
-                [&db_path],
-            )
+            .execute(&sql.update, [])
             .map_err(|error| error.to_string())?;
     }
 
@@ -2622,12 +2682,20 @@ pub async fn reconcile_invoke_owner_inventory(
     input: InvokeImageOwnerInventoryInput,
 ) -> Result<InvokeImageSourceReconcileResult, String> {
     run_blocking(app, move |conn| {
-        // Logs a long wait: an owner switch's source repair can queue here behind a facet build (#533).
-        let _coordinator =
-            crate::db::facets::lock_facet_builds_unless_stopped("owner inventory", None)?;
-        reconcile_invoke_owner_inventory_inner(conn, &input)
+        reconcile_invoke_owner_inventory_after_facet_builds(conn, &input)
     })
     .await
+}
+
+/// Waits for a running facet build, then reconciles. Logs a long wait: an owner switch's source
+/// repair can queue here behind a facet build (#533).
+fn reconcile_invoke_owner_inventory_after_facet_builds(
+    conn: &rusqlite::Connection,
+    input: &InvokeImageOwnerInventoryInput,
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    let _coordinator =
+        crate::db::facets::lock_facet_builds_unless_stopped("owner inventory", None)?;
+    reconcile_invoke_owner_inventory_inner(conn, input)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -4372,6 +4440,275 @@ mod tests {
         )
         .expect("repeat inventory");
         assert_eq!(repeated, super::InvokeImageSourceReconcileResult::default());
+    }
+
+    /// The inventory update as it ran before #568, kept as the oracle for the index-driven one.
+    fn former_owner_inventory_update(
+        conn: &Connection,
+        input: &super::InvokeImageOwnerInventoryInput,
+    ) -> super::InvokeImageSourceReconcileResult {
+        let db_path = super::normalize_invoke_root(&input.db_path);
+        conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_inventory (
+                 id TEXT PRIMARY KEY,
+                 owner_id TEXT
+             );
+             DELETE FROM temp_invoke_owner_inventory;",
+        )
+        .unwrap();
+        for item in &input.images {
+            conn.execute(
+                "INSERT INTO temp_invoke_owner_inventory (id, owner_id)
+                 VALUES (?1, ?2)
+                 ON CONFLICT(id) DO UPDATE SET
+                     owner_id = CASE
+                         WHEN temp_invoke_owner_inventory.owner_id IS excluded.owner_id
+                         THEN excluded.owner_id
+                         ELSE NULL
+                     END",
+                params![item.id.trim(), item.invoke_owner_id.as_deref()],
+            )
+            .unwrap();
+        }
+        let source_match = super::invoke_source_match_sql();
+        let mut result = super::InvokeImageSourceReconcileResult::default();
+        for (table, count) in [
+            ("images", &mut result.active_updated),
+            ("removed_images", &mut result.removed_updated),
+        ] {
+            *count = conn
+                .execute(
+                    &format!(
+                        "UPDATE {table}
+                         SET invoke_owner_id = (
+                             SELECT inventory.owner_id
+                             FROM temp_invoke_owner_inventory inventory
+                             WHERE inventory.id = {table}.id
+                         )
+                         WHERE {source_match}
+                           AND invoke_owner_id IS NOT (
+                               SELECT inventory.owner_id
+                               FROM temp_invoke_owner_inventory inventory
+                               WHERE inventory.id = {table}.id
+                           )"
+                    ),
+                    [&db_path],
+                )
+                .unwrap();
+        }
+        result
+    }
+
+    const INVENTORY_SOURCES: [Option<&str>; 6] = [
+        Some("C:/Invoke/databases/invokeai.db"),
+        Some("c:\\invoke\\databases\\INVOKEAI.db"),
+        Some("C:/Invoke/databases/invokeai.db/"),
+        Some("C:/Other/databases/invokeai.db"),
+        None,
+        Some("C:/Invoke/databases/invokeai.db"),
+    ];
+
+    /// Two owners, an owner-less row, rows of another source, rows of Windows spellings of this
+    /// source, active and removed rows; the inventory omits some rows, repeats some with another
+    /// owner (so they turn ambiguous) and names rows that do not exist.
+    fn seed_owner_inventory_fixture(conn: &Connection) -> super::InvokeImageOwnerInventoryInput {
+        let owners = [Some("a"), Some("b"), None, Some("c")];
+        let mut images = Vec::new();
+        for i in 0..240usize {
+            let source = INVENTORY_SOURCES[i % INVENTORY_SOURCES.len()];
+            let owner = owners[(i / 3) % owners.len()];
+            let (table, id) = if i % 8 == 7 {
+                ("removed_images", format!("removed-{i}"))
+            } else {
+                ("images", format!("image-{i}"))
+            };
+            let columns = if table == "images" {
+                "(id, path, timestamp, invoke_source_id, invoke_owner_id)"
+            } else {
+                "(id, path, timestamp, removed_at, invoke_source_id, invoke_owner_id)"
+            };
+            let extra = if table == "images" { "" } else { "1, " };
+            conn.execute(
+                &format!("INSERT INTO {table} {columns} VALUES (?1, ?2, 1, {extra}?3, ?4)"),
+                params![
+                    id,
+                    format!("C:/Invoke/outputs/images/{id}.png"),
+                    source,
+                    owner
+                ],
+            )
+            .unwrap();
+            let named = match i % 5 {
+                0 => None,
+                1 | 2 => Some(Some("b")),
+                3 => Some(None),
+                _ => Some(Some("a")),
+            };
+            if let Some(inventory_owner) = named {
+                images.push(super::InvokeImageOwnerInventoryItem {
+                    id: id.clone(),
+                    invoke_owner_id: inventory_owner.map(str::to_string),
+                });
+            }
+            if i % 11 == 0 {
+                images.push(super::InvokeImageOwnerInventoryItem {
+                    id: format!("  {id} "),
+                    invoke_owner_id: Some("c".to_string()),
+                });
+            }
+        }
+        images.push(super::InvokeImageOwnerInventoryItem {
+            id: "never-imported".to_string(),
+            invoke_owner_id: Some("a".to_string()),
+        });
+        super::InvokeImageOwnerInventoryInput {
+            db_path: "C:\\Invoke\\databases\\invokeai.db\\".to_string(),
+            images,
+        }
+    }
+
+    fn owners_of(conn: &Connection, table: &str) -> Vec<(String, Option<String>)> {
+        conn.prepare(&format!(
+            "SELECT id, invoke_owner_id FROM {table} ORDER BY id"
+        ))
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    }
+
+    // #568: the inventory reads its rows from indexes and writes only the rows that change. It
+    // must leave every owner exactly as the former full-scan UPDATE did.
+    #[test]
+    fn owner_inventory_gives_the_same_owners_as_the_former_update() {
+        let before = Connection::open_in_memory().unwrap();
+        let after = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&before);
+        apply_all_migrations(&after);
+        let input = seed_owner_inventory_fixture(&before);
+        seed_owner_inventory_fixture(&after);
+
+        let expected = former_owner_inventory_update(&before, &input);
+        let actual = super::reconcile_invoke_owner_inventory_inner(&after, &input).unwrap();
+
+        assert_eq!(actual, expected);
+        assert!(actual.active_updated + actual.removed_updated > 0);
+        for table in ["images", "removed_images"] {
+            assert_eq!(
+                owners_of(&after, table),
+                owners_of(&before, table),
+                "{table}"
+            );
+        }
+        // Another source is never touched.
+        let other_source_owner: Option<String> = after
+            .query_row(
+                "SELECT invoke_owner_id FROM images WHERE id = 'image-3'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(other_source_owner, Some("b".to_string()));
+        let repeated = super::reconcile_invoke_owner_inventory_inner(&after, &input).unwrap();
+        assert_eq!(repeated, super::InvokeImageSourceReconcileResult::default());
+    }
+
+    // #568: the full SCAN of `images` read each row's late columns past about 40 KB of overflow
+    // pages. Every read must come from an index that already exists.
+    #[test]
+    fn owner_inventory_reads_use_the_existing_indexes() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        let input = seed_owner_inventory_fixture(&conn);
+        super::reconcile_invoke_owner_inventory_inner(&conn, &input).unwrap();
+
+        let plan = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> String {
+            conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap()
+                .query_map(params, |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+                .join(" | ")
+        };
+        for (table, source_index, id_index) in [
+            (
+                "images",
+                "idx_images_invoke_source_owner",
+                "sqlite_autoindex_images_1",
+            ),
+            (
+                "removed_images",
+                // The planner picks this covering index, which also holds the source and owner.
+                "idx_removed_images_maintenance_counts_v1",
+                "sqlite_autoindex_removed_images_1",
+            ),
+        ] {
+            let sql = super::owner_inventory_sql(table);
+            let current = plan(&sql.current, &[&"c:/invoke/databases/invokeai.db"]);
+            let target = plan(&sql.target, &[]);
+            let update = plan(&sql.update, &[]);
+            eprintln!("{table}\n  current: {current}\n  target: {target}\n  update: {update}");
+            assert!(
+                current.contains(&format!("{table} USING COVERING INDEX {source_index}")),
+                "{current}"
+            );
+            assert!(
+                target.contains(&format!("USING COVERING INDEX {id_index} (id=?)")),
+                "{target}"
+            );
+            assert!(
+                update.contains("USING INTEGER PRIMARY KEY (rowid=?)"),
+                "{update}"
+            );
+        }
+    }
+
+    // #568: the inventory waits for a facet build to finish, then for the write lock it still
+    // holds, and then succeeds; it neither fails with `SQLITE_BUSY` nor skips the wait.
+    #[test]
+    fn owner_inventory_waits_for_a_facet_build_holding_the_write_lock() {
+        let (_temporary_database, db_path) = migrated_file_database("inventory-facet-build");
+        let seed = Connection::open(&db_path).unwrap();
+        let input = seed_owner_inventory_fixture(&seed);
+        drop(seed);
+
+        let (locked_tx, locked_rx) = mpsc::sync_channel(0);
+        let builder_path = db_path.clone();
+        let builder = thread::spawn(move || {
+            // What a facet build does: owns the build lock, then writes in a transaction.
+            let _build = crate::db::facets::lock_facet_builds().expect("facet build lock");
+            let conn = Connection::open(&builder_path).unwrap();
+            crate::db::configure_connection(&conn).unwrap();
+            conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+            conn.execute("UPDATE images SET notes = 'facet' WHERE id = 'image-0'", [])
+                .unwrap();
+            locked_tx.send(()).unwrap();
+            thread::sleep(Duration::from_millis(400));
+            conn.execute_batch("COMMIT").unwrap();
+        });
+        locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        crate::db::configure_connection(&conn).unwrap();
+        let started = Instant::now();
+        let result = super::reconcile_invoke_owner_inventory_after_facet_builds(&conn, &input);
+        let waited = started.elapsed();
+        builder.join().unwrap();
+
+        let result = result.expect("the inventory must wait for the facet build, not fail");
+        assert!(
+            waited >= Duration::from_millis(300),
+            "waited only {waited:?}"
+        );
+        assert!(result.active_updated > 0);
+        let notes: Option<String> = conn
+            .query_row("SELECT notes FROM images WHERE id = 'image-0'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(notes.as_deref(), Some("facet"), "the facet write is kept");
     }
 
     #[test]
