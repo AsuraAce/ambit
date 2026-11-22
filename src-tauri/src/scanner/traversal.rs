@@ -161,7 +161,7 @@ fn collect_images_recursive_batched(root: &Path, current: &Path, files: &mut Vec
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FileCheck {
     ReparsePointsOnly,
-    #[cfg(test)]
+    #[cfg_attr(not(test), allow(dead_code))]
     Always,
 }
 
@@ -251,10 +251,7 @@ fn collect_images_recursive_inner(
                 && is_image_path(&p)
                 && !is_thumbnail_file(&p)
             {
-                #[cfg(test)]
                 let check = file_check == FileCheck::Always || is_reparse_point(&entry);
-                #[cfg(not(test))]
-                let check = is_reparse_point(&entry);
                 candidates.push((p, check));
                 if candidates.len() == IMAGE_CANDIDATE_BATCH_SIZE {
                     flush_image_candidates(root, root_canonical, &mut candidates, files);
