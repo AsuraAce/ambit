@@ -124,6 +124,13 @@ const makeCollection = (overrides: Partial<Collection> & Pick<Collection, 'id'>)
 
 const makeFilters = (overrides: Partial<FilterState> = {}): FilterState => createDefaultFilters(overrides);
 
+// A row of the one-pass smart summary query: `k` is the collection's index in the chunk.
+const passRow = (
+    k: number,
+    kind: 'count' | 'cover' | 'safe',
+    values: { n?: number; thumbnail_path?: string; privacy_hidden?: number } = {}
+) => ({ k, kind, n: values.n ?? null, thumbnail_path: values.thumbnail_path ?? null, privacy_hidden: values.privacy_hidden ?? null });
+
 const resetRepoMocks = () => {
     vi.clearAllMocks();
     vi.resetModules();
@@ -917,12 +924,8 @@ describe('collectionRepo thumbnail hydration', () => {
 
     it('writes raw dynamic thumbnail paths to the collection cache after smart summary hydration', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
-            if (query.includes('COUNT(*) FROM scoped_images')) return [{ id: 'smart-1', count: 2 }];
-            if (query.includes('SELECT thumbnail_path, privacy_hidden')) {
-                return [{ thumbnail_path: 'C:/thumbs/smart.webp', privacy_hidden: 0 }];
-            }
-            if (query.includes('AND privacy_hidden = 0')) {
-                return [];
+            if (query.includes('WITH hits AS MATERIALIZED')) {
+                return [passRow(0, 'count', { n: 2 }), passRow(0, 'cover', { thumbnail_path: 'C:/thumbs/smart.webp', privacy_hidden: 0 })];
             }
             return [];
         });
@@ -986,10 +989,12 @@ describe('collectionRepo thumbnail hydration', () => {
     it('writes no smart cover to the collection cache when the refresh was aborted while its query ran', async () => {
         const controller = new AbortController();
         dbMocks.select.mockImplementation(async (query: string) => {
-            if (query.includes('COUNT(*) FROM scoped_images')) return [{ id: 'smart-1', count: 2 }];
-            if (query.includes('SELECT thumbnail_path, privacy_hidden')) {
+            if (query.includes('WITH hits AS MATERIALIZED')) {
                 controller.abort();
-                return [{ thumbnail_path: 'C:/thumbs/old-scope.webp', privacy_hidden: 0 }];
+                return [
+                    passRow(0, 'count', { n: 2 }),
+                    passRow(0, 'cover', { thumbnail_path: 'C:/thumbs/old-scope.webp', privacy_hidden: 0 }),
+                ];
             }
             return [];
         });
@@ -1002,25 +1007,16 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(dbMocks.execute).not.toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), expect.anything());
     });
 
-    it('does not query a smart cover once the refresh has aborted', async () => {
+    it('does not run the smart pass once the refresh has aborted', async () => {
         const controller = new AbortController();
-        dbMocks.select.mockImplementation(async (query: string) => {
-            if (query.includes('COUNT(*) FROM scoped_images')) {
-                controller.abort();
-                return [{ id: 'smart-1', count: 2 }];
-            }
-            return [];
-        });
+        controller.abort();
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
 
         await expect(
             getSmartCollectionSummaries([makeCollection({ id: 'smart-1', filters: makeFilters() })], { signal: controller.signal })
         ).rejects.toThrow();
 
-        expect(dbMocks.select).not.toHaveBeenCalledWith(
-            expect.stringContaining('SELECT thumbnail_path, privacy_hidden'),
-            expect.anything()
-        );
+        expect(dbMocks.select).not.toHaveBeenCalled();
     });
 
     it('writes no smart count when the refresh aborted while the database was being opened', async () => {
@@ -1066,11 +1062,8 @@ describe('collectionRepo thumbnail hydration', () => {
 
     it('returns empty smart thumbnail data and skips cache writes for custom thumbnails', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
-            if (query.includes('COUNT(*) FROM scoped_images')) {
-                return [
-                    { id: 'smart-empty', count: 0 },
-                    { id: 'smart-custom', count: 0 },
-                ];
+            if (query.includes('WITH hits AS MATERIALIZED')) {
+                return [passRow(0, 'count', { n: 0 }), passRow(1, 'count', { n: 0 })];
             }
             return [];
         });
@@ -1308,7 +1301,7 @@ describe('collectionRepo membership helpers', () => {
     });
 
     it('returns count summaries without persisting before the caller accepts them', async () => {
-        dbMocks.select.mockResolvedValue([{ id: 'smart-1', count: 4 }]);
+        dbMocks.select.mockResolvedValue([passRow(0, 'count', { n: 4 })]);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
         await expect(
@@ -1380,10 +1373,11 @@ describe('collectionRepo membership helpers', () => {
     });
 
     it('hydrates smart thumbnails independently from count cache persistence', async () => {
-        dbMocks.select
-            .mockResolvedValueOnce([{ id: 'smart-1', count: 4 }])
-            .mockResolvedValueOnce([{ thumbnail_path: 'C:/thumbs/smart.webp', privacy_hidden: 0 }])
-            .mockResolvedValueOnce([{ thumbnail_path: 'C:/thumbs/smart.webp' }]);
+        dbMocks.select.mockResolvedValueOnce([
+            passRow(0, 'count', { n: 4 }),
+            passRow(0, 'cover', { thumbnail_path: 'C:/thumbs/smart.webp', privacy_hidden: 0 }),
+            passRow(0, 'safe', { thumbnail_path: 'C:/thumbs/smart.webp' }),
+        ]);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
         await expect(
@@ -1403,8 +1397,8 @@ describe('collectionRepo membership helpers', () => {
         expect(dbMocks.execute).toHaveBeenCalledWith(expect.stringContaining('dynamic_thumbnail_path'), expect.any(Array));
     });
 
-    it('returns partial smart summaries when smart thumbnail queries fail', async () => {
-        dbMocks.select.mockResolvedValueOnce([{ id: 'smart-1', count: 4 }]).mockRejectedValueOnce(new Error('thumbnail query failed'));
+    it('returns no smart summaries for a pass that fails, without writing anything', async () => {
+        dbMocks.select.mockRejectedValueOnce(new Error('smart pass failed'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
@@ -1415,9 +1409,8 @@ describe('collectionRepo membership helpers', () => {
                     filters: makeFilters({ searchQuery: 'portrait' }),
                 }),
             ])
-        ).resolves.toEqual({
-            'smart-1': { count: 4, thumbnailSourceKind: 'dynamic' },
-        });
+        ).resolves.toEqual({});
+        expect(dbMocks.execute).not.toHaveBeenCalled();
 
         expect(errorSpy).toHaveBeenCalledWith('[DB] Failed smart collection summaries', expect.any(Error));
         errorSpy.mockRestore();

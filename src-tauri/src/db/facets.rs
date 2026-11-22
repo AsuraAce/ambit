@@ -166,7 +166,60 @@ pub fn stop_facet_build(build_id: String) {
 }
 
 /// TEMP tables a facet build stages into; a stopped build drops them.
-const STAGING_TABLES: &[&str] = &["facet_cache", "harvested_models"];
+const STAGING_TABLES: &[&str] = &["facet_cache", "harvested_models", "facet_source"];
+
+/// Where a facet build reads image rows from.
+///
+/// A full build reads `scoped_images` once into `temp.facet_source`. An image row is
+/// about 40 KB, and every scan of the view walks each row's overflow pages to reach
+/// late columns such as `thumbnail_path` and `tool`. The extraction holds only the
+/// columns the facet builders read, so the builders scan it cheaply (#565).
+/// An incremental repair reads `scoped_images` as it always did.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum FacetSource {
+    Scoped,
+    Extract,
+}
+
+impl FacetSource {
+    /// A compile-time constant, never user input.
+    fn table(self) -> &'static str {
+        match self {
+            FacetSource::Scoped => "scoped_images",
+            FacetSource::Extract => "temp.facet_source",
+        }
+    }
+
+    /// The model name in `metadata_json`, the last fallback for a checkpoint name.
+    fn metadata_model(self) -> &'static str {
+        match self {
+            FacetSource::Scoped => "json_extract(metadata_json, '$.model')",
+            FacetSource::Extract => "metadata_model",
+        }
+    }
+}
+
+/// Reads the visible rows of `scoped_images` once, with the columns the facet builders need.
+/// Every builder filters `is_deleted = 0`, so deleted rows are left out.
+/// `metadata_model` is filled only for the rows the checkpoint thumbnail statements read
+/// (`cp_thumbs`, `cp_safe_thumbs`) and only where the first two name columns are empty, so a
+/// malformed `metadata_json` on any other row cannot fail the build, as before.
+fn create_facet_source(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS temp.facet_source;
+         CREATE TEMP TABLE facet_source AS
+         SELECT id, timestamp, is_pinned, is_deleted, invoke_scope_hidden, is_invoke_asset_gen,
+                privacy_hidden, thumbnail_path, model_hash, resolved_model_name, model_name, tool,
+                CASE WHEN NULLIF(resolved_model_name, '') IS NULL AND model_name IS NULL
+                          AND is_deleted = 0 AND IFNULL(is_invoke_asset_gen, 0) = 0
+                          AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                     THEN json_extract(metadata_json, '$.model') END AS metadata_model
+         FROM scoped_images
+         WHERE invoke_scope_hidden = 0 AND is_deleted = 0;
+         CREATE INDEX temp.facet_source_id ON facet_source(id);",
+    )
+    .map_err(|error| format!("Failed to extract the facet source rows: {}", error))
+}
 
 /// The message a facet build fails with when it was asked to stop.
 pub(crate) const FACET_BUILD_STOPPED: &str = "Facet build was stopped.";
@@ -270,6 +323,16 @@ fn build_full_facet_cache(
         tx.execute("DELETE FROM facet_cache", [])
             .map_err(|e| e.to_string())?;
 
+        // One read of the library rows for every statement below (#565).
+        let start_source = std::time::Instant::now();
+        create_facet_source(&tx)?;
+        println!(
+            "[FacetCache] Source rows extracted in {:?}.",
+            start_source.elapsed()
+        );
+        ensure_not_stopped(stop)?;
+        let source = FacetSource::Extract;
+
         // 1. Checkpoints
         println!("[FacetCache] Building checkpoints...");
         let start_cp = std::time::Instant::now();
@@ -278,7 +341,7 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building checkpoints cache...".into(),
         });
-        build_checkpoint_facets(&tx)?;
+        build_checkpoint_facets(&tx, source)?;
         println!(
             "[FacetCache] Checkpoints built in {:?}.",
             start_cp.elapsed()
@@ -292,7 +355,7 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building LoRAs cache...".into(),
         });
-        build_resource_facets(&tx, "loras", "loras")?;
+        build_resource_facets(&tx, "loras", "loras", source)?;
         println!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
 
         // 3. Embeddings
@@ -303,7 +366,7 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building Embeddings cache...".into(),
         });
-        build_resource_facets(&tx, "embeddings", "embeddings")?;
+        build_resource_facets(&tx, "embeddings", "embeddings", source)?;
         println!(
             "[FacetCache] Embeddings built in {:?}.",
             start_emb.elapsed()
@@ -317,7 +380,7 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building Hypernetworks cache...".into(),
         });
-        build_resource_facets(&tx, "hypernetworks", "hypernetworks")?;
+        build_resource_facets(&tx, "hypernetworks", "hypernetworks", source)?;
         println!(
             "[FacetCache] Hypernetworks built in {:?}.",
             start_hyper.elapsed()
@@ -329,7 +392,7 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building tools cache...".into(),
         });
-        build_tool_facets(&tx)?;
+        build_tool_facets(&tx, source)?;
 
         // 6. ControlNets
         emit(ProgressPayload {
@@ -337,7 +400,7 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building ControlNet cache...".into(),
         });
-        build_resource_facets(&tx, "control_nets", "control_nets")?;
+        build_resource_facets(&tx, "control_nets", "control_nets", source)?;
 
         // 7. IP-Adapters
         emit(ProgressPayload {
@@ -345,10 +408,12 @@ fn build_full_facet_cache(
             total: 8,
             message: "Building IP-Adapter cache...".into(),
         });
-        build_resource_facets(&tx, "ip_adapters", "ip_adapters")?;
+        build_resource_facets(&tx, "ip_adapters", "ip_adapters", source)?;
 
         sanitize_owner_hidden_facet_thumbnails(&tx)?;
 
+        tx.execute("DROP TABLE IF EXISTS temp.facet_source", [])
+            .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
         ensure_not_stopped(stop)?;
 
@@ -1743,17 +1808,21 @@ fn stage_incremental_facet_types(
     // Read inside the build's snapshot, so the marker matches the rows staged.
     let marker = read_scope_change_marker(&tx)?;
 
+    // A repair of one or two types would pay for the extraction; it reads the view.
+    let source = FacetSource::Scoped;
     for db_facet_type in normalized_types {
         let facet_started_at = std::time::Instant::now();
 
         match db_facet_type.as_str() {
-            "checkpoints" => build_checkpoint_facets(&tx)?,
-            "tools" => build_tool_facets(&tx)?,
-            "loras" => build_resource_facets(&tx, "loras", "loras")?,
-            "embeddings" => build_resource_facets(&tx, "embeddings", "embeddings")?,
-            "hypernetworks" => build_resource_facets(&tx, "hypernetworks", "hypernetworks")?,
-            "control_nets" => build_resource_facets(&tx, "control_nets", "control_nets")?,
-            "ip_adapters" => build_resource_facets(&tx, "ip_adapters", "ip_adapters")?,
+            "checkpoints" => build_checkpoint_facets(&tx, source)?,
+            "tools" => build_tool_facets(&tx, source)?,
+            "loras" => build_resource_facets(&tx, "loras", "loras", source)?,
+            "embeddings" => build_resource_facets(&tx, "embeddings", "embeddings", source)?,
+            "hypernetworks" => {
+                build_resource_facets(&tx, "hypernetworks", "hypernetworks", source)?
+            }
+            "control_nets" => build_resource_facets(&tx, "control_nets", "control_nets", source)?,
+            "ip_adapters" => build_resource_facets(&tx, "ip_adapters", "ip_adapters", source)?,
             _ => unreachable!("facet types are normalized before rebuild"),
         }
 
@@ -2359,13 +2428,16 @@ fn harvest_models_into(conn: &rusqlite::Connection, target: &str) -> Result<(), 
     Ok(())
 }
 
-fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+fn build_checkpoint_facets(conn: &rusqlite::Connection, source: FacetSource) -> Result<(), String> {
     let started_at = std::time::Instant::now();
+    let rows = source.table();
+    let metadata_model = source.metadata_model();
     // 1. Calculate Counts and Usage Stats
     // COALESCE(NULLIF(..., ''), 'Unknown') aligns with frontend filter logic
     let phase_started = std::time::Instant::now();
     conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
+        &format!(
+            "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
             SELECT
                 model_hash as mh,
                 COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') as mn,
@@ -2373,10 +2445,11 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 COUNT(DISTINCT id) as cnt,
                 MAX(timestamp) as last_used,
                 MIN(timestamp) as first_used
-            FROM scoped_images
+            FROM {rows}
             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
             AND IFNULL(is_invoke_asset_gen, 0) = 0
-            GROUP BY mh, lmn",
+            GROUP BY mh, lmn"
+        ),
         [],
     )
     .map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
@@ -2388,22 +2461,24 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     // 2. Calculate Best Dynamic Thumbnails (Pinned > Recent), including a safe candidate.
     let phase_started = std::time::Instant::now();
     conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS cp_thumbs AS
+        &format!(
+            "CREATE TEMP TABLE IF NOT EXISTS cp_thumbs AS
             SELECT lmn, image_id, thumbnail_path, privacy_hidden FROM (
                 SELECT
-                    LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown')) as lmn,
+                    LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, {metadata_model}, 'Unknown')) as lmn,
                     id as image_id,
                     thumbnail_path,
                     privacy_hidden,
                     ROW_NUMBER() OVER (
-                        PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown'))
+                        PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, {metadata_model}, 'Unknown'))
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
-                FROM scoped_images i
+                FROM {rows} i
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
-            ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
+            ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1"
+        ),
         []
     ).map_err(|e| format!("Failed to create cp_thumbs temp table: {}", e))?;
     println!(
@@ -2413,21 +2488,23 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 
     let phase_started = std::time::Instant::now();
     conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS cp_safe_thumbs AS
+        &format!(
+            "CREATE TEMP TABLE IF NOT EXISTS cp_safe_thumbs AS
             SELECT lmn, image_id, thumbnail_path FROM (
                 SELECT
-                    LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown')) as lmn,
+                    LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, {metadata_model}, 'Unknown')) as lmn,
                     id as image_id,
                     thumbnail_path,
                     ROW_NUMBER() OVER (
-                        PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown'))
+                        PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, {metadata_model}, 'Unknown'))
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
-                FROM scoped_images i
+                FROM {rows} i
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                 AND privacy_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
-            ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
+            ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1"
+        ),
         []
     ).map_err(|e| format!("Failed to create cp_safe_thumbs temp table: {}", e))?;
     println!(
@@ -2541,7 +2618,8 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     // Keep asset-only checkpoint names available for the scoped reveal overlay,
     // without adding their usage or thumbnails to the default-visible cache.
     conn.execute(
-        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+        &format!(
+            "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
             SELECT 'checkpoints', candidates.mn,
                 COALESCE(candidates.mh, 'orphan_' || candidates.mn), 0
             FROM (
@@ -2549,7 +2627,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                     MIN(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS mn,
                     LOWER(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS lmn,
                     MIN(NULLIF(model_hash, '')) AS mh
-                FROM scoped_images
+                FROM {rows}
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 1
                 GROUP BY lmn
@@ -2558,7 +2636,8 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 SELECT 1 FROM facet_cache fc
                 WHERE fc.facet_type = 'checkpoints'
                 AND LOWER(fc.resource_name) = candidates.lmn
-            )",
+            )"
+        ),
         [],
     )
     .map_err(|e| format!("Failed to insert asset-only checkpoint candidates: {}", e))?;
@@ -2577,8 +2656,10 @@ fn build_resource_facets(
     conn: &rusqlite::Connection,
     facet_type: &str,
     json_key: &str,
+    source: FacetSource,
 ) -> Result<(), String> {
     let started_at = std::time::Instant::now();
+    let rows = source.table();
     // Optimization: Use JUNCTION TABLES instead of JSON extraction
 
     // Determine the junction table and ID column based on the facet type/json_key
@@ -2627,13 +2708,14 @@ fn build_resource_facets(
                         WHEN IFNULL(i.is_invoke_asset_gen, 0) = 0 THEN i.timestamp
                     END) as first_used
                 FROM {2} jt
-                JOIN scoped_images i ON i.id = jt.{3}
+                JOIN {4} i ON i.id = jt.{3}
                 WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 GROUP BY lclean_ref",
             temp_table,
             name_col,
             junction_table,
-            image_id_col
+            image_id_col,
+            rows
         ),
         [],
     )
@@ -2669,7 +2751,7 @@ fn build_resource_facets(
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM {2} jt
-                JOIN scoped_images i ON i.id = jt.{3}
+                JOIN {4} i ON i.id = jt.{3}
                 WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
@@ -2677,7 +2759,8 @@ fn build_resource_facets(
             temp_thumbs,
             name_col,
             junction_table,
-            image_id_col
+            image_id_col,
+            rows
         ),
         []
     ).map_err(|e| format!("Failed to create {} table: {}", temp_thumbs, e))?;
@@ -2709,7 +2792,7 @@ fn build_resource_facets(
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM {2} jt
-                JOIN scoped_images i ON i.id = jt.{3}
+                JOIN {4} i ON i.id = jt.{3}
                 WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 AND i.privacy_hidden = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
@@ -2717,7 +2800,8 @@ fn build_resource_facets(
             temp_safe_thumbs,
             name_col,
             junction_table,
-            image_id_col
+            image_id_col,
+            rows
         ),
         []
     ).map_err(|e| format!("Failed to create {} table: {}", temp_safe_thumbs, e))?;
@@ -2850,10 +2934,12 @@ fn build_resource_facets(
     Ok(())
 }
 
-fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+fn build_tool_facets(conn: &rusqlite::Connection, source: FacetSource) -> Result<(), String> {
+    let rows = source.table();
     // Optimization: Use DENORMALIZED tool column
     conn.execute(
-        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
+        &format!(
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
             SELECT 'tools',
                 all_tools.tool,
                 NULL,
@@ -2862,15 +2948,16 @@ fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 MIN(visible.timestamp)
             FROM (
                 SELECT DISTINCT COALESCE(tool, 'Unknown') AS tool
-                FROM scoped_images
+                FROM {rows}
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
             ) all_tools
-            LEFT JOIN scoped_images visible
+            LEFT JOIN {rows} visible
               ON COALESCE(visible.tool, 'Unknown') = all_tools.tool
              AND visible.invoke_scope_hidden = 0
              AND visible.is_deleted = 0
              AND IFNULL(visible.is_invoke_asset_gen, 0) = 0
-            GROUP BY all_tools.tool",
+            GROUP BY all_tools.tool"
+        ),
         []
     ).map_err(|e| e.to_string())?;
     Ok(())
@@ -2991,6 +3078,339 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap()
+    }
+
+    /// Local images and two InvokeAI owners, with every column the facet builders read:
+    /// pinned, privacy-hidden, deleted, hidden and asset rows, a model named only in
+    /// `metadata_json`, and a junction row of each resource type for both owners.
+    fn create_two_owner_conn(mode: &str, owner: Option<&str>) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for m in init_db() {
+            conn.execute_batch(m.sql).unwrap();
+        }
+        conn.execute("DELETE FROM invoke_owner_scope_state", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state
+             (state_key, db_path, images_root, scope_mode, owner_id, updated_at, boards_verified)
+             VALUES ('current', 'invoke.db', 'C:/Invoke', ?1, ?2, 1, 1)",
+            params![mode, owner],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "INSERT INTO images (
+                id, path, timestamp, is_pinned, is_deleted, invoke_scope_hidden,
+                invoke_image_category, privacy_hidden, thumbnail_path, model_hash,
+                resolved_model_name, model_name, tool, metadata_json,
+                invoke_source_id, invoke_owner_id
+             ) VALUES
+             ('local-1','l1.png',100,0,0,0,NULL,0,'t/local-1.webp','h-local','LocalModel',NULL,'Automatic1111','{}',NULL,NULL),
+             ('local-2','l2.png',300,1,0,0,NULL,1,'t/local-2.webp','h-local','LocalModel',NULL,'Automatic1111','{}',NULL,NULL),
+             ('a-1','a1.png',200,0,0,0,'general',0,'t/a-1.webp','h-shared','SharedModel',NULL,'InvokeAI','{}','invoke.db','owner-a'),
+             ('a-2','a2.png',250,0,0,0,'general',0,'t/a-2.webp',NULL,NULL,'SharedModel','InvokeAI','{}','invoke.db','owner-a'),
+             ('a-3','a3.png',260,0,0,0,'general',0,'t/a-3.webp',NULL,'',NULL,NULL,'{\"model\":\"LocalModel\"}','invoke.db','owner-a'),
+             ('a-asset','aa.png',270,0,0,0,'user',0,'t/a-asset.webp','h-asset','AssetOnlyModel',NULL,'InvokeAI','{}','invoke.db','owner-a'),
+             ('a-hidden','ah.png',280,0,0,1,'general',0,'t/a-hidden.webp','h-hidden','HiddenModel',NULL,'HiddenTool','{}','invoke.db','owner-a'),
+             ('a-deleted','ad.png',290,0,1,0,'general',0,'t/a-deleted.webp','h-del','DeletedModel',NULL,'DeletedTool','{}','invoke.db','owner-a'),
+             ('b-1','b1.png',999,1,0,0,'general',0,'t/b-1.webp','h-b','OwnerBModel',NULL,'BTool','{}','invoke.db','owner-b'),
+             ('b-2','b2.png',998,1,0,0,'general',0,'t/b-2.webp','h-shared','SharedModel',NULL,'InvokeAI','{}','invoke.db','owner-b');
+             UPDATE images SET user_masked = 1 WHERE id = 'local-2';
+             INSERT INTO image_loras (image_id, lora_name) VALUES
+                ('local-1','LocalLora'), ('a-1','SharedLora'), ('a-2','SharedLora (v2)'),
+                ('a-hidden','HiddenLora'), ('b-1','BLora'), ('b-2','SharedLora');
+             INSERT INTO image_embeddings (image_id, embedding_name) VALUES
+                ('local-2','EmbLocal'), ('a-1','EmbA'), ('b-1','EmbB');
+             INSERT INTO image_hypernetworks (image_id, hypernetwork_name) VALUES
+                ('a-1','HyperA'), ('b-1','HyperB');
+             INSERT INTO image_controlnets (image_id, controlnet_name) VALUES
+                ('a-1','CnetA'), ('b-1','CnetB');
+             INSERT INTO image_ipadapters (image_id, ipadapter_name) VALUES
+                ('a-1','IpA'), ('b-1','IpB');",
+        )
+        .unwrap();
+        conn
+    }
+
+    /// Every column of a schema's `facet_cache`, one line a row, in a fixed order.
+    fn facet_dump(conn: &rusqlite::Connection, schema: &str) -> Vec<String> {
+        let mut statement = conn
+            .prepare(&format!(
+                "SELECT quote(facet_type)||'|'||quote(resource_name)||'|'||quote(resource_hash)
+                    ||'|'||quote(count)||'|'||quote(thumbnail_path)||'|'||quote(preview_url)
+                    ||'|'||quote(last_used_at)||'|'||quote(created_at)||'|'||quote(is_manual)
+                    ||'|'||quote(has_sidecar)||'|'||quote(is_user_override)
+                    ||'|'||quote(guidance_subtype)||'|'||quote(safe_thumbnail_path)
+                    ||'|'||quote(thumbnail_image_id)||'|'||quote(thumbnail_is_sensitive)
+                    ||'|'||quote(thumbnail_sensitivity_override)
+                 FROM {schema}.facet_cache ORDER BY facet_type, resource_name"
+            ))
+            .unwrap();
+        statement
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    fn build_every_facet(conn: &rusqlite::Connection, source: FacetSource) {
+        build_checkpoint_facets(conn, source).unwrap();
+        for facet_type in ["loras", "embeddings", "hypernetworks"] {
+            build_resource_facets(conn, facet_type, facet_type, source).unwrap();
+        }
+        build_tool_facets(conn, source).unwrap();
+        for facet_type in ["control_nets", "ip_adapters"] {
+            build_resource_facets(conn, facet_type, facet_type, source).unwrap();
+        }
+    }
+
+    /// The staged facet rows of a build that reads `scoped_images`, as before #565.
+    fn staged_dump_from_scoped_images(mode: &str, owner: Option<&str>) -> Vec<String> {
+        let mut conn = create_two_owner_conn(mode, owner);
+        harvest_models_staged(&mut conn).unwrap();
+        create_facet_staging_table(&conn).unwrap();
+        build_every_facet(&conn, FacetSource::Scoped);
+        facet_dump(&conn, "temp")
+    }
+
+    /// The live rows of the full build, after the swap and the privacy mask.
+    fn live_dump_from_full_build(mode: &str, owner: Option<&str>) -> Vec<String> {
+        let mut conn = create_two_owner_conn(mode, owner);
+        build_full_facet_cache(&mut conn, None, |_| {}).unwrap();
+        facet_dump(&conn, "main")
+    }
+
+    fn temp_table_exists(conn: &rusqlite::Connection, name: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' AND name = ?1",
+            [name],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap()
+            > 0
+    }
+
+    // The one-pass extraction must not change a single facet: counts, covers, safe covers,
+    // sensitivity flags and dates, in every scope (#565).
+    #[test]
+    fn full_build_from_the_extraction_equals_the_build_from_scoped_images() {
+        let scopes: [(&str, Option<&str>); 3] = [
+            ("owner", Some("owner-a")),
+            ("owner", Some("owner-b")),
+            ("all", None),
+        ];
+        for (mode, owner) in scopes {
+            let expected = staged_dump_from_scoped_images(mode, owner);
+            let actual = live_dump_from_full_build(mode, owner);
+            // The build ends with the privacy mask; the fixture has no keyword to mask.
+            assert_eq!(actual, expected, "scope {mode}/{owner:?}");
+        }
+        // The fixture reaches the model names that only the thumbnail partition reads:
+        // `model_name` (a-2) and `metadata_json` (a-3), the newest safe cover of LocalModel.
+        let owner_a = live_dump_from_full_build("owner", Some("owner-a"));
+        let row = |facet_type: &str, name: &str| {
+            owner_a
+                .iter()
+                .find(|line| line.starts_with(&format!("'{facet_type}'|'{name}'|")))
+                .unwrap_or_else(|| panic!("{facet_type} {name} is listed: {owner_a:?}"))
+                .clone()
+        };
+        assert!(
+            row("checkpoints", "SharedModel").contains("|'t/a-2.webp'|"),
+            "the cover comes from the model_name fallback"
+        );
+        assert!(
+            row("checkpoints", "LocalModel").contains("|NULL|'t/a-3.webp'|'local-2'|"),
+            "the privacy-hidden cover keeps a safe alternative from the metadata_json fallback"
+        );
+        row("checkpoints", "AssetOnlyModel");
+        row("loras", "SharedLora");
+    }
+
+    // A build for owner A must never carry owner B's names, counts or covers.
+    #[test]
+    fn full_build_for_one_owner_holds_nothing_of_the_other_owner() {
+        let rows = live_dump_from_full_build("owner", Some("owner-a")).join("\n");
+        for foreign in [
+            "OwnerBModel",
+            "BLora",
+            "EmbB",
+            "HyperB",
+            "CnetB",
+            "IpB",
+            "BTool",
+            "b-1",
+            "b-2",
+            "t/b-1.webp",
+            "t/b-2.webp",
+        ] {
+            assert!(!rows.contains(foreign), "{foreign} leaked into {rows}");
+        }
+        // The shared name counts the owner's image only, with the owner's newest cover.
+        let shared = rows
+            .lines()
+            .find(|line| line.starts_with("'checkpoints'|'SharedModel'"))
+            .expect("SharedModel is listed");
+        assert!(shared.contains("|1|'t/a-2.webp'"), "{shared}");
+    }
+
+    // Only the rows the checkpoint thumbnail statements read have their `metadata_json` parsed
+    // (the schema cannot store malformed JSON, so the domain is checked by value): an asset, or
+    // a row with no thumbnail, keeps `metadata_model` empty, as the old statements never read
+    // it for them. A deleted row is not extracted at all: every builder skips it (#565).
+    #[test]
+    fn extraction_reads_the_metadata_model_only_for_the_thumbnail_rows() {
+        let conn = create_two_owner_conn("owner", Some("owner-a"));
+        conn.execute_batch(
+            "INSERT INTO images (
+                id, path, timestamp, is_deleted, invoke_scope_hidden, invoke_image_category,
+                thumbnail_path, resolved_model_name, model_name, metadata_json,
+                invoke_source_id, invoke_owner_id
+             ) VALUES
+             ('m-thumb','m1.png',10,0,0,'general','t/m1.webp',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-asset','m2.png',11,0,0,'user','t/m2.webp',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-no-thumb','m3.png',12,0,0,'general',NULL,NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-empty-thumb','m4.png',13,0,0,'general','',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-deleted','m6.png',15,1,0,'general','t/m6.webp',NULL,NULL,'{\"model\":\"FromJson\"}','invoke.db','owner-a'),
+             ('m-named','m5.png',14,0,0,'general','t/m5.webp',NULL,'Named','{\"model\":\"FromJson\"}','invoke.db','owner-a');",
+        )
+        .unwrap();
+        create_facet_source(&conn).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT id, metadata_model FROM temp.facet_source WHERE id LIKE 'm-%' ORDER BY id",
+            )
+            .unwrap();
+        let rows: Vec<(String, Option<String>)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let expected = |model: Option<&str>| model.map(str::to_string);
+        assert_eq!(
+            rows,
+            vec![
+                ("m-asset".to_string(), expected(None)),
+                ("m-empty-thumb".to_string(), expected(None)),
+                ("m-named".to_string(), expected(None)),
+                ("m-no-thumb".to_string(), expected(None)),
+                ("m-thumb".to_string(), expected(Some("FromJson"))),
+            ]
+        );
+    }
+
+    // The builders read the extraction, not the library: with `scoped_images` emptied after
+    // the extraction, the staged rows are the same as before.
+    #[test]
+    fn builders_read_the_extracted_rows_not_scoped_images() {
+        let expected = staged_dump_from_scoped_images("owner", Some("owner-a"));
+        assert!(expected.len() > 10, "the fixture builds facets");
+
+        let mut conn = create_two_owner_conn("owner", Some("owner-a"));
+        harvest_models_staged(&mut conn).unwrap();
+        create_facet_staging_table(&conn).unwrap();
+        create_facet_source(&conn).unwrap();
+        conn.execute_batch("CREATE TEMP VIEW scoped_images AS SELECT * FROM main.images WHERE 0;")
+            .unwrap();
+        let visible: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scoped_images", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(visible, 0, "the library view is shadowed");
+
+        build_every_facet(&conn, FacetSource::Extract);
+        assert_eq!(facet_dump(&conn, "temp"), expected);
+    }
+
+    // The late columns of a large image row sit behind overflow pages, so every statement
+    // that reads them from `scoped_images` costs another walk of the library (#565). Once the
+    // extraction exists, the full build must not need them from the library again: with the
+    // library's copy of those columns blanked from then on, the facets stay the same.
+    #[test]
+    fn full_build_does_not_read_the_late_image_columns_again_after_the_extraction() {
+        use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+
+        let expected = live_dump_from_full_build("owner", Some("owner-a"));
+        assert!(expected.len() > 10, "the fixture builds facets");
+
+        let mut conn = create_two_owner_conn("owner", Some("owner-a"));
+        let extracted = Arc::new(AtomicBool::new(false));
+        let extracted_seen = extracted.clone();
+        conn.authorizer(Some(move |ctx: AuthContext<'_>| {
+            match ctx.action {
+                // The extraction's index is created right after its table is filled.
+                AuthAction::CreateTempIndex {
+                    index_name: "facet_source_id",
+                    ..
+                } => extracted_seen.store(true, Ordering::SeqCst),
+                AuthAction::Read {
+                    table_name: "images",
+                    column_name:
+                        "thumbnail_path" | "model_hash" | "tool" | "model_name" | "resolved_model_name",
+                } if extracted_seen.load(Ordering::SeqCst) => return Authorization::Ignore,
+                _ => {}
+            }
+            Authorization::Allow
+        }));
+
+        build_full_facet_cache(&mut conn, None, |_| {}).unwrap();
+        conn.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
+
+        assert!(
+            extracted.load(Ordering::SeqCst),
+            "the build extracts its rows"
+        );
+        assert_eq!(facet_dump(&conn, "main"), expected);
+        // The finished build gives its memory back: nothing of the extraction stays on the connection.
+        assert!(!temp_table_exists(&conn, "facet_source"));
+    }
+
+    // The extraction is a TEMP table of the build's own transaction: a failed build leaves
+    // none behind, and neither does a stopped one.
+    #[test]
+    fn a_failed_build_leaves_no_extraction_behind() {
+        let mut conn = create_two_owner_conn("owner", Some("owner-a"));
+        // The checkpoint statement fails to prepare, after the extraction exists.
+        conn.execute_batch("ALTER TABLE privacy_mask_keywords RENAME TO moved_keywords;")
+            .unwrap();
+        let before = facet_dump(&conn, "main");
+
+        let error = build_full_facet_cache(&mut conn, None, |_| {}).expect_err("the build fails");
+        assert!(error.contains("privacy_mask_keywords"), "{error}");
+        assert!(!temp_table_exists(&conn, "facet_source"));
+        assert_eq!(facet_dump(&conn, "main"), before);
+    }
+
+    #[test]
+    fn a_stopped_build_leaves_no_extraction_behind_and_the_live_cache_unchanged() {
+        let mut conn = create_two_owner_conn("owner", Some("owner-a"));
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'LiveBeforeStop', 5)",
+            [],
+        )
+        .unwrap();
+        let before = facet_dump(&conn, "main");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_in_build = stop.clone();
+        let result = build_full_facet_cache(&mut conn, Some(&stop), |payload| {
+            // Stop while the checkpoints are built, after the extraction.
+            if payload.current == 2 {
+                stop_in_build.store(true, Ordering::SeqCst);
+            }
+        });
+        assert_eq!(result, Err(FACET_BUILD_STOPPED.to_string()));
+        assert!(!temp_table_exists(&conn, "facet_source"));
+        assert_eq!(facet_dump(&conn, "main"), before);
+    }
+
+    // A connection stopped in the middle of the extraction cleans up with the staging list.
+    #[test]
+    fn stop_cleanup_drops_a_leftover_extraction() {
+        let conn = create_two_owner_conn("owner", Some("owner-a"));
+        create_facet_source(&conn).unwrap();
+        assert!(temp_table_exists(&conn, "facet_source"));
+        crate::db::background_work::clean_up_stopped_connection(&conn, STAGING_TABLES);
+        assert!(!temp_table_exists(&conn, "facet_source"));
     }
 
     // A switch stops the previous scope's build (#533). The stopped build must leave the
@@ -3419,11 +3839,12 @@ mod tests {
             .unwrap();
         assert!(model_count > 0, "Models should be populated from harvest");
 
-        build_checkpoint_facets(&conn).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
-        build_resource_facets(&conn, "embeddings", "embeddings").unwrap();
-        build_resource_facets(&conn, "hypernetworks", "hypernetworks").unwrap();
-        build_tool_facets(&conn).unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "embeddings", "embeddings", FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "hypernetworks", "hypernetworks", FacetSource::Scoped)
+            .unwrap();
+        build_tool_facets(&conn, FacetSource::Scoped).unwrap();
 
         // --- Regression Check: Collections ---
         // Verify that rebuilding cache does NOT wipe collections
@@ -3456,8 +3877,8 @@ mod tests {
         // No, `rebuild_facet_cache` takes AppHandle. We can't call it here easily.
         // But we can call the internal functions again.
         conn.execute("DELETE FROM facet_cache", []).unwrap(); // Clear cache first
-        build_checkpoint_facets(&conn).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         let col_count_after: i64 = conn
             .query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0))
@@ -3501,7 +3922,7 @@ mod tests {
         // Rebuild Only Checkpoints - MUST CLEAR CACHE FIRST or handle upsert
         conn.execute("DELETE FROM facet_cache WHERE facet_type='checkpoints'", [])
             .unwrap();
-        build_checkpoint_facets(&conn).unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
 
         let cp_thumb_manual: String = conn.query_row(
             "SELECT thumbnail_path FROM facet_cache WHERE facet_type='checkpoints' AND resource_name='SDXL Base'",
@@ -3574,9 +3995,9 @@ mod tests {
 
         conn.execute("DELETE FROM facet_cache", []).unwrap();
         harvest_models(&conn).unwrap();
-        build_checkpoint_facets(&conn).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
-        build_tool_facets(&conn).unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
+        build_tool_facets(&conn, FacetSource::Scoped).unwrap();
 
         let (shared_count, shared_thumbnail): (i64, String) = conn
             .query_row(
@@ -3685,7 +4106,7 @@ mod tests {
 
         conn.execute("DELETE FROM facet_cache", []).unwrap();
         harvest_models(&conn).unwrap();
-        build_checkpoint_facets(&conn).unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
         let full: (Option<String>, i64, Option<String>) = conn
             .query_row(
                 "SELECT resource_hash, count, thumbnail_path
@@ -3740,7 +4161,7 @@ mod tests {
         .unwrap();
 
         // 3. Build LoRA facets
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         // 4. Check if the facet has the thumbnail
         let (name, thumb): (String, Option<String>) = conn
@@ -3790,7 +4211,7 @@ mod tests {
         .unwrap();
 
         harvest_models(&conn).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         let (thumb, safe_thumb, image_id, sensitive): (String, String, String, i64) = conn
             .query_row(
@@ -3908,9 +4329,9 @@ mod tests {
         .unwrap();
 
         harvest_models(&conn).unwrap();
-        build_checkpoint_facets(&conn).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
-        build_tool_facets(&conn).unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
+        build_tool_facets(&conn, FacetSource::Scoped).unwrap();
 
         conn.execute(
             "UPDATE images
@@ -4259,8 +4680,8 @@ mod tests {
         .unwrap();
 
         harvest_models(&conn).unwrap();
-        build_checkpoint_facets(&conn).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_checkpoint_facets(&conn, FacetSource::Scoped).unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         let hidden_facet_count: i64 = conn
             .query_row(
@@ -4317,7 +4738,7 @@ mod tests {
         )
         .unwrap();
 
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         let facets: Vec<(String, i64)> = conn
             .prepare(
@@ -4369,7 +4790,7 @@ mod tests {
         )
         .unwrap();
 
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
         sanitize_owner_hidden_facet_thumbnails(&conn).unwrap();
 
         let (thumbnail_path, thumbnail_image_id): (Option<String>, Option<String>) = conn
@@ -4405,7 +4826,7 @@ mod tests {
         )
         .unwrap();
 
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         let sensitive: i64 = conn
             .query_row(
@@ -4424,7 +4845,7 @@ mod tests {
         )
         .unwrap();
         conn.execute("DELETE FROM facet_cache", []).unwrap();
-        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_resource_facets(&conn, "loras", "loras", FacetSource::Scoped).unwrap();
 
         let override_sensitive: i64 = conn
             .query_row(

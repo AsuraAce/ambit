@@ -266,6 +266,41 @@ mod tests {
     }
 
     #[test]
+    fn runs_the_one_pass_smart_summary_shape() {
+        // #565: smart collection counts and covers read from one MATERIALIZED CTE that
+        // flags each collection's matches with a CASE carrying bound parameters. The
+        // guard's authorizer sees a CTE materialization on the read connection; it must
+        // not refuse it, and the bound values must reach the flags in order.
+        let library = Library::new("one-pass");
+        let rows = read(
+            &library,
+            "WITH hits AS MATERIALIZED (
+               SELECT * FROM (
+                 SELECT id, score,
+                 CASE WHEN (is_deleted = ?) THEN 1 ELSE 0 END AS c0,
+                 CASE WHEN (id = ?) THEN 1 ELSE 0 END AS c1
+                 FROM scoped_images AS images
+               ) WHERE c0 = 1 OR c1 = 1
+             )
+             SELECT 0 AS k, 'count' AS kind, COUNT(*) AS n, NULL AS score FROM hits WHERE c0 = 1
+             UNION ALL
+             SELECT * FROM (SELECT 0, 'cover', NULL, score FROM hits WHERE c0 = 1 ORDER BY id DESC LIMIT 1)
+             UNION ALL
+             SELECT 1 AS k, 'count' AS kind, COUNT(*) AS n, NULL AS score FROM hits WHERE c1 = 1",
+            &[SqlValue::Integer(1), SqlValue::Text("a".into())],
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["n"], SqlValue::Integer(1));
+        assert_eq!(rows[1]["kind"], SqlValue::Text("cover".into()));
+        assert_eq!(rows[1]["score"], SqlValue::Null);
+        assert_eq!(rows[2]["k"], SqlValue::Integer(1));
+        assert_eq!(rows[2]["n"], SqlValue::Integer(1));
+        // The read left the library untouched.
+        assert_eq!(library.rows(), 2);
+    }
+
+    #[test]
     fn values_cross_ipc_as_plain_json() {
         let row: SqlRow = [
             ("n".to_string(), SqlValue::Integer(3)),
