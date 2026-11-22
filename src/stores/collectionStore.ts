@@ -699,22 +699,25 @@ export const useCollectionStore = create<CollectionState>()(
                     }
 
                     let wasSuperseded = false;
+                    const isRunCurrent = (collectionId: string) =>
+                        refreshGeneration === initializationGeneration && smartCountRunsByCollection.get(collectionId)?.runId === runId;
+
+                    // One pass over the library answers every collection (#565). The loop below
+                    // still applies each result on its own, with the same supersede checks.
+                    throwIfInvokeAborted(options.signal);
+                    const dueCols = smartCols.filter((collection) => isRunCurrent(collection.id));
+                    const summaries =
+                        dueCols.length > 0
+                            ? await getSmartCollectionSummaries(dueCols, {
+                                  includeThumbnails,
+                                  signal: options.signal,
+                                  isCurrent: isRunCurrent,
+                              })
+                            : {};
+
                     for (const smartCol of smartCols) {
                         throwIfInvokeAborted(options.signal);
-                        if (
-                            refreshGeneration !== initializationGeneration ||
-                            smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
-                        ) {
-                            wasSuperseded = true;
-                            continue;
-                        }
-
-                        const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails, signal: options.signal });
-                        throwIfInvokeAborted(options.signal);
-                        if (
-                            refreshGeneration !== initializationGeneration ||
-                            smartCountRunsByCollection.get(smartCol.id)?.runId !== runId
-                        ) {
+                        if (!isRunCurrent(smartCol.id)) {
                             wasSuperseded = true;
                             continue;
                         }

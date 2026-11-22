@@ -163,7 +163,92 @@ export interface ScopedCollectionRow {
 interface SmartCollectionSummaryOptions {
     includeThumbnails?: boolean;
     signal?: AbortSignal;
+    /**
+     * Whether a collection's result is still wanted. A newer run may take a collection over
+     * while the one pass is reading; its cover is then not written to the cache.
+     */
+    isCurrent?: (collectionId: string) => boolean;
 }
+
+/** One smart collection's WHERE condition, with the parameters it binds once. */
+interface SmartSummaryQuery {
+    id: string;
+    where: string;
+    params: Array<string | number>;
+}
+
+/** Collections per one-pass query; the statement grows by 3 selects and 1 flag column each. */
+const SMART_SUMMARY_CHUNK_COLLECTIONS = 32;
+/** Under SQLite's 32,766 variable limit: manual exclusions bind one parameter per image. */
+const SMART_SUMMARY_CHUNK_PARAMS = 30_000;
+
+const chunkSmartSummaryQueries = (queries: SmartSummaryQuery[]): SmartSummaryQuery[][] => {
+    const chunks: SmartSummaryQuery[][] = [];
+    let current: SmartSummaryQuery[] = [];
+    let currentParams = 0;
+    for (const query of queries) {
+        const wouldOverflow =
+            current.length >= SMART_SUMMARY_CHUNK_COLLECTIONS || currentParams + query.params.length > SMART_SUMMARY_CHUNK_PARAMS;
+        if (current.length > 0 && wouldOverflow) {
+            chunks.push(current);
+            current = [];
+            currentParams = 0;
+        }
+        current.push(query);
+        currentParams += query.params.length;
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+};
+
+interface SmartSummaryRow {
+    k: number;
+    kind: 'count' | 'cover' | 'safe';
+    n: number | null;
+    thumbnail_path: string | null;
+    privacy_hidden: number | null;
+}
+
+/**
+ * One scan of `scoped_images` for a chunk of smart collections. Each collection's WHERE becomes
+ * a 0/1 flag, computed once per row. The rows that match any collection are kept in a
+ * materialized CTE; counts and covers then read that small set. Reading the late columns of an
+ * image row walks its overflow pages, so a scan per collection and per question cost minutes on
+ * a large library (#565). Covers keep the order and predicates of the per-collection queries.
+ */
+const buildSmartSummaryChunkQuery = (
+    chunk: SmartSummaryQuery[],
+    includeThumbnails: boolean
+): { sql: string; params: Array<string | number> } => {
+    const flags = chunk
+        .map((query, k) => `CASE WHEN (${query.where.replace(/^\s*WHERE\s+/i, '')}) THEN 1 ELSE 0 END AS c${k}`)
+        .join(',\n    ');
+    const anyMatch = chunk.map((_, k) => `c${k} = 1`).join(' OR ');
+    const order = 'ORDER BY is_pinned DESC, timestamp DESC';
+    const reads = chunk
+        .map((_, k) => {
+            const selects = [
+                `SELECT ${k} AS k, 'count' AS kind, COUNT(*) AS n, NULL AS thumbnail_path, NULL AS privacy_hidden FROM hits WHERE c${k} = 1`,
+            ];
+            if (includeThumbnails) {
+                selects.push(
+                    `SELECT * FROM (SELECT ${k}, 'cover', NULL, thumbnail_path, privacy_hidden FROM hits WHERE c${k} = 1 AND thumbnail_path IS NOT NULL AND thumbnail_path != '' ${order} LIMIT 1)`,
+                    `SELECT * FROM (SELECT ${k}, 'safe', NULL, thumbnail_path, NULL FROM hits WHERE c${k} = 1 AND privacy_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != '' ${order} LIMIT 1)`
+                );
+            }
+            return selects.join('\nUNION ALL\n');
+        })
+        .join('\nUNION ALL\n');
+    const sql = `WITH hits AS MATERIALIZED (
+  SELECT * FROM (
+    SELECT id, is_pinned, timestamp, thumbnail_path, privacy_hidden,
+    ${flags}
+    FROM scoped_images AS images
+  ) WHERE ${anyMatch}
+)
+${reads}`;
+    return { sql, params: chunk.flatMap((query) => query.params) };
+};
 
 interface CollectionThumbnailInput {
     id: string;
@@ -1346,71 +1431,57 @@ export const getSmartCollectionSummaries = async (
             return { id: c.id, where, params };
         });
 
-        // SQLite UNION ALL approach for batched counts - using denormalized columns, no JOIN needed
-        const unionSql = queries
-            .map((q) => `SELECT ? as id, (SELECT COUNT(*) FROM scoped_images AS images ${q.where}) as count`)
-            .join(' UNION ALL ');
-        const unionParams = queries.flatMap((q) => [q.id, ...q.params]);
+        for (const chunk of chunkSmartSummaryQueries(queries)) {
+            throwIfInvokeAborted(options.signal);
+            const { sql, params } = buildSmartSummaryChunkQuery(chunk, includeThumbnails);
+            const rows = await timeDbCall('smartCollectionSummaries.onePass', `${chunk.length} collections`, () =>
+                selectReadonly<SmartSummaryRow[]>(sql, params)
+            );
+            // A pass that ran past an abort or a supersede reports nothing.
+            throwIfInvokeAborted(options.signal);
 
-        const res = await timeDbCall('smartCollectionSummaries.counts', `${smartCollections.length} collections`, () =>
-            selectReadonly<{ id: string; count: number }[]>(unionSql, unionParams)
-        );
-        res.forEach((row) => {
-            summaries[row.id] = { count: row.count, thumbnailSourceKind: 'dynamic' };
-        });
+            const countByIndex = new Map<number, number>();
+            const normalByIndex = new Map<number, SmartSummaryRow>();
+            const safeByIndex = new Map<number, SmartSummaryRow>();
+            for (const row of rows) {
+                if (row.kind === 'count') countByIndex.set(row.k, row.n ?? 0);
+                else if (row.kind === 'cover') normalByIndex.set(row.k, row);
+                else safeByIndex.set(row.k, row);
+            }
+
+            chunk.forEach((query, k) => {
+                summaries[query.id] = { count: countByIndex.get(k) ?? 0, thumbnailSourceKind: 'dynamic' };
+                if (!includeThumbnails) return;
+
+                const normal = normalByIndex.get(k);
+                const safe = safeByIndex.get(k);
+                const thumbnailPath = normal?.thumbnail_path || null;
+                summaries[query.id] = {
+                    ...summaries[query.id],
+                    thumbnail: toDisplayUrl(thumbnailPath),
+                    safeThumbnail: toDisplayUrl(safe?.thumbnail_path),
+                    thumbnailIsSensitive: normal?.privacy_hidden === 1,
+                    thumbnailSourceKind: 'dynamic',
+                };
+
+                if (!customThumbnailById.get(query.id)) {
+                    cacheUpdates.push({
+                        collectionId: query.id,
+                        thumbnailPath,
+                        safeThumbnailPath: thumbnailPath ? safe?.thumbnail_path || null : null,
+                        thumbnailIsSensitive: thumbnailPath ? normal?.privacy_hidden === 1 : null,
+                    });
+                }
+            });
+        }
 
         if (!includeThumbnails) return summaries;
 
-        for (const query of queries) {
-            throwIfInvokeAborted(options.signal);
-            const normalRows = await timeDbCall('smartCollectionSummaries.thumbnail', query.id, () =>
-                selectReadonly<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
-                    `SELECT thumbnail_path, privacy_hidden
-                 FROM scoped_images AS images
-                 ${query.where}
-                 AND thumbnail_path IS NOT NULL
-                 AND thumbnail_path != ''
-                 ORDER BY is_pinned DESC, timestamp DESC
-                 LIMIT 1`,
-                    query.params
-                )
-            );
-            const safeRows = await timeDbCall('smartCollectionSummaries.safeThumbnail', query.id, () =>
-                selectReadonly<{ thumbnail_path?: string | null }[]>(
-                    `SELECT thumbnail_path
-                 FROM scoped_images AS images
-                 ${query.where}
-                 AND privacy_hidden = 0
-                 AND thumbnail_path IS NOT NULL
-                 AND thumbnail_path != ''
-                 ORDER BY is_pinned DESC, timestamp DESC
-                 LIMIT 1`,
-                    query.params
-                )
-            );
-
-            const normal = normalRows[0];
-            const safe = safeRows[0];
-            const thumbnailPath = normal?.thumbnail_path || null;
-            summaries[query.id] = {
-                ...summaries[query.id],
-                thumbnail: toDisplayUrl(thumbnailPath),
-                safeThumbnail: toDisplayUrl(safe?.thumbnail_path),
-                thumbnailIsSensitive: normal?.privacy_hidden === 1,
-                thumbnailSourceKind: 'dynamic',
-            };
-
-            if (!customThumbnailById.get(query.id)) {
-                cacheUpdates.push({
-                    collectionId: query.id,
-                    thumbnailPath,
-                    safeThumbnailPath: thumbnailPath ? safe?.thumbnail_path || null : null,
-                    thumbnailIsSensitive: thumbnailPath ? normal?.privacy_hidden === 1 : null,
-                });
-            }
-        }
-
-        await writeDynamicThumbnailCache(db, cacheUpdates, options.signal);
+        await writeDynamicThumbnailCache(
+            db,
+            options.isCurrent ? cacheUpdates.filter((update) => options.isCurrent?.(update.collectionId)) : cacheUpdates,
+            options.signal
+        );
     } catch (e) {
         if (options.signal?.aborted) throw e;
         console.error('[DB] Failed smart collection summaries', e);

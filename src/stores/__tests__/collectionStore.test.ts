@@ -528,9 +528,10 @@ describe('collectionStore smart count refresh', () => {
             includePromptSearch: true,
         });
 
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-1' })], {
-            includeThumbnails: false,
-        });
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'smart-1' })],
+            expect.objectContaining({ includeThumbnails: false })
+        );
         expect(useCollectionStore.getState().collections[0]).toEqual(
             expect.objectContaining({
                 count: 9,
@@ -581,9 +582,10 @@ describe('collectionStore smart count refresh', () => {
         await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
 
         expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1);
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-date' })], {
-            includeThumbnails: false,
-        });
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'smart-date' })],
+            expect.objectContaining({ includeThumbnails: false })
+        );
     });
 
     it('marks smart summary pending ids while smart thumbnails are loading', async () => {
@@ -936,9 +938,10 @@ describe('collectionStore smart count refresh', () => {
 
         await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
 
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-prompt', isPinned: true })], {
-            includeThumbnails: false,
-        });
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'smart-prompt', isPinned: true })],
+            expect.objectContaining({ includeThumbnails: false })
+        );
         expect(useCollectionStore.getState().collections[0].count).toBe(11);
     });
 
@@ -1005,9 +1008,11 @@ describe('collectionStore smart count refresh', () => {
         await selectedRefresh;
 
         expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(2);
-        expect(mockGetSmartCollectionSummaries).toHaveBeenNthCalledWith(2, [expect.objectContaining({ id: 'smart-date' })], {
-            includeThumbnails: false,
-        });
+        expect(mockGetSmartCollectionSummaries).toHaveBeenNthCalledWith(
+            2,
+            [expect.objectContaining({ id: 'smart-date' })],
+            expect.objectContaining({ includeThumbnails: false })
+        );
         expect(useCollectionStore.getState().collections).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({ id: 'smart-prompt', count: 5 }),
@@ -1061,9 +1066,10 @@ describe('collectionStore smart count refresh', () => {
         });
 
         expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1);
-        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith([expect.objectContaining({ id: 'smart-prompt' })], {
-            includeThumbnails: true,
-        });
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'smart-prompt' })],
+            expect.objectContaining({ includeThumbnails: true })
+        );
         expect(useCollectionStore.getState().collections[0]).toEqual(
             expect.objectContaining({
                 count: 5,
@@ -1985,27 +1991,76 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({ count: 3 }));
     });
 
-    it('stops an older smart refresh before its next collection begins', async () => {
-        vi.useFakeTimers();
-        try {
-            useCollectionStore.setState({
-                collections: [
-                    makeStaticCollection({ id: 'smart-one', filters: createDefaultFilters({ dateRange: 'today' }) }),
-                    makeStaticCollection({ id: 'smart-two', filters: createDefaultFilters({ dateRange: 'week' }) }),
-                ],
+    // One read answers every due collection (#565): the pass is no longer a loop of reads that a
+    // newer refresh could stop between collections, so the stale result must be dropped on return.
+    it('reads every due smart collection in one call', async () => {
+        useCollectionStore.setState({
+            collections: [
+                makeStaticCollection({ id: 'smart-one', filters: createDefaultFilters({ dateRange: 'today' }) }),
+                makeStaticCollection({ id: 'smart-two', filters: createDefaultFilters({ dateRange: 'week' }) }),
+                makeStaticCollection({ id: 'smart-three', filters: createDefaultFilters({ dateRange: 'month' }) }),
+            ],
+        });
+        mockGetSmartCollectionSummaries.mockResolvedValue({
+            'smart-one': { count: 1, thumbnailSourceKind: 'dynamic' },
+            'smart-two': { count: 2, thumbnailSourceKind: 'dynamic' },
+            'smart-three': { count: 3, thumbnailSourceKind: 'dynamic' },
+        });
+
+        await useCollectionStore.getState().refreshSmartCounts();
+
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1);
+        expect(mockGetSmartCollectionSummaries.mock.calls[0][0].map((collection: { id: string }) => collection.id)).toEqual([
+            'smart-one',
+            'smart-two',
+            'smart-three',
+        ]);
+        expect(useCollectionStore.getState().collections.map((collection) => collection.count)).toEqual([1, 2, 3]);
+    });
+
+    it('writes nothing from an older smart refresh once a newer refresh has superseded it', async () => {
+        const staleRead = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        useCollectionStore.setState({
+            collections: [
+                makeStaticCollection({ id: 'smart-one', filters: createDefaultFilters({ dateRange: 'today' }) }),
+                makeStaticCollection({ id: 'smart-two', filters: createDefaultFilters({ dateRange: 'week' }) }),
+            ],
+        });
+        mockGetSmartCollectionSummaries
+            .mockImplementationOnce(() => staleRead.promise)
+            .mockResolvedValueOnce({
+                'smart-one': { count: 20, thumbnailSourceKind: 'dynamic' },
+                'smart-two': { count: 21, thumbnailSourceKind: 'dynamic' },
             });
-            mockGetSmartCollectionSummaries.mockResolvedValue({});
-            const stale = useCollectionStore.getState().refreshSmartCounts();
-            expect(mockGetSmartCollectionSummaries).toHaveBeenCalledOnce();
-            await Promise.resolve();
-            await Promise.resolve();
-            const fresh = useCollectionStore.getState().refreshSmartCounts();
-            await vi.runAllTimersAsync();
-            await Promise.all([stale, fresh]);
-            expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(3);
-        } finally {
-            vi.useRealTimers();
-        }
+
+        const stale = useCollectionStore.getState().refreshSmartCounts();
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
+        await useCollectionStore.getState().refreshSmartCounts();
+        staleRead.resolve({
+            'smart-one': { count: 1, thumbnailSourceKind: 'dynamic' },
+            'smart-two': { count: 2, thumbnailSourceKind: 'dynamic' },
+        });
+        await stale;
+
+        expect(useCollectionStore.getState().collections.map((collection) => collection.count)).toEqual([20, 21]);
+    });
+
+    it('tells the read which collections are still wanted, so a superseded one is not cached', async () => {
+        const staleRead = createDeferred<Record<string, never>>();
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({ id: 'smart-one', filters: createDefaultFilters({ dateRange: 'today' }) })],
+        });
+        mockGetSmartCollectionSummaries.mockImplementationOnce(() => staleRead.promise).mockResolvedValueOnce({});
+
+        const stale = useCollectionStore.getState().refreshSmartCounts();
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
+        const isCurrent = mockGetSmartCollectionSummaries.mock.calls[0][1].isCurrent as (id: string) => boolean;
+        expect(isCurrent('smart-one')).toBe(true);
+
+        await useCollectionStore.getState().refreshSmartCounts();
+        expect(isCurrent('smart-one')).toBe(false);
+        staleRead.resolve({});
+        await stale;
     });
 
     it('handles empty legacy migration data and migration failures', async () => {
