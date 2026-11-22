@@ -170,6 +170,23 @@ describe('startup repair aggregate evidence', () => {
         info.mockRestore();
     });
 
+    it('does not blame the 8-report cap for another refusal', async () => {
+        const send = vi.fn(async () => ({ status: 'error', error: 'Startup repair report diagnostic is invalid' }));
+        const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const bridge = createStartupDiagnosticBridge({
+            now: () => 0,
+            send,
+            getLaunch: async () => ({ launchId: 'ab', processElapsedMs: 0 }),
+        });
+        await bridge.connect();
+        bridge.mark('ready');
+        bridge.claimRuntimeRepair()!.finish('completed');
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        expect(info.mock.calls.filter(([line]) => String(line).includes('keeps at most 8'))).toHaveLength(0);
+        info.mockRestore();
+    });
+
     it('does not claim runtime repair after startup failure, or fabricate timing after clock failure', () => {
         const bridge = createStartupDiagnosticBridge({
             now: () => 0,

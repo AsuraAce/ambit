@@ -967,7 +967,7 @@ fn reconcile_invoke_image_sources_inner(
 /// How the owner inventory finds a source's rows. Windows compares the spelled path folded.
 fn invoke_source_match_sql() -> &'static str {
     if cfg!(windows) {
-        "LOWER(RTRIM(REPLACE(invoke_source_id, '\', '/'), '/')) = LOWER(?1)"
+        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
     } else {
         "invoke_source_id = ?1"
     }
@@ -2933,11 +2933,7 @@ fn reconcile_invoke_board_snapshot_inner(
         }
     }
 
-    let source_match = if cfg!(windows) {
-        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
-    } else {
-        "invoke_source_id = ?1"
-    };
+    let source_match = invoke_source_match_sql();
     if input.ownership_only {
         // Refresh only imported boards already bound to this source. IDs alone
         // cannot authorize adopting local collections or retargeting another DB.
@@ -4470,7 +4466,13 @@ mod tests {
             )
             .unwrap();
         }
-        let source_match = super::invoke_source_match_sql();
+        // A literal copy of the predicate on origin/main, not `invoke_source_match_sql`: the oracle
+        // must not share a typo with the code it checks.
+        let source_match = if cfg!(windows) {
+            "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
+        } else {
+            "invoke_source_id = ?1"
+        };
         let mut result = super::InvokeImageSourceReconcileResult::default();
         for (table, count) in [
             ("images", &mut result.active_updated),
@@ -4614,6 +4616,60 @@ mod tests {
         assert_eq!(repeated, super::InvokeImageSourceReconcileResult::default());
     }
 
+    // #568: a row whose source id is spelled with backslashes belongs to the source; when its
+    // owner moved (Odin to System) the inventory must move it, or the old owner still sees it.
+    #[test]
+    fn owner_inventory_moves_a_backslash_spelled_row_to_its_new_owner() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        for (table, id, extra_columns, extra_values) in [
+            ("images", "active-odin", "", ""),
+            ("removed_images", "removed-odin", "removed_at, ", "1, "),
+        ] {
+            conn.execute(
+                &format!(
+                    "INSERT INTO {table} (id, path, timestamp, {extra_columns}invoke_source_id, invoke_owner_id)
+                     VALUES (?1, ?2, 1, {extra_values}?3, 'odin')"
+                ),
+                params![
+                    id,
+                    format!("C:/Invoke/outputs/images/{id}.png"),
+                    "C:\\Invoke\\databases\\InvokeAI.db"
+                ],
+            )
+            .unwrap();
+        }
+        let input = super::InvokeImageOwnerInventoryInput {
+            db_path: "c:/invoke/databases/invokeai.db".to_string(),
+            images: ["active-odin", "removed-odin"]
+                .into_iter()
+                .map(|id| super::InvokeImageOwnerInventoryItem {
+                    id: id.to_string(),
+                    invoke_owner_id: Some("system".to_string()),
+                })
+                .collect(),
+        };
+
+        let result = super::reconcile_invoke_owner_inventory_inner(&conn, &input).unwrap();
+
+        if cfg!(windows) {
+            assert_eq!((result.active_updated, result.removed_updated), (1, 1));
+            for table in ["images", "removed_images"] {
+                let visible_to_odin: i64 = conn
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM {table} WHERE invoke_owner_id = 'odin'"),
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(visible_to_odin, 0, "{table} still shows Odin's old owner");
+            }
+        } else {
+            // Off Windows the source id is compared exactly, so this spelling is another source.
+            assert_eq!((result.active_updated, result.removed_updated), (0, 0));
+        }
+    }
+
     // #568: the full SCAN of `images` read each row's late columns past about 40 KB of overflow
     // pages. Every read must come from an index that already exists.
     #[test]
@@ -4665,25 +4721,40 @@ mod tests {
         }
     }
 
-    // #568: the inventory waits for a facet build to finish, then for the write lock it still
-    // holds, and then succeeds; it neither fails with `SQLITE_BUSY` nor skips the wait.
-    #[test]
-    fn owner_inventory_waits_for_a_facet_build_holding_the_write_lock() {
-        let (_temporary_database, db_path) = migrated_file_database("inventory-facet-build");
+    /// Runs `entry` while another connection holds the SQLite write lock for 400 ms, optionally
+    /// together with the facet-build coordinator, and returns what it did and how long it waited.
+    fn inventory_against_a_writer(
+        name: &str,
+        holder_owns_facet_build: bool,
+        entry: fn(
+            &Connection,
+            &super::InvokeImageOwnerInventoryInput,
+        ) -> Result<super::InvokeImageSourceReconcileResult, String>,
+    ) -> (
+        Result<super::InvokeImageSourceReconcileResult, String>,
+        Duration,
+        Option<String>,
+    ) {
+        let (_temporary_database, db_path) = migrated_file_database(name);
         let seed = Connection::open(&db_path).unwrap();
         let input = seed_owner_inventory_fixture(&seed);
         drop(seed);
 
         let (locked_tx, locked_rx) = mpsc::sync_channel(0);
-        let builder_path = db_path.clone();
-        let builder = thread::spawn(move || {
-            // What a facet build does: owns the build lock, then writes in a transaction.
-            let _build = crate::db::facets::lock_facet_builds().expect("facet build lock");
-            let conn = Connection::open(&builder_path).unwrap();
+        let writer_path = db_path.clone();
+        let writer = thread::spawn(move || {
+            // A facet build owns the build lock and then writes; an import or a thumbnail write
+            // takes only the SQLite write lock.
+            let _build = holder_owns_facet_build
+                .then(|| crate::db::facets::lock_facet_builds().expect("facet build lock"));
+            let conn = Connection::open(&writer_path).unwrap();
             crate::db::configure_connection(&conn).unwrap();
             conn.execute_batch("BEGIN IMMEDIATE").unwrap();
-            conn.execute("UPDATE images SET notes = 'facet' WHERE id = 'image-0'", [])
-                .unwrap();
+            conn.execute(
+                "UPDATE images SET notes = 'writer' WHERE id = 'image-0'",
+                [],
+            )
+            .unwrap();
             locked_tx.send(()).unwrap();
             thread::sleep(Duration::from_millis(400));
             conn.execute_batch("COMMIT").unwrap();
@@ -4693,22 +4764,98 @@ mod tests {
         let conn = Connection::open(&db_path).unwrap();
         crate::db::configure_connection(&conn).unwrap();
         let started = Instant::now();
-        let result = super::reconcile_invoke_owner_inventory_after_facet_builds(&conn, &input);
+        let result = entry(&conn, &input);
         let waited = started.elapsed();
-        builder.join().unwrap();
+        writer.join().unwrap();
+        let notes = conn
+            .query_row("SELECT notes FROM images WHERE id = 'image-0'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        (result, waited, notes)
+    }
 
+    // #568: the inventory waits for a facet build to finish, then for the write lock it still
+    // holds, and then succeeds; it neither fails with `SQLITE_BUSY` nor skips the wait.
+    #[test]
+    fn owner_inventory_waits_for_a_facet_build_holding_the_write_lock() {
+        let (result, waited, notes) = inventory_against_a_writer(
+            "inventory-facet-build",
+            true,
+            super::reconcile_invoke_owner_inventory_after_facet_builds,
+        );
         let result = result.expect("the inventory must wait for the facet build, not fail");
         assert!(
             waited >= Duration::from_millis(300),
             "waited only {waited:?}"
         );
         assert!(result.active_updated > 0);
-        let notes: Option<String> = conn
-            .query_row("SELECT notes FROM images WHERE id = 'image-0'", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(notes.as_deref(), Some("facet"), "the facet write is kept");
+        assert_eq!(notes.as_deref(), Some("writer"), "the facet write is kept");
+    }
+
+    // #568: an import or a thumbnail write holds the SQLite write lock without the facet
+    // coordinator. The inventory reads before it writes, so it must start IMMEDIATE and wait for
+    // that lock; a deferred transaction would read first and then fail at its first write with
+    // a stale snapshot.
+    #[test]
+    fn owner_inventory_waits_for_a_plain_writer_holding_the_write_lock() {
+        let (result, waited, notes) = inventory_against_a_writer(
+            "inventory-plain-writer",
+            false,
+            super::reconcile_invoke_owner_inventory_inner,
+        );
+        let result = result.expect("the inventory must wait for the writer, not fail");
+        assert!(
+            waited >= Duration::from_millis(300),
+            "waited only {waited:?}"
+        );
+        assert!(result.active_updated > 0);
+        assert_eq!(notes.as_deref(), Some("writer"), "the other write is kept");
+    }
+
+    // #568: through the entry the Tauri command calls, the inventory runs its index-driven
+    // statements (the two temp tables it fills, then writes by rowid) and not one UPDATE that
+    // scans the library.
+    #[test]
+    fn owner_inventory_entry_runs_the_index_driven_statements() {
+        use rusqlite::hooks::{AuthAction, Authorization};
+        use std::collections::BTreeSet;
+        use std::sync::{Arc, Mutex};
+
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        let input = seed_owner_inventory_fixture(&conn);
+        let seen = Arc::new(Mutex::new(BTreeSet::new()));
+        let recorder = seen.clone();
+        conn.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+            let entry = match context.action {
+                AuthAction::Insert { table_name } => Some(format!("insert {table_name}")),
+                AuthAction::Update { table_name, .. } => Some(format!("update {table_name}")),
+                _ => None,
+            };
+            if let Some(entry) = entry {
+                recorder.lock().unwrap().insert(entry);
+            }
+            Authorization::Allow
+        }));
+
+        let result =
+            super::reconcile_invoke_owner_inventory_after_facet_builds(&conn, &input).unwrap();
+        conn.authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> Authorization>);
+
+        assert!(result.active_updated > 0 && result.removed_updated > 0);
+        let seen = seen.lock().unwrap();
+        for statement in [
+            "insert temp_invoke_owner_current",
+            "insert temp_invoke_owner_target",
+            "update images",
+            "update removed_images",
+        ] {
+            assert!(
+                seen.contains(statement),
+                "the entry never ran `{statement}`: {seen:?}"
+            );
+        }
     }
 
     #[test]

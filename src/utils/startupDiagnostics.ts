@@ -285,9 +285,16 @@ export function createStartupDiagnosticBridge({
                     try {
                         void Promise.resolve(send(event))
                             .then((result) => {
-                                const refused =
-                                    typeof result === 'object' && result !== null && 'status' in result && result.status === 'error';
-                                if (!refused || runtimeReportDropLogged) return;
+                                // Only the native cap ("Startup repair report limit reached"), not any other refusal.
+                                const capReached =
+                                    typeof result === 'object' &&
+                                    result !== null &&
+                                    'status' in result &&
+                                    result.status === 'error' &&
+                                    'error' in result &&
+                                    typeof result.error === 'string' &&
+                                    result.error.includes('report limit reached');
+                                if (!capReached || runtimeReportDropLogged) return;
                                 runtimeReportDropLogged = true;
                                 console.info(
                                     '[Startup] An owner source repair report was not recorded: the startup journal keeps at most 8 per launch.'
