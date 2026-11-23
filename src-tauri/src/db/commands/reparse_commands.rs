@@ -278,19 +278,24 @@ mod tests {
              SELECT 'img' || i, 'img' || i || '.png', 100, 0, '{\"a\":1}' FROM n;",
         )
         .expect("rows");
-        let epoch = crate::db::background_work::current_epoch();
+        // The stop epoch is process-wide, and a parallel test advances it. A count that an epoch
+        // change stopped runs again in the new epoch, so only the pause decides the result.
+        let count = |paused: bool| loop {
+            let epoch = crate::db::background_work::current_epoch();
+            let result = metadata_reparse_count_unless_paused(
+                &conn,
+                epoch,
+                Arc::new(AtomicBool::new(paused)),
+            );
+            if crate::db::background_work::current_epoch() == epoch {
+                break result;
+            }
+        };
 
-        let paused = Arc::new(AtomicBool::new(true));
-        assert_eq!(
-            metadata_reparse_count_unless_paused(&conn, epoch, paused),
-            Err(METADATA_REFRESH_PAUSED.to_string())
-        );
-
-        let resumed = Arc::new(AtomicBool::new(false));
-        assert_eq!(
-            metadata_reparse_count_unless_paused(&conn, epoch, resumed),
-            Ok(5000)
-        );
+        // The app matches this text (RUST_METADATA_REFRESH_PAUSED in useMetadataRefresh.test.tsx).
+        assert_eq!(METADATA_REFRESH_PAUSED, "Metadata refresh paused");
+        assert_eq!(count(true), Err(METADATA_REFRESH_PAUSED.to_string()));
+        assert_eq!(count(false), Ok(5000));
     }
 
     #[test]
