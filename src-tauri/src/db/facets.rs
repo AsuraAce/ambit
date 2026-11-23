@@ -136,7 +136,7 @@ pub async fn rebuild_facet_cache(
             stopped_error(stop.as_ref(), error)
         })?;
 
-        println!(
+        log::info!(
             "[FacetCache] Rebuild complete in {:?}. Total entries: {}",
             start_total.elapsed(),
             count_result
@@ -287,7 +287,7 @@ fn build_full_facet_cache(
     mut emit: impl FnMut(ProgressPayload),
 ) -> Result<usize, String> {
     ensure_not_stopped(stop)?;
-    println!("[FacetCache] Starting rebuild...");
+    log::debug!("[FacetCache] Starting rebuild...");
     emit(ProgressPayload {
         current: 0,
         total: 8,
@@ -296,7 +296,7 @@ fn build_full_facet_cache(
 
     // --- PHASE 1: HARVEST ---
     {
-        println!("[FacetCache] Harvesting models from images...");
+        log::debug!("[FacetCache] Harvesting models from images...");
         let start_harvest = std::time::Instant::now();
         emit(ProgressPayload {
             current: 1,
@@ -305,7 +305,7 @@ fn build_full_facet_cache(
         });
 
         harvest_models_staged(conn)?;
-        println!(
+        log::info!(
             "[FacetCache] Harvest completed in {:?}.",
             start_harvest.elapsed()
         );
@@ -326,7 +326,7 @@ fn build_full_facet_cache(
         // One read of the library rows for every statement below (#565).
         let start_source = std::time::Instant::now();
         create_facet_source(&tx)?;
-        println!(
+        log::info!(
             "[FacetCache] Source rows extracted in {:?}.",
             start_source.elapsed()
         );
@@ -334,7 +334,7 @@ fn build_full_facet_cache(
         let source = FacetSource::Extract;
 
         // 1. Checkpoints
-        println!("[FacetCache] Building checkpoints...");
+        log::debug!("[FacetCache] Building checkpoints...");
         let start_cp = std::time::Instant::now();
         emit(ProgressPayload {
             current: 2,
@@ -342,13 +342,13 @@ fn build_full_facet_cache(
             message: "Building checkpoints cache...".into(),
         });
         build_checkpoint_facets(&tx, source)?;
-        println!(
+        log::info!(
             "[FacetCache] Checkpoints built in {:?}.",
             start_cp.elapsed()
         );
 
         // 2. LoRAs
-        println!("[FacetCache] Building LoRAs...");
+        log::debug!("[FacetCache] Building LoRAs...");
         let start_lora = std::time::Instant::now();
         emit(ProgressPayload {
             current: 3,
@@ -356,10 +356,10 @@ fn build_full_facet_cache(
             message: "Building LoRAs cache...".into(),
         });
         build_resource_facets(&tx, "loras", "loras", source)?;
-        println!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
+        log::info!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
 
         // 3. Embeddings
-        println!("[FacetCache] Building Embeddings...");
+        log::debug!("[FacetCache] Building Embeddings...");
         let start_emb = std::time::Instant::now();
         emit(ProgressPayload {
             current: 4,
@@ -367,13 +367,13 @@ fn build_full_facet_cache(
             message: "Building Embeddings cache...".into(),
         });
         build_resource_facets(&tx, "embeddings", "embeddings", source)?;
-        println!(
+        log::info!(
             "[FacetCache] Embeddings built in {:?}.",
             start_emb.elapsed()
         );
 
         // 4. Hypernetworks
-        println!("[FacetCache] Building Hypernetworks...");
+        log::debug!("[FacetCache] Building Hypernetworks...");
         let start_hyper = std::time::Instant::now();
         emit(ProgressPayload {
             current: 5,
@@ -381,34 +381,46 @@ fn build_full_facet_cache(
             message: "Building Hypernetworks cache...".into(),
         });
         build_resource_facets(&tx, "hypernetworks", "hypernetworks", source)?;
-        println!(
+        log::info!(
             "[FacetCache] Hypernetworks built in {:?}.",
             start_hyper.elapsed()
         );
 
         // 5. Tools
+        let start_tools = std::time::Instant::now();
         emit(ProgressPayload {
             current: 6,
             total: 8,
             message: "Building tools cache...".into(),
         });
         build_tool_facets(&tx, source)?;
+        log::info!("[FacetCache] Tools built in {:?}.", start_tools.elapsed());
 
         // 6. ControlNets
+        let start_cn = std::time::Instant::now();
         emit(ProgressPayload {
             current: 7,
             total: 8,
             message: "Building ControlNet cache...".into(),
         });
         build_resource_facets(&tx, "control_nets", "control_nets", source)?;
+        log::info!(
+            "[FacetCache] ControlNets built in {:?}.",
+            start_cn.elapsed()
+        );
 
         // 7. IP-Adapters
+        let start_ip = std::time::Instant::now();
         emit(ProgressPayload {
             current: 8,
             total: 8,
             message: "Building IP-Adapter cache...".into(),
         });
         build_resource_facets(&tx, "ip_adapters", "ip_adapters", source)?;
+        log::info!(
+            "[FacetCache] IP-Adapters built in {:?}.",
+            start_ip.elapsed()
+        );
 
         sanitize_owner_hidden_facet_thumbnails(&tx)?;
 

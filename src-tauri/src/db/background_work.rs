@@ -306,8 +306,10 @@ mod tests {
                               SELECT count(*) FROM n";
 
     // The stop epoch is process-wide, so these checks run in one test to keep
-    // parallel test threads from advancing it under each other. No other test
-    // reads it, and it never changes the page count that claims use.
+    // parallel test threads from advancing it under each other. Other tests read
+    // it through jobs that opt in (the facet build, the reparse count), and a change
+    // while they run stops them. It never changes the page count
+    // that claims use.
     #[test]
     fn epoch_change_stops_only_jobs_from_earlier_epochs() {
         // A running statement on an opted-in connection stops soon after the epoch moves.
