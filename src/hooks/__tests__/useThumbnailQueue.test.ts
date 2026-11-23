@@ -177,6 +177,74 @@ describe('useThumbnailQueue behavioral contract', () => {
         return { promise, resolve, reject };
     };
 
+    // The consumer refresh rebuilds thumbnail facets, holding the facet build lock that an owner
+    // switch waits on; in #578 it held a switch for another 44 s. A switch stops it, and it runs
+    // once afterwards.
+    it('stops the thumbnail consumer refresh for an owner switch and runs it once afterwards', async () => {
+        vi.useFakeTimers();
+        const signals: AbortSignal[] = [];
+        mocks.rebuildThumbnailFacetCache.mockImplementationOnce(
+            (options: { signal: AbortSignal }) =>
+                new Promise<void>((_, reject) => {
+                    signals.push(options.signal);
+                    options.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+                })
+        );
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        const view = renderHook(({ ready }) => useThumbnailQueue(undefined, ready), { initialProps: { ready: true } });
+        await advanceStartup();
+        // Later optimizer runs stay pending, so only the consumer refresh reruns.
+        mocks.startThumbnailOptimizationJob.mockReturnValue(new Promise(() => undefined));
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
+
+        view.rerender({ ready: false });
+        expect(signals[0]?.aborted).toBe(true);
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
+
+        view.rerender({ ready: true });
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledTimes(2);
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenLastCalledWith({ signal: expect.any(AbortSignal) });
+
+        view.rerender({ ready: false });
+        view.rerender({ ready: true });
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledTimes(2);
+    });
+
+    // A post-run retry can finish a second optimizer run while the first run's consumer refresh
+    // still rebuilds facets. An owner switch must stop both (#591 review).
+    it('stops every overlapping thumbnail consumer refresh and runs one afterwards', async () => {
+        vi.useFakeTimers();
+        const signals: AbortSignal[] = [];
+        mocks.rebuildThumbnailFacetCache.mockImplementation(
+            (options: { signal: AbortSignal }) =>
+                new Promise<void>((_, reject) => {
+                    signals.push(options.signal);
+                    options.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+                })
+        );
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        const view = renderHook(({ ready }) => useThumbnailQueue(undefined, ready), { initialProps: { ready: true } });
+        await advanceStartup();
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
+        await act(async () => vi.advanceTimersByTimeAsync(1500));
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(2);
+        mocks.startThumbnailOptimizationJob.mockReturnValue(new Promise(() => undefined));
+
+        view.rerender({ ready: false });
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(signals.every((signal) => signal.aborted)).toBe(true);
+        const stoppedCalls = mocks.rebuildThumbnailFacetCache.mock.calls.length;
+
+        view.rerender({ ready: true });
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledTimes(stoppedCalls + 1);
+    });
+
     it('waits for library readiness before starting the startup delay', async () => {
         vi.useFakeTimers();
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
