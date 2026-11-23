@@ -2136,8 +2136,11 @@ fn get_valid_facet_names_for_query(
         format!("WHERE invoke_scope_hidden = 0 AND ({requested_conditions})")
     };
 
+    // A collection outside the current owner scope gives no names (#572).
     let collection_join = collection_id
-        .map(|_| "JOIN collection_images ci_filter ON ci_filter.image_id = i.id AND ci_filter.collection_id = ?")
+        .map(|_| {
+            "JOIN collection_images ci_filter ON ci_filter.image_id = i.id AND ci_filter.collection_id = ?              AND ci_filter.collection_id IN (SELECT id FROM scoped_collections)"
+        })
         .unwrap_or("");
     let lora_join = if lora_name.is_some() {
         let clean_lora = resource_clean_ref_sql("il_filter.lora_name");
@@ -3569,6 +3572,33 @@ mod tests {
         assert_eq!(result.loras, vec!["CollectionLora"]);
         assert_eq!(result.embeddings, vec!["CollectionEmbedding"]);
         assert!(!result.loras.contains(&"OutsideLora".to_string()));
+    }
+
+    #[test]
+    fn test_valid_facet_names_give_nothing_for_a_collection_outside_the_scope() {
+        // A board an owner switch left selected must not list another owner's resources (#572).
+        let conn = create_valid_facet_conn();
+        conn.execute(
+            "UPDATE collections SET invoke_suppressed = 1 WHERE id = 'col-a'",
+            [],
+        )
+        .unwrap();
+
+        for lora in [None, Some("CollectionLora")] {
+            let result = get_valid_facet_names_for_query(
+                &conn,
+                "WHERE is_deleted = 0",
+                vec![],
+                Some("col-a"),
+                lora,
+            )
+            .unwrap();
+
+            assert!(result.checkpoints.is_empty());
+            assert!(result.loras.is_empty());
+            assert!(result.embeddings.is_empty());
+            assert!(result.tools.is_empty());
+        }
     }
 
     #[test]

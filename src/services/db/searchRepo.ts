@@ -421,6 +421,9 @@ const appendTrailingPredicate = (whereClause: string, predicate?: string): strin
     predicate ? `${whereClause} AND ${predicate}` : whereClause;
 
 const loraReferencePredicate = resourceReferenceEqualsSql('il.lora_name');
+// A collection outside the current owner scope gives no rows: a selection an owner switch left behind
+// must not filter the new owner's images by another owner's board (#572).
+const collectionMembershipPredicate = 'ci.collection_id = ? AND ci.collection_id IN (SELECT id FROM scoped_collections)';
 
 export const countImages = async (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): Promise<number> => {
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
@@ -433,7 +436,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN scoped_images AS images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
+            ${finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND ${loraReferencePredicate} AND`)}
         `;
         const result = await timeDbCall('countImages', reason, () =>
             selectReadonly<CountRow[]>(query, [collectionId, loraName, ...params])
@@ -447,7 +450,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             SELECT count(*) as count 
             FROM collection_images ci
             CROSS JOIN scoped_images AS images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND`)}
         `;
         const result = await timeDbCall('countImages', reason, () => selectReadonly<CountRow[]>(query, [collectionId, ...params]));
         return result[0]?.count || 0;
@@ -504,14 +507,14 @@ export const countLibraryScopes = async (
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN scoped_images AS images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
+            ${finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND ${loraReferencePredicate} AND`)}
             ${group}`;
         queryParams = [collectionId, loraName, ...params];
     } else if (collectionId) {
         query = `${select}
             FROM collection_images ci
             CROSS JOIN scoped_images AS images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND`)}
             ${group}`;
         queryParams = [collectionId, ...params];
     } else if (loraName) {
@@ -622,7 +625,7 @@ export const searchImages = async (
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN scoped_images AS images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
+            ${finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND ${loraReferencePredicate} AND`)}
             ${cursorWhere.sql}
             ${orderBy}
             LIMIT ${limit}
@@ -639,7 +642,7 @@ export const searchImages = async (
             SELECT ${getImageFieldsLight()}
             FROM collection_images ci
             CROSS JOIN scoped_images AS images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND`)}
             ${cursorWhere.sql}
             ${orderBy}
             LIMIT ${limit}
@@ -716,7 +719,7 @@ const buildScopedImageSourceParts = (
                 JOIN scoped_images AS images ON images.id = ci.image_id
             `,
             scopedWhere: appendTrailingPredicate(
-                finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`),
+                finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND ${loraReferencePredicate} AND`),
                 trailingPredicate
             ),
             queryParams: [collectionId, loraName, ...params, ...trailingParams],
@@ -730,7 +733,10 @@ const buildScopedImageSourceParts = (
                 FROM collection_images ci
                 CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             `,
-            scopedWhere: appendTrailingPredicate(finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND'), trailingPredicate),
+            scopedWhere: appendTrailingPredicate(
+                finalWhere.replace('WHERE', `WHERE ${collectionMembershipPredicate} AND`),
+                trailingPredicate
+            ),
             queryParams: [collectionId, ...params, ...trailingParams],
             reason,
         };

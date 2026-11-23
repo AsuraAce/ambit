@@ -45,8 +45,10 @@ fn build_parameter_scope_from_clause(
     let mut join_params = Vec::new();
 
     if let Some(col_id) = collection_id {
+        // A collection outside the current owner scope gives no rows (#572).
         from_clause.push_str(
-            " JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = ?",
+            " JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = ? \
+             AND ci.collection_id IN (SELECT id FROM scoped_collections)",
         );
         join_params.push(Value::Text(col_id.to_string()));
     }
@@ -197,6 +199,7 @@ mod tests {
             CREATE VIEW scoped_images AS SELECT * FROM images;
             CREATE TABLE collection_images (collection_id TEXT, image_id TEXT);
             CREATE TABLE image_loras (image_id TEXT, lora_name TEXT);
+            CREATE VIEW scoped_collections AS SELECT 'collection' AS id;
             INSERT INTO images VALUES ('image', 'euler', 0, 0);
             INSERT INTO collection_images VALUES ('collection', 'image');
             INSERT INTO image_loras VALUES ('image', 'detailer');
@@ -219,6 +222,49 @@ mod tests {
             .expect("collect scoped parameters");
 
         assert_eq!(rows, vec!["euler".to_string()]);
+    }
+
+    /// A board the current owner scope cannot see must not narrow that owner's filter options:
+    /// they would show which of the owner's images sit in another owner's board (#572).
+    #[test]
+    fn parameter_scope_gives_no_rows_for_a_collection_outside_the_scope() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "
+            CREATE TABLE images (
+                id TEXT PRIMARY KEY, sampler TEXT, is_deleted INTEGER,
+                invoke_scope_hidden INTEGER
+            );
+            CREATE VIEW scoped_images AS SELECT * FROM images;
+            CREATE TABLE collections (id TEXT PRIMARY KEY, visible INTEGER);
+            CREATE VIEW scoped_collections AS SELECT id FROM collections WHERE visible = 1;
+            CREATE TABLE collection_images (collection_id TEXT, image_id TEXT);
+            CREATE TABLE image_loras (image_id TEXT, lora_name TEXT);
+            INSERT INTO images VALUES ('owned', 'euler', 0, 0);
+            INSERT INTO collections VALUES ('own-board', 1), ('other-board', 0);
+            INSERT INTO collection_images VALUES ('own-board', 'owned'), ('other-board', 'owned');
+            INSERT INTO image_loras VALUES ('owned', 'detailer');
+            ",
+        )
+        .expect("setup scoped collections");
+
+        let samplers = |collection: &str, lora: Option<&str>| -> Vec<String> {
+            let (from_clause, params) = build_parameter_scope_from_clause(Some(collection), lora);
+            let sql = format!(
+                "SELECT DISTINCT sampler {from_clause}
+                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0"
+            );
+            conn.prepare(&sql)
+                .expect("prepare scoped parameter query")
+                .query_map(rusqlite::params_from_iter(params.iter()), |row| row.get(0))
+                .expect("query scoped parameters")
+                .collect::<Result<_, _>>()
+                .expect("collect scoped parameters")
+        };
+
+        assert_eq!(samplers("own-board", None), vec!["euler".to_string()]);
+        assert!(samplers("other-board", None).is_empty());
+        assert!(samplers("other-board", Some("detailer")).is_empty());
     }
 
     #[test]
