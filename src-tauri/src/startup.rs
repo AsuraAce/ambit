@@ -661,19 +661,73 @@ fn validate_diagnostic_time(field: &str, value: u64) -> Result<(), String> {
     Ok(())
 }
 
-fn schedule_automatic_backup(app: tauri::AppHandle, process_started: Instant) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(120)).await;
-        let backup_started = Instant::now();
-        log_backup_event("start", "started", Duration::ZERO, process_started);
+const AUTOMATIC_BACKUP_DELAY: Duration = Duration::from_secs(120);
+/// The longest the automatic backup waits for owner-cache work, so a pause flag that never
+/// clears cannot turn automatic backups off. Builds take minutes (#584).
+const AUTOMATIC_BACKUP_HOLD_CAP: Duration = Duration::from_secs(30 * 60);
+const AUTOMATIC_BACKUP_HOLD_POLL: Duration = Duration::from_secs(1);
 
-        let outcome = match crate::db::backup::check_and_run_autobackup(app).await {
-            Ok(Some(_)) => "created",
-            Ok(None) => "skipped",
-            Err(_) => "failed",
-        };
-        log_backup_event("end", outcome, backup_started.elapsed(), process_started);
+fn schedule_automatic_backup(app: tauri::AppHandle, process_started: Instant) {
+    use tauri::Manager;
+    // Set while an InvokeAI owner-cache build or repair runs; the backup's full database copy
+    // slowed a cold build several-fold when the two overlapped (#584).
+    let owner_cache_busy = app
+        .state::<crate::db::reparse::ReparseState>()
+        .is_paused
+        .clone();
+    tauri::async_runtime::spawn(async move {
+        hold_then_run_backup(
+            AUTOMATIC_BACKUP_DELAY,
+            &owner_cache_busy,
+            AUTOMATIC_BACKUP_HOLD_CAP,
+            AUTOMATIC_BACKUP_HOLD_POLL,
+            process_started,
+            || async move {
+                let backup_started = Instant::now();
+                log_backup_event("start", "started", Duration::ZERO, process_started);
+
+                let outcome = match crate::db::backup::check_and_run_autobackup(app).await {
+                    Ok(Some(_)) => "created",
+                    Ok(None) => "skipped",
+                    Err(_) => "failed",
+                };
+                log_backup_event("end", outcome, backup_started.elapsed(), process_started);
+            },
+        )
+        .await;
     });
+}
+
+/// Waits `delay`, then holds while `hold` is set, for at most `cap`, then runs `backup`. The
+/// hold opens nothing, so an exit while held leaves no partial backup and the next launch's
+/// check runs it. A backup that has started is not stopped by a later hold.
+async fn hold_then_run_backup<F, Fut>(
+    delay: Duration,
+    hold: &AtomicBool,
+    cap: Duration,
+    poll: Duration,
+    process_started: Instant,
+    backup: F,
+) where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    tokio::time::sleep(delay).await;
+    if hold.load(Ordering::SeqCst) {
+        let held_since = Instant::now();
+        log_backup_event("held", "waiting", Duration::ZERO, process_started);
+        let reason = loop {
+            if !hold.load(Ordering::SeqCst) {
+                break "cleared";
+            }
+            if held_since.elapsed() >= cap {
+                break "cap";
+            }
+            tokio::time::sleep(poll.min(cap.saturating_sub(held_since.elapsed()))).await;
+        };
+        log_backup_event("released", reason, held_since.elapsed(), process_started);
+    }
+    backup().await;
 }
 
 fn log_backup_event(phase: &str, outcome: &str, duration: Duration, process_started: Instant) {
@@ -698,10 +752,13 @@ fn duration_ms(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        truncate_frontend_message, validate_diagnostic, StartupDiagnosticEvent, StartupState,
+        hold_then_run_backup, truncate_frontend_message, validate_diagnostic,
+        StartupDiagnosticEvent, StartupState, AUTOMATIC_BACKUP_DELAY, AUTOMATIC_BACKUP_HOLD_CAP,
         FRONTEND_ERROR_MAX_CHARS,
     };
-    use std::time::Instant;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
     #[test]
     fn frontend_error_message_is_capped_on_a_char_boundary() {
@@ -935,5 +992,113 @@ mod tests {
 
         assert!(!state.complete_and_claim_backup(true));
         assert!(!state.is_backup_scheduled());
+    }
+
+    /// Runs the automatic-backup schedule on its own thread and returns when the backup started.
+    fn spawn_backup_schedule(
+        delay: Duration,
+        hold: Arc<AtomicBool>,
+        cap: Duration,
+    ) -> (Arc<Mutex<Option<Instant>>>, std::thread::JoinHandle<()>) {
+        let started_at = Arc::new(Mutex::new(None));
+        let record = started_at.clone();
+        let handle = std::thread::spawn(move || {
+            tauri::async_runtime::block_on(hold_then_run_backup(
+                delay,
+                &hold,
+                cap,
+                Duration::from_millis(10),
+                Instant::now(),
+                || async move {
+                    *record.lock().unwrap() = Some(Instant::now());
+                },
+            ));
+        });
+        (started_at, handle)
+    }
+
+    // The backup copies the whole library database. Started during a cold owner-cache build, it
+    // made the build take 219 s instead of about 35 s (#584), so a due backup waits for it.
+    #[test]
+    fn a_due_backup_waits_while_owner_cache_work_runs_and_starts_once_it_clears() {
+        let hold = Arc::new(AtomicBool::new(true));
+        let (started_at, schedule) = spawn_backup_schedule(
+            Duration::from_millis(20),
+            hold.clone(),
+            Duration::from_secs(60),
+        );
+
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            started_at.lock().unwrap().is_none(),
+            "the backup started during the hold"
+        );
+
+        let cleared = Instant::now();
+        hold.store(false, Ordering::SeqCst);
+        schedule.join().unwrap();
+        let started = started_at
+            .lock()
+            .unwrap()
+            .expect("the backup ran once the hold cleared");
+        assert!(started >= cleared);
+    }
+
+    // With no owner-cache work, the backup keeps its timing: it starts after the startup delay.
+    #[test]
+    fn with_no_hold_the_backup_starts_right_after_the_startup_delay() {
+        assert_eq!(AUTOMATIC_BACKUP_DELAY, Duration::from_secs(120));
+        let delay = Duration::from_millis(200);
+        let scheduled = Instant::now();
+        let (started_at, schedule) = spawn_backup_schedule(
+            delay,
+            Arc::new(AtomicBool::new(false)),
+            Duration::from_secs(60),
+        );
+        schedule.join().unwrap();
+        let waited = started_at.lock().unwrap().expect("the backup ran") - scheduled;
+        assert!(
+            waited >= delay,
+            "the backup started before the delay: {waited:?}"
+        );
+        assert!(
+            waited < delay + Duration::from_secs(2),
+            "the backup was held: {waited:?}"
+        );
+    }
+
+    // A pause flag that never clears must not turn automatic backups off: they are the user's
+    // recovery copy, so the hold gives up at its cap.
+    #[test]
+    fn a_hold_that_never_clears_releases_the_backup_at_the_cap() {
+        assert_eq!(AUTOMATIC_BACKUP_HOLD_CAP, Duration::from_secs(30 * 60));
+        // The cap counts from the start of the hold, after the startup delay.
+        let delay = Duration::from_millis(200);
+        let cap = Duration::from_millis(300);
+        let scheduled = Instant::now();
+        let (started_at, schedule) =
+            spawn_backup_schedule(delay, Arc::new(AtomicBool::new(true)), cap);
+        let deadline = scheduled + delay + cap + Duration::from_secs(5);
+        while !schedule.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the cap did not release the backup"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        schedule.join().unwrap();
+        let waited = started_at
+            .lock()
+            .unwrap()
+            .expect("the backup ran at the cap")
+            - scheduled;
+        assert!(
+            waited >= delay + cap,
+            "the backup started before the delay plus the cap: {waited:?}"
+        );
+        assert!(
+            waited < delay + cap + Duration::from_secs(2),
+            "the cap did not release it: {waited:?}"
+        );
     }
 }
