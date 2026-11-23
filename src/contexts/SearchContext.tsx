@@ -332,8 +332,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [invokeQueriesAdmitted, queryClient]);
     const allCollections = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
     // An owner switch can leave a collection selected that the new scope cannot see (#572). Every path
-    // to an admitted scope publishes that scope's collections first, so the list is decided against
-    // here is the admitted one; a held switch waits for its swap. A failed load clears the selection.
+    // to an admitted scope publishes that scope's collections first, so the list checked here belongs to
+    // the admitted scope. A held switch waits for its swap. A failed load clears the selection.
     const collectionsFailed = useCollectionStore((state) => state.initializationError);
     const selectedCollectionId = filters.collectionId;
     React.useLayoutEffect(() => {
