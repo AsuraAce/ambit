@@ -2556,21 +2556,17 @@ fn wait_for_facet_builds_before_visibility(
     connection_ms: u64,
 ) -> Result<std::sync::MutexGuard<'static, ()>, String> {
     crate::startup_log::owner_stage("visibility-connection", true, connection_ms);
-    let (guard, wait) = crate::db::facets::lock_facet_builds_observed("owner visibility")
-        .inspect_err(|_| {
-            crate::startup_log::owner_facet_wait(false, Default::default());
-        })?;
-    crate::startup_log::owner_facet_wait(true, wait);
+    let (guard, wait) = crate::db::facets::lock_facet_builds_observed("owner visibility");
+    crate::startup_log::owner_facet_wait(guard.is_ok(), wait);
     log::info!(
-        "[DB] owner visibility wait operation={} connection_ms={} facet_wait_ms={} facet_holder={} facet_holder_age_ms={}",
+        "[DB] owner visibility wait operation={} status={} connection_ms={} facet_wait_ms={} {}",
         OWNER_SCOPE_REFRESH_OPERATION,
+        if guard.is_ok() { "completed" } else { "failed" },
         connection_ms,
         wait.waited_ms,
-        wait.holder.unwrap_or("none"),
-        wait.holder_age_ms
-            .map_or_else(|| "none".to_string(), |age| age.to_string())
+        crate::db::facets::facet_lock_wait_log_fields(&wait)
     );
-    Ok(guard)
+    guard
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -4761,6 +4757,7 @@ mod tests {
         Duration,
         Option<String>,
     ) {
+        let _serial = crate::db::facets::serialize_facet_lock_test();
         let (_temporary_database, db_path) = migrated_file_database(name);
         let seed = Connection::open(&db_path).unwrap();
         let input = seed_owner_inventory_fixture(&seed);
@@ -4845,6 +4842,7 @@ mod tests {
     // scans the library.
     #[test]
     fn owner_inventory_entry_runs_the_index_driven_statements() {
+        let _serial = crate::db::facets::serialize_facet_lock_test();
         use rusqlite::hooks::{AuthAction, Authorization};
         use std::collections::BTreeSet;
         use std::sync::{Arc, Mutex};

@@ -460,7 +460,8 @@ impl StartupJournal {
                 ..RecordTimes::default()
             },
             json!({"phase":phase,"status":status,"durationMs":wait.waited_ms,
-                "holder":wait.holder,"holderAgeMs":wait.holder_age_ms}),
+                "holder":wait.holder,"holderAgeMs":wait.holder_age_ms,
+                "releasedBy":wait.released_by,"releasedByHeldMs":wait.released_by_held_ms}),
             JournalRecordKind::Ordinary,
         );
     }
@@ -1438,11 +1439,22 @@ mod tests {
             true,
             crate::db::facets::FacetLockWait {
                 waited_ms: 236_000,
-                holder: Some("incremental rebuild"),
-                holder_age_ms: Some(94_000),
+                holder: Some("owner cache claim"),
+                holder_age_ms: Some(20),
+                released_by: Some("incremental rebuild"),
+                released_by_held_ms: Some(330_000),
             },
         );
-        journal.owner_facet_wait(true, Default::default());
+        journal.owner_facet_wait(
+            false,
+            crate::db::facets::FacetLockWait {
+                waited_ms: 40,
+                holder: Some("full rebuild"),
+                holder_age_ms: Some(5),
+                released_by: None,
+                released_by_held_ms: None,
+            },
+        );
 
         let records = events(&directory.0);
         let event = |index: usize| &records[records.len() - 3 + index]["event"];
@@ -1450,11 +1462,17 @@ mod tests {
         assert_eq!(event(0)["status"], "completed");
         assert_eq!(event(0)["durationMs"], 3);
         assert_eq!(event(1)["phase"], "owner-visibility-facet-wait");
+        assert_eq!(event(1)["status"], "completed");
         assert_eq!(event(1)["durationMs"], 236_000);
-        assert_eq!(event(1)["holder"], "incremental rebuild");
-        assert_eq!(event(1)["holderAgeMs"], 94_000);
-        assert_eq!(event(2)["durationMs"], 0);
-        assert!(event(2)["holder"].is_null());
+        assert_eq!(event(1)["holder"], "owner cache claim");
+        assert_eq!(event(1)["holderAgeMs"], 20);
+        assert_eq!(event(1)["releasedBy"], "incremental rebuild");
+        assert_eq!(event(1)["releasedByHeldMs"], 330_000);
+        // A failed wait keeps its real duration and holder.
+        assert_eq!(event(2)["status"], "failed");
+        assert_eq!(event(2)["durationMs"], 40);
+        assert_eq!(event(2)["holder"], "full rebuild");
+        assert!(event(2)["releasedBy"].is_null());
     }
     #[test]
     fn post_readiness_failure_cannot_reclassify_a_successful_launch() {

@@ -11,18 +11,54 @@ const SLOW_RESOURCE_REFRESH_LOG_THRESHOLD_MS: u128 = 100;
 const RESOURCE_INDEX_PROGRESS_INTERVAL_MS: u128 = 250;
 
 static FACET_BUILD_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
-// The last caller to take the facet build lock, and when. It is never cleared: a waiter
-// reads it only after a try_lock failed, when that caller still holds the lock (#578).
+// The last caller to take the facet build lock, and when. It is never cleared, and it is
+// written just after the lock is taken, so a reader can see the previous holder for a moment
+// after a new one took the lock. A waiter reads it when its try_lock fails (usually the
+// caller holding the lock then) and again once it holds the lock (the caller that released
+// it last). The lock is not FIFO, so a long wait can span several holders (#578).
 static FACET_BUILD_HOLDER: Mutex<Option<(&'static str, Instant)>> = Mutex::new(None);
 
-/// What a caller of the facet build lock waited on, as it saw it when the lock was busy.
+/// Runs tests that take the facet build lock one at a time, so one test's holder label never
+/// lands in another's assertions.
+#[cfg(test)]
+pub(crate) fn serialize_facet_lock_test() -> MutexGuard<'static, ()> {
+    static SERIAL: Mutex<()> = Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// What a caller of the facet build lock waited on, when the lock was busy.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FacetLockWait {
     pub waited_ms: u64,
-    /// The fixed label of the caller holding the lock, if it was busy.
+    /// The fixed label of the caller seen holding the lock when the wait began.
     pub holder: Option<&'static str>,
     /// How long that caller had held it when the wait began.
     pub holder_age_ms: Option<u64>,
+    /// The fixed label of the caller that held the lock last before this one took it.
+    pub released_by: Option<&'static str>,
+    /// How long that caller had held it when this one took it.
+    pub released_by_held_ms: Option<u64>,
+}
+
+impl FacetLockWait {
+    /// Completes a wait that began at `started`. A blocked wait reads the holder record once
+    /// more: it still names the caller that released the lock, until this caller records itself.
+    fn finish(started: Instant, first_seen: Option<(&'static str, u64)>, blocked: bool) -> Self {
+        let released = if blocked {
+            current_facet_build_holder()
+        } else {
+            None
+        };
+        Self {
+            waited_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            holder: first_seen.map(|(label, _)| label),
+            holder_age_ms: first_seen.map(|(_, age)| age),
+            released_by: released.map(|(label, _)| label),
+            released_by_held_ms: released.map(|(_, age)| age),
+        }
+    }
 }
 
 fn facet_build_coordinator() -> &'static Mutex<()> {
@@ -35,51 +71,56 @@ fn record_facet_build_holder(label: &'static str) {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((label, Instant::now()));
 }
 
-fn current_facet_build_holder() -> (Option<&'static str>, Option<u64>) {
-    match *FACET_BUILD_HOLDER
+fn current_facet_build_holder() -> Option<(&'static str, u64)> {
+    FACET_BUILD_HOLDER
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-    {
-        Some((label, since)) => (
-            Some(label),
-            Some(since.elapsed().as_millis().min(u64::MAX as u128) as u64),
-        ),
-        None => (None, None),
-    }
+        .map(|(label, since)| {
+            (
+                label,
+                since.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            )
+        })
 }
 
-/// Takes the facet build lock, blocking, and reports the wait and who held the lock.
+/// Takes the facet build lock, blocking, and reports the wait and who held the lock. The wait
+/// is reported whether or not the lock was taken.
 pub(crate) fn lock_facet_builds_observed(
     label: &'static str,
-) -> Result<(MutexGuard<'static, ()>, FacetLockWait), String> {
+) -> (Result<MutexGuard<'static, ()>, String>, FacetLockWait) {
+    const UNAVAILABLE: &str = "Facet build coordinator is unavailable";
     let started = Instant::now();
     let coordinator = facet_build_coordinator();
-    let (guard, holder, holder_age_ms) = match coordinator.try_lock() {
-        Ok(guard) => (guard, None, None),
+    let (guard, first_seen, blocked) = match coordinator.try_lock() {
+        Ok(guard) => (Ok(guard), None, false),
         Err(TryLockError::WouldBlock) => {
-            let (holder, holder_age_ms) = current_facet_build_holder();
-            let guard = coordinator
-                .lock()
-                .map_err(|_| "Facet build coordinator is unavailable".to_string())?;
-            (guard, holder, holder_age_ms)
+            let first_seen = current_facet_build_holder();
+            let guard = coordinator.lock().map_err(|_| UNAVAILABLE.to_string());
+            (guard, first_seen, true)
         }
-        Err(TryLockError::Poisoned(_)) => {
-            return Err("Facet build coordinator is unavailable".to_string())
-        }
+        Err(TryLockError::Poisoned(_)) => (Err(UNAVAILABLE.to_string()), None, false),
     };
-    record_facet_build_holder(label);
-    Ok((
-        guard,
-        FacetLockWait {
-            waited_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
-            holder,
-            holder_age_ms,
-        },
-    ))
+    let wait = FacetLockWait::finish(started, first_seen, blocked);
+    if guard.is_ok() {
+        record_facet_build_holder(label);
+    }
+    (guard, wait)
+}
+
+/// The holder fields of a wait, for a log line: fixed labels and numbers only.
+pub(crate) fn facet_lock_wait_log_fields(wait: &FacetLockWait) -> String {
+    let age = |ms: Option<u64>| ms.map_or_else(|| "none".to_string(), |ms| ms.to_string());
+    format!(
+        "holder={} holder_age_ms={} released_by={} released_by_held_ms={}",
+        wait.holder.unwrap_or("none"),
+        age(wait.holder_age_ms),
+        wait.released_by.unwrap_or("none"),
+        age(wait.released_by_held_ms)
+    )
 }
 
 pub(crate) fn lock_facet_builds(label: &'static str) -> Result<MutexGuard<'static, ()>, String> {
-    lock_facet_builds_observed(label).map(|(guard, _)| guard)
+    lock_facet_builds_observed(label).0
 }
 
 fn create_facet_staging_table(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -316,18 +357,23 @@ pub(crate) fn lock_facet_builds_unless_stopped(
     stop: Option<&Arc<AtomicBool>>,
 ) -> Result<MutexGuard<'static, ()>, String> {
     let (guard, wait) = match stop {
-        None => lock_facet_builds_observed(label)?,
+        None => {
+            let (guard, wait) = lock_facet_builds_observed(label);
+            (guard?, wait)
+        }
         Some(_) => {
             let started = Instant::now();
             let coordinator = facet_build_coordinator();
-            let mut seen = (None, None);
+            let mut first_seen = None;
+            let mut blocked = false;
             let guard = loop {
                 ensure_not_stopped(stop)?;
                 match coordinator.try_lock() {
                     Ok(guard) => break guard,
                     Err(TryLockError::WouldBlock) => {
-                        if seen.0.is_none() {
-                            seen = current_facet_build_holder();
+                        if !blocked {
+                            blocked = true;
+                            first_seen = current_facet_build_holder();
                         }
                         std::thread::sleep(std::time::Duration::from_millis(50))
                     }
@@ -336,22 +382,16 @@ pub(crate) fn lock_facet_builds_unless_stopped(
                     }
                 }
             };
+            let wait = FacetLockWait::finish(started, first_seen, blocked);
             record_facet_build_holder(label);
-            let wait = FacetLockWait {
-                waited_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
-                holder: seen.0,
-                holder_age_ms: seen.1,
-            };
             (guard, wait)
         }
     };
     if wait.waited_ms >= 1_000 {
         log::info!(
-            "[FacetCache] {label} waited {} ms for the facet build lock holder={} holder_age_ms={}",
+            "[FacetCache] {label} waited {} ms for the facet build lock {}",
             wait.waited_ms,
-            wait.holder.unwrap_or("unknown"),
-            wait.holder_age_ms
-                .map_or_else(|| "unknown".to_string(), |age| age.to_string())
+            facet_lock_wait_log_fields(&wait)
         );
     }
     Ok(guard)
@@ -3565,6 +3605,7 @@ mod tests {
     // slow owner switch shows which build it queued behind, not only that it waited (#578).
     #[test]
     fn a_waiter_names_the_facet_build_lock_holder() {
+        let _serial = serialize_facet_lock_test();
         let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
         let holder = std::thread::spawn(move || {
             let _guard = lock_facet_builds("test incremental holder").unwrap();
@@ -3573,7 +3614,8 @@ mod tests {
         });
         held_receiver.recv().unwrap();
 
-        let (_guard, wait) = lock_facet_builds_observed("test waiter").unwrap();
+        let (guard, wait) = lock_facet_builds_observed("test waiter");
+        let _guard = guard.unwrap();
         holder.join().unwrap();
 
         assert_eq!(wait.holder, Some("test incremental holder"));
@@ -3581,22 +3623,62 @@ mod tests {
         assert!(wait.holder_age_ms.is_some());
     }
 
-    // A free lock reports no holder, so a stale label never reads as a wait.
+    // The lock is not FIFO, so a long wait can span holders: the wait names the caller that
+    // released the lock to it, not only the one it first saw (#578).
     #[test]
-    fn a_free_facet_build_lock_reports_no_holder() {
-        let wait = loop {
-            let (_guard, wait) = lock_facet_builds_observed("test free waiter").unwrap();
-            // Another test may hold the lock for a moment; only a free lock is checked.
-            if wait.holder.is_none() {
-                break wait;
-            }
-        };
-        assert_eq!(wait.holder_age_ms, None);
+    fn a_waiter_names_the_holder_that_released_the_lock() {
+        let _serial = serialize_facet_lock_test();
+        let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+        let first = std::thread::spawn(move || {
+            let _guard = lock_facet_builds("test first holder").unwrap();
+            held_sender.send(()).unwrap();
+            let _ = release_receiver.recv_timeout(std::time::Duration::from_secs(5));
+        });
+        held_receiver.recv().unwrap();
+        let waiter = std::thread::spawn(|| {
+            let (guard, wait) = lock_facet_builds_observed("test released waiter");
+            guard.map(|_| wait)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        // A second holder took the lock in turn while the waiter was queued.
+        record_facet_build_holder("test second holder");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        release_sender.send(()).unwrap();
+        first.join().unwrap();
+        let wait = waiter.join().unwrap().unwrap();
+
+        assert_eq!(wait.holder, Some("test first holder"));
+        assert_eq!(wait.released_by, Some("test second holder"));
+        assert!(wait.released_by_held_ms.is_some_and(|held| held >= 40));
+    }
+
+    // A build that can be stopped records itself as the holder too, so a switch queued behind
+    // it can name it.
+    #[test]
+    fn a_stoppable_build_records_itself_as_the_holder() {
+        let _serial = serialize_facet_lock_test();
+        let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
+        let holder = std::thread::spawn(move || {
+            let stop = Arc::new(AtomicBool::new(false));
+            let _guard =
+                lock_facet_builds_unless_stopped("test stoppable holder", Some(&stop)).unwrap();
+            held_sender.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        });
+        held_receiver.recv().unwrap();
+
+        let (guard, wait) = lock_facet_builds_observed("test stoppable waiter");
+        let _guard = guard.unwrap();
+        holder.join().unwrap();
+
+        assert_eq!(wait.holder, Some("test stoppable holder"));
     }
 
     // A stopped build still queued behind another lock holder returns without the lock.
     #[test]
     fn a_stopped_build_gives_up_waiting_for_the_facet_build_lock() {
+        let _serial = serialize_facet_lock_test();
         let (held, release) = (
             std::sync::mpsc::channel::<()>(),
             std::sync::mpsc::channel::<()>(),
