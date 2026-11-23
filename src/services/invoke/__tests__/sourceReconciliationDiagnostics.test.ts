@@ -67,12 +67,14 @@ const createDatabase = (rows: readonly SourceRow[], rowIdSupported: boolean, tra
         if (!sql.includes('FROM images i')) return [];
 
         const selected = sql.includes('i.user_id = ?') ? rows.filter((row) => row.user_id === params[0]) : rows;
+        // Like SQLite, honour the LIMIT the query asks for: identity reads 10,000, details 500.
+        const limit = Number(sql.match(/LIMIT (\d+)/)?.[1] ?? batchSize);
         if (rowIdSupported) {
             const cursor = Number(params.at(-1) ?? 0);
-            return selected.filter((row) => row.source_rowid > cursor).slice(0, batchSize);
+            return selected.filter((row) => row.source_rowid > cursor).slice(0, limit);
         }
         const offset = Number(sql.match(/OFFSET (\d+)/)?.[1] ?? 0);
-        return selected.slice(offset, offset + batchSize);
+        return selected.slice(offset, offset + limit);
     }),
 });
 
@@ -195,7 +197,7 @@ describe('source reconciliation diagnostics parity', () => {
         const rowIdBatches = absent.trace.filter(
             (event) => event.kind === 'select' && String(event.args[0]).includes('ORDER BY i.rowid ASC')
         );
-        expect(rowIdBatches.map((event) => event.args[1])).toEqual([[0], [500], ['owner-a', 0]]);
+        expect(rowIdBatches.map((event) => event.args[1])).toEqual([[0], ['owner-a', 0]]);
 
         const inventory = absent.trace.find((event) => event.kind === 'inventory')?.args[0] as {
             images: Array<{ id: string; invokeOwnerId: string }>;
@@ -239,10 +241,9 @@ describe('source reconciliation diagnostics parity', () => {
         expect(enabled.trace).toEqual(absent.trace);
         expect(throwing.trace).toEqual(absent.trace);
         const offsetBatches = absent.trace.filter((event) => event.kind === 'select' && String(event.args[0]).includes('OFFSET'));
-        expect(offsetBatches).toHaveLength(4);
+        expect(offsetBatches).toHaveLength(3);
         expect(offsetBatches.map((event) => String(event.args[0]).match(/OFFSET \d+/)?.[0])).toEqual([
             'OFFSET 0',
-            'OFFSET 500',
             'OFFSET 0',
             'OFFSET 500',
         ]);

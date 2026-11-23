@@ -91,10 +91,12 @@ export const applyInvokeOwnerScope = async ({
     if (scope && reconcileSourceFacts) {
         await measureStartupPhase('owner-source-repair', async () => {
             // Startup and traced runs keep their own reports; any other repair (a user switch after
-            // startup) logs its stage timings so a slow repair shows where its time went (#533).
+            // startup) logs its timings and sends one report to the startup journal, so a slow repair
+            // shows where its time went (#533, #568).
             const diagnostics =
                 startupDiagnostics.claimRepair() ??
                 invokeSyncTrace.claimRepair(traceOperationId) ??
+                startupDiagnostics.claimRuntimeRepair() ??
                 createStartupRepairCollector({
                     now: () => performance.now(),
                     stage: () => undefined,

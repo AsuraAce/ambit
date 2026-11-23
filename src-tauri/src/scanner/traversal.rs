@@ -10,6 +10,9 @@ const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
 const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "webm", "mov", "m4v", "mkv"];
 #[cfg(not(feature = "perf-harness-serial-traversal"))]
 const IMAGE_CANDIDATE_BATCH_SIZE: usize = 256;
+/// Counts files that took the per-file `canonicalize` check, so a test can prove plain files skip it.
+#[cfg(all(test, not(feature = "perf-harness-serial-traversal")))]
+static CHECKED_FILES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn canonical_root(root: &Path) -> Option<PathBuf> {
     root.canonicalize().ok()
@@ -146,11 +149,61 @@ pub fn collect_images_recursive(root: &Path, current: &Path, files: &mut Vec<Str
 
 #[cfg(not(feature = "perf-harness-serial-traversal"))]
 fn collect_images_recursive_batched(root: &Path, current: &Path, files: &mut Vec<String>) {
+    collect_images_recursive_batched_with(root, current, files, FileCheck::ReparsePointsOnly);
+}
+
+/// Which listed files get the `canonicalize` containment check.
+///
+/// A plain file (not a symlink, no reparse-point attribute) sits physically inside a directory that
+/// was already proven to be inside the root, so checking it again can only repeat that answer.
+/// `Always` keeps the former per-file check; tests run it as the oracle for the cheaper rule.
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileCheck {
+    ReparsePointsOnly,
+    #[cfg_attr(not(test), allow(dead_code))]
+    Always,
+}
+
+#[cfg(not(feature = "perf-harness-serial-traversal"))]
+fn collect_images_recursive_batched_with(
+    root: &Path,
+    current: &Path,
+    files: &mut Vec<String>,
+    file_check: FileCheck,
+) {
     let Some(root_canonical) = canonical_root(root) else {
         return;
     };
     let mut visited = HashSet::new();
-    collect_images_recursive_inner(root, &root_canonical, current, files, &mut visited);
+    collect_images_recursive_inner(
+        root,
+        &root_canonical,
+        current,
+        files,
+        &mut visited,
+        file_check,
+    );
+}
+
+/// True when the entry carries the Windows reparse-point attribute (junction, symlink, cloud
+/// placeholder, deduplicated file and similar). `DirEntry::metadata` reads the attribute from the
+/// directory listing itself on Windows, so this costs no extra syscall. When it cannot be read the
+/// entry is treated as a reparse point and takes the full check. Symlinks never reach this point:
+/// `DirEntry::file_type` reports them without following them, and they are not candidates.
+#[cfg(all(windows, not(feature = "perf-harness-serial-traversal")))]
+fn is_reparse_point(entry: &std::fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    entry
+        .metadata()
+        .map(|metadata| metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        .unwrap_or(true)
+}
+
+#[cfg(all(not(windows), not(feature = "perf-harness-serial-traversal")))]
+fn is_reparse_point(_entry: &std::fs::DirEntry) -> bool {
+    false
 }
 
 #[cfg(not(feature = "perf-harness-serial-traversal"))]
@@ -160,6 +213,7 @@ fn collect_images_recursive_inner(
     current: &Path,
     files: &mut Vec<String>,
     visited: &mut HashSet<PathBuf>,
+    file_check: FileCheck,
 ) {
     if files.len() > 300_000 {
         return;
@@ -183,14 +237,22 @@ fn collect_images_recursive_inner(
             if safe_dir(root_canonical, &p, file_type) {
                 if !is_thumbnail_dir(&p) {
                     flush_image_candidates(root, root_canonical, &mut candidates, files);
-                    collect_images_recursive_inner(root, root_canonical, &p, files, visited);
+                    collect_images_recursive_inner(
+                        root,
+                        root_canonical,
+                        &p,
+                        files,
+                        visited,
+                        file_check,
+                    );
                 }
             } else if !file_type.is_symlink()
                 && file_type.is_file()
                 && is_image_path(&p)
                 && !is_thumbnail_file(&p)
             {
-                candidates.push(p);
+                let check = file_check == FileCheck::Always || is_reparse_point(&entry);
+                candidates.push((p, check));
                 if candidates.len() == IMAGE_CANDIDATE_BATCH_SIZE {
                     flush_image_candidates(root, root_canonical, &mut candidates, files);
                 }
@@ -204,7 +266,7 @@ fn collect_images_recursive_inner(
 fn flush_image_candidates(
     root: &Path,
     root_canonical: &Path,
-    candidates: &mut Vec<PathBuf>,
+    candidates: &mut Vec<(PathBuf, bool)>,
     files: &mut Vec<String>,
 ) {
     if candidates.is_empty() {
@@ -214,8 +276,12 @@ fn flush_image_candidates(
     let found: Vec<Option<String>> = SCAN_POOL.install(|| {
         candidates
             .par_iter()
-            .map(|path| {
-                canonical_inside_root(root_canonical, path)?;
+            .map(|(path, check)| {
+                if *check {
+                    #[cfg(test)]
+                    CHECKED_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    canonical_inside_root(root_canonical, path)?;
+                }
                 let rel = path.strip_prefix(root).ok()?;
                 Some(rel.to_string_lossy().replace("\\", "/"))
             })
@@ -711,5 +777,99 @@ mod tests {
 
         assert_scanners_only_return(&root.path, &expected_absolute);
         assert_relative_scan_matches_serial(&root.path, &root.path, Vec::new());
+    }
+
+    /// Runs that check every file (`FileCheck::Always`) move `CHECKED_FILES`, so they wait for the
+    /// test that reads it.
+    static CHECKED_FILES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn batched_listing(root: &Path, current: &Path, file_check: FileCheck) -> Vec<String> {
+        let _guard = (file_check == FileCheck::Always)
+            .then(|| CHECKED_FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
+        let mut files = Vec::new();
+        collect_images_recursive_batched_with(root, current, &mut files, file_check);
+        files
+    }
+
+    fn build_listing_fixture(root: &Path) {
+        for i in 0..300 {
+            write_file(&root.join(format!("flat-{i:03}.PNG")));
+        }
+        write_file(&root.join("MiXeD/CaSe/Upper.PNG"));
+        write_file(&root.join("MiXeD/lower.jpg"));
+        write_file(&root.join("MiXeD/CaSe/deep/Deeper.WebP"));
+        write_file(&root.join("MiXeD/CaSe/deep/clip.mp4"));
+        write_file(&root.join("MiXeD/CaSe/deep/x-thumbnail.png"));
+        write_file(&root.join("MiXeD/Thumbnails/skip.png"));
+        write_file(&root.join("a b/\u{e9}t\u{e9}.png"));
+    }
+
+    #[test]
+    fn plain_files_are_listed_like_the_per_file_check_without_running_it() {
+        let root = TestDir::new("listing-oracle");
+        build_listing_fixture(&root.path);
+
+        let guard = CHECKED_FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let before = CHECKED_FILES.load(std::sync::atomic::Ordering::Relaxed);
+        let mut fast = Vec::new();
+        collect_images_recursive(&root.path, &root.path, &mut fast);
+        let after = CHECKED_FILES.load(std::sync::atomic::Ordering::Relaxed);
+        drop(guard);
+        assert_eq!(
+            after, before,
+            "a plain file must not take the per-file canonicalize"
+        );
+        assert_eq!(fast.len(), 300 + 4);
+
+        let checked = batched_listing(&root.path, &root.path, FileCheck::Always);
+        assert_eq!(
+            fast, checked,
+            "same strings, case and order as the per-file check"
+        );
+        let mut serial = Vec::new();
+        collect_images_recursive_serial(&root.path, &root.path, &mut serial);
+        assert_eq!(fast, serial);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn listing_keeps_the_callers_spelling_when_the_root_differs_in_case() {
+        let root = TestDir::new("listing-case");
+        build_listing_fixture(&root.path);
+        let spelled = PathBuf::from(root.path.to_string_lossy().to_uppercase());
+
+        let fast = batched_listing(&spelled, &spelled, FileCheck::ReparsePointsOnly);
+        let checked = batched_listing(&spelled, &spelled, FileCheck::Always);
+        assert_eq!(fast, checked);
+        assert!(fast.contains(&"MiXeD/CaSe/Upper.PNG".to_string()));
+        assert!(!fast.iter().any(|path| path.starts_with("//?")));
+    }
+
+    #[test]
+    fn linked_files_are_never_listed_by_the_fast_path() {
+        let (root, _outside, outside_image, _expected) = create_link_fixture("fast-linked-file");
+        let linked_file = root.path.join("linked-file.png");
+        if let Err(error) = create_file_link(&outside_image, &linked_file) {
+            eprintln!("Skipping file link coverage because link creation failed: {error}");
+            return;
+        }
+
+        let fast = batched_listing(&root.path, &root.path, FileCheck::ReparsePointsOnly);
+        assert_eq!(
+            fast,
+            batched_listing(&root.path, &root.path, FileCheck::Always)
+        );
+        assert!(!fast.iter().any(|path| path.contains("linked-file")));
+
+        // A link is a reparse point on Windows, so it takes the full check if it ever reaches it.
+        #[cfg(windows)]
+        {
+            let entry = fs::read_dir(&root.path)
+                .unwrap()
+                .flatten()
+                .find(|entry| entry.file_name() == "linked-file.png")
+                .expect("link is listed by read_dir");
+            assert!(is_reparse_point(&entry));
+        }
     }
 }

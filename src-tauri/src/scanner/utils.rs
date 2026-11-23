@@ -105,6 +105,42 @@ where
     Ok(())
 }
 
+/// `validate_library_file_paths` with the scope check run in parallel on the scan pool.
+///
+/// The scope check resolves links on disk (two or three `canonicalize` calls per path), which
+/// dominates a library-wide check of tens of thousands of paths. It is read-only, so it can run
+/// for every path first. The paths it refuses then go, in their original order, through the
+/// serial library lookup, so the result, the first refusal and the lookup calls are the same as
+/// the serial function gives. The scan pool bounds the threads (at most four), so a running scan
+/// is slowed no more than by one more of its own batches.
+pub fn validate_library_file_paths_parallel<F, K>(
+    paths: &[String],
+    is_allowed: F,
+    mut is_known_media: K,
+) -> Result<(), String>
+where
+    F: Fn(&Path) -> bool + Sync,
+    K: FnMut(&str) -> Result<bool, String>,
+{
+    let allowed: Vec<bool> = super::SCAN_POOL.install(|| {
+        paths
+            .par_iter()
+            .map(|path| !path.trim().is_empty() && is_allowed(Path::new(path)))
+            .collect()
+    });
+    for (path, allowed) in paths.iter().zip(allowed) {
+        if path.trim().is_empty() {
+            return Err("Image path cannot be empty".to_string());
+        }
+        if !allowed && !is_known_media(path)? {
+            return Err(format!(
+                "Image path is outside the allowed filesystem scope and not in the library: {path}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Refuses a thumbnail folder other than Ambit's own `<AppLocalData>/.thumbnails`,
 /// so a scan cannot write WebP files anywhere else. When both folders exist they
 /// are compared after resolving links; otherwise the spelled paths must match.
@@ -303,10 +339,10 @@ pub fn verify_image_paths_in_scope<F, K>(
     is_known_media: K,
 ) -> Result<Vec<String>, String>
 where
-    F: FnMut(&Path) -> bool,
+    F: Fn(&Path) -> bool + Sync,
     K: FnMut(&str) -> Result<bool, String>,
 {
-    validate_library_file_paths(&paths, is_allowed, is_known_media)?;
+    validate_library_file_paths_parallel(&paths, is_allowed, is_known_media)?;
     Ok(verify_image_paths_impl(paths))
 }
 
@@ -622,8 +658,9 @@ mod tests {
         resolve_known_media_file_target, resolve_show_in_folder_target,
         scan_directory_since_in_scope, scan_directory_with_stats_in_scope, scan_image_in_scope,
         scan_image_workflow_in_scope, scope_check_path, validate_bulk_scan_request,
-        validate_library_file_paths, validate_metadata_probe_paths, validate_scoped_roots,
-        validate_thumbnail_dir, verify_image_paths_in_scope, ScanImageOptions,
+        validate_library_file_paths, validate_library_file_paths_parallel,
+        validate_metadata_probe_paths, validate_scoped_roots, validate_thumbnail_dir,
+        verify_image_paths_in_scope, ScanImageOptions,
     };
     use crate::scanner::models::FileMetadataProbe;
     use rusqlite::Connection;
@@ -770,6 +807,97 @@ mod tests {
             Err("db closed".to_string())
         );
         let _ = fs::remove_dir_all(temp_root);
+    }
+
+    // #568: the parallel scope check must answer exactly as the serial one: the same first
+    // refusal, and the same library lookups in the same order.
+    #[test]
+    fn parallel_library_path_check_matches_the_serial_check() {
+        let allowed_prefix = "D:/In/";
+        let is_allowed = |path: &Path| path.to_string_lossy().starts_with(allowed_prefix);
+        let mut cases: Vec<Vec<String>> = Vec::new();
+        let in_scope = |n: usize| format!("D:/In/{n}.png");
+        let tracked = |n: usize| format!("E:/Tracked/{n}.png");
+        let foreign = |n: usize| format!("F:/Foreign/{n}.png");
+
+        cases.push((0..50).map(in_scope).collect());
+        cases.push((0..50).map(tracked).collect());
+        cases.push(vec![
+            in_scope(1),
+            tracked(2),
+            foreign(3),
+            tracked(4),
+            foreign(5),
+        ]);
+        cases.push(vec![tracked(1), String::new(), foreign(2)]);
+        cases.push(vec![foreign(1), String::new()]);
+        cases.push(vec![in_scope(1), "  ".to_string(), foreign(2)]);
+        cases.push(
+            (0..300)
+                .map(|n| if n % 7 == 0 { tracked(n) } else { in_scope(n) })
+                .collect(),
+        );
+        cases.push(Vec::new());
+
+        for paths in cases {
+            let serial_calls = std::cell::RefCell::new(Vec::new());
+            let serial = validate_library_file_paths(&paths, is_allowed, |path| {
+                serial_calls.borrow_mut().push(path.to_string());
+                Ok(path.starts_with("E:/Tracked/"))
+            });
+            let parallel_calls = std::cell::RefCell::new(Vec::new());
+            let parallel = validate_library_file_paths_parallel(&paths, is_allowed, |path| {
+                parallel_calls.borrow_mut().push(path.to_string());
+                Ok(path.starts_with("E:/Tracked/"))
+            });
+            assert_eq!(parallel, serial, "paths: {paths:?}");
+            assert_eq!(parallel_calls.into_inner(), serial_calls.into_inner());
+        }
+
+        // A failing library lookup surfaces in the same place.
+        let paths = vec![in_scope(1), foreign(2), foreign(3)];
+        assert_eq!(
+            validate_library_file_paths_parallel(&paths, is_allowed, |_| Err("db closed".into())),
+            validate_library_file_paths(&paths, is_allowed, |_| Err("db closed".into())),
+        );
+    }
+
+    // #568: the scope check of a library-wide verify runs on the bounded scan pool, not on the
+    // calling thread and not on the global pool, which would size itself to every core.
+    #[test]
+    fn parallel_library_path_check_runs_on_the_scan_pool() {
+        let missing_dir = std::env::temp_dir().join("ambit-568-no-such-folder");
+        let paths: Vec<String> = (0..400)
+            .map(|n| {
+                missing_dir
+                    .join(format!("{n}.png"))
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        let threads = std::sync::Mutex::new(std::collections::HashSet::new());
+        let off_pool = std::sync::atomic::AtomicUsize::new(0);
+
+        let result = verify_image_paths_in_scope(
+            paths.clone(),
+            |_| {
+                if crate::scanner::SCAN_POOL.current_thread_index().is_none() {
+                    off_pool.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                threads.lock().unwrap().insert(std::thread::current().id());
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                true
+            },
+            |_| Ok(false),
+        );
+
+        assert_eq!(result, Ok(paths));
+        assert_eq!(off_pool.load(std::sync::atomic::Ordering::Relaxed), 0);
+        let used = threads.lock().unwrap().len();
+        assert!(used <= crate::scanner::SCAN_POOL.current_num_threads());
+        if crate::scanner::SCAN_POOL.current_num_threads() > 1 {
+            assert!(used > 1, "the check ran on {used} thread");
+        }
     }
 
     // #384: a scan writes WebP thumbnails into `thumbnail_dir`, so it must be Ambit's own.

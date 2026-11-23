@@ -99,6 +99,42 @@ describe('applyInvokeOwnerScope', () => {
             claim.mockRestore();
         }
     });
+    it.each(['completed', 'cancelled'] as const)(
+        'reports a repair after ready through the journal collector, finished as %s',
+        async (status) => {
+            const { applyInvokeOwnerScope } = await import('../ownerScope');
+            const { startupDiagnostics } = await import('../../../utils/startupDiagnostics');
+            const { createStartupRepairCollector } = await import('../../../utils/startupRepairDiagnostics');
+            const report = vi.fn();
+            const collector = createStartupRepairCollector({ now: () => 0, stage: vi.fn(), report });
+            const startupClaim = vi.spyOn(startupDiagnostics, 'claimRepair').mockReturnValueOnce(undefined);
+            const runtimeClaim = vi.spyOn(startupDiagnostics, 'claimRuntimeRepair').mockReturnValueOnce(collector);
+            const controller = new AbortController();
+            mocks.reconcileInvokeSourceFacts.mockImplementationOnce(async () => {
+                if (status === 'cancelled') {
+                    controller.abort();
+                    throw new Error('Aborted');
+                }
+                return 3;
+            });
+            try {
+                const apply = applyInvokeOwnerScope({
+                    discovery,
+                    selection: { dbPath: discovery.dbPath, mode: 'all' },
+                    reconcileSourceFacts: true,
+                    signal: controller.signal,
+                });
+                if (status === 'cancelled') await expect(apply).rejects.toThrow('Aborted');
+                else await apply;
+                expect(runtimeClaim).toHaveBeenCalledTimes(1);
+                expect(report).toHaveBeenCalledTimes(1);
+                expect(report.mock.calls[0][0].status).toBe(status);
+            } finally {
+                startupClaim.mockRestore();
+                runtimeClaim.mockRestore();
+            }
+        }
+    );
     it('persists the failing native visibility stage without exposing owner data', async () => {
         const { applyInvokeOwnerScope } = await import('../ownerScope');
         mocks.refreshInvokeOwnerScope.mockResolvedValue({ status: 'error', error: 'database is locked' });
