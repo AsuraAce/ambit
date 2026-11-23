@@ -1,20 +1,21 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const STARTUP_CHUNK_LIMIT_BYTES = 500 * 1024;
-const isWindows = process.platform === 'win32';
 
-const result = isWindows
-    ? spawnSync('pnpm exec vite build', {
-          cwd: process.cwd(),
-          encoding: 'utf8',
-          shell: true,
-      })
-    : spawnSync('pnpm', ['exec', 'vite', 'build'], {
-          cwd: process.cwd(),
-          encoding: 'utf8',
-      });
+// Run Vite through the current Node with the project's installed CLI so the
+// gate does not depend on which pnpm is first on PATH.
+const require = createRequire(import.meta.url);
+const vitePackagePath = require.resolve('vite/package.json');
+const viteBin = join(dirname(vitePackagePath), require(vitePackagePath).bin.vite);
+
+const result = spawnSync(process.execPath, [viteBin, 'build'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    shell: false,
+});
 
 process.stdout.write(result.stdout ?? '');
 process.stderr.write(result.stderr ?? '');
