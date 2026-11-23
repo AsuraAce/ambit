@@ -61,6 +61,9 @@ pub enum StartupPhase {
     Ready,
     ThumbnailMaintenance,
     MetadataMaintenance,
+    // The facet cache refresh after a metadata refresh updated images. It holds the facet
+    // build lock, so an owner switch can queue behind it (#578).
+    MetadataFacetRefresh,
     OwnerRepairDecision,
     OwnerRepairStage,
     OwnerRepairReport,

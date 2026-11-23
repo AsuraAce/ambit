@@ -491,7 +491,7 @@ fn purge_resource_folder_assets_inner(
         folder_path,
         remaining_paths,
         |conn, touches| {
-            let _coordinator = lock_facet_builds()?;
+            let _coordinator = lock_facet_builds("resource folder purge")?;
             refresh_live_facet_resources(conn, touches)
         },
     )

@@ -11,12 +11,75 @@ const SLOW_RESOURCE_REFRESH_LOG_THRESHOLD_MS: u128 = 100;
 const RESOURCE_INDEX_PROGRESS_INTERVAL_MS: u128 = 250;
 
 static FACET_BUILD_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
+// The last caller to take the facet build lock, and when. It is never cleared: a waiter
+// reads it only after a try_lock failed, when that caller still holds the lock (#578).
+static FACET_BUILD_HOLDER: Mutex<Option<(&'static str, Instant)>> = Mutex::new(None);
 
-pub(crate) fn lock_facet_builds() -> Result<MutexGuard<'static, ()>, String> {
-    FACET_BUILD_COORDINATOR
-        .get_or_init(|| Mutex::new(()))
+/// What a caller of the facet build lock waited on, as it saw it when the lock was busy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FacetLockWait {
+    pub waited_ms: u64,
+    /// The fixed label of the caller holding the lock, if it was busy.
+    pub holder: Option<&'static str>,
+    /// How long that caller had held it when the wait began.
+    pub holder_age_ms: Option<u64>,
+}
+
+fn facet_build_coordinator() -> &'static Mutex<()> {
+    FACET_BUILD_COORDINATOR.get_or_init(|| Mutex::new(()))
+}
+
+fn record_facet_build_holder(label: &'static str) {
+    *FACET_BUILD_HOLDER
         .lock()
-        .map_err(|_| "Facet build coordinator is unavailable".to_string())
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((label, Instant::now()));
+}
+
+fn current_facet_build_holder() -> (Option<&'static str>, Option<u64>) {
+    match *FACET_BUILD_HOLDER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    {
+        Some((label, since)) => (
+            Some(label),
+            Some(since.elapsed().as_millis().min(u64::MAX as u128) as u64),
+        ),
+        None => (None, None),
+    }
+}
+
+/// Takes the facet build lock, blocking, and reports the wait and who held the lock.
+pub(crate) fn lock_facet_builds_observed(
+    label: &'static str,
+) -> Result<(MutexGuard<'static, ()>, FacetLockWait), String> {
+    let started = Instant::now();
+    let coordinator = facet_build_coordinator();
+    let (guard, holder, holder_age_ms) = match coordinator.try_lock() {
+        Ok(guard) => (guard, None, None),
+        Err(TryLockError::WouldBlock) => {
+            let (holder, holder_age_ms) = current_facet_build_holder();
+            let guard = coordinator
+                .lock()
+                .map_err(|_| "Facet build coordinator is unavailable".to_string())?;
+            (guard, holder, holder_age_ms)
+        }
+        Err(TryLockError::Poisoned(_)) => {
+            return Err("Facet build coordinator is unavailable".to_string())
+        }
+    };
+    record_facet_build_holder(label);
+    Ok((
+        guard,
+        FacetLockWait {
+            waited_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            holder,
+            holder_age_ms,
+        },
+    ))
+}
+
+pub(crate) fn lock_facet_builds(label: &'static str) -> Result<MutexGuard<'static, ()>, String> {
+    lock_facet_builds_observed(label).map(|(guard, _)| guard)
 }
 
 fn create_facet_staging_table(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -249,33 +312,46 @@ fn stopped_error(stop: Option<&Arc<AtomicBool>>, error: String) -> String {
 /// stopped, so a stopped build queued behind another holder returns at once (#533).
 /// A wait longer than a second is logged with `label`, to show what a slow step waited for.
 pub(crate) fn lock_facet_builds_unless_stopped(
-    label: &str,
+    label: &'static str,
     stop: Option<&Arc<AtomicBool>>,
 ) -> Result<MutexGuard<'static, ()>, String> {
-    let started = Instant::now();
-    let guard = match stop {
-        None => lock_facet_builds()?,
+    let (guard, wait) = match stop {
+        None => lock_facet_builds_observed(label)?,
         Some(_) => {
-            let coordinator = FACET_BUILD_COORDINATOR.get_or_init(|| Mutex::new(()));
-            loop {
+            let started = Instant::now();
+            let coordinator = facet_build_coordinator();
+            let mut seen = (None, None);
+            let guard = loop {
                 ensure_not_stopped(stop)?;
                 match coordinator.try_lock() {
                     Ok(guard) => break guard,
                     Err(TryLockError::WouldBlock) => {
+                        if seen.0.is_none() {
+                            seen = current_facet_build_holder();
+                        }
                         std::thread::sleep(std::time::Duration::from_millis(50))
                     }
                     Err(TryLockError::Poisoned(_)) => {
                         return Err("Facet build coordinator is unavailable".to_string())
                     }
                 }
-            }
+            };
+            record_facet_build_holder(label);
+            let wait = FacetLockWait {
+                waited_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                holder: seen.0,
+                holder_age_ms: seen.1,
+            };
+            (guard, wait)
         }
     };
-    let waited = started.elapsed();
-    if waited.as_millis() >= 1_000 {
+    if wait.waited_ms >= 1_000 {
         log::info!(
-            "[FacetCache] {label} waited {} ms for the facet build lock",
-            waited.as_millis()
+            "[FacetCache] {label} waited {} ms for the facet build lock holder={} holder_age_ms={}",
+            wait.waited_ms,
+            wait.holder.unwrap_or("unknown"),
+            wait.holder_age_ms
+                .map_or_else(|| "unknown".to_string(), |age| age.to_string())
         );
     }
     Ok(guard)
@@ -3485,6 +3561,39 @@ mod tests {
         assert_eq!(live_facet_rows(&conn), before);
     }
 
+    // A waiter names the caller holding the facet build lock and how long it had held it, so a
+    // slow owner switch shows which build it queued behind, not only that it waited (#578).
+    #[test]
+    fn a_waiter_names_the_facet_build_lock_holder() {
+        let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
+        let holder = std::thread::spawn(move || {
+            let _guard = lock_facet_builds("test incremental holder").unwrap();
+            held_sender.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        });
+        held_receiver.recv().unwrap();
+
+        let (_guard, wait) = lock_facet_builds_observed("test waiter").unwrap();
+        holder.join().unwrap();
+
+        assert_eq!(wait.holder, Some("test incremental holder"));
+        assert!(wait.waited_ms >= 150, "waited {} ms", wait.waited_ms);
+        assert!(wait.holder_age_ms.is_some());
+    }
+
+    // A free lock reports no holder, so a stale label never reads as a wait.
+    #[test]
+    fn a_free_facet_build_lock_reports_no_holder() {
+        let wait = loop {
+            let (_guard, wait) = lock_facet_builds_observed("test free waiter").unwrap();
+            // Another test may hold the lock for a moment; only a free lock is checked.
+            if wait.holder.is_none() {
+                break wait;
+            }
+        };
+        assert_eq!(wait.holder_age_ms, None);
+    }
+
     // A stopped build still queued behind another lock holder returns without the lock.
     #[test]
     fn a_stopped_build_gives_up_waiting_for_the_facet_build_lock() {
@@ -3495,7 +3604,7 @@ mod tests {
         let (held_sender, held_receiver) = held;
         let (release_sender, release_receiver) = release;
         let holder = std::thread::spawn(move || {
-            let _guard = lock_facet_builds().unwrap();
+            let _guard = lock_facet_builds("test holder").unwrap();
             held_sender.send(()).unwrap();
             let _ = release_receiver.recv_timeout(std::time::Duration::from_secs(5));
         });

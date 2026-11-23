@@ -2540,11 +2540,37 @@ pub async fn refresh_invoke_owner_scope(
     // Read at entry, like the stop epoch: a call that waited on the lock across a reload
     // still belongs to the page that made it.
     let session_id = invoke_scope_cache_build_session_id();
+    let entered = Instant::now();
     run_blocking(app, move |conn| {
-        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let connection_ms = entered.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        let _coordinator = wait_for_facet_builds_before_visibility(connection_ms)?;
         refresh_invoke_owner_scope_for_session_inner(conn, &input, &session_id)
     })
     .await
+}
+
+/// Takes the facet build lock for the visibility refresh, and records the two waits that come
+/// before its transaction: reaching a database connection, and the facet build lock with the
+/// caller holding it. The journal had no record of either (#578).
+fn wait_for_facet_builds_before_visibility(
+    connection_ms: u64,
+) -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    crate::startup_log::owner_stage("visibility-connection", true, connection_ms);
+    let (guard, wait) = crate::db::facets::lock_facet_builds_observed("owner visibility")
+        .inspect_err(|_| {
+            crate::startup_log::owner_facet_wait(false, Default::default());
+        })?;
+    crate::startup_log::owner_facet_wait(true, wait);
+    log::info!(
+        "[DB] owner visibility wait operation={} connection_ms={} facet_wait_ms={} facet_holder={} facet_holder_age_ms={}",
+        OWNER_SCOPE_REFRESH_OPERATION,
+        connection_ms,
+        wait.waited_ms,
+        wait.holder.unwrap_or("none"),
+        wait.holder_age_ms
+            .map_or_else(|| "none".to_string(), |age| age.to_string())
+    );
+    Ok(guard)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -2595,7 +2621,7 @@ pub async fn begin_active_invoke_scope_cache_build(
     // Read at entry: an old page's call that waited on the lock must not claim as the new page.
     let session_id = invoke_scope_cache_build_session_id();
     run_blocking(app, move |conn| {
-        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let _coordinator = crate::db::facets::lock_facet_builds("owner cache claim")?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
@@ -2616,7 +2642,7 @@ pub async fn abort_active_invoke_scope_cache_build(
     // Read at entry: an old page's late abort must not release the new page's claim.
     let session_id = invoke_scope_cache_build_session_id();
     run_blocking(app, move |conn| {
-        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let _coordinator = crate::db::facets::lock_facet_builds("owner cache abort")?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
@@ -2637,7 +2663,7 @@ pub async fn commit_active_invoke_scope_cache(
     // Read at entry: an old page's commit that waited on the lock must not commit as the new page.
     let session_id = invoke_scope_cache_build_session_id();
     run_blocking(app, move |conn| {
-        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let _coordinator = crate::db::facets::lock_facet_builds("owner cache commit")?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
@@ -4745,8 +4771,9 @@ mod tests {
         let writer = thread::spawn(move || {
             // A facet build owns the build lock and then writes; an import or a thumbnail write
             // takes only the SQLite write lock.
-            let _build = holder_owns_facet_build
-                .then(|| crate::db::facets::lock_facet_builds().expect("facet build lock"));
+            let _build = holder_owns_facet_build.then(|| {
+                crate::db::facets::lock_facet_builds("test facet build").expect("facet build lock")
+            });
             let conn = Connection::open(&writer_path).unwrap();
             crate::db::configure_connection(&conn).unwrap();
             conn.execute_batch("BEGIN IMMEDIATE").unwrap();
