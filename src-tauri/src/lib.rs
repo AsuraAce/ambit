@@ -54,6 +54,13 @@ use tauri::Manager;
 #[cfg(not(test))]
 use watcher::WatcherState;
 
+// One smoke session's log must survive rotation, so the active file and the
+// rotated files together hold about 10 MB: 2 MB each, active file plus 4 rotated.
+#[cfg(not(test))]
+const LOG_MAX_FILE_BYTES: u128 = 2 * 1024 * 1024;
+#[cfg(not(test))]
+const LOG_ROTATED_FILES_KEPT: usize = 4;
+
 /// Create the Specta builder with all commands registered.
 /// This is shared between the app runtime and the export test.
 #[cfg(not(test))]
@@ -269,6 +276,10 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log_level)
+                .max_file_size(LOG_MAX_FILE_BYTES)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(
+                    LOG_ROTATED_FILES_KEPT,
+                ))
                 .build(),
         )
         .plugin(sql_guard::SqlPluginGuard::new(

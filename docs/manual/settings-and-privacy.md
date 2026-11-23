@@ -81,6 +81,8 @@ The database location shown in Support Diagnostics is the local catalog path, no
 
 Support Diagnostics also shows the app log file location. Use Show Logs Folder or Copy Diagnostics when collecting details for an issue; the copied diagnostics include paths and aggregate counts, not image prompts or metadata.
 
+The log is local only. Ambit rolls `Ambit.log` over at about 2 MB and keeps the four most recent older files beside it, named `Ambit_<date>.log`, so a whole session's log is normally still there when you collect it. Attach the files from Show Logs Folder, not only the one path shown.
+
 Use Purge Database only when you intentionally want to remove all imported metadata and reset application state. The confirmation explains that source image files are not touched, but Ambit's catalog and linked folders are reset.
 
 ## Next Step
