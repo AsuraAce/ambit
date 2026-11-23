@@ -8,12 +8,15 @@ interface ThumbnailConsumerRefreshOptions {
     queryClient: QueryClient;
     refreshCollectionThumbnails: RefreshCollectionThumbnails;
     logPrefix: string;
+    /** Aborting stops the shared thumbnail facet rebuild if no other caller needs it; the call then rejects. */
+    signal?: AbortSignal;
 }
 
 export const refreshThumbnailConsumers = async ({
     queryClient,
     refreshCollectionThumbnails,
     logPrefix,
+    signal,
 }: ThumbnailConsumerRefreshOptions): Promise<void> => {
     await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['images'] }),
@@ -21,9 +24,10 @@ export const refreshThumbnailConsumers = async ({
     ]);
 
     try {
-        await rebuildThumbnailFacetCache();
+        await rebuildThumbnailFacetCache({ signal });
         useLibraryStore.getState().incrementFacetCacheVersion();
     } catch (error) {
+        if (signal?.aborted) throw error;
         console.warn(`${logPrefix} Thumbnail facet cache refresh failed`, error);
     }
 

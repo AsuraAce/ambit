@@ -498,15 +498,10 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         await flushAsyncWork();
-        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith([
-            'checkpoints',
-            'loras',
-            'embeddings',
-            'hypernetworks',
-            'controlNets',
-            'ipAdapters',
-            'tools',
-        ]);
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith(
+            ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'],
+            { signal: expect.any(AbortSignal) }
+        );
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
     });
 
@@ -526,15 +521,10 @@ describe('useMetadataRefresh', () => {
 
         await flushAsyncWork();
 
-        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith([
-            'checkpoints',
-            'loras',
-            'embeddings',
-            'hypernetworks',
-            'controlNets',
-            'ipAdapters',
-            'tools',
-        ]);
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith(
+            ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'],
+            { signal: expect.any(AbortSignal) }
+        );
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
         expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('asset counts may be stale'), 'warning');
     });
@@ -564,6 +554,69 @@ describe('useMetadataRefresh', () => {
         await flushAsyncWork();
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
         start.mockRestore();
+    });
+
+    // The refresh holds the facet build lock for minutes on a large library, and an owner
+    // switch queued behind it for 160 s (#578). A switch stops it; it runs once afterwards,
+    // since the counts still miss the reparse.
+    it('stops the post-reparse facet refresh for an owner switch and runs it once afterwards', async () => {
+        const signals: AbortSignal[] = [];
+        mockRebuildFacetCacheIncrementalBatchStrict.mockImplementationOnce(
+            (_types: string[], options: { signal: AbortSignal }) =>
+                new Promise<number>((_, reject) => {
+                    signals.push(options.signal);
+                    options.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+                })
+        );
+        const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
+        act(() => {
+            listenerCallbacks.get('refresh-complete')?.({
+                payload: { processed: 12, updated: 3, errors: 0, wasCancelled: false },
+            });
+        });
+        await flushAsyncWork();
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledOnce();
+
+        view.rerender({ ready: false });
+        expect(signals[0]?.aborted).toBe(true);
+        await flushAsyncWork();
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledOnce();
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('asset counts may be stale'), 'warning');
+
+        view.rerender({ ready: true });
+        await flushAsyncWork();
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledTimes(2);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+
+        view.rerender({ ready: false });
+        view.rerender({ ready: true });
+        await flushAsyncWork();
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops the post-reparse facet refresh while an owner cache is repaired', async () => {
+        const signals: AbortSignal[] = [];
+        mockRebuildFacetCacheIncrementalBatchStrict.mockImplementationOnce(
+            (_types: string[], options: { signal: AbortSignal }) =>
+                new Promise<number>((_, reject) => {
+                    signals.push(options.signal);
+                    options.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+                })
+        );
+        renderHook(() => useMetadataRefresh(true));
+        act(() => {
+            listenerCallbacks.get('refresh-complete')?.({
+                payload: { processed: 12, updated: 3, errors: 0, wasCancelled: false },
+            });
+        });
+        await flushAsyncWork();
+
+        act(() => useLibraryStore.setState({ isOwnerCacheRepairing: true }));
+        expect(signals[0]?.aborted).toBe(true);
+        await flushAsyncWork();
+        act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+        await flushAsyncWork();
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledTimes(2);
     });
 
     it('skips facet refresh when metadata refresh has no updates', async () => {
@@ -600,15 +653,10 @@ describe('useMetadataRefresh', () => {
 
         await flushAsyncWork();
 
-        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith([
-            'checkpoints',
-            'loras',
-            'embeddings',
-            'hypernetworks',
-            'controlNets',
-            'ipAdapters',
-            'tools',
-        ]);
+        expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith(
+            ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'],
+            { signal: expect.any(AbortSignal) }
+        );
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
     });
 

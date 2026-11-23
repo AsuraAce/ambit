@@ -451,34 +451,85 @@ export const refreshFacetCacheForResourcesStrict = async (
 };
 
 const THUMBNAIL_FACET_TYPES = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
-let runningThumbnailFacetRebuild: Promise<void> | null = null;
-let queuedThumbnailFacetRebuild: Promise<void> | null = null;
 
-const startThumbnailFacetRebuild = (): Promise<void> => {
-    const run = rebuildFacetCacheIncrementalBatch(THUMBNAIL_FACET_TYPES)
-        .then(() => undefined)
-        .finally(() => {
-            if (runningThumbnailFacetRebuild === run) runningThumbnailFacetRebuild = null;
-        });
-    runningThumbnailFacetRebuild = run;
-    return run;
+// One shared thumbnail facet rebuild and the callers waiting on it. It is stopped only when
+// every caller passed a signal and all of those aborted: a mask or Maintenance caller, which
+// passes none, always gets its rebuild (#578).
+interface ThumbnailFacetRebuild {
+    promise: Promise<void>;
+    controller: AbortController;
+    signals: AbortSignal[];
+    unstoppable: boolean;
+}
+
+let runningThumbnailFacetRebuild: ThumbnailFacetRebuild | null = null;
+let queuedThumbnailFacetRebuild: ThumbnailFacetRebuild | null = null;
+
+const runThumbnailFacetRebuild = async (signal: AbortSignal): Promise<void> => {
+    try {
+        const count = await runRebuildFacetCacheIncrementalBatch(THUMBNAIL_FACET_TYPES, { signal });
+        console.log(`[DB] Rebuilt incremental facet cache for ${THUMBNAIL_FACET_TYPES.join(', ')}: ${count} entries`);
+    } catch (e) {
+        // Only a stop reaches the callers; any other failure is logged, as before.
+        if (signal.aborted) throw e;
+        console.error(`[DB] Failed to rebuild incremental facet cache batch for ${THUMBNAIL_FACET_TYPES.join(', ')}`, e);
+    }
+};
+
+const createThumbnailFacetRebuild = (start: (rebuild: ThumbnailFacetRebuild) => Promise<void>): ThumbnailFacetRebuild => {
+    const rebuild: ThumbnailFacetRebuild = {
+        promise: Promise.resolve(),
+        controller: new AbortController(),
+        signals: [],
+        unstoppable: false,
+    };
+    rebuild.promise = start(rebuild).finally(() => {
+        if (runningThumbnailFacetRebuild === rebuild) runningThumbnailFacetRebuild = null;
+    });
+    return rebuild;
+};
+
+const joinThumbnailFacetRebuild = (rebuild: ThumbnailFacetRebuild, signal: AbortSignal | undefined): Promise<void> => {
+    if (!signal) {
+        rebuild.unstoppable = true;
+        return rebuild.promise;
+    }
+    rebuild.signals.push(signal);
+    const stopIfNobodyNeedsIt = () => {
+        if (!rebuild.unstoppable && rebuild.signals.every((waiter) => waiter.aborted)) rebuild.controller.abort();
+    };
+    signal.addEventListener('abort', stopIfNobodyNeedsIt, { once: true });
+    return rebuild.promise;
 };
 
 /**
  * Rebuilds the facet types whose thumbnails a mask or thumbnail change can affect. Each
  * rebuild takes 30-40 s on a large library, and back-to-back masks used to queue one each
  * (#464). A call during a rebuild waits for one more rebuild that starts after it, so it
- * still sees its own change; any further calls in that time share that rebuild.
+ * still sees its own change; any further calls in that time share that rebuild. A rebuild
+ * whose every caller aborted its signal is stopped and rejects with `Aborted`.
  */
-export const rebuildThumbnailFacetCache = (): Promise<void> => {
-    if (queuedThumbnailFacetRebuild) return queuedThumbnailFacetRebuild;
-    if (!runningThumbnailFacetRebuild) return startThumbnailFacetRebuild();
-    const queued = runningThumbnailFacetRebuild.then(() => {
-        queuedThumbnailFacetRebuild = null;
-        return startThumbnailFacetRebuild();
-    });
+export const rebuildThumbnailFacetCache = (options?: FacetBuildOptions): Promise<void> => {
+    const signal = options?.signal;
+    if (signal?.aborted) return Promise.resolve().then(() => throwIfInvokeAborted(signal));
+    if (queuedThumbnailFacetRebuild) return joinThumbnailFacetRebuild(queuedThumbnailFacetRebuild, signal);
+    const running = runningThumbnailFacetRebuild;
+    if (!running) {
+        const rebuild = createThumbnailFacetRebuild((self) => runThumbnailFacetRebuild(self.controller.signal));
+        runningThumbnailFacetRebuild = rebuild;
+        return joinThumbnailFacetRebuild(rebuild, signal);
+    }
+    const queued = createThumbnailFacetRebuild((self) =>
+        running.promise
+            .catch(() => undefined)
+            .then(() => {
+                queuedThumbnailFacetRebuild = null;
+                runningThumbnailFacetRebuild = self;
+                return runThumbnailFacetRebuild(self.controller.signal);
+            })
+    );
     queuedThumbnailFacetRebuild = queued;
-    return queued;
+    return joinThumbnailFacetRebuild(queued, signal);
 };
 
 /**

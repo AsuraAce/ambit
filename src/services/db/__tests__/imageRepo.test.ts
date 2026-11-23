@@ -2573,7 +2573,7 @@ describe('rebuildThumbnailFacetCache', () => {
         expect(invokeMock).toHaveBeenCalledTimes(2);
         expect(invokeMock).toHaveBeenCalledWith('rebuild_facet_cache_incremental_batch', {
             facetTypes: expect.arrayContaining(['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters']),
-            buildId: null,
+            buildId: expect.any(String),
         });
 
         // With nothing running, the next mask starts its own rebuild at once.
@@ -2582,5 +2582,72 @@ describe('rebuildThumbnailFacetCache', () => {
         releases[2]();
         await next;
         expect(invokeMock).toHaveBeenCalledTimes(3);
+    });
+
+    // An owner switch stops the thumbnail queue's background refresh (#578), but a mask or
+    // Maintenance caller sharing that rebuild passes no signal and must still get it.
+    it('keeps a shared rebuild running while a caller without a signal waits on it', async () => {
+        vi.clearAllMocks();
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.stopFacetBuild).mockResolvedValue(undefined);
+        const releases: Array<() => void> = [];
+        invokeMock.mockImplementation(async (command: string) => {
+            if (command !== 'rebuild_facet_cache_incremental_batch') return undefined;
+            await new Promise<void>((resolve) => releases.push(resolve));
+            return 10;
+        });
+        const { rebuildThumbnailFacetCache } = await import('../imageRepo');
+        const background = new AbortController();
+
+        const earlier = rebuildThumbnailFacetCache();
+        await vi.waitFor(() => expect(releases).toHaveLength(1));
+        // Both join the one rebuild queued behind the running one.
+        const stoppable = rebuildThumbnailFacetCache({ signal: background.signal });
+        const mask = rebuildThumbnailFacetCache();
+        background.abort();
+
+        releases[0]();
+        await earlier;
+        await vi.waitFor(() => expect(releases).toHaveLength(2));
+        expect(commands.stopFacetBuild).not.toHaveBeenCalled();
+        releases[1]();
+        await expect(Promise.all([stoppable, mask])).resolves.toBeDefined();
+        expect(invokeMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops a shared rebuild once every caller waiting on it has aborted', async () => {
+        vi.clearAllMocks();
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.stopFacetBuild).mockResolvedValue(undefined);
+        const releases: Array<() => void> = [];
+        const rejects: Array<(error: Error) => void> = [];
+        invokeMock.mockImplementation((command: string) =>
+            command === 'rebuild_facet_cache_incremental_batch'
+                ? new Promise((resolve, reject) => {
+                      releases.push(() => resolve(10));
+                      rejects.push(reject);
+                  })
+                : Promise.resolve(undefined)
+        );
+        const { rebuildThumbnailFacetCache } = await import('../imageRepo');
+        const first = new AbortController();
+        const second = new AbortController();
+
+        const earlier = rebuildThumbnailFacetCache();
+        await vi.waitFor(() => expect(releases).toHaveLength(1));
+        const firstCall = rebuildThumbnailFacetCache({ signal: first.signal });
+        const secondCall = rebuildThumbnailFacetCache({ signal: second.signal });
+        releases[0]();
+        await earlier;
+        await vi.waitFor(() => expect(releases).toHaveLength(2));
+        const buildId = (invokeMock.mock.calls[1][1] as { buildId: string }).buildId;
+
+        first.abort();
+        expect(commands.stopFacetBuild).not.toHaveBeenCalled();
+        second.abort();
+        expect(commands.stopFacetBuild).toHaveBeenCalledWith(buildId);
+        rejects[1](new Error('Facet build was stopped.'));
+        await expect(firstCall).rejects.toThrow('Aborted');
+        await expect(secondCall).rejects.toThrow('Aborted');
     });
 });

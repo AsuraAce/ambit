@@ -3707,6 +3707,84 @@ mod tests {
         assert_eq!(wait.holder, Some("test stoppable holder"));
     }
 
+    // An owner switch stops the post-reparse facet refresh (#578): the switch gets the lock at
+    // once, and the stopped refresh leaves the owner caches as the reparse marked them, dirty,
+    // so the next launch's owner-cache repair still rebuilds the counts.
+    #[test]
+    fn a_stopped_metadata_facet_refresh_hands_the_lock_to_a_switch_and_leaves_its_repair_owed() {
+        let _serial = serialize_facet_lock_test();
+        let conn = create_valid_facet_conn();
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_state (
+                scope_key, db_path, images_root, scope_mode, owner_id,
+                status, generation, built_generation, updated_at
+             ) VALUES ('all-users', 'C:/Invoke/invokeai.db', 'C:/Invoke', 'all', NULL, 'ready', 4, 4, 1)",
+            [],
+        )
+        .unwrap();
+        // A reparse write: the image triggers mark the owner caches dirty.
+        conn.execute(
+            "UPDATE images SET metadata_json = '{\"changed\":true}' WHERE id = 'img-a'",
+            [],
+        )
+        .unwrap();
+        let owner_cache = |conn: &rusqlite::Connection| -> (String, i64) {
+            conn.query_row(
+                "SELECT status, generation FROM invoke_scope_cache_state WHERE scope_key = 'all-users'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+        };
+        let reparsed = owner_cache(&conn);
+        assert_eq!(reparsed.0, "dirty");
+        let before = live_facet_rows(&conn);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
+        let (go_sender, go_receiver) = std::sync::mpsc::channel::<()>();
+        let build_stop = stop.clone();
+        let refresh = std::thread::spawn(move || {
+            let mut conn = conn;
+            let guard = lock_facet_builds_unless_stopped("incremental rebuild", Some(&build_stop));
+            held_sender.send(()).unwrap();
+            let _ = go_receiver.recv_timeout(std::time::Duration::from_secs(5));
+            let result = rebuild_incremental_facet_types_unless_stopped(
+                &mut conn,
+                &[
+                    "checkpoints".to_string(),
+                    "loras".to_string(),
+                    "tools".to_string(),
+                ],
+                Some(&build_stop),
+            );
+            drop(guard);
+            (conn, result)
+        });
+        held_receiver.recv().unwrap();
+        let switch = spawn_queued_facet_waiter("owner visibility");
+
+        let stopped_at = Instant::now();
+        stop.store(true, Ordering::SeqCst);
+        go_sender.send(()).unwrap();
+        let wait = switch.join().unwrap().unwrap();
+        let handed_over_ms = stopped_at.elapsed().as_millis();
+        let (conn, result) = refresh.join().unwrap();
+
+        assert_eq!(result, Err(FACET_BUILD_STOPPED.to_string()));
+        assert!(
+            handed_over_ms < 2_000,
+            "the switch waited {handed_over_ms} ms after the stop"
+        );
+        assert_eq!(wait.released_by, Some("incremental rebuild"));
+        assert_eq!(live_facet_rows(&conn), before, "nothing was swapped in");
+        assert_eq!(
+            owner_cache(&conn),
+            reparsed,
+            "the owner cache still needs its repair"
+        );
+    }
+
     // A stopped build still queued behind another lock holder returns without the lock.
     #[test]
     fn a_stopped_build_gives_up_waiting_for_the_facet_build_lock() {

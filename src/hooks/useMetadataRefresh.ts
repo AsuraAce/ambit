@@ -5,7 +5,7 @@
  * The actual processing happens entirely in the Rust backend.
  */
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useToast } from './useToast';
@@ -102,24 +102,64 @@ export function useMetadataRefresh(startupReady = false) {
 
     const { setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress } = useLibraryStore();
 
+    // The post-reparse facet refresh holds the facet build lock for minutes on a large library,
+    // and an owner switch waits on that lock (#578). An owner switch or owner-cache repair stops
+    // it; it then runs once more when background work is allowed again, for whichever scope is
+    // active. The reparse already marked the owner caches dirty, so a restart before that rerun
+    // still repairs the counts.
+    const backgroundAllowed = startupReady && !isOwnerCacheRepairing;
+    const backgroundAllowedRef = useRef(backgroundAllowed);
+    const metadataFacetRefreshRef = useRef<AbortController | null>(null);
+    const metadataFacetRefreshOwedRef = useRef(false);
+    const [metadataFacetRefreshStopped, setMetadataFacetRefreshStopped] = useState(0);
+
+    const runMetadataFacetRefresh = useCallback(async () => {
+        const controller = new AbortController();
+        metadataFacetRefreshRef.current = controller;
+        try {
+            // Journaled apart from the refresh itself: it holds the facet build lock, which an owner switch waits on (#578).
+            const refreshed = await measureStartupPhase('metadata-facet-refresh', () =>
+                rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES, { signal: controller.signal })
+            );
+            useLibraryStore.getState().incrementFacetCacheVersion();
+            console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
+        } catch (err) {
+            if (controller.signal.aborted) {
+                console.info('[Refresh] Stopped the metadata facet refresh for an owner switch; it runs again afterwards');
+                metadataFacetRefreshOwedRef.current = true;
+                // The switch may already have finished while the stop settled.
+                setMetadataFacetRefreshStopped((stops) => stops + 1);
+                return;
+            }
+            console.error('[Refresh] Failed to refresh metadata facet cache after reparse', err);
+            addToast('Metadata refresh finished, but asset counts may be stale until the next refresh.', 'warning');
+        } finally {
+            if (metadataFacetRefreshRef.current === controller) metadataFacetRefreshRef.current = null;
+        }
+    }, [addToast]);
+
+    useEffect(() => {
+        backgroundAllowedRef.current = backgroundAllowed;
+        if (!backgroundAllowed) {
+            metadataFacetRefreshRef.current?.abort();
+            return;
+        }
+        if (!metadataFacetRefreshOwedRef.current || metadataFacetRefreshRef.current) return;
+        metadataFacetRefreshOwedRef.current = false;
+        void runMetadataFacetRefresh();
+    }, [backgroundAllowed, metadataFacetRefreshStopped, runMetadataFacetRefresh]);
+
     const refreshFacetsAfterMetadataUpdate = useCallback(
         async (result: RefreshResult) => {
             if (result.updated <= 0 || metadataFacetRefreshHandledRef.current) return;
             metadataFacetRefreshHandledRef.current = true;
-
-            try {
-                // Journaled apart from the refresh itself: it holds the facet build lock, which an owner switch waits on (#578).
-                const refreshed = await measureStartupPhase('metadata-facet-refresh', () =>
-                    rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES)
-                );
-                useLibraryStore.getState().incrementFacetCacheVersion();
-                console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
-            } catch (err) {
-                console.error('[Refresh] Failed to refresh metadata facet cache after reparse', err);
-                addToast('Metadata refresh finished, but asset counts may be stale until the next refresh.', 'warning');
+            if (!backgroundAllowedRef.current) {
+                metadataFacetRefreshOwedRef.current = true;
+                return;
             }
+            await runMetadataFacetRefresh();
         },
-        [addToast]
+        [runMetadataFacetRefresh]
     );
 
     const completeRefresh = useCallback(

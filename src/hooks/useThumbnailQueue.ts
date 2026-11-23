@@ -243,31 +243,65 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
         [setBackgroundHealingDetails]
     );
 
-    const refreshThumbnailConsumers = useCallback(
-        async (optimized: number, missing: number, force = false) => {
-            if (!force && optimized <= 0 && missing <= 0) return;
+    // The consumer refresh rebuilds thumbnail facets, which holds the facet build lock that an
+    // owner switch waits on (#578). An owner switch or owner-cache repair stops it; it then runs
+    // once more when background work is allowed again.
+    const consumerRefreshAllowed = startupReady && !isOwnerCacheRepairing;
+    const consumerRefreshAllowedRef = useRef(consumerRefreshAllowed);
+    const consumerRefreshRef = useRef<AbortController | null>(null);
+    const consumerRefreshOwedRef = useRef(false);
+    const [consumerRefreshStopped, setConsumerRefreshStopped] = useState(0);
+
+    const refreshThumbnailConsumers = useCallback(async () => {
+        const controller = new AbortController();
+        consumerRefreshRef.current = controller;
+        try {
             await refreshCommittedThumbnailConsumers({
                 queryClient,
                 refreshCollectionThumbnails,
                 logPrefix: '[ThumbnailQueue]',
+                signal: controller.signal,
             });
-        },
-        [queryClient, refreshCollectionThumbnails]
-    );
+        } catch (refreshError) {
+            if (!controller.signal.aborted) throw refreshError;
+            console.info('[ThumbnailQueue] Stopped the thumbnail consumer refresh for an owner switch; it runs again afterwards');
+            consumerRefreshOwedRef.current = true;
+            // The switch may already have finished while the stop settled.
+            setConsumerRefreshStopped((stops) => stops + 1);
+        } finally {
+            if (consumerRefreshRef.current === controller) consumerRefreshRef.current = null;
+        }
+    }, [queryClient, refreshCollectionThumbnails]);
+
+    const runThumbnailConsumerRefresh = useCallback(() => {
+        void refreshThumbnailConsumers().catch((refreshError: unknown) => {
+            console.error('[ThumbnailQueue] Smart thumbnail changes may have been saved, but consumers failed to refresh', refreshError);
+        });
+    }, [refreshThumbnailConsumers]);
+
+    useEffect(() => {
+        consumerRefreshAllowedRef.current = consumerRefreshAllowed;
+        if (!consumerRefreshAllowed) {
+            consumerRefreshRef.current?.abort();
+            return;
+        }
+        if (!consumerRefreshOwedRef.current || consumerRefreshRef.current) return;
+        consumerRefreshOwedRef.current = false;
+        runThumbnailConsumerRefresh();
+    }, [consumerRefreshAllowed, consumerRefreshStopped, runThumbnailConsumerRefresh]);
 
     const scheduleThumbnailConsumerRefresh = useCallback(
         (optimized: number, missing: number, force = false) => {
             if (!force && optimized <= 0 && missing <= 0) return;
             if (consumerRefreshScheduledRef.current) return;
             consumerRefreshScheduledRef.current = true;
-            void refreshThumbnailConsumers(optimized, missing, force).catch((refreshError) => {
-                console.error(
-                    '[ThumbnailQueue] Smart thumbnail changes may have been saved, but consumers failed to refresh',
-                    refreshError
-                );
-            });
+            if (!consumerRefreshAllowedRef.current) {
+                consumerRefreshOwedRef.current = true;
+                return;
+            }
+            runThumbnailConsumerRefresh();
         },
-        [refreshThumbnailConsumers]
+        [runThumbnailConsumerRefresh]
     );
 
     const handleCompletion = useCallback(
