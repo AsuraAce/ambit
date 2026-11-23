@@ -12,7 +12,7 @@ import { useToast } from './useToast';
 import { isBrowserMockMode } from '../services/runtime';
 import { listenWithCleanup } from '../utils/tauriListener';
 import { rebuildFacetCacheIncrementalBatchStrict } from '../services/db/imageRepo';
-import { measureStartupPhase } from '../utils/startupDiagnostics';
+import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
 import { commands } from '../bindings';
 
 interface RefreshProgress {
@@ -105,49 +105,62 @@ export function useMetadataRefresh(startupReady = false) {
     // The post-reparse facet refresh holds the facet build lock for minutes on a large library,
     // and an owner switch waits on that lock (#578). An owner switch or owner-cache repair stops
     // it; it then runs once more when background work is allowed again, for whichever scope is
-    // active. The reparse already marked the owner caches dirty, so a restart before that rerun
-    // still repairs the counts.
+    // active. One runs at a time: a request while one runs is owed, so a stop never misses one.
+    // The reparse already marked the owner caches dirty, so a restart before the rerun still
+    // repairs the counts.
     const backgroundAllowed = startupReady && !isOwnerCacheRepairing;
     const backgroundAllowedRef = useRef(backgroundAllowed);
     const metadataFacetRefreshRef = useRef<AbortController | null>(null);
     const metadataFacetRefreshOwedRef = useRef(false);
-    const [metadataFacetRefreshStopped, setMetadataFacetRefreshStopped] = useState(0);
+    const metadataFacetRefreshStopCauseRef = useRef('');
+    const [metadataFacetRefreshSettled, setMetadataFacetRefreshSettled] = useState(0);
 
     const runMetadataFacetRefresh = useCallback(async () => {
+        if (metadataFacetRefreshRef.current) {
+            metadataFacetRefreshOwedRef.current = true;
+            return;
+        }
         const controller = new AbortController();
         metadataFacetRefreshRef.current = controller;
+        // Journaled apart from the refresh itself: it holds the facet build lock, which an owner switch waits on (#578).
+        const finish = startupDiagnostics.start('metadata-facet-refresh', null);
         try {
-            // Journaled apart from the refresh itself: it holds the facet build lock, which an owner switch waits on (#578).
-            const refreshed = await measureStartupPhase('metadata-facet-refresh', () =>
-                rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES, { signal: controller.signal })
-            );
+            const refreshed = await rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES, { signal: controller.signal });
+            finish();
             useLibraryStore.getState().incrementFacetCacheVersion();
             console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
         } catch (err) {
             if (controller.signal.aborted) {
-                console.info('[Refresh] Stopped the metadata facet refresh for an owner switch; it runs again afterwards');
+                finish('cancelled');
+                console.info(
+                    `[Refresh] Stopped the metadata facet refresh for ${metadataFacetRefreshStopCauseRef.current}; it runs again afterwards`
+                );
                 metadataFacetRefreshOwedRef.current = true;
-                // The switch may already have finished while the stop settled.
-                setMetadataFacetRefreshStopped((stops) => stops + 1);
                 return;
             }
+            finish('failed', err);
             console.error('[Refresh] Failed to refresh metadata facet cache after reparse', err);
             addToast('Metadata refresh finished, but asset counts may be stale until the next refresh.', 'warning');
         } finally {
-            if (metadataFacetRefreshRef.current === controller) metadataFacetRefreshRef.current = null;
+            metadataFacetRefreshRef.current = null;
+            // An owed rerun starts once background work is allowed, which may already be so.
+            if (metadataFacetRefreshOwedRef.current) setMetadataFacetRefreshSettled((settled) => settled + 1);
         }
     }, [addToast]);
 
     useEffect(() => {
         backgroundAllowedRef.current = backgroundAllowed;
         if (!backgroundAllowed) {
+            metadataFacetRefreshStopCauseRef.current = isOwnerCacheRepairing
+                ? 'an owner-cache repair'
+                : 'paused background work (an owner switch or startup preparation)';
             metadataFacetRefreshRef.current?.abort();
             return;
         }
         if (!metadataFacetRefreshOwedRef.current || metadataFacetRefreshRef.current) return;
         metadataFacetRefreshOwedRef.current = false;
         void runMetadataFacetRefresh();
-    }, [backgroundAllowed, metadataFacetRefreshStopped, runMetadataFacetRefresh]);
+    }, [backgroundAllowed, isOwnerCacheRepairing, metadataFacetRefreshSettled, runMetadataFacetRefresh]);
 
     const refreshFacetsAfterMetadataUpdate = useCallback(
         async (result: RefreshResult) => {

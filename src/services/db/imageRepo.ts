@@ -512,7 +512,9 @@ const joinThumbnailFacetRebuild = (rebuild: ThumbnailFacetRebuild, signal: Abort
 export const rebuildThumbnailFacetCache = (options?: FacetBuildOptions): Promise<void> => {
     const signal = options?.signal;
     if (signal?.aborted) return Promise.resolve().then(() => throwIfInvokeAborted(signal));
-    if (queuedThumbnailFacetRebuild) return joinThumbnailFacetRebuild(queuedThumbnailFacetRebuild, signal);
+    // A queued rebuild whose every caller aborted never runs; a new caller queues its own.
+    const queuedRebuild = queuedThumbnailFacetRebuild;
+    if (queuedRebuild && !queuedRebuild.controller.signal.aborted) return joinThumbnailFacetRebuild(queuedRebuild, signal);
     const running = runningThumbnailFacetRebuild;
     if (!running) {
         const rebuild = createThumbnailFacetRebuild((self) => runThumbnailFacetRebuild(self.controller.signal));
@@ -523,8 +525,8 @@ export const rebuildThumbnailFacetCache = (options?: FacetBuildOptions): Promise
         running.promise
             .catch(() => undefined)
             .then(() => {
-                queuedThumbnailFacetRebuild = null;
-                runningThumbnailFacetRebuild = self;
+                if (queuedThumbnailFacetRebuild === self) queuedThumbnailFacetRebuild = null;
+                if (!self.controller.signal.aborted) runningThumbnailFacetRebuild = self;
                 return runThumbnailFacetRebuild(self.controller.signal);
             })
     );

@@ -2650,4 +2650,33 @@ describe('rebuildThumbnailFacetCache', () => {
         await expect(firstCall).rejects.toThrow('Aborted');
         await expect(secondCall).rejects.toThrow('Aborted');
     });
+
+    // A mask after the background refresh aborted must not join that stopped rebuild: it would
+    // reject, and the mask would skip its facet bump and toast (#591 review).
+    it('gives a caller without a signal a fresh rebuild when the queued one was stopped', async () => {
+        vi.clearAllMocks();
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.stopFacetBuild).mockResolvedValue(undefined);
+        const releases: Array<() => void> = [];
+        invokeMock.mockImplementation(async (command: string) => {
+            if (command !== 'rebuild_facet_cache_incremental_batch') return undefined;
+            await new Promise<void>((resolve) => releases.push(resolve));
+            return 10;
+        });
+        const { rebuildThumbnailFacetCache } = await import('../imageRepo');
+        const background = new AbortController();
+
+        const earlier = rebuildThumbnailFacetCache();
+        await vi.waitFor(() => expect(releases).toHaveLength(1));
+        const stopped = expect(rebuildThumbnailFacetCache({ signal: background.signal })).rejects.toThrow('Aborted');
+        background.abort();
+        const mask = rebuildThumbnailFacetCache();
+
+        releases[0]();
+        await earlier;
+        await stopped;
+        await vi.waitFor(() => expect(releases).toHaveLength(2));
+        releases[1]();
+        await expect(mask).resolves.toBeUndefined();
+    });
 });

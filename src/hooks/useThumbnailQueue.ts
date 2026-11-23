@@ -245,14 +245,20 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
 
     // The consumer refresh rebuilds thumbnail facets, which holds the facet build lock that an
     // owner switch waits on (#578). An owner switch or owner-cache repair stops it; it then runs
-    // once more when background work is allowed again.
+    // once more when background work is allowed again. One runs at a time: a request while one
+    // runs is owed, so a stop never misses one.
     const consumerRefreshAllowed = startupReady && !isOwnerCacheRepairing;
     const consumerRefreshAllowedRef = useRef(consumerRefreshAllowed);
     const consumerRefreshRef = useRef<AbortController | null>(null);
     const consumerRefreshOwedRef = useRef(false);
-    const [consumerRefreshStopped, setConsumerRefreshStopped] = useState(0);
+    const consumerRefreshStopCauseRef = useRef('');
+    const [consumerRefreshSettled, setConsumerRefreshSettled] = useState(0);
 
     const refreshThumbnailConsumers = useCallback(async () => {
+        if (consumerRefreshRef.current) {
+            consumerRefreshOwedRef.current = true;
+            return;
+        }
         const controller = new AbortController();
         consumerRefreshRef.current = controller;
         try {
@@ -264,12 +270,14 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
             });
         } catch (refreshError) {
             if (!controller.signal.aborted) throw refreshError;
-            console.info('[ThumbnailQueue] Stopped the thumbnail consumer refresh for an owner switch; it runs again afterwards');
+            console.info(
+                `[ThumbnailQueue] Stopped the thumbnail consumer refresh for ${consumerRefreshStopCauseRef.current}; it runs again afterwards`
+            );
             consumerRefreshOwedRef.current = true;
-            // The switch may already have finished while the stop settled.
-            setConsumerRefreshStopped((stops) => stops + 1);
         } finally {
-            if (consumerRefreshRef.current === controller) consumerRefreshRef.current = null;
+            consumerRefreshRef.current = null;
+            // An owed rerun starts once background work is allowed, which may already be so.
+            if (consumerRefreshOwedRef.current) setConsumerRefreshSettled((settled) => settled + 1);
         }
     }, [queryClient, refreshCollectionThumbnails]);
 
@@ -282,13 +290,16 @@ export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): voi
     useEffect(() => {
         consumerRefreshAllowedRef.current = consumerRefreshAllowed;
         if (!consumerRefreshAllowed) {
+            consumerRefreshStopCauseRef.current = isOwnerCacheRepairing
+                ? 'an owner-cache repair'
+                : 'paused background work (an owner switch or startup preparation)';
             consumerRefreshRef.current?.abort();
             return;
         }
         if (!consumerRefreshOwedRef.current || consumerRefreshRef.current) return;
         consumerRefreshOwedRef.current = false;
         runThumbnailConsumerRefresh();
-    }, [consumerRefreshAllowed, consumerRefreshStopped, runThumbnailConsumerRefresh]);
+    }, [consumerRefreshAllowed, consumerRefreshSettled, isOwnerCacheRepairing, runThumbnailConsumerRefresh]);
 
     const scheduleThumbnailConsumerRefresh = useCallback(
         (optimized: number, missing: number, force = false) => {
