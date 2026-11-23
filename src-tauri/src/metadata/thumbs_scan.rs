@@ -1827,6 +1827,8 @@ mod tests {
     // favorite, pin or mask in that time failed. A user write must get in while it reads.
     #[test]
     fn folder_purge_leaves_user_writes_free_while_facets_refresh() {
+        // The purge takes the real facet build lock.
+        let _serial = crate::db::facets::serialize_facet_lock_test();
         let (path, _setup) = open_purge_test_library("concurrent", 4_000, 30);
         let mut purge = Connection::open(&path).unwrap();
         crate::db::configure_connection(&purge).unwrap();

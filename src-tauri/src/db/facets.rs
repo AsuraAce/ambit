@@ -28,6 +28,12 @@ pub(crate) fn serialize_facet_lock_test() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Counts observed waiters that found the lock busy, so a test can release a holder only once
+/// its waiter is queued instead of guessing with a sleep.
+#[cfg(test)]
+static BLOCKED_FACET_WAITERS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 /// What a caller of the facet build lock waited on, when the lock was busy.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FacetLockWait {
@@ -95,6 +101,8 @@ pub(crate) fn lock_facet_builds_observed(
         Ok(guard) => (Ok(guard), None, false),
         Err(TryLockError::WouldBlock) => {
             let first_seen = current_facet_build_holder();
+            #[cfg(test)]
+            BLOCKED_FACET_WAITERS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let guard = coordinator.lock().map_err(|_| UNAVAILABLE.to_string());
             (guard, first_seen, true)
         }
@@ -3601,25 +3609,52 @@ mod tests {
         assert_eq!(live_facet_rows(&conn), before);
     }
 
+    // Waits until an observed waiter started after `before` was read is queued on the lock.
+    fn wait_for_a_blocked_facet_waiter(before: usize) {
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while BLOCKED_FACET_WAITERS.load(std::sync::atomic::Ordering::SeqCst) == before {
+            assert!(
+                Instant::now() < deadline,
+                "the waiter never queued on the lock"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    // Spawns a waiter on the facet build lock and returns once it is queued behind the holder.
+    fn spawn_queued_facet_waiter(
+        label: &'static str,
+    ) -> std::thread::JoinHandle<Result<FacetLockWait, String>> {
+        let before = BLOCKED_FACET_WAITERS.load(std::sync::atomic::Ordering::SeqCst);
+        let waiter = std::thread::spawn(move || {
+            let (guard, wait) = lock_facet_builds_observed(label);
+            guard.map(|_| wait)
+        });
+        wait_for_a_blocked_facet_waiter(before);
+        waiter
+    }
+
     // A waiter names the caller holding the facet build lock and how long it had held it, so a
     // slow owner switch shows which build it queued behind, not only that it waited (#578).
     #[test]
     fn a_waiter_names_the_facet_build_lock_holder() {
         let _serial = serialize_facet_lock_test();
         let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
         let holder = std::thread::spawn(move || {
             let _guard = lock_facet_builds("test incremental holder").unwrap();
             held_sender.send(()).unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            let _ = release_receiver.recv_timeout(std::time::Duration::from_secs(5));
         });
         held_receiver.recv().unwrap();
-
-        let (guard, wait) = lock_facet_builds_observed("test waiter");
-        let _guard = guard.unwrap();
+        let waiter = spawn_queued_facet_waiter("test waiter");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        release_sender.send(()).unwrap();
         holder.join().unwrap();
+        let wait = waiter.join().unwrap().unwrap();
 
         assert_eq!(wait.holder, Some("test incremental holder"));
-        assert!(wait.waited_ms >= 150, "waited {} ms", wait.waited_ms);
+        assert!(wait.waited_ms >= 50, "waited {} ms", wait.waited_ms);
         assert!(wait.holder_age_ms.is_some());
     }
 
@@ -3636,11 +3671,7 @@ mod tests {
             let _ = release_receiver.recv_timeout(std::time::Duration::from_secs(5));
         });
         held_receiver.recv().unwrap();
-        let waiter = std::thread::spawn(|| {
-            let (guard, wait) = lock_facet_builds_observed("test released waiter");
-            guard.map(|_| wait)
-        });
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let waiter = spawn_queued_facet_waiter("test released waiter");
         // A second holder took the lock in turn while the waiter was queued.
         record_facet_build_holder("test second holder");
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -3650,7 +3681,7 @@ mod tests {
 
         assert_eq!(wait.holder, Some("test first holder"));
         assert_eq!(wait.released_by, Some("test second holder"));
-        assert!(wait.released_by_held_ms.is_some_and(|held| held >= 40));
+        assert!(wait.released_by_held_ms.is_some_and(|held| held >= 50));
     }
 
     // A build that can be stopped records itself as the holder too, so a switch queued behind
@@ -3659,18 +3690,19 @@ mod tests {
     fn a_stoppable_build_records_itself_as_the_holder() {
         let _serial = serialize_facet_lock_test();
         let (held_sender, held_receiver) = std::sync::mpsc::channel::<()>();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
         let holder = std::thread::spawn(move || {
             let stop = Arc::new(AtomicBool::new(false));
             let _guard =
                 lock_facet_builds_unless_stopped("test stoppable holder", Some(&stop)).unwrap();
             held_sender.send(()).unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = release_receiver.recv_timeout(std::time::Duration::from_secs(5));
         });
         held_receiver.recv().unwrap();
-
-        let (guard, wait) = lock_facet_builds_observed("test stoppable waiter");
-        let _guard = guard.unwrap();
+        let waiter = spawn_queued_facet_waiter("test stoppable waiter");
+        release_sender.send(()).unwrap();
         holder.join().unwrap();
+        let wait = waiter.join().unwrap().unwrap();
 
         assert_eq!(wait.holder, Some("test stoppable holder"));
     }
