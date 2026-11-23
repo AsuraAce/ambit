@@ -4267,6 +4267,111 @@ describe('Library Integration (Provider Stack)', () => {
         });
     });
 
+    describe('a selected collection across an owner switch (#572)', () => {
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'odin', imageCount: 4 },
+                { ownerId: 'system', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        const board = (id: string, name: string): Collection => ({ id, name, source: 'invoke', imageIds: [], createdAt: 1 });
+        const systemBoard = board('system-board', 'Explicit - Unsorted');
+        const odinBoard = board('odin-board', 'Odin board');
+        type Selection = { dbPath: string; mode: 'owner'; ownerId: string } | { dbPath: string; mode: 'all' };
+        const allUsers: Selection = { dbPath: discovery.dbPath, mode: 'all' };
+        const odin: Selection = { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'odin' };
+
+        // The collection list follows the applied scope, as `scoped_collections` does.
+        const startIn = async (selection: Selection) => {
+            let scope: Selection = selection;
+            mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+            mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection: next }: { selection: Selection }) => {
+                scope = next;
+                return {
+                    changed: true,
+                    sourceFactsUpdated: 0,
+                    activeVisibilityUpdated: 0,
+                    removedVisibilityUpdated: 0,
+                    boardCollectionsUpdated: 0,
+                    mode: next.mode,
+                };
+            });
+            mocks.getAllCollectionsWithStats.mockImplementation(async () =>
+                scope.mode === 'all' ? [systemBoard, odinBoard] : [odinBoard]
+            );
+            let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+            let syncHook: SyncHook | undefined;
+            renderSyncStack(
+                (h) => (libraryHook = h),
+                (h) => (syncHook = h)
+            );
+            await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+            await act(async () =>
+                libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke', invokeSyncBoards: true, invokeOwnerSelection: selection })
+            );
+            await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+            const library = () => libraryHook!;
+            // A user switch, then the swap App makes once the target is admitted.
+            const switchTo = async (target: Selection) => {
+                const heldSelection = library().filters.collectionId;
+                await act(async () => {
+                    expect(await syncHook!.selectInvokeOwnerScope(target)).toBe(true);
+                });
+                const retained = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
+                expect(retained).not.toBeNull();
+                await act(async () => {});
+                // The held view keeps its selection until the swap.
+                expect(library().filters.collectionId).toBe(heldSelection);
+                const callsBeforeSwap = {
+                    search: mocks.searchImages.mock.calls.length,
+                    count: mocks.countImages.mock.calls.length,
+                    scopes: mocks.countLibraryScopes.mock.calls.length,
+                };
+                act(() => useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(retained!.operationId));
+                return callsBeforeSwap;
+            };
+            const select = async (collection: Collection) => {
+                act(() => library().setFilters((previous: FilterState) => ({ ...previous, collectionId: collection.id })));
+                await waitFor(() => expect(mocks.searchImages.mock.calls.some((call) => call[6] === collection.id)).toBe(true));
+            };
+            return { library, switchTo, select };
+        };
+
+        it("clears another owner's board when switching to Odin, and no query after the swap filters by it", async () => {
+            const { library, switchTo, select } = await startIn(allUsers);
+            await select(systemBoard);
+
+            const before = await switchTo(odin);
+
+            await waitFor(() => expect(library().filters.collectionId).toBeNull());
+            const afterSwap = [
+                ...mocks.searchImages.mock.calls.slice(before.search).map((call) => call[6]),
+                ...mocks.countImages.mock.calls.slice(before.count).map((call) => call[2]),
+                ...mocks.countLibraryScopes.mock.calls.slice(before.scopes).map((call) => call[2]),
+            ];
+            expect(afterSwap).not.toContain(systemBoard.id);
+            // Odin's view lists no board of another owner, so nothing can name it in the header.
+            expect(library().collections.map((collection: Collection) => collection.id)).toEqual([odinBoard.id]);
+        });
+
+        it("keeps Odin's own board selected across switches to All users and back", async () => {
+            const { library, switchTo, select } = await startIn(odin);
+            await select(odinBoard);
+
+            await switchTo(allUsers);
+            await act(async () => {});
+            expect(library().filters.collectionId).toBe(odinBoard.id);
+
+            await switchTo(odin);
+            await act(async () => {});
+            expect(library().filters.collectionId).toBe(odinBoard.id);
+        });
+    });
+
     it('restores cached owner cursors and skips SQLite catch-up when switching between current scopes', async () => {
         let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
         let syncHook: SyncHook | undefined;

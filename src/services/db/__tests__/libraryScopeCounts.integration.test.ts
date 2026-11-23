@@ -37,6 +37,8 @@ describe('library media scopes over SQLite', () => {
             -- m86 names the count index in this view; the rows it returns are the same.
             CREATE VIEW scoped_count_images AS SELECT * FROM scoped_images;
             CREATE TABLE collection_images (collection_id TEXT, image_id TEXT);
+            -- Collection reads also require the collection to be visible in the current scope (#572).
+            CREATE VIEW scoped_collections AS SELECT 'selected' AS id;
             INSERT INTO images(id, media_type, source_kind, positive_prompt) VALUES
                 ('photo', 'image', 'photograph', 'portrait'),
                 ('generated', 'image', 'generated', 'landscape'),

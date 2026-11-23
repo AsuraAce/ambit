@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
     shouldPrefetchResultPages: vi.fn(),
     refreshSmartCounts: vi.fn(),
     invalidateRetainedThumbnails: vi.fn(),
+    collectionsFailed: { current: false },
 }));
 
 vi.mock('../SettingsContext', () => ({ useSettings: () => mocks.settings.current }));
@@ -111,8 +112,8 @@ vi.mock('../../stores/libraryStore', () => ({
 }));
 vi.mock('../../stores/collectionStore', () => ({
     useCollectionStore: Object.assign(
-        (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
-            selector({ refreshSmartCounts: mocks.refreshSmartCounts }),
+        (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts; initializationError: boolean }) => unknown) =>
+            selector({ refreshSmartCounts: mocks.refreshSmartCounts, initializationError: mocks.collectionsFailed.current }),
         { getState: () => ({ invalidateRetainedThumbnails: mocks.invalidateRetainedThumbnails }) }
     ),
 }));
@@ -1493,6 +1494,37 @@ describe('SearchProvider', () => {
         };
         expect(recentSearchUpdater({ recentSearches: ['portrait'] }).recentSearches).toEqual(['landscape']);
         await act(() => latest.refreshHiddenAvailability());
+    });
+
+    describe('a selected collection the admitted scope cannot vouch for (#572)', () => {
+        const board = { id: 'board', name: 'Board', imageIds: [], createdAt: 1 } as Collection;
+        const clearingCalls = () =>
+            ((mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>).mock.calls
+                .map(([update]) => (typeof update === 'function' ? update((mocks.searchState.current as SearchValue).filters) : update))
+                .filter((update: Partial<FilterState>) => 'collectionId' in update && update.collectionId === null);
+        beforeEach(() => {
+            mocks.searchState.current = {
+                ...(mocks.searchState.current as object),
+                filters: { ...baseFilters, collectionId: board.id },
+            };
+        });
+        afterEach(() => {
+            mocks.collectionsFailed.current = false;
+        });
+
+        it('keeps a selection the loaded list still holds', async () => {
+            mocks.collections.current = { ...(mocks.collections.current as object), collections: [board] };
+            renderProvider();
+            await act(async () => {});
+            expect(clearingCalls()).toEqual([]);
+        });
+
+        it('clears the selection when the collection list failed to load, rather than trust an old list', async () => {
+            mocks.collections.current = { ...(mocks.collections.current as object), collections: [board] };
+            mocks.collectionsFailed.current = true;
+            renderProvider();
+            await waitFor(() => expect(clearingCalls()).toHaveLength(1));
+        });
     });
 
     it('hydrates view filters from initialized settings before enabling write-back', async () => {
