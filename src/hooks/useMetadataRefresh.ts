@@ -108,7 +108,10 @@ export function useMetadataRefresh(startupReady = false) {
             metadataFacetRefreshHandledRef.current = true;
 
             try {
-                const refreshed = await rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES);
+                // Journaled apart from the refresh itself: it holds the facet build lock, which an owner switch waits on (#578).
+                const refreshed = await measureStartupPhase('metadata-facet-refresh', () =>
+                    rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES)
+                );
                 useLibraryStore.getState().incrementFacetCacheVersion();
                 console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
             } catch (err) {

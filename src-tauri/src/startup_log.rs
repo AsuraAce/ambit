@@ -135,14 +135,8 @@ pub fn install(started: Instant, identifier: &str) -> Arc<StartupJournal> {
 
 // Callers can supply only a fixed stage and durations, never a formatted log line.
 pub fn owner_stage(stage: &str, succeeded: bool, duration_ms: u64) {
-    let phase = match stage {
-        "identity-normalization" => "owner-normalization",
-        "cache-snapshot" => "owner-cache-snapshot",
-        "cache-restore" => "owner-cache-restore",
-        "commit" => "owner-commit",
-        "refresh_invoke_owner_scope" => "owner-visibility-lock",
-        "reconcile_invoke_board_snapshot" => "owner-board-lock",
-        _ => return,
+    let Some(phase) = owner_stage_phase(stage) else {
+        return;
     };
     if let Some(journal) = ACTIVE.get() {
         journal.native(
@@ -150,6 +144,27 @@ pub fn owner_stage(stage: &str, succeeded: bool, duration_ms: u64) {
             if succeeded { "completed" } else { "failed" },
             Some(duration_ms),
         );
+    }
+}
+
+fn owner_stage_phase(stage: &str) -> Option<&'static str> {
+    Some(match stage {
+        "identity-normalization" => "owner-normalization",
+        "cache-snapshot" => "owner-cache-snapshot",
+        "cache-restore" => "owner-cache-restore",
+        "commit" => "owner-commit",
+        "refresh_invoke_owner_scope" => "owner-visibility-lock",
+        "reconcile_invoke_board_snapshot" => "owner-board-lock",
+        "visibility-connection" => "owner-visibility-connection",
+        _ => return None,
+    })
+}
+
+/// The visibility refresh's wait for the facet build lock, with the caller that held it.
+/// The holder is one of the fixed labels its callers pass, never formatted text (#578).
+pub fn owner_facet_wait(succeeded: bool, wait: crate::db::facets::FacetLockWait) {
+    if let Some(journal) = ACTIVE.get() {
+        journal.owner_facet_wait(succeeded, wait);
     }
 }
 
@@ -431,6 +446,23 @@ impl StartupJournal {
             } else {
                 JournalRecordKind::Ordinary
             },
+        );
+    }
+
+    fn owner_facet_wait(&self, succeeded: bool, wait: crate::db::facets::FacetLockWait) {
+        let phase = "owner-visibility-facet-wait";
+        let status = if succeeded { "completed" } else { "failed" };
+        self.record(
+            phase,
+            status,
+            RecordTimes {
+                duration_ms: Some(wait.waited_ms),
+                ..RecordTimes::default()
+            },
+            json!({"phase":phase,"status":status,"durationMs":wait.waited_ms,
+                "holder":wait.holder,"holderAgeMs":wait.holder_age_ms,
+                "releasedBy":wait.released_by,"releasedByHeldMs":wait.released_by_held_ms}),
+            JournalRecordKind::Ordinary,
         );
     }
 
@@ -1393,6 +1425,54 @@ mod tests {
         journal.renderer(&renderer_event(&journal, "startup-failure", "failed"));
         journal.end();
         assert_eq!(events(&directory.0).last().unwrap()["outcome"], "failed");
+    }
+    // An owner switch's time before the visibility lock is split into the connection and the
+    // facet build lock wait, and the wait names its holder, so a long switch says what it
+    // queued behind (#578).
+    #[test]
+    fn visibility_waits_are_recorded_with_durations_and_the_lock_holder() {
+        let directory = TestLogs::new();
+        let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
+        let connection = owner_stage_phase("visibility-connection").unwrap();
+        journal.native(connection, "completed", Some(3));
+        journal.owner_facet_wait(
+            true,
+            crate::db::facets::FacetLockWait {
+                waited_ms: 236_000,
+                holder: Some("owner cache claim"),
+                holder_age_ms: Some(20),
+                released_by: Some("incremental rebuild"),
+                released_by_held_ms: Some(330_000),
+            },
+        );
+        journal.owner_facet_wait(
+            false,
+            crate::db::facets::FacetLockWait {
+                waited_ms: 40,
+                holder: Some("full rebuild"),
+                holder_age_ms: Some(5),
+                released_by: None,
+                released_by_held_ms: None,
+            },
+        );
+
+        let records = events(&directory.0);
+        let event = |index: usize| &records[records.len() - 3 + index]["event"];
+        assert_eq!(event(0)["phase"], "owner-visibility-connection");
+        assert_eq!(event(0)["status"], "completed");
+        assert_eq!(event(0)["durationMs"], 3);
+        assert_eq!(event(1)["phase"], "owner-visibility-facet-wait");
+        assert_eq!(event(1)["status"], "completed");
+        assert_eq!(event(1)["durationMs"], 236_000);
+        assert_eq!(event(1)["holder"], "owner cache claim");
+        assert_eq!(event(1)["holderAgeMs"], 20);
+        assert_eq!(event(1)["releasedBy"], "incremental rebuild");
+        assert_eq!(event(1)["releasedByHeldMs"], 330_000);
+        // A failed wait keeps its real duration and holder.
+        assert_eq!(event(2)["status"], "failed");
+        assert_eq!(event(2)["durationMs"], 40);
+        assert_eq!(event(2)["holder"], "full rebuild");
+        assert!(event(2)["releasedBy"].is_null());
     }
     #[test]
     fn post_readiness_failure_cannot_reclassify_a_successful_launch() {

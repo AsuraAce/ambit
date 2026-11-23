@@ -3,6 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { useMetadataRefresh, useMetadataRefreshPause } from '../useMetadataRefresh';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { startupDiagnostics } from '../../utils/startupDiagnostics';
 
 const { mockAddToast, mockRebuildFacetCacheIncrementalBatchStrict, listenerCallbacks, listenerCleanups, runtimeMock } = vi.hoisted(() => ({
     mockAddToast: vi.fn(),
@@ -536,6 +537,33 @@ describe('useMetadataRefresh', () => {
         ]);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
         expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('asset counts may be stale'), 'warning');
+    });
+
+    // The facet refresh holds the facet build lock an owner switch waits on, so the journal
+    // must show it as its own span, not as part of the reparse or its count (#578).
+    it('journals the post-reparse facet refresh as its own phase', async () => {
+        const start = vi.spyOn(startupDiagnostics, 'start');
+        let finishRefresh: (count: number) => void = () => undefined;
+        mockRebuildFacetCacheIncrementalBatchStrict.mockReturnValueOnce(
+            new Promise<number>((resolve) => {
+                finishRefresh = resolve;
+            })
+        );
+        renderHook(() => useMetadataRefresh(true));
+
+        act(() => {
+            listenerCallbacks.get('refresh-complete')?.({
+                payload: { processed: 12, updated: 3, errors: 0, wasCancelled: false },
+            });
+        });
+        await flushAsyncWork();
+
+        expect(start).toHaveBeenCalledWith('metadata-facet-refresh', null);
+        expect(start).not.toHaveBeenCalledWith('metadata-maintenance', null);
+        finishRefresh(7);
+        await flushAsyncWork();
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        start.mockRestore();
     });
 
     it('skips facet refresh when metadata refresh has no updates', async () => {
