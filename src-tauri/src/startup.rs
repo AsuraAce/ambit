@@ -725,14 +725,7 @@ async fn hold_then_run_backup<F, Fut>(
             }
             tokio::time::sleep(poll.min(cap.saturating_sub(held_since.elapsed()))).await;
         };
-        let event = serde_json::json!({
-            "event": "startup_backup",
-            "phase": "released",
-            "reason": reason,
-            "durationMs": duration_ms(held_since.elapsed()),
-            "processElapsedMs": elapsed_ms(process_started),
-        });
-        log::info!("[Backup] {event}");
+        log_backup_event("released", reason, held_since.elapsed(), process_started);
     }
     backup().await;
 }
@@ -1079,10 +1072,20 @@ mod tests {
     #[test]
     fn a_hold_that_never_clears_releases_the_backup_at_the_cap() {
         assert_eq!(AUTOMATIC_BACKUP_HOLD_CAP, Duration::from_secs(30 * 60));
+        // The cap counts from the start of the hold, after the startup delay.
+        let delay = Duration::from_millis(200);
         let cap = Duration::from_millis(300);
         let scheduled = Instant::now();
         let (started_at, schedule) =
-            spawn_backup_schedule(Duration::ZERO, Arc::new(AtomicBool::new(true)), cap);
+            spawn_backup_schedule(delay, Arc::new(AtomicBool::new(true)), cap);
+        let deadline = scheduled + delay + cap + Duration::from_secs(5);
+        while !schedule.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the cap did not release the backup"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
         schedule.join().unwrap();
         let waited = started_at
             .lock()
@@ -1090,11 +1093,11 @@ mod tests {
             .expect("the backup ran at the cap")
             - scheduled;
         assert!(
-            waited >= cap,
-            "the backup started before the cap: {waited:?}"
+            waited >= delay + cap,
+            "the backup started before the delay plus the cap: {waited:?}"
         );
         assert!(
-            waited < cap + Duration::from_secs(2),
+            waited < delay + cap + Duration::from_secs(2),
             "the cap did not release it: {waited:?}"
         );
     }
