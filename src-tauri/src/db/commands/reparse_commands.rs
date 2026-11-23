@@ -1,6 +1,10 @@
 use super::run_blocking;
+use crate::db::background_work;
+use crate::db::reparse::ReparseState;
 use crate::metadata::{CURRENT_PARSER_VERSION, VIDEO_PARSER_VERSION};
-use tauri::{AppHandle, Emitter};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -40,10 +44,36 @@ pub async fn get_images_needing_reparse(
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn get_reparse_count(app: AppHandle) -> Result<i64, String> {
+    let paused = app.state::<ReparseState>().is_paused.clone();
+    let epoch = background_work::current_epoch();
     run_blocking(app, move |conn| {
-        metadata_reparse_count(conn).map_err(|error| error.to_string())
+        metadata_reparse_count_unless_paused(conn, epoch, paused)
     })
     .await
+}
+
+/// The error a count returns when metadata refresh is paused while it runs. The app pauses
+/// refresh during owner-cache work, and the full-library scan would compete with it (#567).
+const METADATA_REFRESH_PAUSED: &str = "Metadata refresh paused";
+
+/// Counts on `conn`, which must be the caller's own connection: the stop handler stays on it.
+fn metadata_reparse_count_unless_paused(
+    conn: &rusqlite::Connection,
+    epoch: u64,
+    paused: Arc<AtomicBool>,
+) -> Result<i64, String> {
+    background_work::stop_when_epoch_changes_or_job_stopped(conn, epoch, Some(paused.clone()));
+    metadata_reparse_count(conn).map_err(|error| {
+        let interrupted = matches!(
+            error.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::OperationInterrupted)
+        );
+        if interrupted && paused.load(Ordering::SeqCst) {
+            METADATA_REFRESH_PAUSED.to_string()
+        } else {
+            error.to_string()
+        }
+    })
 }
 
 fn metadata_reparse_count(conn: &rusqlite::Connection) -> rusqlite::Result<i64> {
@@ -157,8 +187,13 @@ pub async fn reset_parser_versions(app: AppHandle) -> Result<usize, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{metadata_reparse_count, REPARSE_SKIP_SQL, REPARSE_UPDATE_SQL};
+    use super::{
+        metadata_reparse_count, metadata_reparse_count_unless_paused, METADATA_REFRESH_PAUSED,
+        REPARSE_SKIP_SQL, REPARSE_UPDATE_SQL,
+    };
     use crate::metadata::{CURRENT_PARSER_VERSION, VIDEO_PARSER_VERSION};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     fn migrated_db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
@@ -230,6 +265,32 @@ mod tests {
             )
             .expect("hidden version");
         assert_eq!(hidden, 0);
+    }
+
+    // The startup count scans the whole library. Run during an owner-cache build, it doubled the
+    // build's facet time (#567), so the pause the app sets for that build must stop a running count.
+    #[test]
+    fn a_count_stops_while_metadata_refresh_is_paused_and_counts_once_resumed() {
+        let conn = migrated_db();
+        conn.execute_batch(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)
+             INSERT INTO images (id, path, timestamp, parser_version, original_metadata_json)
+             SELECT 'img' || i, 'img' || i || '.png', 100, 0, '{\"a\":1}' FROM n;",
+        )
+        .expect("rows");
+        let epoch = crate::db::background_work::current_epoch();
+
+        let paused = Arc::new(AtomicBool::new(true));
+        assert_eq!(
+            metadata_reparse_count_unless_paused(&conn, epoch, paused),
+            Err(METADATA_REFRESH_PAUSED.to_string())
+        );
+
+        let resumed = Arc::new(AtomicBool::new(false));
+        assert_eq!(
+            metadata_reparse_count_unless_paused(&conn, epoch, resumed),
+            Ok(5000)
+        );
     }
 
     #[test]

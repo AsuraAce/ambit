@@ -60,6 +60,7 @@ describe('useMetadataRefresh', () => {
             isStartupCatchupPending: false,
             isImporting: false,
             syncStatus: 'idle',
+            isOwnerCacheRepairing: false,
             isMetadataRefreshPending: false,
             isRefreshingMetadata: false,
             refreshProgress: null,
@@ -220,6 +221,91 @@ describe('useMetadataRefresh', () => {
         }
         await act(async () => vi.advanceTimersByTimeAsync(60_000));
         expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(20);
+    });
+
+    // The startup count scans every image. Run during an owner-cache build, it doubled the build's
+    // facet time (#567), so it waits for the build and then counts once.
+    describe('while an owner-cache build runs', () => {
+        const countCalls = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count');
+
+        it('does not count until the build ends, then counts once', async () => {
+            vi.mocked(invoke).mockResolvedValue(0);
+            useLibraryStore.setState({ isOwnerCacheRepairing: true });
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+            expect(countCalls()).toHaveLength(0);
+
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            expect(countCalls()).toHaveLength(1);
+
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: true }));
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+            await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+            expect(countCalls()).toHaveLength(1);
+        });
+
+        it('holds a count whose start delay a build interrupts', async () => {
+            vi.mocked(invoke).mockResolvedValue(0);
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(1_000));
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: true }));
+            await act(async () => vi.advanceTimersByTimeAsync(60_000));
+            expect(countCalls()).toHaveLength(0);
+
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+            await act(async () => vi.advanceTimersByTimeAsync(60_000));
+            expect(countCalls()).toHaveLength(1);
+        });
+
+        it('counts once more after a build stops a running count, without using a lock attempt', async () => {
+            let rejectCount!: (reason: string) => void;
+            let counts = 0;
+            vi.mocked(invoke).mockImplementation((command) => {
+                if (command !== 'get_reparse_count') return Promise.resolve(undefined);
+                counts += 1;
+                if (counts === 1) {
+                    return new Promise((_, reject) => {
+                        rejectCount = reject;
+                    });
+                }
+                return Promise.reject('database is locked');
+            });
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            expect(counts).toBe(1);
+
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: true }));
+            await act(async () => rejectCount('Metadata refresh paused'));
+            await act(async () => vi.advanceTimersByTimeAsync(60_000));
+            expect(counts).toBe(1);
+            expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
+            expect(mockAddToast).not.toHaveBeenCalled();
+
+            // The stopped count used no attempt: the 20 lock attempts all remain.
+            act(() => useLibraryStore.setState({ isOwnerCacheRepairing: false }));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000 + 20 * 15_000 + 60_000));
+            expect(counts).toBe(1 + 20);
+        });
+
+        it('retries a count paused while the startup check still runs, without using an attempt', async () => {
+            let counts = 0;
+            vi.mocked(invoke).mockImplementation((command) => {
+                if (command !== 'get_reparse_count') return Promise.resolve(undefined);
+                counts += 1;
+                return counts === 1 ? Promise.reject('Metadata refresh paused') : Promise.reject('database is locked');
+            });
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            expect(counts).toBe(1);
+            expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
+
+            await act(async () => vi.advanceTimersByTimeAsync(15_000));
+            expect(counts).toBe(2);
+            await act(async () => vi.advanceTimersByTimeAsync(20 * 15_000 + 60_000));
+            expect(counts).toBe(1 + 20);
+            expect(mockAddToast).not.toHaveBeenCalled();
+        });
     });
 
     it('pauses native metadata refresh while the app asks it to', async () => {

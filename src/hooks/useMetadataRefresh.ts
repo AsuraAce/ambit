@@ -63,6 +63,11 @@ const isTransientDatabaseLock = (err: unknown): boolean => {
     );
 };
 
+// The native count stops with this error when metadata refresh is paused while it runs (#567).
+const METADATA_REFRESH_PAUSED = 'metadata refresh paused';
+
+const isMetadataRefreshPaused = (err: unknown): boolean => getErrorMessage(err).toLowerCase().includes(METADATA_REFRESH_PAUSED);
+
 /**
  * Pauses metadata refresh between batches while `paused` is true. Its image writes mark an
  * InvokeAI owner cache that is being built dirty, which gets that cache's commit refused (#552).
@@ -91,6 +96,9 @@ export function useMetadataRefresh(startupReady = false) {
     // Lock retries count across readiness changes, so an owner switch or failed switch
     // never restarts the startup refresh from its first attempt (#552).
     const startupRefreshAttemptRef = useRef(1);
+    // The startup count scans the whole library, so it waits for an owner-cache repair like the
+    // pause does; a count already running when one starts is stopped natively (#567).
+    const isOwnerCacheRepairing = useLibraryStore((s) => s.isOwnerCacheRepairing);
 
     const { setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress } = useLibraryStore();
 
@@ -351,7 +359,7 @@ export function useMetadataRefresh(startupReady = false) {
 
     // Auto-detect stale metadata on startup
     useEffect(() => {
-        if (browserMockMode || !startupReady || startupRefreshCompletedRef.current) return;
+        if (browserMockMode || !startupReady || isOwnerCacheRepairing || startupRefreshCompletedRef.current) return;
 
         let isCancelled = false;
         let retryTimer: number | undefined;
@@ -430,6 +438,13 @@ export function useMetadataRefresh(startupReady = false) {
             } catch (err) {
                 const retryCount = isTransientDatabaseLock(err) && countLockFailure(attempt);
                 if (isCancelled) return;
+                if (isMetadataRefreshPaused(err)) {
+                    // A pause is not a failure: count again later without using an attempt.
+                    retryTimer = window.setTimeout(() => {
+                        void runStartupRefresh(attempt);
+                    }, STARTUP_REFRESH_RETRY_DELAY_MS);
+                    return;
+                }
                 if (retryCount) {
                     setMetadataRefreshPending(true);
                     console.info(
@@ -470,7 +485,7 @@ export function useMetadataRefresh(startupReady = false) {
                 window.clearTimeout(retryTimer);
             }
         };
-    }, [setMetadataRefreshPending, startRefresh, addToast, browserMockMode, startupReady]);
+    }, [setMetadataRefreshPending, startRefresh, addToast, browserMockMode, startupReady, isOwnerCacheRepairing]);
 
     return {
         startRefresh,
