@@ -6745,7 +6745,9 @@ describe('Library Integration (Provider Stack)', () => {
                 }),
             })
         );
-        expect(useSettingsStore.getState().settings.monitoredFolders[0].lastScanned).toEqual(expect.any(Number));
+        // A watcher event does not prove the folder was swept: moving the catch-up cursor would hide
+        // files that were never imported from every later catch-up (#594).
+        expect(useSettingsStore.getState().settings.monitoredFolders[0].lastScanned).toBeUndefined();
     });
 
     it('returns failed normalized paths when targeted import throws', async () => {

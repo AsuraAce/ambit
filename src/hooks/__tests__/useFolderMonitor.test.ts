@@ -1460,4 +1460,82 @@ describe('useFolderMonitor', () => {
         await waitFor(() => expect(handleImportPaths).toHaveBeenCalledTimes(1));
         await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Catch-up: Synced 1 new items', 'success'));
     });
+
+    // #594: files generated while Live Watch was off are found only by the turn-on catch-up.
+    // A catch-up dropped because another import was running leaves them unimported, so it
+    // must stay owed until that import ends.
+    describe('Live Watch turn-on catch-up while another import runs (#594)', () => {
+        const folder: MonitoredFolder = { id: 'watch', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 };
+        const renderWithFolder = (handleImportPaths: Parameters<typeof useFolderMonitor>[0]['handleImportPaths']) =>
+            renderHook(
+                ({ folders }) =>
+                    useFolderMonitor({
+                        isLoaded: true,
+                        monitoredFolders: folders,
+                        onScan: mockOnScan,
+                        addToast: mockAddToast,
+                        handleImportPaths,
+                        refreshMetadata: vi.fn(),
+                        invokeAiPath: 'C:/invokeai',
+                    }),
+                { initialProps: { folders: [] as MonitoredFolder[] } }
+            );
+
+        it('runs the catch-up once an import that was running at turn-on ends', async () => {
+            const handleImportPaths = vi.fn().mockResolvedValue(completedImportResult);
+            const { rerender } = renderWithFolder(handleImportPaths);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            rerender({ folders: [folder] });
+            mocks.scanDirectorySince.mockResolvedValue({ status: 'ok', data: [{ path: 'C:/watch/before.png', modified: 2, size: 1 }] });
+            useLibraryStore.setState({ isImporting: true, importRunId: 'manual', importRunOwner: 'manual' });
+
+            act(() => useLibraryStore.setState({ isLiveWatching: true }));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(mocks.scanDirectorySince).not.toHaveBeenCalled();
+
+            act(() => useLibraryStore.setState({ isImporting: false, importRunId: null, importRunOwner: null }));
+
+            await waitFor(() => expect(handleImportPaths).toHaveBeenCalledWith(['C:/watch/before.png'], undefined, expect.anything()));
+            expect(mocks.scanDirectorySince).toHaveBeenCalledWith('C:/watch', 1);
+        });
+
+        it('retries the catch-up when another import took the run during the folder scan', async () => {
+            const handleImportPaths = vi.fn().mockResolvedValue(completedImportResult);
+            const { rerender } = renderWithFolder(handleImportPaths);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            rerender({ folders: [folder] });
+            mocks.scanDirectorySince
+                .mockImplementationOnce(async () => {
+                    useLibraryStore.setState({ isImporting: true, importRunId: 'manual', importRunOwner: 'manual' });
+                    return { status: 'ok', data: [{ path: 'C:/watch/before.png', modified: 2, size: 1 }] };
+                })
+                .mockResolvedValue({ status: 'ok', data: [{ path: 'C:/watch/before.png', modified: 2, size: 1 }] });
+
+            act(() => useLibraryStore.setState({ isLiveWatching: true }));
+            await waitFor(() => expect(mocks.scanDirectorySince).toHaveBeenCalledTimes(1));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(handleImportPaths).not.toHaveBeenCalled();
+
+            act(() => useLibraryStore.setState({ isImporting: false, importRunId: null, importRunOwner: null }));
+
+            await waitFor(() => expect(handleImportPaths).toHaveBeenCalledTimes(1));
+            expect(mocks.scanDirectorySince).toHaveBeenCalledTimes(2);
+        });
+
+        it('does not run an owed catch-up once Live Watch is off when the import ends', async () => {
+            const handleImportPaths = vi.fn().mockResolvedValue(completedImportResult);
+            const { rerender } = renderWithFolder(handleImportPaths);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            rerender({ folders: [folder] });
+            useLibraryStore.setState({ isImporting: true, importRunId: 'manual', importRunOwner: 'manual' });
+
+            act(() => useLibraryStore.setState({ isLiveWatching: true }));
+            act(() => useLibraryStore.setState({ isLiveWatching: false }));
+            act(() => useLibraryStore.setState({ isImporting: false, importRunId: null, importRunOwner: null }));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            expect(mocks.scanDirectorySince).not.toHaveBeenCalled();
+            expect(handleImportPaths).not.toHaveBeenCalled();
+        });
+    });
 });
