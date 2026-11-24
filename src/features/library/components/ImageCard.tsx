@@ -48,6 +48,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
     const sourceKind = getEffectiveSourceKind(image);
     const isVideo = isVideoAsset(image);
     const hasVideoPoster = isVideo && image.thumbnailSource === 'ambit-video-v1';
+    const hasOwnThumbnail = image.thumbnailUrl !== image.url;
     const invokeAssetLabel = getInvokeImageAssetLabel(image.invokeImageCategory);
     const invokeAssetMarkerLabel = invokeAssetLabel ? `Asset · ${invokeAssetLabel}` : undefined;
 
@@ -105,8 +106,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                         alt={image.filename}
                         onImageError={onImageError}
                         // VirtualGrid already limits mounted tiles to the screen and its buffer;
-                        // lazy loading could hold a visible tile grey until a hover (#590).
-                        loading="eager"
+                        // lazy loading could hold a visible tile grey until a hover (#590). A tile
+                        // without its own thumbnail shows the original file, so keep that lazy.
+                        loading={hasOwnThumbnail ? 'eager' : 'lazy'}
                         className={`w-full h-full transition-all duration-700 ease-spring
                 ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'}
                 ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
