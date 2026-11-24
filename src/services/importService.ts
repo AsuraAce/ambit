@@ -339,7 +339,8 @@ async function processImageFileEntries(
                     width: info.width || 0,
                     height: info.height || 0,
                     fileSize: info.fileSize,
-                    thumbnailUrl: info.thumbnail ? convertFileSrc(info.thumbnail) : '',
+                    // No thumbnail yet: use the original, as database rows do. An empty src never loads.
+                    thumbnailUrl: convertFileSrc(info.thumbnail || path),
                     isFavorite: false,
                     isPinned: false,
                     isDeleted: false,
@@ -454,7 +455,11 @@ async function processImageFileEntries(
                         break;
                     }
                     const upsertStartedAt = liveWatchNow();
-                    await insertImagesBatch(imagesToUpdate);
+                    // Display falls back to the original, but the database must not store it as the
+                    // thumbnail: the upsert would overwrite an existing generated one.
+                    await insertImagesBatch(
+                        imagesToUpdate.map((img) => (img.thumbnailUrl === img.url ? { ...img, thumbnailUrl: '' } : img))
+                    );
                     upsertMs = elapsedMs(upsertStartedAt);
                     if (abortSignal?.aborted) {
                         wasCancelled = true;

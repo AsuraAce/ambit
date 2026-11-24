@@ -7,7 +7,7 @@ import {
     scanResourceThumbnails,
     WEB_IMAGE_LOAD_TIMEOUT_MS,
 } from '../importService';
-import { GeneratorTool } from '../../types';
+import { AIImage, GeneratorTool } from '../../types';
 import { normalizePath } from '../../utils/pathUtils';
 
 const mocks = vi.hoisted(() => ({
@@ -1578,6 +1578,32 @@ describe('processTargetedFiles', () => {
         expect(beforeTask.cancelledSourcePaths).toContain('C:/library/source-c');
     });
 
+    it('points an imported tile with no thumbnail at its original so it can load (#597)', async () => {
+        // React 19 drops an empty src, so '' leaves the tile on the shimmer forever.
+        // thumbnailUrl === url is how database rows mark "no own thumbnail".
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            { path: 'C:/library/fresh.png', metadata: {}, thumbnail: '', width: 1, height: 1, fileSize: 1 },
+        ]);
+
+        const result = await processTargetedFiles(['C:/library/fresh.png'], { forceRescan: true });
+
+        expect(result.images[0].thumbnailUrl).not.toBe('');
+        expect(result.images[0].thumbnailUrl).toBe(result.images[0].url);
+    });
+
+    it('persists no thumbnail path for an import without one, so a stored thumbnail survives re-import (#597)', async () => {
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            { path: 'C:/library/fresh.png', metadata: {}, thumbnail: '', width: 1, height: 1, fileSize: 1 },
+        ]);
+
+        const result = await processTargetedFiles(['C:/library/fresh.png'], { forceRescan: true });
+
+        expect(mocks.insertImagesBatch).toHaveBeenCalledTimes(1);
+        const persisted = mocks.insertImagesBatch.mock.calls[0][0] as AIImage[];
+        expect(persisted[0].thumbnailUrl).toBe('');
+        expect(result.images[0].thumbnailUrl).toBe(result.images[0].url);
+    });
+
     it('maps sparse native metadata to safe image defaults', async () => {
         mocks.scanImagesBulk.mockResolvedValueOnce([
             {
@@ -1598,7 +1624,7 @@ describe('processTargetedFiles', () => {
             filename: 'sparse.png',
             width: 0,
             height: 0,
-            thumbnailUrl: '',
+            thumbnailUrl: 'asset://C:/library/sparse.png',
             isIntermediate: false,
             metadata: {
                 tool: GeneratorTool.UNKNOWN,
