@@ -419,6 +419,7 @@ export function useMetadataRefresh(startupReady = false) {
 
         let isCancelled = false;
         let retryTimer: number | undefined;
+        let countHeldForIdleLibrary: number | null = null;
 
         // Records a lock failure on `attempt`. Returns whether another attempt is allowed; after
         // the last one the startup refresh stops for this session.
@@ -439,10 +440,28 @@ export function useMetadataRefresh(startupReady = false) {
                 }, STARTUP_REFRESH_RETRY_DELAY_MS);
                 return;
             }
+            // The count scans the whole library: wait for catch-up, an import or a sync before it,
+            // and keep a count those started during for when they end, rather than scan again (#581).
+            const isLibraryBusy = () => {
+                const store = useLibraryStore.getState();
+                return store.isStartupCatchupPending || store.isImporting || store.syncStatus === 'syncing';
+            };
+            const retryWhenLibraryIdle = () => {
+                retryTimer = window.setTimeout(() => {
+                    void runStartupRefresh(attempt);
+                }, STARTUP_REFRESH_RETRY_DELAY_MS);
+            };
+            setMetadataRefreshPending(true);
+            if (isLibraryBusy()) {
+                retryWhenLibraryIdle();
+                return;
+            }
             startupRefreshInFlightRef.current = true;
             try {
-                setMetadataRefreshPending(true);
-                const countRes = await measureStartupPhase('metadata-maintenance', () => invoke<number>('get_reparse_count'));
+                const knownCount = countHeldForIdleLibrary;
+                countHeldForIdleLibrary = null;
+                const countRes =
+                    knownCount ?? (await measureStartupPhase('metadata-maintenance', () => invoke<number>('get_reparse_count')));
                 if (isCancelled) return;
                 if (countRes <= 0) {
                     startupRefreshCompletedRef.current = true;
@@ -453,11 +472,9 @@ export function useMetadataRefresh(startupReady = false) {
                     return;
                 }
 
-                const store = useLibraryStore.getState();
-                if (store.isStartupCatchupPending || store.isImporting || store.syncStatus === 'syncing') {
-                    retryTimer = window.setTimeout(() => {
-                        void runStartupRefresh(attempt);
-                    }, STARTUP_REFRESH_RETRY_DELAY_MS);
+                if (isLibraryBusy()) {
+                    countHeldForIdleLibrary = countRes;
+                    retryWhenLibraryIdle();
                     return;
                 }
 
