@@ -393,7 +393,8 @@ export function useFolderMonitor({
     }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths, browserMockMode]);
 
     // Reusable Scan Logic (Extracted from previous effect)
-    const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
+    // Resolves to 'busy' when another import held the import run, so the caller can retry.
+    const performUnifiedScan = async (folders: MonitoredFolder[], source: string): Promise<'done' | 'busy'> => {
         let totalFilesFound = 0;
         let scanWasCancelled = false;
         const tasks: { paths: string[]; variant: GeneratorTool | undefined; folderId: string }[] = [];
@@ -429,7 +430,7 @@ export function useFolderMonitor({
             }
         }
 
-        if (scanWasCancelled) return;
+        if (scanWasCancelled) return 'done';
 
         if (totalFilesFound > 0) {
             const abortCtrl = new AbortController();
@@ -445,8 +446,8 @@ export function useFolderMonitor({
                 }),
             });
             if (!importRunId) {
-                console.info(`[FolderMonitor] ${source}: import skipped because another import is active.`);
-                return;
+                console.info(`[FolderMonitor] ${source}: import deferred because another import is active.`);
+                return 'busy';
             }
             const setProgressForRun = useLibraryStore.getState().setImportProgressForRun;
             const finishRun = useLibraryStore.getState().finishImportRun;
@@ -494,7 +495,7 @@ export function useFolderMonitor({
             }
 
             // Force UI Refresh
-            if (wasCancelled) return;
+            if (wasCancelled) return 'done';
 
             await refreshMetadata();
 
@@ -502,38 +503,63 @@ export function useFolderMonitor({
         } else {
             console.log(`[FolderMonitor] ${source}: No new files found.`);
         }
+        return 'done';
     };
 
     // Live Watch Catch-up
     const isLiveWatching = useLibraryStore((s) => s.isLiveWatching);
+    const isImporting = useLibraryStore((s) => s.isImporting);
     const hasLiveWatchStartedRef = useRef(isLiveWatching);
+    // A turn-on catch-up that could not run yet. It stays owed until it runs or Live Watch
+    // is turned off: a dropped catch-up would leave files generated while Live Watch was off
+    // unimported (#594).
+    const liveCatchupPendingRef = useRef(false);
 
     // Unified Watcher Effect (Handles "Turn On")
     useEffect(() => {
         if (browserMockMode) return;
 
+        const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
+        hasLiveWatchStartedRef.current = isLiveWatching;
+        if (!isLiveWatching) {
+            liveCatchupPendingRef.current = false;
+            return;
+        }
+        if (isTurningOn) liveCatchupPendingRef.current = true;
+        if (!liveCatchupPendingRef.current) return;
+
         const activeFolders = monitoredFolders.filter((f) => f.isActive && !f.initialScanCancelled);
         if (activeFolders.length === 0) {
-            hasLiveWatchStartedRef.current = isLiveWatching;
+            liveCatchupPendingRef.current = false;
             return;
         }
 
         // CRITICAL: If an import is already running (e.g. manual re-scan), DO NOT start another scan.
         // This prevents lock contention on the database (Read lock vs Write lock).
-        if (useLibraryStore.getState().isImporting) {
-            console.log('[FolderMonitor] Skipping live scan check - Import already in progress');
+        // The catch-up stays owed and runs when that import ends (isImporting is a dependency).
+        if (isImporting) {
+            console.log('[FolderMonitor] Live Watch catch-up deferred - Import already in progress');
             return;
         }
 
-        // Condition 1: Turning ON (Catch-up)
-        const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
-
-        if (isTurningOn) {
-            console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
-            performUnifiedScan(activeFolders, 'Catch-up').catch((error) => console.error('[FolderMonitor] Catch-up scan failed', error));
-        }
-
-        hasLiveWatchStartedRef.current = isLiveWatching;
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle; performUnifiedScan is recreated every render, so adding it would re-run this effect each time
-    }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata, browserMockMode]);
+        liveCatchupPendingRef.current = false;
+        console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
+        performUnifiedScan(activeFolders, 'Catch-up')
+            .then((outcome) => {
+                // Another import took the run while the folders were scanned; retry when it ends.
+                if (outcome === 'busy' && useLibraryStore.getState().isLiveWatching) liveCatchupPendingRef.current = true;
+            })
+            .catch((error) => console.error('[FolderMonitor] Catch-up scan failed', error));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle and when a blocking import ends; performUnifiedScan is recreated every render, so adding it would re-run this effect each time
+    }, [
+        isLiveWatching,
+        isImporting,
+        monitoredFolders,
+        onScan,
+        handleImportPaths,
+        updateFolderLastScanned,
+        addToast,
+        refreshMetadata,
+        browserMockMode,
+    ]);
 }

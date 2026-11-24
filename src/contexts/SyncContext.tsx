@@ -2968,8 +2968,8 @@ export const SyncProvider: React.FC<{
                             });
                         }
 
-                        // Targeted watcher events do not prove the whole folder has been swept.
-                        // The startup/catch-up scanner owns the monitored-folder cursor.
+                        // Targeted watcher events do not prove the whole folder has been swept, so they
+                        // never move the monitored-folder cursor: the startup/catch-up scanner owns it (#594).
                         if (result.handledPaths.length > 0) {
                             const invalidateStartedAt = liveWatchNow();
                             // Exclude pre-update count responses even when no facets changed.
@@ -3003,23 +3003,6 @@ export const SyncProvider: React.FC<{
                                 },
                                 result.touchedFacetResources
                             );
-                        }
-
-                        if (result.handledPaths.length > 0) {
-                            // Keep the catch-up cursor aligned only for files we actually handled.
-                            const { updateFolderLastScanned } = useSettingsStore.getState();
-                            const monitoredFolders = settingsRef.current.monitoredFolders || [];
-                            const now = Date.now();
-                            const updatedFolderIds = new Set<string>();
-
-                            result.handledPaths.forEach((path) => {
-                                const lowerPath = path.toLowerCase();
-                                const folder = monitoredFolders.find((f) => lowerPath.startsWith(f.path.replace(/\\/g, '/').toLowerCase()));
-                                if (folder && !updatedFolderIds.has(folder.id)) {
-                                    updatedFolderIds.add(folder.id);
-                                    updateFolderLastScanned(folder.id, now);
-                                }
-                            });
                         }
 
                         infoLiveWatchPerf('Targeted live cycle complete', {
@@ -3068,7 +3051,6 @@ export const SyncProvider: React.FC<{
             reportLiveImagesReceived,
             startLiveWatchSession,
             updateLiveWatchSession,
-            settingsRef,
             waitForBackgroundOwnerCacheRepair,
             abortIdleOwnerCacheRepair,
             scheduleOwnerCacheIdleRepair,
