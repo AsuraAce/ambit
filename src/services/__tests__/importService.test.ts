@@ -521,7 +521,7 @@ describe('processTargetedFiles', () => {
 
         expect(result.handledPaths).toEqual([]);
         expect(result.failedPaths).toEqual(['C:/library/updated-image.png', 'C:/library/new-image.png']);
-        expect(result.failureReason).toBe('database is locked');
+        expect(result.failureKind).toBe('db_locked');
         expect(result.completedSourcePaths).toEqual([]);
     });
 
@@ -531,7 +531,26 @@ describe('processTargetedFiles', () => {
         const result = await processTargetedFiles(['C:/library/broken.png'], { forceRescan: true });
 
         expect(result.failedPaths).toEqual(['C:/library/broken.png']);
-        expect(result.failureReason).toBe('Failed to read C:/library/broken.png: truncated PNG');
+        expect(result.failureKind).toBe('scan_error');
+    });
+
+    // A cycle where only a video failed must still say why in Ambit.log, not fall back to "other".
+    it('reports a failed video import as video_error', async () => {
+        mocks.importVideoPaths.mockResolvedValueOnce({
+            imported: 0,
+            duplicate: 0,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [],
+            handledPaths: [],
+            failedPaths: ['C:/library/clip.mp4'],
+        });
+
+        const result = await processTargetedFiles(['C:/library/clip.mp4'], { forceRescan: true });
+
+        expect(result.failedPaths).toEqual(['C:/library/clip.mp4']);
+        expect(result.failureKind).toBe('video_error');
     });
 
     it('returns touched facet types for new and updated live imports', async () => {

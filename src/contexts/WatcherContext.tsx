@@ -159,6 +159,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
     const genericInFlightPathsRef = useRef<Set<string>>(new Set());
     const liveRetryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
     const liveRetryGenerationRef = useRef(0);
+    const mountedRef = useRef(false);
     const invokeActivationCatchupRootRef = useRef<string | null>(null);
 
     const clearLiveRetries = useCallback(() => {
@@ -168,7 +169,13 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
         liveRetryFailuresRef.current.clear();
     }, []);
 
-    useEffect(() => clearLiveRetries, [clearLiveRetries]);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            clearLiveRetries();
+        };
+    }, [clearLiveRetries]);
 
     useEffect(() => {
         callbacksRef.current = { refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
@@ -191,12 +198,19 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
     const drainGenericLiveChanges = useMemo(() => {
         // Each failed path goes back through this queue after a delay, so a retry is serialized
         // with fresh watcher events and deduplicated by the pending set (#547).
-        const scheduleLiveRetries = (result: TargetedLiveSyncResult) => {
+        const scheduleLiveRetries = (batch: string[], result: TargetedLiveSyncResult, cycleGeneration: number) => {
             const handled = new Set(result.handledPaths);
             const failed = Array.from(new Set(result.failedPaths)).filter((path) => !handled.has(path));
+            const failedSet = new Set(failed);
+            // A finished path that did not fail (handled, or ended neither way) keeps no attempt count.
+            [...batch, ...result.handledPaths].forEach((path) => {
+                if (!failedSet.has(path)) liveRetryFailuresRef.current.delete(path);
+            });
             if (failed.length === 0) return;
 
-            const liveWatchOn = useLibraryStore.getState().isLiveWatching;
+            // No retry once the provider unmounted or Live Watch was turned off during the cycle.
+            const liveWatchOn =
+                mountedRef.current && cycleGeneration === liveRetryGenerationRef.current && useLibraryStore.getState().isLiveWatching;
             const retryByDelay = new Map<number, Map<string, number>>();
             let leftForCatchUpCount = 0;
             let nextAttempt = 0;
@@ -225,7 +239,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 nextAttempt,
                 maxAttempts: LIVE_RETRY_DELAYS_MS.length,
                 retryInMs,
-                reason: result.failureReason,
+                reason: result.failureKind,
             });
 
             const generation = liveRetryGenerationRef.current;
@@ -235,10 +249,21 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     if (generation !== liveRetryGenerationRef.current) return;
                     // Skip a path that a later cycle imported, failed again (it has a newer timer),
                     // or is importing right now (that result decides).
-                    const due = Array.from(expectedFailures)
+                    const waiting = Array.from(expectedFailures)
                         .filter(([path, failures]) => liveRetryFailuresRef.current.get(path) === failures)
                         .filter(([path]) => !genericInFlightPathsRef.current.has(path))
                         .map(([path]) => path);
+                    // A folder deactivated or removed since is no longer watched, and a removed
+                    // folder's revoked grant would fail the other paths in the same scan.
+                    const activeRoots = (callbacksRef.current.settings.monitoredFolders ?? [])
+                        .filter((folder) => folder.isActive)
+                        .map((folder) => `${folder.path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()}/`);
+                    const due = waiting.filter((path) => {
+                        const normalized = path.replace(/\\/g, '/').toLowerCase();
+                        const watched = activeRoots.some((root) => normalized.startsWith(root));
+                        if (!watched) liveRetryFailuresRef.current.delete(path);
+                        return watched;
+                    });
                     if (due.length === 0) return;
                     debugLiveWatchPerf('Generic live retry queued', { pathCount: due.length, delayMs: delay });
                     pendingGenericPerfRef.current = mergeTargetedPerfContext(pendingGenericPerfRef.current, due.length, liveWatchNow());
@@ -280,6 +305,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     });
 
                     const cb = callbacksRef.current;
+                    const cycleGeneration = liveRetryGenerationRef.current;
                     genericInFlightPathsRef.current = new Set(nextBatch);
                     let liveResult: TargetedLiveSyncResult;
                     try {
@@ -287,13 +313,12 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     } catch (error) {
                         // The batch already left the pending set, so a rejection would lose it.
                         console.error('[LiveSync] Generic live sync rejected', error);
-                        liveResult = { handledPaths: [], failedPaths: nextBatch, importedCount: 0, failureReason: String(error) };
+                        liveResult = { handledPaths: [], failedPaths: nextBatch, importedCount: 0, failureKind: 'sync_rejected' };
                     } finally {
                         genericInFlightPathsRef.current = new Set();
                     }
 
-                    liveResult.handledPaths.forEach((path) => liveRetryFailuresRef.current.delete(path));
-                    scheduleLiveRetries(liveResult);
+                    scheduleLiveRetries(nextBatch, liveResult, cycleGeneration);
 
                     if (liveResult.handledPaths.length > 0) {
                         await cb.refreshMaintenanceCounts();

@@ -1,16 +1,17 @@
 import { commands } from '../bindings';
 
-const REASON_MAX_CHARS = 200;
-// Absolute Windows, UNC and POSIX paths, then bare media or sidecar file names.
-const PATH_PATTERN = /(?:[A-Za-z]:[\\/]|\\\\|\/)[^\s"'<>|]*/g;
-const FILE_NAME_PATTERN = /[^\s"'<>|\\/]+\.(?:png|jpe?g|webp|gif|bmp|tiff?|avif|heic|mp4|webm|mov|mkv|avi|m4v|json|txt)\b/gi;
+/**
+ * Why a Live Watch path was not imported, as a fixed kind. Error texts can contain file paths
+ * and prompt-like file names, so only the kind ever reaches Ambit.log.
+ */
+export type LiveImportFailureKind = 'db_locked' | 'scope' | 'scan_error' | 'video_error' | 'sync_rejected' | 'other';
 
-/** An error text with paths and file names removed, on one line and capped, so it can go in Ambit.log. */
-export const sanitizeFailureReason = (reason: string | undefined): string => {
-    if (!reason) return 'unknown';
-    const cleaned = reason.replace(PATH_PATTERN, '<path>').replace(FILE_NAME_PATTERN, '<file>').replace(/\s+/g, ' ').trim();
-    if (!cleaned) return 'unknown';
-    return cleaned.length > REASON_MAX_CHARS ? `${cleaned.slice(0, REASON_MAX_CHARS)}…` : cleaned;
+/** The kind for an error text; `fallback` when it is neither a lock nor a scope refusal. */
+export const classifyImportFailure = (error: unknown, fallback: LiveImportFailureKind): LiveImportFailureKind => {
+    const text = String(error);
+    if (/database is (locked|busy)|SQLITE_BUSY|SQLITE_LOCKED/i.test(text)) return 'db_locked';
+    if (/outside the allowed filesystem scope/i.test(text)) return 'scope';
+    return fallback;
 };
 
 export interface LiveWatchFailureSummary {
@@ -21,7 +22,7 @@ export interface LiveWatchFailureSummary {
     nextAttempt?: number;
     maxAttempts: number;
     retryInMs?: number;
-    reason?: string;
+    reason?: LiveImportFailureKind;
 }
 
 export const formatLiveWatchFailure = (summary: LiveWatchFailureSummary): string => {
@@ -33,7 +34,7 @@ export const formatLiveWatchFailure = (summary: LiveWatchFailureSummary): string
     if (summary.retryCount > 0 && summary.nextAttempt !== undefined && summary.retryInMs !== undefined) {
         parts.push(`retry=${summary.nextAttempt}/${summary.maxAttempts}`, `retry_in_ms=${summary.retryInMs}`);
     }
-    parts.push(`reason=${sanitizeFailureReason(summary.reason)}`);
+    parts.push(`reason=${summary.reason ?? 'other'}`);
     return parts.join(' ');
 };
 

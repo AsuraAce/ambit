@@ -28,6 +28,7 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
+import { classifyImportFailure, type LiveImportFailureKind } from '../utils/liveWatchFailureLog';
 import { isBrowserMockMode } from '../services/runtime';
 import { createLiveFacetRefreshQueue } from '../utils/liveFacetRefreshQueue';
 import { TouchedFacetResources } from '../utils/touchedFacetTypes';
@@ -256,8 +257,8 @@ export interface TargetedLiveSyncResult {
     handledPaths: string[];
     failedPaths: string[];
     importedCount: number;
-    /** The first error behind `failedPaths`, as raw text; it can contain a file path. */
-    failureReason?: string;
+    /** Why the first path in `failedPaths` failed, as a fixed kind (never the error text). */
+    failureKind?: LiveImportFailureKind;
 }
 
 export const SyncProvider: React.FC<{
@@ -2906,7 +2907,7 @@ export const SyncProvider: React.FC<{
                 const handledPaths = new Set<string>();
                 const failedPaths = new Set<string>();
                 let importedCount = 0;
-                let failureReason: string | undefined;
+                let failureKind: LiveImportFailureKind | undefined;
 
                 while (pendingTargetedPathsRef.current.size > 0) {
                     // Imports would invalidate a running cache repair; new paths keep queueing meanwhile.
@@ -2958,7 +2959,7 @@ export const SyncProvider: React.FC<{
                             }
                         });
                         importedCount += result.stats.imported;
-                        if (result.failedPaths.length > 0) failureReason ??= result.failureReason;
+                        if (result.failedPaths.length > 0) failureKind ??= result.failureKind;
 
                         if (result.stats.imported > 0) {
                             reportLiveImagesReceived(result.stats.imported, { source: 'generic' });
@@ -3022,7 +3023,7 @@ export const SyncProvider: React.FC<{
                     } catch (e) {
                         console.error('[LiveSync] Targeted sync failed', e);
                         nextBatch.forEach((path) => failedPaths.add(path));
-                        failureReason ??= String(e);
+                        failureKind ??= classifyImportFailure(e, 'other');
                         infoLiveWatchPerf('Targeted live cycle complete', {
                             cycleId: cyclePerfContext?.cycleId,
                             source: cyclePerfContext?.source,
@@ -3041,7 +3042,7 @@ export const SyncProvider: React.FC<{
                     handledPaths: Array.from(handledPaths),
                     failedPaths: Array.from(failedPaths),
                     importedCount,
-                    ...(failedPaths.size > 0 && failureReason ? { failureReason } : {}),
+                    ...(failedPaths.size > 0 && failureKind ? { failureKind } : {}),
                 };
             })();
 

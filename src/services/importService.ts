@@ -24,6 +24,7 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
+import { classifyImportFailure, type LiveImportFailureKind } from '../utils/liveWatchFailureLog';
 import { listenWithCleanup } from '../utils/tauriListener';
 import { cancelVideoImport, importVideoPaths, type VideoImportSummary } from './videoService';
 
@@ -73,8 +74,8 @@ export interface ImportResult {
     completedSourcePaths: string[];
     cancelledSourcePaths: string[];
     videoSummary?: VideoImportSummary;
-    /** The first error that put a path in `failedPaths`, as raw text; it can contain a file path. */
-    failureReason?: string;
+    /** Why the first path in `failedPaths` failed, as a fixed kind (never the error text). */
+    failureKind?: LiveImportFailureKind;
     /** Folders skipped because they are a filesystem root such as `D:\`. */
     unscannableRootPaths?: string[];
 }
@@ -200,7 +201,7 @@ async function processImageFileEntries(
     images: AIImage[];
     handledPaths: string[];
     failedPaths: string[];
-    failureReason?: string;
+    failureKind?: LiveImportFailureKind;
     touchedFacetTypes: FacetType[];
     touchedFacetResources: TouchedFacetResources;
     wasCancelled: boolean;
@@ -209,7 +210,7 @@ async function processImageFileEntries(
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
     const failedPaths: string[] = [];
-    let failureReason: string | undefined;
+    let failureKind: LiveImportFailureKind | undefined;
     const importStartedAt = liveWatchNow();
     const cycleId = perfContext?.cycleId ?? createLiveWatchPerfId('import');
     const touchedFacetTypes = new Set<FacetType>();
@@ -329,7 +330,7 @@ async function processImageFileEntries(
                     stats.errors++;
                     console.warn(`Scan error for ${path}:`, info.errorReason);
                     failedPaths.push(normalizePath(path));
-                    failureReason ??= info.errorReason;
+                    failureKind ??= classifyImportFailure(info.errorReason, 'scan_error');
                     continue; // Skip valid object creation if hard error
                 }
 
@@ -514,7 +515,7 @@ async function processImageFileEntries(
             console.error('Import batch error:', e);
             stats.errors += chunk.length;
             failedPaths.push(...chunk.map((path) => normalizePath(path)));
-            failureReason ??= String(e);
+            failureKind ??= classifyImportFailure(e, 'other');
         } finally {
             unlisten?.();
         }
@@ -537,7 +538,7 @@ async function processImageFileEntries(
         images: newImages,
         handledPaths,
         failedPaths,
-        failureReason,
+        failureKind,
         touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
         touchedFacetResources,
         wasCancelled: wasCancelled || !!abortSignal?.aborted,
@@ -716,7 +717,7 @@ async function processMediaFileEntries(
     images: AIImage[];
     handledPaths: string[];
     failedPaths: string[];
-    failureReason?: string;
+    failureKind?: LiveImportFailureKind;
     touchedFacetTypes: FacetType[];
     touchedFacetResources: TouchedFacetResources;
     wasCancelled: boolean;
@@ -748,7 +749,7 @@ async function processMediaFileEntries(
         images: [...images.images, ...videos.images],
         handledPaths: [...images.handledPaths, ...videos.handledPaths],
         failedPaths: [...images.failedPaths, ...videos.failedPaths],
-        failureReason: images.failureReason,
+        failureKind: images.failureKind ?? (videos.failedPaths.length > 0 ? 'video_error' : undefined),
         touchedFacetTypes: orderFacetTypes([...images.touchedFacetTypes, ...videos.touchedFacetTypes]),
         touchedFacetResources: mergeTouchedFacetResources(images.touchedFacetResources, videos.touchedFacetResources),
         wasCancelled: videos.wasCancelled,
@@ -1176,7 +1177,7 @@ export const processTargetedFiles = async (
     result.images = imported.images;
     result.handledPaths = imported.handledPaths;
     result.failedPaths = imported.failedPaths;
-    result.failureReason = imported.failureReason;
+    result.failureKind = imported.failureKind;
     result.touchedFacetTypes = imported.touchedFacetTypes;
     result.touchedFacetResources = imported.touchedFacetResources;
     result.wasCancelled = imported.wasCancelled;
