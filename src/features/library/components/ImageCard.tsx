@@ -104,7 +104,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                         microSrc={image.microThumbnail}
                         alt={image.filename}
                         onImageError={onImageError}
-                        loading="lazy"
+                        // VirtualGrid already limits mounted tiles to the screen and its buffer;
+                        // lazy loading could hold a visible tile grey until a hover (#590).
+                        loading="eager"
                         className={`w-full h-full transition-all duration-700 ease-spring
                 ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'}
                 ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}

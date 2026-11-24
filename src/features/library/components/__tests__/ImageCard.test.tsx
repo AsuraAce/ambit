@@ -90,7 +90,7 @@ describe('ImageCard', () => {
         expect(root.dataset.dragSource).toBe('true');
         expect(screen.getByText('flux_dev')).toBeTruthy();
         expect(screen.getByText('1024x768')).toBeTruthy();
-        expect(smartImageMocks.props[0]).toMatchObject({ src: 'thumb.png', fallbackSrc: 'source.png', microSrc: 'micro', loading: 'lazy' });
+        expect(smartImageMocks.props[0]).toMatchObject({ src: 'thumb.png', fallbackSrc: 'source.png', microSrc: 'micro' });
 
         fireEvent.mouseDown(root);
         fireEvent.click(screen.getByRole('button', { name: /Open image\.png/ }));
@@ -114,6 +114,17 @@ describe('ImageCard', () => {
         expect(props.onToggleFavorite).toHaveBeenCalledTimes(1);
         expect(props.onTogglePin).toHaveBeenCalledTimes(1);
         expect(props.onClick).toHaveBeenCalledTimes(1);
+    });
+
+    // #590: VirtualGrid mounts a tile only when it is on screen or inside its scroll buffer, so the
+    // mount is the visibility check. A lazy image lets the browser hold the request until its own
+    // visibility check reruns, which a composited transform animation can skip; the tile then stays
+    // grey until a hover changes its style. Once a thumbnail exists, a mounted tile must show it
+    // without the user touching it.
+    it('requests the thumbnail as soon as the virtualized tile mounts', () => {
+        setup();
+
+        expect(smartImageMocks.props[0]?.loading).toBe('eager');
     });
 
     it('opens missing originals for cached inspection and forwards modifier selection', () => {
