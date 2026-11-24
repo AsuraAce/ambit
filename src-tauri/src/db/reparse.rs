@@ -429,6 +429,14 @@ fn run_reparse_job(
 
     let cancelled_while_counting = || {
         log::info!("[Refresh] Job cancelled by user");
+        emit_progress(ReparseProgress {
+            current: 0,
+            total: 0,
+            updated: 0,
+            errors: 0,
+            phase: "complete".to_string(),
+            message: "Completed 0 / 0 images".to_string(),
+        });
         let result = ReparseJobResult {
             processed: 0,
             updated: 0,

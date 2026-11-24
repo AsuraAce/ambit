@@ -342,12 +342,30 @@ describe('useMetadataRefresh', () => {
             expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
 
             act(() => useLibraryStore.setState(idle));
-            await act(async () => vi.advanceTimersByTimeAsync(15_000));
+            await flushAsyncWork();
             expect(countCalls()).toHaveLength(1);
             expect(startCalls()).toHaveLength(1);
 
             await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
             expect(countCalls()).toHaveLength(1);
+        });
+
+        // Thumbnails wait while the check is pending, so it must not sit out a retry tick (#581 review).
+        it('counts as soon as the last gate clears, without waiting for a retry tick', async () => {
+            vi.mocked(invoke).mockResolvedValue(0);
+            useLibraryStore.setState({ isStartupCatchupPending: true, isImporting: true });
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+
+            act(() => useLibraryStore.setState({ isStartupCatchupPending: false }));
+            await flushAsyncWork();
+            expect(countCalls()).toHaveLength(0);
+
+            act(() => useLibraryStore.setState({ isImporting: false }));
+            await flushAsyncWork();
+            expect(countCalls()).toHaveLength(1);
+            await flushAsyncWork();
+            expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
         });
 
         it('does not count again when an import starts during the count', async () => {
@@ -370,7 +388,7 @@ describe('useMetadataRefresh', () => {
             expect(startCalls()).toHaveLength(0);
 
             act(() => useLibraryStore.setState({ isImporting: false }));
-            await act(async () => vi.advanceTimersByTimeAsync(15_000));
+            await flushAsyncWork();
             expect(countCalls()).toHaveLength(1);
             expect(startCalls()).toHaveLength(1);
         });

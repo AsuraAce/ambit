@@ -420,6 +420,7 @@ export function useMetadataRefresh(startupReady = false) {
         let isCancelled = false;
         let retryTimer: number | undefined;
         let countHeldForIdleLibrary: number | null = null;
+        let stopWaitingForIdleLibrary: (() => void) | undefined;
 
         // Records a lock failure on `attempt`. Returns whether another attempt is allowed; after
         // the last one the startup refresh stops for this session.
@@ -442,14 +443,20 @@ export function useMetadataRefresh(startupReady = false) {
             }
             // The count scans the whole library: wait for catch-up, an import or a sync before it,
             // and keep a count those started during for when they end, rather than scan again (#581).
+            // The check runs again as soon as the last of them ends, so thumbnails are not held longer.
             const isLibraryBusy = () => {
                 const store = useLibraryStore.getState();
                 return store.isStartupCatchupPending || store.isImporting || store.syncStatus === 'syncing';
             };
             const retryWhenLibraryIdle = () => {
-                retryTimer = window.setTimeout(() => {
+                stopWaitingForIdleLibrary?.();
+                const unsubscribe = useLibraryStore.subscribe(() => {
+                    if (isLibraryBusy()) return;
+                    unsubscribe();
+                    stopWaitingForIdleLibrary = undefined;
                     void runStartupRefresh(attempt);
-                }, STARTUP_REFRESH_RETRY_DELAY_MS);
+                });
+                stopWaitingForIdleLibrary = unsubscribe;
             };
             setMetadataRefreshPending(true);
             if (isLibraryBusy()) {
@@ -554,6 +561,7 @@ export function useMetadataRefresh(startupReady = false) {
                 deferStartupVisibilityUntilProcessingRef.current = false;
             }
             window.clearTimeout(timer);
+            stopWaitingForIdleLibrary?.();
             if (retryTimer !== undefined) {
                 window.clearTimeout(retryTimer);
             }
