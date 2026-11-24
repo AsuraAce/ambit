@@ -90,7 +90,12 @@ describe('ImageCard', () => {
         expect(root.dataset.dragSource).toBe('true');
         expect(screen.getByText('flux_dev')).toBeTruthy();
         expect(screen.getByText('1024x768')).toBeTruthy();
-        expect(smartImageMocks.props[0]).toMatchObject({ src: 'thumb.png', fallbackSrc: 'source.png', microSrc: 'micro', loading: 'lazy' });
+        expect(smartImageMocks.props[0]).toMatchObject({
+            src: 'thumb.png',
+            fallbackSrc: 'source.png',
+            microSrc: 'micro',
+            loading: 'eager',
+        });
 
         fireEvent.mouseDown(root);
         fireEvent.click(screen.getByRole('button', { name: /Open image\.png/ }));
@@ -114,6 +119,21 @@ describe('ImageCard', () => {
         expect(props.onToggleFavorite).toHaveBeenCalledTimes(1);
         expect(props.onTogglePin).toHaveBeenCalledTimes(1);
         expect(props.onClick).toHaveBeenCalledTimes(1);
+    });
+
+    // #590: VirtualGrid mounts a tile only when it is on screen or inside its scroll buffer, so the
+    // mount is the visibility check. A lazy image lets the browser hold the request until its own
+    // visibility check reruns, which a composited transform animation can skip; the tile then stays
+    // grey until a hover changes its style. jsdom cannot model that timing, so this pins the
+    // loading mode: a tile's own thumbnail is small and loads at mount, while a tile still showing
+    // its original file stays lazy so a fast scroll through the buffer does not decode originals.
+    it('chooses the loading mode by thumbnail kind', () => {
+        const { unmount } = setup({ image: image({ url: 'source.png', thumbnailUrl: 'source.png' }) });
+        expect(smartImageMocks.props.at(-1)?.loading).toBe('lazy');
+        unmount();
+
+        setup({ image: image({ url: 'source.png', thumbnailUrl: 'thumb.png' }) });
+        expect(smartImageMocks.props.at(-1)?.loading).toBe('eager');
     });
 
     it('opens missing originals for cached inspection and forwards modifier selection', () => {
