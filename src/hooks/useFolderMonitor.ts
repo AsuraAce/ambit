@@ -510,9 +510,9 @@ export function useFolderMonitor({
     const isLiveWatching = useLibraryStore((s) => s.isLiveWatching);
     const isImporting = useLibraryStore((s) => s.isImporting);
     const hasLiveWatchStartedRef = useRef(isLiveWatching);
-    // A turn-on catch-up that could not run yet. It stays owed until it runs or Live Watch
-    // is turned off: a dropped catch-up would leave files generated while Live Watch was off
-    // unimported (#594).
+    // A turn-on catch-up that could not run yet. It stays owed until it runs; while Live Watch
+    // is off it never runs, and turning it on owes a fresh one. A dropped catch-up would leave
+    // files generated while Live Watch was off unimported (#594).
     const liveCatchupPendingRef = useRef(false);
 
     // Unified Watcher Effect (Handles "Turn On")
@@ -521,10 +521,7 @@ export function useFolderMonitor({
 
         const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
         hasLiveWatchStartedRef.current = isLiveWatching;
-        if (!isLiveWatching) {
-            liveCatchupPendingRef.current = false;
-            return;
-        }
+        if (!isLiveWatching) return;
         if (isTurningOn) liveCatchupPendingRef.current = true;
         if (!liveCatchupPendingRef.current) return;
 
@@ -547,7 +544,7 @@ export function useFolderMonitor({
         performUnifiedScan(activeFolders, 'Catch-up')
             .then((outcome) => {
                 // Another import took the run while the folders were scanned; retry when it ends.
-                if (outcome === 'busy' && useLibraryStore.getState().isLiveWatching) liveCatchupPendingRef.current = true;
+                if (outcome === 'busy') liveCatchupPendingRef.current = true;
             })
             .catch((error) => console.error('[FolderMonitor] Catch-up scan failed', error));
         // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle and when a blocking import ends; performUnifiedScan is recreated every render, so adding it would re-run this effect each time

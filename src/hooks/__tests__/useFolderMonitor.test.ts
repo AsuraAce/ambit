@@ -1522,7 +1522,7 @@ describe('useFolderMonitor', () => {
             expect(mocks.scanDirectorySince).toHaveBeenCalledTimes(2);
         });
 
-        it('drops an owed catch-up when Live Watch is turned off before the import ends', async () => {
+        it('does not run an owed catch-up once Live Watch is off when the import ends', async () => {
             const handleImportPaths = vi.fn().mockResolvedValue(completedImportResult);
             const { rerender } = renderWithFolder(handleImportPaths);
             await new Promise((resolve) => setTimeout(resolve, 0));
