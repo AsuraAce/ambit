@@ -307,11 +307,48 @@ struct ReparseJobOptions {
     refresh_photo_metadata: bool,
 }
 
+/// Runs one of the job's upfront counts on its own connection. The count scans the whole
+/// library, so a pause set while it runs stops it, as it stops the startup count (#582). The job
+/// then waits for the pause to clear and counts again. Returns `None` if the job was cancelled
+/// while it waited.
+fn count_unless_paused(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    params: &[Box<dyn rusqlite::ToSql>],
+    is_paused: &Arc<AtomicBool>,
+    is_cancelled: &AtomicBool,
+) -> Option<usize> {
+    use crate::db::background_work;
+    loop {
+        background_work::stop_when_epoch_changes_or_job_stopped(
+            conn,
+            background_work::current_epoch(),
+            Some(is_paused.clone()),
+        );
+        let result = conn.query_row(sql, rusqlite::params_from_iter(params.iter()), |row| {
+            row.get::<_, i64>(0)
+        });
+        background_work::clean_up_stopped_connection(conn, &[]);
+        match result {
+            // Stopped by the pause, or by a page load or exit that the job outlives as before.
+            Err(error)
+                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::OperationInterrupted) =>
+            {
+                wait_while_paused(is_paused, is_cancelled);
+                if is_cancelled.load(Ordering::SeqCst) {
+                    return None;
+                }
+            }
+            result => return Some(result.unwrap_or(0) as usize),
+        }
+    }
+}
+
 /// Runs one reparse job on `conn`, pausing between batches while `is_paused` is set (#552).
 fn run_reparse_job(
     conn: &mut rusqlite::Connection,
     options: ReparseJobOptions,
-    is_paused: &AtomicBool,
+    is_paused: &Arc<AtomicBool>,
     is_cancelled: &AtomicBool,
     emit_progress: &dyn Fn(ReparseProgress),
     emit_complete: &dyn Fn(ReparseJobResult),
@@ -390,23 +427,34 @@ fn run_reparse_job(
     );
     let count_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", where_sql);
 
-    let generated_total: usize = conn
-        .query_row(
-            &count_query,
-            rusqlite::params_from_iter(count_params.iter()),
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap_or(0) as usize;
+    let cancelled_while_counting = || {
+        log::info!("[Refresh] Job cancelled by user");
+        let result = ReparseJobResult {
+            processed: 0,
+            updated: 0,
+            errors: 0,
+            was_cancelled: true,
+        };
+        emit_complete(result.clone());
+        Ok(result)
+    };
+
+    let Some(generated_total) =
+        count_unless_paused(conn, &count_query, &count_params, is_paused, is_cancelled)
+    else {
+        return cancelled_while_counting();
+    };
 
     let photo_total = if refresh_photo_metadata && filter_tool.is_none() {
         let (photo_where, photo_params) =
             build_photo_filters(force_reparse, normalized_filter_root.as_deref());
-        conn.query_row(
-            &format!("SELECT COUNT(*) FROM scoped_images WHERE {}", photo_where),
-            rusqlite::params_from_iter(photo_params.iter()),
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap_or(0) as usize
+        let photo_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", photo_where);
+        let Some(photo_total) =
+            count_unless_paused(conn, &photo_query, &photo_params, is_paused, is_cancelled)
+        else {
+            return cancelled_while_counting();
+        };
+        photo_total
     } else {
         0
     };
@@ -1290,6 +1338,71 @@ mod tests {
             assert_eq!(stale_rows(&path), 0);
             let _ = std::fs::remove_file(&path);
         }
+    }
+
+    // The job's own count scans the whole library. An owner-cache build that starts while it runs
+    // pauses refresh, and the count must stop then rather than compete with the build. The job
+    // reports no rows while paused, then counts again and runs, so it never ends with 0 (#582).
+    #[test]
+    fn a_reparse_job_stops_its_count_while_paused_and_counts_again_once_resumed() {
+        let path = reparse_test_database("count-pause");
+        Connection::open(&path)
+            .expect("setup connection")
+            .execute_batch(
+                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)
+                 INSERT INTO images (id, path, timestamp, invoke_scope_hidden, parser_version, original_metadata_json)
+                 SELECT 'bulk-' || i, 'D:/lib/bulk-' || i || '.png', 100, 0, 0, '{\"a\":1}' FROM n;",
+            )
+            .expect("rows");
+        let state = ReparseState::default();
+        let (paused, cancelled) = (state.is_paused.clone(), state.is_cancelled.clone());
+        let phases = Arc::new(std::sync::Mutex::new(Vec::<(String, usize)>::new()));
+        let job_path = path.clone();
+        let job_phases = phases.clone();
+        let job = std::thread::spawn(move || {
+            let mut conn = Connection::open(&job_path).expect("job connection");
+            run_reparse_job(
+                &mut conn,
+                ReparseJobOptions {
+                    force_reparse: false,
+                    filter_root: None,
+                    filter_tool: None,
+                    refresh_photo_metadata: false,
+                },
+                &paused.clone(),
+                &cancelled,
+                &|progress| {
+                    // An owner-cache build starts as the job begins its count.
+                    if progress.phase == "counting" {
+                        paused.store(true, Ordering::SeqCst);
+                    }
+                    job_phases
+                        .lock()
+                        .unwrap()
+                        .push((progress.phase, progress.total));
+                },
+                &|_| {},
+            )
+        });
+        std::thread::sleep(PAUSE_POLL * 5);
+        assert!(!job.is_finished(), "the job finished while paused");
+        assert_eq!(
+            phases.lock().unwrap().as_slice(),
+            [("counting".to_string(), 0)],
+            "the count finished or rows were reported while paused"
+        );
+        assert_eq!(stale_rows(&path), 5003, "a batch was written while paused");
+
+        state.is_paused.store(false, Ordering::SeqCst);
+        let result = job.join().unwrap().expect("reparse job");
+        assert_eq!(result.processed, 5003);
+        assert!(!result.was_cancelled);
+        assert!(phases
+            .lock()
+            .unwrap()
+            .contains(&("starting".to_string(), 5003)));
+        assert_eq!(stale_rows(&path), 0);
+        let _ = std::fs::remove_file(&path);
     }
 
     // A job counted in one InvokeAI user's scope often resumes in another after a switch, and
