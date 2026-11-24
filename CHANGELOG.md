@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.2](https://github.com/AsuraAce/ambit/compare/v0.16.1...v0.16.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **watch:** retry Live Watch imports that fail while the database is busy ([#604](https://github.com/AsuraAce/ambit/issues/604)) ([2a8c525](https://github.com/AsuraAce/ambit/commit/2a8c525c7808bddbfb0ccef65c7b828d717fea64))
+
+
+### Performance Improvements
+
+* **startup:** stop the automatic backup while owner-cache work runs and retry it ([#601](https://github.com/AsuraAce/ambit/issues/601)) ([54be2d3](https://github.com/AsuraAce/ambit/commit/54be2d37d3b2b3405b400540795e1518c8d4ded8))
+
 ## [0.16.1](https://github.com/AsuraAce/ambit/compare/v0.16.0...v0.16.1) (2026-11-24)
 
 
