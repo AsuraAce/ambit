@@ -685,62 +685,126 @@ fn schedule_automatic_backup(app: tauri::AppHandle, process_started: Instant) {
             AUTOMATIC_BACKUP_HOLD_CAP,
             AUTOMATIC_BACKUP_HOLD_POLL,
             process_started,
-            || async move {
-                let backup_started = Instant::now();
-                log_backup_event("start", "started", Duration::ZERO, process_started);
+            |attempt, stoppable| {
+                let app = app.clone();
+                let stop = stoppable.then(|| owner_cache_busy.clone());
+                async move {
+                    let backup_started = Instant::now();
+                    let phase = if attempt == 1 { "start" } else { "resumed" };
+                    log_backup_event(phase, "started", Duration::ZERO, process_started, attempt);
 
-                let outcome = match crate::db::backup::check_and_run_autobackup(app).await {
-                    Ok(Some(_)) => "created",
-                    Ok(None) => "skipped",
-                    Err(_) => "failed",
-                };
-                log_backup_event("end", outcome, backup_started.elapsed(), process_started);
+                    use crate::db::backup::{run_automatic_backup, AutoBackupOutcome};
+                    let outcome = match run_automatic_backup(app, stop).await {
+                        Ok(AutoBackupOutcome::Stopped) => {
+                            log_backup_event(
+                                "interrupted",
+                                "paused",
+                                backup_started.elapsed(),
+                                process_started,
+                                attempt,
+                            );
+                            return BackupRun::Stopped;
+                        }
+                        Ok(AutoBackupOutcome::Created(_)) => "created",
+                        Ok(AutoBackupOutcome::NotDue) => "skipped",
+                        Err(_) => "failed",
+                    };
+                    log_backup_event(
+                        "end",
+                        outcome,
+                        backup_started.elapsed(),
+                        process_started,
+                        attempt,
+                    );
+                    BackupRun::Finished
+                }
             },
         )
         .await;
     });
 }
 
-/// Waits `delay`, then holds while `hold` is set, for at most `cap`, then runs `backup`. The
-/// hold opens nothing, so an exit while held leaves no partial backup and the next launch's
-/// check runs it. A backup that has started is not stopped by a later hold.
+/// How one attempt of the automatic backup ended.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum BackupRun {
+    /// Created, not due, or failed: the automatic backup is over for this process.
+    Finished,
+    /// A pause stopped the copy and its partial file was deleted: try again once it clears.
+    Stopped,
+}
+
+/// Waits `delay`, then holds while `hold` is set, then runs `backup(attempt, stoppable)`. An
+/// attempt stopped by a later hold goes back to holding and starts again from the beginning
+/// once the hold clears (#587). Holding ends at a deadline `cap` after the first hold or stop;
+/// from then on attempts are not stoppable, so a hold that never clears, or keeps coming back,
+/// cannot turn automatic backups off. The hold opens nothing and a stopped copy deletes its
+/// partial file, so an exit leaves no backup and the next launch's 24 h check runs it.
 async fn hold_then_run_backup<F, Fut>(
     delay: Duration,
     hold: &AtomicBool,
     cap: Duration,
     poll: Duration,
     process_started: Instant,
-    backup: F,
+    mut backup: F,
 ) where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = ()>,
+    F: FnMut(u32, bool) -> Fut,
+    Fut: std::future::Future<Output = BackupRun>,
 {
     tokio::time::sleep(delay).await;
-    if hold.load(Ordering::SeqCst) {
-        let held_since = Instant::now();
-        log_backup_event("held", "waiting", Duration::ZERO, process_started);
-        let reason = loop {
-            if !hold.load(Ordering::SeqCst) {
-                break "cleared";
+    let mut deadline: Option<Instant> = None;
+    let mut attempt = 0;
+    loop {
+        if hold.load(Ordering::SeqCst) {
+            let held_since = Instant::now();
+            let until = *deadline.get_or_insert(held_since + cap);
+            log_backup_event("held", "waiting", Duration::ZERO, process_started, attempt);
+            let reason = loop {
+                if !hold.load(Ordering::SeqCst) {
+                    break "cleared";
+                }
+                let now = Instant::now();
+                if now >= until {
+                    break "cap";
+                }
+                tokio::time::sleep(poll.min(until - now)).await;
+            };
+            log_backup_event(
+                "released",
+                reason,
+                held_since.elapsed(),
+                process_started,
+                attempt,
+            );
+        }
+        attempt += 1;
+        let stoppable = deadline.is_none_or(|until| Instant::now() < until);
+        match backup(attempt, stoppable).await {
+            BackupRun::Finished => return,
+            BackupRun::Stopped => {
+                deadline.get_or_insert(Instant::now() + cap);
             }
-            if held_since.elapsed() >= cap {
-                break "cap";
-            }
-            tokio::time::sleep(poll.min(cap.saturating_sub(held_since.elapsed()))).await;
-        };
-        log_backup_event("released", reason, held_since.elapsed(), process_started);
+        }
     }
-    backup().await;
 }
 
-fn log_backup_event(phase: &str, outcome: &str, duration: Duration, process_started: Instant) {
-    let event = serde_json::json!({
+fn log_backup_event(
+    phase: &str,
+    outcome: &str,
+    duration: Duration,
+    process_started: Instant,
+    attempt: u32,
+) {
+    let mut event = serde_json::json!({
         "event": "startup_backup",
         "phase": phase,
         "outcome": outcome,
         "durationMs": duration_ms(duration),
         "processElapsedMs": elapsed_ms(process_started),
     });
+    // Attempts are counted from 1; a hold before the first attempt has none.
+    if attempt > 0 {
+        event["attempt"] = attempt.into();
+    }
     log::info!("[Backup] {event}");
 }
 
@@ -755,7 +819,7 @@ fn duration_ms(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        hold_then_run_backup, truncate_frontend_message, validate_diagnostic,
+        hold_then_run_backup, truncate_frontend_message, validate_diagnostic, BackupRun,
         StartupDiagnosticEvent, StartupState, AUTOMATIC_BACKUP_DELAY, AUTOMATIC_BACKUP_HOLD_CAP,
         FRONTEND_ERROR_MAX_CHARS,
     };
@@ -1003,21 +1067,167 @@ mod tests {
         hold: Arc<AtomicBool>,
         cap: Duration,
     ) -> (Arc<Mutex<Option<Instant>>>, std::thread::JoinHandle<()>) {
+        let (attempts, handle) =
+            spawn_backup_attempts(delay, hold, cap, |_, _, _| BackupRun::Finished);
         let started_at = Arc::new(Mutex::new(None));
         let record = started_at.clone();
         let handle = std::thread::spawn(move || {
+            handle.join().unwrap();
+            *record.lock().unwrap() = attempts.lock().unwrap().first().map(|a| a.started);
+        });
+        (started_at, handle)
+    }
+
+    struct Attempt {
+        started: Instant,
+        number: u32,
+        stoppable: bool,
+    }
+
+    /// Runs the schedule on its own thread with a fake copy, `run(attempt, stoppable, hold)`,
+    /// and records every attempt.
+    fn spawn_backup_attempts(
+        delay: Duration,
+        hold: Arc<AtomicBool>,
+        cap: Duration,
+        mut run: impl FnMut(u32, bool, &AtomicBool) -> BackupRun + Send + 'static,
+    ) -> (Arc<Mutex<Vec<Attempt>>>, std::thread::JoinHandle<()>) {
+        let attempts = Arc::new(Mutex::new(Vec::new()));
+        let record = attempts.clone();
+        let handle = std::thread::spawn(move || {
+            let copy_hold = hold.clone();
             tauri::async_runtime::block_on(hold_then_run_backup(
                 delay,
                 &hold,
                 cap,
                 Duration::from_millis(10),
                 Instant::now(),
-                || async move {
-                    *record.lock().unwrap() = Some(Instant::now());
+                |number, stoppable| {
+                    record.lock().unwrap().push(Attempt {
+                        started: Instant::now(),
+                        number,
+                        stoppable,
+                    });
+                    let outcome = run(number, stoppable, &copy_hold);
+                    async move { outcome }
                 },
             ));
         });
-        (started_at, handle)
+        (attempts, handle)
+    }
+
+    /// A fake copy that an owner-cache build starts during: the first attempt sets the pause
+    /// flag mid-copy, and like the real copy, any stoppable attempt ends while the flag is set.
+    fn copy_interrupted_by_a_build(number: u32, stoppable: bool, hold: &AtomicBool) -> BackupRun {
+        if number == 1 {
+            hold.store(true, Ordering::SeqCst);
+        }
+        if stoppable && hold.load(Ordering::SeqCst) {
+            BackupRun::Stopped
+        } else {
+            BackupRun::Finished
+        }
+    }
+
+    // An owner-cache build that started during the copy ran several times slower (#587): the
+    // copy stops, waits while the build runs, then starts again and finishes once.
+    #[test]
+    fn a_backup_stopped_by_a_build_waits_for_it_and_then_runs_once_more() {
+        let hold = Arc::new(AtomicBool::new(false));
+        let (attempts, schedule) = spawn_backup_attempts(
+            Duration::from_millis(20),
+            hold.clone(),
+            Duration::from_secs(60),
+            copy_interrupted_by_a_build,
+        );
+
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            attempts.lock().unwrap().len(),
+            1,
+            "the backup tried again while the build was running"
+        );
+
+        let cleared = Instant::now();
+        hold.store(false, Ordering::SeqCst);
+        schedule.join().unwrap();
+        let attempts = attempts.lock().unwrap();
+        assert_eq!(attempts.len(), 2, "exactly one retry");
+        assert_eq!(attempts[1].number, 2);
+        assert!(attempts[1].started >= cleared);
+        assert!(attempts.iter().all(|a| a.stoppable));
+    }
+
+    // A pause that never clears must not turn automatic backups off: the hold after a stop ends
+    // at the cap, and the attempt after it cannot be stopped again, so it finishes.
+    #[test]
+    fn after_a_stop_a_pause_that_never_clears_releases_at_the_cap_and_the_copy_finishes() {
+        let cap = Duration::from_millis(300);
+        let scheduled = Instant::now();
+        let (attempts, schedule) = spawn_backup_attempts(
+            Duration::from_millis(20),
+            Arc::new(AtomicBool::new(false)),
+            cap,
+            copy_interrupted_by_a_build,
+        );
+        let deadline = scheduled + cap + Duration::from_secs(5);
+        while !schedule.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the cap did not release the backup"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        schedule.join().unwrap();
+
+        let attempts = attempts.lock().unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert!(attempts[0].stoppable);
+        assert!(
+            !attempts[1].stoppable,
+            "the attempt after the cap was stoppable"
+        );
+        let held = attempts[1].started - attempts[0].started;
+        assert!(held >= cap, "released before the cap: {held:?}");
+        assert!(
+            held < cap + Duration::from_secs(2),
+            "held past the cap: {held:?}"
+        );
+    }
+
+    // The cap counts from the first hold, not from each one: a pause that keeps coming back
+    // after every retry still ends with a finished backup within the cap.
+    #[test]
+    fn the_cap_counts_from_the_first_hold_across_retries() {
+        let cap = Duration::from_millis(400);
+        let hold = Arc::new(AtomicBool::new(true));
+        let flapping = hold.clone();
+        // Clears the pause shortly after each hold starts, and sets it again on every copy.
+        std::thread::spawn(move || {
+            for _ in 0..200 {
+                std::thread::sleep(Duration::from_millis(30));
+                flapping.store(false, Ordering::SeqCst);
+            }
+        });
+        let (attempts, schedule) =
+            spawn_backup_attempts(Duration::ZERO, hold, cap, |_, stoppable, hold| {
+                hold.store(true, Ordering::SeqCst);
+                if stoppable {
+                    BackupRun::Stopped
+                } else {
+                    BackupRun::Finished
+                }
+            });
+        let deadline = Instant::now() + cap + Duration::from_secs(5);
+        while !schedule.is_finished() {
+            assert!(Instant::now() < deadline, "the retries never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        schedule.join().unwrap();
+        let attempts = attempts.lock().unwrap();
+        assert!(attempts.len() >= 2);
+        assert!(!attempts.last().unwrap().stoppable);
+        assert_eq!(attempts.iter().filter(|a| !a.stoppable).count(), 1);
     }
 
     // The backup copies the whole library database. Started during a cold owner-cache build, it
