@@ -1578,6 +1578,19 @@ describe('processTargetedFiles', () => {
         expect(beforeTask.cancelledSourcePaths).toContain('C:/library/source-c');
     });
 
+    it('points an imported tile with no thumbnail at its original so it can load (#597)', async () => {
+        // React 19 drops an empty src, so '' leaves the tile on the shimmer forever.
+        // thumbnailUrl === url is how database rows mark "no own thumbnail".
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            { path: 'C:/library/fresh.png', metadata: {}, thumbnail: '', width: 1, height: 1, fileSize: 1 },
+        ]);
+
+        const result = await processTargetedFiles(['C:/library/fresh.png'], { forceRescan: true });
+
+        expect(result.images[0].thumbnailUrl).not.toBe('');
+        expect(result.images[0].thumbnailUrl).toBe(result.images[0].url);
+    });
+
     it('maps sparse native metadata to safe image defaults', async () => {
         mocks.scanImagesBulk.mockResolvedValueOnce([
             {
@@ -1598,7 +1611,7 @@ describe('processTargetedFiles', () => {
             filename: 'sparse.png',
             width: 0,
             height: 0,
-            thumbnailUrl: '',
+            thumbnailUrl: 'asset://C:/library/sparse.png',
             isIntermediate: false,
             metadata: {
                 tool: GeneratorTool.UNKNOWN,

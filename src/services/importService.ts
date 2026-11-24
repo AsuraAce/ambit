@@ -339,7 +339,8 @@ async function processImageFileEntries(
                     width: info.width || 0,
                     height: info.height || 0,
                     fileSize: info.fileSize,
-                    thumbnailUrl: info.thumbnail ? convertFileSrc(info.thumbnail) : '',
+                    // No thumbnail yet: use the original, as database rows do. An empty src never loads.
+                    thumbnailUrl: convertFileSrc(info.thumbnail || path),
                     isFavorite: false,
                     isPinned: false,
                     isDeleted: false,
