@@ -314,6 +314,86 @@ describe('useMetadataRefresh', () => {
         });
     });
 
+    // The count scans the whole library, so a 15 s gate retry must not scan again each time (#581).
+    describe('while startup catch-up, an import or a sync holds', () => {
+        const countCalls = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count');
+        const startCalls = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'start_reparse_job');
+        const mockStaleLibrary = () =>
+            vi
+                .mocked(invoke)
+                .mockImplementation((command) =>
+                    command === 'get_reparse_count'
+                        ? Promise.resolve(12)
+                        : Promise.resolve({ processed: 12, updated: 0, errors: 0, wasCancelled: false })
+                );
+
+        it.each([
+            { name: 'catch-up', busy: { isStartupCatchupPending: true }, idle: { isStartupCatchupPending: false } },
+            { name: 'an import', busy: { isImporting: true }, idle: { isImporting: false } },
+            { name: 'a sync', busy: { syncStatus: 'syncing' as const }, idle: { syncStatus: 'idle' as const } },
+        ])('does not count during $name, then counts once and starts once', async ({ busy, idle }) => {
+            mockStaleLibrary();
+            useLibraryStore.setState(busy);
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+            expect(countCalls()).toHaveLength(0);
+            expect(startCalls()).toHaveLength(0);
+            // Thumbnails stay held while the check waits, as before.
+            expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
+
+            act(() => useLibraryStore.setState(idle));
+            await flushAsyncWork();
+            expect(countCalls()).toHaveLength(1);
+            expect(startCalls()).toHaveLength(1);
+
+            await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+            expect(countCalls()).toHaveLength(1);
+        });
+
+        // Thumbnails wait while the check is pending, so it must not sit out a retry tick (#581 review).
+        it('counts as soon as the last gate clears, without waiting for a retry tick', async () => {
+            vi.mocked(invoke).mockResolvedValue(0);
+            useLibraryStore.setState({ isStartupCatchupPending: true, isImporting: true });
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+
+            act(() => useLibraryStore.setState({ isStartupCatchupPending: false }));
+            await flushAsyncWork();
+            expect(countCalls()).toHaveLength(0);
+
+            act(() => useLibraryStore.setState({ isImporting: false }));
+            await flushAsyncWork();
+            expect(countCalls()).toHaveLength(1);
+            await flushAsyncWork();
+            expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
+        });
+
+        it('does not count again when an import starts during the count', async () => {
+            let resolveCount!: (count: number) => void;
+            vi.mocked(invoke).mockImplementation((command) => {
+                if (command === 'get_reparse_count') {
+                    return new Promise((resolve) => {
+                        resolveCount = resolve;
+                    });
+                }
+                return Promise.resolve({ processed: 12, updated: 0, errors: 0, wasCancelled: false });
+            });
+            renderHook(() => useMetadataRefresh(true));
+            await act(async () => vi.advanceTimersByTimeAsync(3_000));
+            expect(countCalls()).toHaveLength(1);
+
+            act(() => useLibraryStore.setState({ isImporting: true }));
+            await act(async () => resolveCount(12));
+            await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+            expect(startCalls()).toHaveLength(0);
+
+            act(() => useLibraryStore.setState({ isImporting: false }));
+            await flushAsyncWork();
+            expect(countCalls()).toHaveLength(1);
+            expect(startCalls()).toHaveLength(1);
+        });
+    });
+
     it('pauses native metadata refresh while the app asks it to', async () => {
         vi.mocked(invoke).mockResolvedValue(undefined);
         const view = renderHook(({ paused }) => useMetadataRefreshPause(paused), { initialProps: { paused: false } });
