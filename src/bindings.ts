@@ -498,6 +498,14 @@ async recordStartupDiagnostic(event: StartupDiagnosticEvent) : Promise<Result<nu
 async logFrontendError(message: string) : Promise<void> {
     await TAURI_INVOKE("log_frontend_error", { message });
 },
+/**
+ * Writes one webview-reported warning (such as a Live Watch import that failed) to the app
+ * log file at WARN. The caller keeps file paths and prompts out of the text; it is capped
+ * like `log_frontend_error`.
+ */
+async logFrontendWarning(message: string) : Promise<void> {
+    await TAURI_INVOKE("log_frontend_warning", { message });
+},
 async recordStartupHeartbeat(launchId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("record_startup_heartbeat", { launchId }) };

@@ -21,6 +21,11 @@ const mocks = vi.hoisted(() => ({
     markImagePathIdentitiesMissing: vi.fn(),
     moveImagePathIdentities: vi.fn(),
     refreshMetadata: vi.fn(),
+    logLiveWatchFailure: vi.fn(),
+}));
+
+vi.mock('../../utils/liveWatchFailureLog', () => ({
+    logLiveWatchFailure: mocks.logLiveWatchFailure,
 }));
 
 vi.mock('../SettingsContext', () => ({
@@ -282,6 +287,189 @@ describe('WatcherContext', () => {
                 pathCount: 3,
             })
         );
+    });
+
+    describe('failed Live Watch imports (#547)', () => {
+        const failedResult = (failedPaths: string[]) => ({
+            handledPaths: [],
+            failedPaths,
+            importedCount: 0,
+            failureKind: 'db_locked' as const,
+        });
+        const advance = async (ms: number) => {
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(ms);
+            });
+        };
+        const startWatchingFolder = async () => {
+            mocks.settings = {
+                ...baseSettings(),
+                monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }],
+            };
+            useLibraryStore.setState({ isLiveWatching: true });
+            const view = renderProvider();
+            await advanceInit();
+            return view;
+        };
+        const emit = async (path: string) => {
+            await act(async () => mocks.watcherCallback?.([{ kind: 'create', paths: [path] }]));
+            await act(async () => Promise.resolve());
+        };
+
+        // The owner's repro: a background job held SQLite's write lock for 29 s while the turn-on
+        // catch-up import run was active, and the two files that arrived meanwhile were never imported.
+        it('imports a path whose first import failed on a locked database once the lock clears', async () => {
+            await startWatchingFolder();
+            useLibraryStore.getState().beginImportRun({ owner: 'live-folder-catchup', abortController: new AbortController() });
+            mocks.startTargetedLiveSync
+                .mockResolvedValueOnce(failedResult(['C:/active/new.png']))
+                .mockResolvedValueOnce(targetedResult(['C:/active/new.png']));
+
+            await emit('C:/active/new.png');
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(1);
+            expect(mocks.logLiveWatchFailure).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    failedCount: 1,
+                    retryCount: 1,
+                    leftForCatchUpCount: 0,
+                    nextAttempt: 1,
+                    retryInMs: 2000,
+                    reason: 'db_locked',
+                })
+            );
+
+            await advance(2000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+            expect(mocks.startTargetedLiveSync.mock.calls[1][0]).toEqual(['C:/active/new.png']);
+
+            // Handled: no further retry, and a successful cycle writes nothing to Ambit.log.
+            await advance(120_000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+            expect(mocks.logLiveWatchFailure).toHaveBeenCalledTimes(1);
+        });
+
+        it('stops retrying a path that keeps failing and leaves it for the next folder catch-up', async () => {
+            await startWatchingFolder();
+            mocks.startTargetedLiveSync.mockResolvedValue(failedResult(['C:/active/stuck.png']));
+
+            await emit('C:/active/stuck.png');
+            await advance(10 * 60_000);
+
+            // The first import and five retries, then nothing more.
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(6);
+            const delays = mocks.logLiveWatchFailure.mock.calls.slice(0, 5).map(([summary]) => summary.retryInMs);
+            expect(delays).toEqual([2000, 4000, 8000, 16000, 30000]);
+            expect(mocks.logLiveWatchFailure).toHaveBeenLastCalledWith(
+                expect.objectContaining({ failedCount: 1, retryCount: 0, leftForCatchUpCount: 1 })
+            );
+        });
+
+        it('imports a path once when a fresh watcher event imports it before its retry is due', async () => {
+            await startWatchingFolder();
+            mocks.startTargetedLiveSync
+                .mockResolvedValueOnce(failedResult(['C:/active/new.png']))
+                .mockResolvedValueOnce(targetedResult(['C:/active/new.png']));
+
+            await emit('C:/active/new.png');
+            await emit('C:/active/new.png');
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+
+            await advance(120_000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+        });
+
+        it('does not send a retry while the same path is being imported, and lets that result decide', async () => {
+            await startWatchingFolder();
+            let resolveFresh!: (value: ReturnType<typeof targetedResult>) => void;
+            mocks.startTargetedLiveSync.mockResolvedValueOnce(failedResult(['C:/active/new.png'])).mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveFresh = resolve;
+                })
+            );
+
+            await emit('C:/active/new.png');
+            await emit('C:/active/new.png');
+            await advance(2000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+
+            await act(async () => resolveFresh(targetedResult(['C:/active/new.png'])));
+            await advance(120_000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+        });
+
+        it('retries a batch whose targeted sync rejected instead of dropping it', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            await startWatchingFolder();
+            mocks.startTargetedLiveSync
+                .mockRejectedValueOnce(new Error('sync blew up'))
+                .mockResolvedValueOnce(targetedResult(['C:/active/new.png']));
+
+            await emit('C:/active/new.png');
+            expect(mocks.logLiveWatchFailure).toHaveBeenCalledWith(
+                expect.objectContaining({ failedCount: 1, retryCount: 1, reason: 'sync_rejected' })
+            );
+            await advance(2000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+            expect(mocks.startTargetedLiveSync.mock.calls[1][0]).toEqual(['C:/active/new.png']);
+            error.mockRestore();
+        });
+
+        it('drops pending retries when Live Watch is turned off, even if it is turned on again within the window', async () => {
+            await startWatchingFolder();
+            mocks.startTargetedLiveSync.mockResolvedValueOnce(failedResult(['C:/active/new.png']));
+
+            await emit('C:/active/new.png');
+            await act(async () => useLibraryStore.setState({ isLiveWatching: false }));
+            await act(async () => useLibraryStore.setState({ isLiveWatching: true }));
+            await advanceInit();
+            await advance(120_000);
+
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(1);
+        });
+
+        // A deactivated folder is no longer watched; only the active folder's path is retried.
+        it('drops the retry for a folder deactivated during the window and keeps the active folder path', async () => {
+            const view = await startWatchingFolder();
+            mocks.settings = {
+                ...baseSettings(),
+                monitoredFolders: [
+                    { id: 'active', path: 'C:/active', isActive: true, imageCount: 0 },
+                    { id: 'other', path: 'C:/other', isActive: true, imageCount: 0 },
+                ],
+            };
+            view.rerender(
+                <WatcherProvider>
+                    <Consumer />
+                </WatcherProvider>
+            );
+            await advanceInit();
+            mocks.startTargetedLiveSync
+                .mockResolvedValueOnce(failedResult(['C:/active/new.png', 'C:/other/new.png']))
+                .mockResolvedValueOnce(targetedResult(['C:/active/new.png']));
+
+            await act(async () => mocks.watcherCallback?.([{ kind: 'create', paths: ['C:/active/new.png', 'C:/other/new.png'] }]));
+            await act(async () => Promise.resolve());
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(1);
+
+            mocks.settings = {
+                ...mocks.settings,
+                monitoredFolders: [
+                    { id: 'active', path: 'C:/active', isActive: true, imageCount: 0 },
+                    { id: 'other', path: 'C:/other', isActive: false, imageCount: 0 },
+                ],
+            };
+            view.rerender(
+                <WatcherProvider>
+                    <Consumer />
+                </WatcherProvider>
+            );
+            await advance(2000);
+
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+            expect(mocks.startTargetedLiveSync.mock.calls[1][0]).toEqual(['C:/active/new.png']);
+            await advance(120_000);
+            expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(2);
+        });
     });
 
     it('filters Invoke database paths, debounces repeated events, and starts live sync', async () => {
