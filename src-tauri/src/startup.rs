@@ -454,6 +454,19 @@ pub fn log_frontend_error(message: String) {
     );
 }
 
+fn frontend_warning_line(message: &str) -> String {
+    format!("frontend: {}", truncate_frontend_message(message))
+}
+
+/// Writes one webview-reported warning (such as a Live Watch import that failed) to the app
+/// log file at WARN. The caller keeps file paths and prompts out of the text; it is capped
+/// like `log_frontend_error`.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn log_frontend_warning(message: String) {
+    log::warn!("{}", frontend_warning_line(&message));
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn record_startup_diagnostic(
@@ -819,9 +832,9 @@ fn duration_ms(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        hold_then_run_backup, truncate_frontend_message, validate_diagnostic, BackupRun,
-        StartupDiagnosticEvent, StartupState, AUTOMATIC_BACKUP_DELAY, AUTOMATIC_BACKUP_HOLD_CAP,
-        FRONTEND_ERROR_MAX_CHARS,
+        frontend_warning_line, hold_then_run_backup, truncate_frontend_message,
+        validate_diagnostic, BackupRun, StartupDiagnosticEvent, StartupState,
+        AUTOMATIC_BACKUP_DELAY, AUTOMATIC_BACKUP_HOLD_CAP, FRONTEND_ERROR_MAX_CHARS,
     };
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
@@ -835,6 +848,17 @@ mod tests {
         let capped = truncate_frontend_message(&long);
         assert_eq!(capped.chars().count(), FRONTEND_ERROR_MAX_CHARS);
         assert!(long.starts_with(capped));
+    }
+
+    #[test]
+    fn frontend_warning_line_is_prefixed_and_capped() {
+        assert_eq!(frontend_warning_line("Live Watch"), "frontend: Live Watch");
+        let long = "é".repeat(FRONTEND_ERROR_MAX_CHARS + 10);
+        let line = frontend_warning_line(&long);
+        assert_eq!(
+            line.chars().count(),
+            "frontend: ".len() + FRONTEND_ERROR_MAX_CHARS
+        );
     }
 
     fn repair_decision() -> serde_json::Value {

@@ -43,6 +43,13 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     { name: 'logFrontendError', invokeName: 'log_frontend_error', args: ['boom'], payload: { message: 'boom' }, returnsResult: false },
+    {
+        name: 'logFrontendWarning',
+        invokeName: 'log_frontend_warning',
+        args: ['careful'],
+        payload: { message: 'careful' },
+        returnsResult: false,
+    },
     { name: 'saveApiKey', invokeName: 'save_api_key', args: ['key'], payload: { key: 'key' }, returnsResult: true },
     { name: 'loadApiKey', invokeName: 'load_api_key', args: [], returnsResult: true },
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },

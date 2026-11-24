@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, useEffect, useRef, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, ReactNode, useCallback } from 'react';
 import { useSettings } from './SettingsContext';
 import { useSync } from './SyncContext';
 import { watcherService } from '../services/WatcherService';
@@ -19,6 +19,8 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
+import { logLiveWatchFailure } from '../utils/liveWatchFailureLog';
+import type { TargetedLiveSyncResult } from './SyncContext';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -32,6 +34,11 @@ const WatcherContext = createContext<WatcherContextType | undefined>(undefined);
 
 const WATCHER_INIT_DEBOUNCE_MS = 500;
 const INVOKE_LIVE_DEBOUNCE_MS = 500;
+// A Live Watch path whose import failed (for example "database is locked" while a background job
+// holds SQLite's write lock) is sent again after each of these delays, about 60 s in all (#547).
+// After the last one it is left for the next folder catch-up, which still lists it: a Live Watch
+// import never moves the folder cursor (#594).
+const LIVE_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 
 const mergeTargetedPerfContext = (
     current: TargetedLiveSyncPerfContext | null,
@@ -145,7 +152,23 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
     const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
     const pendingInvokePerfRef = useRef<InvokeLiveWatchPerfContext | null>(null);
     const genericLiveDrainPromiseRef = useRef<Promise<void> | null>(null);
+    // Failed attempts so far for each path waiting on a retry, the batch being imported now, the
+    // pending retry timers, and a generation that turning Live Watch off advances so an old timer
+    // never fires into a later session.
+    const liveRetryFailuresRef = useRef<Map<string, number>>(new Map());
+    const genericInFlightPathsRef = useRef<Set<string>>(new Set());
+    const liveRetryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+    const liveRetryGenerationRef = useRef(0);
     const invokeActivationCatchupRootRef = useRef<string | null>(null);
+
+    const clearLiveRetries = useCallback(() => {
+        liveRetryGenerationRef.current += 1;
+        liveRetryTimersRef.current.forEach((timer) => clearTimeout(timer));
+        liveRetryTimersRef.current.clear();
+        liveRetryFailuresRef.current.clear();
+    }, []);
+
+    useEffect(() => clearLiveRetries, [clearLiveRetries]);
 
     useEffect(() => {
         callbacksRef.current = { refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
@@ -164,67 +187,146 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
         []
     );
 
-    const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
-        paths.map((path) => path.replace(/\\/g, '/')).forEach((path) => pendingGenericPathsRef.current.add(path));
+    // Built once: the drain schedules retries, and a retry re-enters the same drain.
+    const drainGenericLiveChanges = useMemo(() => {
+        // Each failed path goes back through this queue after a delay, so a retry is serialized
+        // with fresh watcher events and deduplicated by the pending set (#547).
+        const scheduleLiveRetries = (result: TargetedLiveSyncResult) => {
+            const handled = new Set(result.handledPaths);
+            const failed = Array.from(new Set(result.failedPaths)).filter((path) => !handled.has(path));
+            if (failed.length === 0) return;
 
-        const pendingPathCount = pendingGenericPathsRef.current.size;
+            const liveWatchOn = useLibraryStore.getState().isLiveWatching;
+            const retryByDelay = new Map<number, Map<string, number>>();
+            let leftForCatchUpCount = 0;
+            let nextAttempt = 0;
+            let retryInMs = 0;
 
-        if (genericLiveDrainPromiseRef.current) {
-            debugLiveWatchPerf('Generic live paths merged into active queue', {
-                cycleId: pendingGenericPerfRef.current!.cycleId,
-                pendingPathCount,
-                eventCount: pendingGenericPerfRef.current!.eventCount,
-                mergedCycleCount: pendingGenericPerfRef.current!.mergedCycleCount,
-            });
-            return genericLiveDrainPromiseRef.current;
-        }
-
-        const drainPromise = (async () => {
-            while (pendingGenericPathsRef.current.size > 0) {
-                const perfContext = pendingGenericPerfRef.current!;
-                const nextBatch = Array.from(pendingGenericPathsRef.current);
-                pendingGenericPathsRef.current.clear();
-                pendingGenericPerfRef.current = null;
-                const cycleStartAt = liveWatchNow();
-
-                debugLiveWatchPerf('Generic live sync started', {
-                    cycleId: perfContext.cycleId,
-                    batchPathCount: nextBatch.length,
-                    eventCount: perfContext.eventCount,
-                    mergedCycleCount: perfContext.mergedCycleCount,
-                    watcherToImportStartMs: elapsedMs(perfContext.firstEventAt),
-                });
-
-                const cb = callbacksRef.current;
-                const liveResult = await cb.startTargetedLiveSync(nextBatch, { ...perfContext, queueDepthAtStart: nextBatch.length });
-
-                if (liveResult.handledPaths.length > 0) {
-                    await cb.refreshMaintenanceCounts();
+            failed.forEach((path) => {
+                const failures = (liveRetryFailuresRef.current.get(path) ?? 0) + 1;
+                if (!liveWatchOn || failures > LIVE_RETRY_DELAYS_MS.length) {
+                    liveRetryFailuresRef.current.delete(path);
+                    leftForCatchUpCount += 1;
+                    return;
                 }
+                liveRetryFailuresRef.current.set(path, failures);
+                const delay = LIVE_RETRY_DELAYS_MS[failures - 1];
+                const group = retryByDelay.get(delay) ?? new Map<string, number>();
+                group.set(path, failures);
+                retryByDelay.set(delay, group);
+                nextAttempt = Math.max(nextAttempt, failures);
+                retryInMs = Math.max(retryInMs, delay);
+            });
 
-                infoLiveWatchPerf('Generic live cycle complete', {
-                    cycleId: perfContext.cycleId,
-                    batchPathCount: nextBatch.length,
-                    handledPathCount: liveResult.handledPaths.length,
-                    failedPathCount: liveResult.failedPaths.length,
-                    importedCount: liveResult.importedCount,
-                    cycleMs: elapsedMs(cycleStartAt),
-                    watcherToFinishMs: elapsedMs(perfContext.firstEventAt),
+            logLiveWatchFailure({
+                failedCount: failed.length,
+                retryCount: failed.length - leftForCatchUpCount,
+                leftForCatchUpCount,
+                nextAttempt,
+                maxAttempts: LIVE_RETRY_DELAYS_MS.length,
+                retryInMs,
+                reason: result.failureReason,
+            });
+
+            const generation = liveRetryGenerationRef.current;
+            retryByDelay.forEach((expectedFailures, delay) => {
+                const timer = setTimeout(() => {
+                    liveRetryTimersRef.current.delete(timer);
+                    if (generation !== liveRetryGenerationRef.current) return;
+                    // Skip a path that a later cycle imported, failed again (it has a newer timer),
+                    // or is importing right now (that result decides).
+                    const due = Array.from(expectedFailures)
+                        .filter(([path, failures]) => liveRetryFailuresRef.current.get(path) === failures)
+                        .filter(([path]) => !genericInFlightPathsRef.current.has(path))
+                        .map(([path]) => path);
+                    if (due.length === 0) return;
+                    debugLiveWatchPerf('Generic live retry queued', { pathCount: due.length, delayMs: delay });
+                    pendingGenericPerfRef.current = mergeTargetedPerfContext(pendingGenericPerfRef.current, due.length, liveWatchNow());
+                    void drain(due);
+                }, delay);
+                liveRetryTimersRef.current.add(timer);
+            });
+        };
+
+        const drain = async (paths: string[]): Promise<void> => {
+            paths.map((path) => path.replace(/\\/g, '/')).forEach((path) => pendingGenericPathsRef.current.add(path));
+
+            const pendingPathCount = pendingGenericPathsRef.current.size;
+
+            if (genericLiveDrainPromiseRef.current) {
+                debugLiveWatchPerf('Generic live paths merged into active queue', {
+                    cycleId: pendingGenericPerfRef.current!.cycleId,
+                    pendingPathCount,
+                    eventCount: pendingGenericPerfRef.current!.eventCount,
+                    mergedCycleCount: pendingGenericPerfRef.current!.mergedCycleCount,
                 });
+                return genericLiveDrainPromiseRef.current;
             }
-        })();
 
-        genericLiveDrainPromiseRef.current = drainPromise.finally(() => {
-            genericLiveDrainPromiseRef.current = null;
-        });
+            const drainPromise = (async () => {
+                while (pendingGenericPathsRef.current.size > 0) {
+                    const perfContext = pendingGenericPerfRef.current!;
+                    const nextBatch = Array.from(pendingGenericPathsRef.current);
+                    pendingGenericPathsRef.current.clear();
+                    pendingGenericPerfRef.current = null;
+                    const cycleStartAt = liveWatchNow();
 
-        return genericLiveDrainPromiseRef.current;
+                    debugLiveWatchPerf('Generic live sync started', {
+                        cycleId: perfContext.cycleId,
+                        batchPathCount: nextBatch.length,
+                        eventCount: perfContext.eventCount,
+                        mergedCycleCount: perfContext.mergedCycleCount,
+                        watcherToImportStartMs: elapsedMs(perfContext.firstEventAt),
+                    });
+
+                    const cb = callbacksRef.current;
+                    genericInFlightPathsRef.current = new Set(nextBatch);
+                    let liveResult: TargetedLiveSyncResult;
+                    try {
+                        liveResult = await cb.startTargetedLiveSync(nextBatch, { ...perfContext, queueDepthAtStart: nextBatch.length });
+                    } catch (error) {
+                        // The batch already left the pending set, so a rejection would lose it.
+                        console.error('[LiveSync] Generic live sync rejected', error);
+                        liveResult = { handledPaths: [], failedPaths: nextBatch, importedCount: 0, failureReason: String(error) };
+                    } finally {
+                        genericInFlightPathsRef.current = new Set();
+                    }
+
+                    liveResult.handledPaths.forEach((path) => liveRetryFailuresRef.current.delete(path));
+                    scheduleLiveRetries(liveResult);
+
+                    if (liveResult.handledPaths.length > 0) {
+                        await cb.refreshMaintenanceCounts();
+                    }
+
+                    infoLiveWatchPerf('Generic live cycle complete', {
+                        cycleId: perfContext.cycleId,
+                        batchPathCount: nextBatch.length,
+                        handledPathCount: liveResult.handledPaths.length,
+                        failedPathCount: liveResult.failedPaths.length,
+                        importedCount: liveResult.importedCount,
+                        cycleMs: elapsedMs(cycleStartAt),
+                        watcherToFinishMs: elapsedMs(perfContext.firstEventAt),
+                    });
+                }
+            })();
+
+            genericLiveDrainPromiseRef.current = drainPromise.finally(() => {
+                genericLiveDrainPromiseRef.current = null;
+            });
+
+            return genericLiveDrainPromiseRef.current;
+        };
+
+        return drain;
     }, []);
 
     useEffect(() => {
         if (!isLoaded) return;
         if (!isLiveWatching) {
             invokeActivationCatchupRootRef.current = null;
+            // The next turn-on catch-up owes these files (#594), so pending retries end here.
+            clearLiveRetries();
         }
         const activationCancellationGeneration = useLibraryStore.getState().invokeSyncCancellationGeneration;
         let initCancelled = false;
@@ -482,7 +584,15 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 }
             }
         };
-    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, drainGenericLiveChanges, startLiveWatchSession]);
+    }, [
+        isLoaded,
+        isLiveWatching,
+        monitoredFoldersConfig,
+        invokePathConfig,
+        drainGenericLiveChanges,
+        startLiveWatchSession,
+        clearLiveRetries,
+    ]);
 
     return (
         <WatcherContext.Provider

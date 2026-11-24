@@ -6774,6 +6774,7 @@ describe('Library Integration (Provider Stack)', () => {
             handledPaths: [],
             failedPaths: ['C:/watch/broken.png'],
             importedCount: 0,
+            failureReason: 'Error: import failed',
         });
 
         mocks.processTargetedFiles.mockRejectedValueOnce(new Error('second import failed'));
@@ -6781,6 +6782,7 @@ describe('Library Integration (Provider Stack)', () => {
             handledPaths: [],
             failedPaths: ['C:/watch/no-context.png'],
             importedCount: 0,
+            failureReason: 'Error: second import failed',
         });
         expect(consoleError).toHaveBeenCalledWith('[LiveSync] Targeted sync failed', expect.any(Error));
         consoleError.mockRestore();

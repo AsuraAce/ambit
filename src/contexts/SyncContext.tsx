@@ -256,6 +256,8 @@ export interface TargetedLiveSyncResult {
     handledPaths: string[];
     failedPaths: string[];
     importedCount: number;
+    /** The first error behind `failedPaths`, as raw text; it can contain a file path. */
+    failureReason?: string;
 }
 
 export const SyncProvider: React.FC<{
@@ -2904,6 +2906,7 @@ export const SyncProvider: React.FC<{
                 const handledPaths = new Set<string>();
                 const failedPaths = new Set<string>();
                 let importedCount = 0;
+                let failureReason: string | undefined;
 
                 while (pendingTargetedPathsRef.current.size > 0) {
                     // Imports would invalidate a running cache repair; new paths keep queueing meanwhile.
@@ -2955,6 +2958,7 @@ export const SyncProvider: React.FC<{
                             }
                         });
                         importedCount += result.stats.imported;
+                        if (result.failedPaths.length > 0) failureReason ??= result.failureReason;
 
                         if (result.stats.imported > 0) {
                             reportLiveImagesReceived(result.stats.imported, { source: 'generic' });
@@ -3018,6 +3022,7 @@ export const SyncProvider: React.FC<{
                     } catch (e) {
                         console.error('[LiveSync] Targeted sync failed', e);
                         nextBatch.forEach((path) => failedPaths.add(path));
+                        failureReason ??= String(e);
                         infoLiveWatchPerf('Targeted live cycle complete', {
                             cycleId: cyclePerfContext?.cycleId,
                             source: cyclePerfContext?.source,
@@ -3036,6 +3041,7 @@ export const SyncProvider: React.FC<{
                     handledPaths: Array.from(handledPaths),
                     failedPaths: Array.from(failedPaths),
                     importedCount,
+                    ...(failedPaths.size > 0 && failureReason ? { failureReason } : {}),
                 };
             })();
 
