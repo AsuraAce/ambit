@@ -7,7 +7,7 @@ import {
     scanResourceThumbnails,
     WEB_IMAGE_LOAD_TIMEOUT_MS,
 } from '../importService';
-import { GeneratorTool } from '../../types';
+import { AIImage, GeneratorTool } from '../../types';
 import { normalizePath } from '../../utils/pathUtils';
 
 const mocks = vi.hoisted(() => ({
@@ -1588,6 +1588,19 @@ describe('processTargetedFiles', () => {
         const result = await processTargetedFiles(['C:/library/fresh.png'], { forceRescan: true });
 
         expect(result.images[0].thumbnailUrl).not.toBe('');
+        expect(result.images[0].thumbnailUrl).toBe(result.images[0].url);
+    });
+
+    it('persists no thumbnail path for an import without one, so a stored thumbnail survives re-import (#597)', async () => {
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            { path: 'C:/library/fresh.png', metadata: {}, thumbnail: '', width: 1, height: 1, fileSize: 1 },
+        ]);
+
+        const result = await processTargetedFiles(['C:/library/fresh.png'], { forceRescan: true });
+
+        expect(mocks.insertImagesBatch).toHaveBeenCalledTimes(1);
+        const persisted = mocks.insertImagesBatch.mock.calls[0][0] as AIImage[];
+        expect(persisted[0].thumbnailUrl).toBe('');
         expect(result.images[0].thumbnailUrl).toBe(result.images[0].url);
     });
 

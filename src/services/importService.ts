@@ -455,7 +455,11 @@ async function processImageFileEntries(
                         break;
                     }
                     const upsertStartedAt = liveWatchNow();
-                    await insertImagesBatch(imagesToUpdate);
+                    // Display falls back to the original, but the database must not store it as the
+                    // thumbnail: the upsert would overwrite an existing generated one.
+                    await insertImagesBatch(
+                        imagesToUpdate.map((img) => (img.thumbnailUrl === img.url ? { ...img, thumbnailUrl: '' } : img))
+                    );
                     upsertMs = elapsedMs(upsertStartedAt);
                     if (abortSignal?.aborted) {
                         wasCancelled = true;
