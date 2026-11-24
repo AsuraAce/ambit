@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.16.1](https://github.com/AsuraAce/ambit/compare/v0.16.0...v0.16.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **build:** run Vite through Node in build:guard instead of re-resolving pnpm ([#593](https://github.com/AsuraAce/ambit/issues/593)) ([bb78eea](https://github.com/AsuraAce/ambit/commit/bb78eeae6c2c7de386ffcc56b1fc7d24560751ef))
+* **invoke:** stop background facet rebuilds when an owner switch starts ([#591](https://github.com/AsuraAce/ambit/issues/591)) ([eadac3a](https://github.com/AsuraAce/ambit/commit/eadac3a4c5e391fd8083ba15d1fa64c6cd2fcec5))
+* **library:** show gallery tiles whose thumbnail loaded without needing a hover ([#596](https://github.com/AsuraAce/ambit/issues/596)) ([95f3900](https://github.com/AsuraAce/ambit/commit/95f390066f7e3f4ffdbba766f67e911297527760))
+* **library:** show the original for imported tiles that have no thumbnail yet ([#598](https://github.com/AsuraAce/ambit/issues/598)) ([2706c43](https://github.com/AsuraAce/ambit/commit/2706c433cccd167b7b8fe028a750b74f360cdde8))
+* **watch:** stop Live Watch imports from moving the folder catch-up cursor ([#595](https://github.com/AsuraAce/ambit/issues/595)) ([4c4e281](https://github.com/AsuraAce/ambit/commit/4c4e281e0ae7805d2381a3022768f36824494968))
+
+
+### Performance Improvements
+
+* **invoke:** record what an owner switch waits on before the visibility lock ([#589](https://github.com/AsuraAce/ambit/issues/589)) ([adc1508](https://github.com/AsuraAce/ambit/commit/adc15081af8d5d2b21c44a8fc2cc93e94aabf71b))
+* **metadata:** run the reparse count only when startup work has cleared and the job is not paused ([#600](https://github.com/AsuraAce/ambit/issues/600)) ([a91ccc8](https://github.com/AsuraAce/ambit/commit/a91ccc820cfbc67bb7f91a4e3e0dfa26e030530b))
+* **startup:** hold the automatic backup while an owner-cache build runs ([#586](https://github.com/AsuraAce/ambit/issues/586)) ([4c0d25e](https://github.com/AsuraAce/ambit/commit/4c0d25eab835ccad24ebdb798ece6d42145b7659))
+* **startup:** wait for the owner-cache build before the reparse-count scan ([#583](https://github.com/AsuraAce/ambit/issues/583)) ([c183187](https://github.com/AsuraAce/ambit/commit/c183187b9755ce3fed87f96f388a28879c115b6e))
+
 ## [0.16.0](https://github.com/AsuraAce/ambit/compare/v0.15.0...v0.16.0) (2026-11-23)
 
 
