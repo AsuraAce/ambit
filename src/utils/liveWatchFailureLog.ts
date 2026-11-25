@@ -40,7 +40,21 @@ export const formatLiveWatchFailure = (summary: LiveWatchFailureSummary): string
 
 /** Writes one failed Live Watch cycle to Ambit.log at WARN. Never throws: outside Tauri the call fails. */
 export const logLiveWatchFailure = (summary: LiveWatchFailureSummary): void => {
-    const line = formatLiveWatchFailure(summary);
+    writeWarning(formatLiveWatchFailure(summary));
+};
+
+/** The background owner-cache repair kinds Live Watch can stop. */
+export type LiveWatchStoppableRepairKind = 'startup' | 'idle' | 'catch-up';
+
+export const formatLiveWatchRepairStopped = (kind: LiveWatchStoppableRepairKind): string =>
+    `[LiveWatch] owner-cache repair stopped for an import kind=${kind} reason=live_import; the idle repair redoes it`;
+
+/** Writes to Ambit.log at WARN that Live Watch stopped a background owner-cache repair. Never throws. */
+export const logLiveWatchRepairStopped = (kind: LiveWatchStoppableRepairKind): void => {
+    writeWarning(formatLiveWatchRepairStopped(kind));
+};
+
+const writeWarning = (line: string): void => {
     console.warn(line);
     try {
         commands.logFrontendWarning(line).catch(() => undefined);
