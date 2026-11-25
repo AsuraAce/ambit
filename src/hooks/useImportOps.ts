@@ -16,7 +16,7 @@ import {
 } from '../services/importService';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
-import { formatStableImportProgress, type ImportMediaKind } from '../utils/importProgress';
+import { formatImportRefreshProgress, formatStableImportProgress, type ImportMediaKind } from '../utils/importProgress';
 import { formatUnscannableRootsWarning } from '../utils/importSourceStatus';
 import { getThumbnailDir } from '../services/thumbnailService';
 import { ensureFolderAccessible } from '../services/assetScope';
@@ -35,12 +35,16 @@ interface ImportOptions {
     abortSignal?: AbortSignal;
     /** The user's import choice; names the Activity Dock message from the start. Left unset when unknown. */
     mediaKind?: ImportMediaKind;
+    /** Called once the files are written, before the library refresh; a caller that owns the run shows the refresh phase (#603). */
+    onRefreshStart?: () => void;
 }
 
 type CommitToastMode = 'detailed' | 'compact' | 'none';
 
 interface CommitImportOptions {
     toastMode?: CommitToastMode;
+    /** Called right before the awaited library refresh, so the import run can show it instead of a finished count. */
+    onRefreshStart?: () => void;
 }
 
 const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported items were kept; rescan to continue.';
@@ -92,6 +96,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
             const dupeCount = newImages.length - uniqueNewImages.length;
 
             if (uniqueNewImages.length > 0) {
+                options.onRefreshStart?.();
                 if (uniqueNewImages.length > 500 || (result.stats.processed > 0 && result.stats.imported > 0)) {
                     console.log(`[ImportOps] Batch import detected. Triggering full metadata refresh.`);
                     await refreshMetadata();
@@ -224,6 +229,7 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 deferFacetCacheRefresh = false,
                 abortSignal: externalAbortSignal,
                 mediaKind,
+                onRefreshStart: externalOnRefreshStart,
             } = options;
             const isStartup = mode === 'startup';
             const isManual = mode === 'manual';
@@ -281,7 +287,16 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                     if (isManual) addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                     return result;
                 }
-                await commitImportResult(result, { toastMode: isManual ? 'detailed' : 'none' });
+                await commitImportResult(result, {
+                    toastMode: isManual ? 'detailed' : 'none',
+                    onRefreshStart: () => {
+                        if (externalOnRefreshStart) {
+                            externalOnRefreshStart();
+                        } else if (importRunId) {
+                            setImportProgressForRun(importRunId, formatImportRefreshProgress());
+                        }
+                    },
+                });
                 return result;
             } catch (error) {
                 console.error('Import error', error);

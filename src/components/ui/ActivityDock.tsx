@@ -14,6 +14,7 @@ import { isOwnerSwitchHeld, useInvokeOwnerScopeStore } from '../../stores/invoke
 import { getOperationOwnerSwitch, useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
 import { useResourceRemovalDockEntry } from './useResourceRemovalDockEntry';
 import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
+import { IMPORT_REFRESH_PHASE } from '../../utils/importProgress';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
 const LIVE_WATCH_DOCK_REVEAL_MS = 2500;
@@ -301,8 +302,10 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
         label = `InvokeAI · ${retainedOwnerScope.targetLabel}`;
     } else if (isImporting) {
         progress = importProgress;
-        label = 'Importing';
-        supportsCancel = !!importAbortController;
+        // Cancel cannot stop the post-import library refresh, so that phase offers none (#603, as #426 did for startup).
+        const isRefreshPhase = importProgress?.phase === IMPORT_REFRESH_PHASE;
+        label = isRefreshPhase ? 'Refreshing' : 'Importing';
+        supportsCancel = !!importAbortController && !isRefreshPhase;
     } else if (isManualSyncing) {
         progress = isInvokePresentation ? invokeOperation!.progress : syncProgress;
         label = invokePresentation.isOwnerSwitchPreparing

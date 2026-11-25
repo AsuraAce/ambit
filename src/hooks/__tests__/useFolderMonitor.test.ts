@@ -41,6 +41,14 @@ vi.mock('../../contexts/WatcherContext', () => ({
     }),
 }));
 
+function deferred() {
+    let resolve!: (value: unknown) => void;
+    const promise = new Promise<unknown>((res) => {
+        resolve = res;
+    });
+    return { promise, resolve };
+}
+
 describe('useFolderMonitor', () => {
     const mockOnScan = vi.fn();
     const mockAddToast = vi.fn();
@@ -892,6 +900,114 @@ describe('useFolderMonitor', () => {
         } finally {
             unsubscribe();
         }
+    });
+
+    // #603: the catch-up run stays open through each folder's library refresh (it holds off other imports), but
+    // the dock shows the refresh rather than "Importing N / N", and the next folder's import takes the dock back.
+    it('shows the refresh phase while a catch-up folder refreshes, then the next folder import', async () => {
+        const refreshes = [deferred(), deferred()];
+        const handleImportPaths = vi.fn().mockImplementation(async (_paths, _variant, options) => {
+            const call = handleImportPaths.mock.calls.length - 1;
+            options.onProgress(0);
+            options.onProgress(1);
+            options.onRefreshStart();
+            await refreshes[call].promise;
+            return completedImportResult;
+        });
+        const folders: MonitoredFolder[] = [
+            { id: 'watch-1', path: 'C:/watch-a', isActive: true, imageCount: 0, lastScanned: 10 },
+            { id: 'watch-2', path: 'C:/watch-b', isActive: true, imageCount: 0, lastScanned: 20 },
+        ];
+        useSettingsStore.setState({ settings: { ...baseSettings, monitoredFolders: folders } });
+        const { rerender } = renderHook(
+            ({ monitored }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: monitored,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata: vi.fn().mockResolvedValue(undefined),
+                }),
+            { initialProps: { monitored: [] as MonitoredFolder[] } }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        mocks.scanDirectorySince
+            .mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }] })
+            .mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }] });
+
+        rerender({ monitored: folders });
+        useLibraryStore.setState({ isLiveWatching: true });
+
+        await waitFor(() => expect(handleImportPaths).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(useLibraryStore.getState().importProgress?.phase).toBe('refreshing'));
+        expect(useLibraryStore.getState()).toEqual(
+            expect.objectContaining({
+                isImporting: true,
+                importRunOwner: 'catch-up-folder-catchup',
+                importProgress: expect.objectContaining({ message: 'Catch-up: Refreshing library...', mode: 'indeterminate' }),
+            })
+        );
+
+        await act(async () => refreshes[0].resolve(undefined));
+        await waitFor(() => expect(handleImportPaths).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(useLibraryStore.getState().importProgress?.phase).toBe('refreshing'));
+        await act(async () => refreshes[1].resolve(undefined));
+
+        await waitFor(() => expect(useLibraryStore.getState().isImporting).toBe(false));
+        // The #595 cursor rule is unchanged: each folder's cursor moves to the scan start once its files are written.
+        const cursors = useSettingsStore.getState().settings.monitoredFolders.map((folder) => folder.lastScanned);
+        expect(cursors.every((cursor) => (cursor ?? 0) > 20)).toBe(true);
+    });
+
+    it('lets the next catch-up folder import replace the refresh phase', async () => {
+        const secondImportStarted = deferred();
+        const releaseSecond = deferred();
+        const handleImportPaths = vi.fn().mockImplementation(async (_paths, _variant, options) => {
+            const call = handleImportPaths.mock.calls.length - 1;
+            options.onProgress(0);
+            if (call === 0) {
+                options.onRefreshStart();
+                return completedImportResult;
+            }
+            secondImportStarted.resolve(undefined);
+            await releaseSecond.promise;
+            return completedImportResult;
+        });
+        const folders: MonitoredFolder[] = [
+            { id: 'watch-1', path: 'C:/watch-a', isActive: true, imageCount: 0, lastScanned: 10 },
+            { id: 'watch-2', path: 'C:/watch-b', isActive: true, imageCount: 0, lastScanned: 20 },
+        ];
+        const { rerender } = renderHook(
+            ({ monitored }) =>
+                useFolderMonitor({
+                    isLoaded: true,
+                    monitoredFolders: monitored,
+                    onScan: mockOnScan,
+                    addToast: mockAddToast,
+                    handleImportPaths,
+                    refreshMetadata: vi.fn().mockResolvedValue(undefined),
+                }),
+            { initialProps: { monitored: [] as MonitoredFolder[] } }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        mocks.scanDirectorySince
+            .mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }] })
+            .mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }] });
+
+        rerender({ monitored: folders });
+        useLibraryStore.setState({ isLiveWatching: true });
+        await act(async () => secondImportStarted.promise);
+
+        const state = useLibraryStore.getState();
+        expect(state.importProgress).toEqual(
+            expect.objectContaining({ message: 'Catch-up: Importing media from 2 folders...', detail: 'Folder 2 of 2' })
+        );
+        expect(state.importProgress?.phase).toBeUndefined();
+        expect(state.importAbortController).not.toBeNull();
+
+        await act(async () => releaseSecond.resolve(undefined));
+        await waitFor(() => expect(useLibraryStore.getState().isImporting).toBe(false));
     });
 
     it('passes background mode through queued catch-up incremental imports', async () => {

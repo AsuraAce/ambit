@@ -70,7 +70,7 @@ For details, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## During Scans
 
-Scans can take time on large folders. Ambit reports progress while it scans sources, imports images, and finalizes metadata. If an import is cancelled, imported images are kept and unfinished folders can be rescanned later. Refresh All Metadata also adopts camera metadata for older library records in restart-safe batches; manual Image Kind choices remain unchanged.
+Scans can take time on large folders. Ambit reports progress while it scans sources, imports images, and finalizes metadata. Once the files are imported, the Activity Dock shows **Refreshing library...** while the library updates; that step has no **Cancel**, and other imports wait until it ends. If an import is cancelled, imported images are kept and unfinished folders can be rescanned later. Refresh All Metadata also adopts camera metadata for older library records in restart-safe batches; manual Image Kind choices remain unchanged.
 
 ## Next Step
 

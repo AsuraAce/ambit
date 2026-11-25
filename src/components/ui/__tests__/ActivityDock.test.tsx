@@ -5,6 +5,7 @@ import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
 import { invoke } from '@tauri-apps/api/core';
 import { useResourceRemovalStore } from '../../../stores/resourceRemovalStore';
+import { formatImportRefreshProgress } from '../../../utils/importProgress';
 import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../../stores/invokeOwnerScopeStore';
 
 vi.mock('framer-motion', () => ({
@@ -87,6 +88,32 @@ describe('ActivityDock', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    // #603: Cancel cannot stop the post-import library refresh, so its phase offers none; the import offers it.
+    it('shows the post-import refresh without Cancel, and the import with it', () => {
+        useLibraryStore.setState({
+            isImporting: true,
+            importAbortController: new AbortController(),
+            importProgress: formatImportRefreshProgress('Catch-up'),
+        });
+
+        const { rerender } = render(<ActivityDock />);
+
+        expect(screen.getByText('Refreshing')).toBeTruthy();
+        expect(screen.getByText('Catch-up: Refreshing library...')).toBeTruthy();
+        expect(screen.queryByText('Importing')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+
+        act(() =>
+            useLibraryStore.setState({
+                importProgress: { current: 0, total: 1, message: 'Catch-up: Importing media from 2 folders...' },
+            })
+        );
+        rerender(<ActivityDock />);
+
+        expect(screen.getByText('Importing')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
     });
 
     it('renders the manual syncing card with cancel controls', () => {

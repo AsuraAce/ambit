@@ -839,6 +839,77 @@ describe('useImportOps', () => {
         expect(useLibraryStore.getState().isImporting).toBe(false);
     });
 
+    // #603: once the files are written the dock must not show a finished import as "Importing N / N" for the
+    // whole refresh; the run stays open (it holds off other imports) but shows the refresh, without Cancel.
+    it('shows the library refresh, not the finished import count, while a path import refreshes', async () => {
+        const refresh = deferred<void>();
+        mocks.refreshMetadata.mockReturnValueOnce(refresh.promise);
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(8, 8, 'Extracting Metadata');
+            return importResult({ images: [importedImage('new')], stats: { processed: 8, imported: 8, skipped: 0, errors: 0 } });
+        });
+        const { result } = renderImportOps();
+
+        let importDone!: Promise<unknown>;
+        act(() => {
+            importDone = result.current.handleImportPaths(['C:/new.png']);
+        });
+        await waitFor(() => expect(mocks.refreshMetadata).toHaveBeenCalledTimes(1));
+
+        const state = useLibraryStore.getState();
+        expect(state.isImporting).toBe(true);
+        expect(state.importProgress).toEqual(
+            expect.objectContaining({ message: 'Refreshing library...', phase: 'refreshing', mode: 'indeterminate', total: 0 })
+        );
+
+        await act(async () => {
+            refresh.resolve();
+            await importDone;
+        });
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        expect(useLibraryStore.getState().importProgress).toBeNull();
+    });
+
+    it('hands the refresh start to a caller that owns the run, before the refresh settles', async () => {
+        const refresh = deferred<void>();
+        mocks.refreshMetadata.mockReturnValueOnce(refresh.promise);
+        mocks.processNativePaths.mockResolvedValueOnce(
+            importResult({ images: [importedImage('new')], stats: { processed: 1, imported: 1, skipped: 0, errors: 0 } })
+        );
+        const onRefreshStart = vi.fn();
+        const { result } = renderImportOps();
+
+        let importDone!: Promise<unknown>;
+        act(() => {
+            importDone = result.current.handleImportPaths(['C:/new.png'], undefined, {
+                mode: 'background',
+                skipStateManagement: true,
+                onProgress: vi.fn(),
+                onRefreshStart,
+            });
+        });
+        await waitFor(() => expect(mocks.refreshMetadata).toHaveBeenCalledTimes(1));
+        expect(onRefreshStart).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            refresh.resolve();
+            await importDone;
+        });
+    });
+
+    it('ends the run when the library refresh fails, so the dock does not stay on the refresh', async () => {
+        mocks.refreshMetadata.mockRejectedValueOnce(new Error('database is locked'));
+        mocks.processNativePaths.mockResolvedValueOnce(
+            importResult({ images: [importedImage('new')], stats: { processed: 1, imported: 1, skipped: 0, errors: 0 } })
+        );
+        const { result } = renderImportOps();
+
+        await act(async () => result.current.handleImportPaths(['C:/new.png'], undefined, { mode: 'background' }));
+
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        expect(useLibraryStore.getState().importProgress).toBeNull();
+    });
+
     it('short-circuits empty startup paths and handles manual path errors by abort state', async () => {
         const empty = renderImportOps();
         await act(async () => empty.result.current.handleImportPaths([], undefined, { mode: 'startup' }));
