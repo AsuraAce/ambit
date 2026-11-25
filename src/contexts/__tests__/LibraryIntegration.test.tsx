@@ -3899,6 +3899,95 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
         });
 
+        // A startup repair can spend minutes in its facet build on a large library; Live Watch files
+        // waited behind it for up to 9 minutes in the owner's log.
+        it('stops a startup repair for a Live Watch import and logs that it did', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { getSync, facets } = await startViewWithRepairInFacets();
+            mocks.processTargetedFiles.mockClear();
+
+            await act(async () => {
+                await getSync().startTargetedLiveSync(['C:/watch/during-startup-repair.png']);
+            });
+
+            expect(mocks.processTargetedFiles).toHaveBeenCalledWith(['C:/watch/during-startup-repair.png'], expect.anything());
+            expect(facets.wasStopped()).toBe(true);
+            expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+            expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 3 });
+            expect(warn).toHaveBeenCalledWith(
+                '[LiveWatch] owner-cache repair stopped for an import kind=startup reason=live_import; the idle repair redoes it'
+            );
+            warn.mockRestore();
+        });
+
+        // The stopped repair left the cache dirty: the idle repair must redo it, even when Live Watch
+        // imported nothing, or counts stay stale until the next start.
+        it.each([
+            ['imported its file', createTargetedResult({ handledPaths: ['C:/watch/new.png'], imported: 1 })],
+            ['imported nothing', createTargetedResult({ failedPaths: ['C:/watch/locked.png'] })],
+        ])('repairs once it is quiet after Live Watch stopped a startup repair and %s', async (_name, result) => {
+            vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const { getSync } = await startViewWithRepairInFacets();
+            mocks.processTargetedFiles.mockResolvedValueOnce(result);
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            await act(async () => {
+                await getSync().startTargetedLiveSync(['C:/watch/new.png']);
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 7));
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(29_000);
+            });
+            expect(mocks.beginActiveInvokeScopeCacheBuild).not.toHaveBeenCalled();
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+
+            expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
+            expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 7 });
+            expect(isRepairing()).toBe(false);
+            vi.mocked(console.warn).mockRestore();
+        });
+
+        // The repair after an Invoke catch-up commits what that catch-up imported; stopping it would
+        // leave those counts stale, so Live Watch still waits for it.
+        it('waits for the repair after an Invoke catch-up instead of stopping it', async () => {
+            const { getSync } = await startView({ cacheRepair: planOf('restored') });
+            const facets = holdFacetBuild();
+            mocks.syncImages.mockResolvedValueOnce({
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: 200,
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: resources,
+            });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 5));
+            mocks.refreshFacetCacheForResourcesStrict.mockClear();
+            await act(async () => {
+                await getSync().startInvokeSync({ mode: 'startup' });
+            });
+            await waitFor(() => expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledOnce());
+            mocks.processTargetedFiles.mockClear();
+
+            let batch!: ReturnType<SyncHook['startTargetedLiveSync']>;
+            act(() => {
+                batch = getSync().startTargetedLiveSync(['C:/watch/during-catch-up.png']);
+            });
+            await act(async () => {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            });
+            expect(facets.wasStopped()).toBe(false);
+            expect(mocks.processTargetedFiles).not.toHaveBeenCalled();
+
+            await act(async () => {
+                facets.release();
+                await batch;
+            });
+            expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 });
+            expect(mocks.processTargetedFiles).toHaveBeenCalledWith(['C:/watch/during-catch-up.png'], expect.anything());
+        });
+
         it('stops an idle repair before it applies the switched owner scope', async () => {
             const { getSync, gate } = await startIdleRepairHoldingClaim();
             mocks.applyInvokeOwnerScope.mockClear();

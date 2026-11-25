@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { logFrontendWarning } = vi.hoisted(() => ({ logFrontendWarning: vi.fn() }));
 vi.mock('../../bindings', () => ({ commands: { logFrontendWarning } }));
 
-import { classifyImportFailure, formatLiveWatchFailure, logLiveWatchFailure } from '../liveWatchFailureLog';
+import { classifyImportFailure, formatLiveWatchFailure, logLiveWatchFailure, logLiveWatchRepairStopped } from '../liveWatchFailureLog';
 
 describe('liveWatchFailureLog', () => {
     beforeEach(() => {
@@ -63,6 +63,16 @@ describe('liveWatchFailureLog', () => {
             expect(line).toMatch(/ reason=(scope|scan_error|other|db_locked)$/);
             expect(line).not.toMatch(/Jane|Doe|Smith|portrait|Secret|Users|home|nas|[\\/:]/);
         }
+    });
+
+    // The owner log must show when Live Watch stopped a startup repair, with no paths or counts.
+    it('logs one line when Live Watch stops a startup repair', () => {
+        logLiveWatchRepairStopped('startup');
+
+        expect(logFrontendWarning).toHaveBeenCalledTimes(1);
+        expect(logFrontendWarning).toHaveBeenCalledWith(
+            '[LiveWatch] owner-cache repair stopped for an import kind=startup reason=live_import; the idle repair redoes it'
+        );
     });
 
     it('reports a cycle with no known kind as other', () => {

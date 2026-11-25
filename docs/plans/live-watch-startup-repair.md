@@ -1,6 +1,6 @@
 # Live Watch waits out the startup owner-cache repair
 
-Status: **proposed** (plan only, awaiting approval). Branch `fix/live-watch-startup-repair-wait`.
+Status: **approved** (option a), implementation in review. Approval conditions: Live Watch stops only the startup preparation's repair and idle repairs; the switch and Invoke-sync catch-up repairs get their own kind `catch-up` and are still waited for (test); the idle repair is scheduled whenever a repair was stopped; each stop writes one Ambit.log WARN line (kind and reason only). Branch `fix/live-watch-startup-repair-wait`.
 
 Goal: Live Watch imports new files within seconds while a startup owner-cache repair runs. The cache still ends committed and correct, and the library counts end up right.
 
@@ -99,5 +99,5 @@ Risks:
 - **Stale counts for a whole generation session** (by design, see §3). Mitigation later: #561, #468.
 - **Abort latency behind an unrelated facet build**: the claim abort takes the facet build lock; if a non-stoppable build (e.g. a live facet refresh, ~100 s on the owner's library) holds it, the first batch waits for it once. Bounded and one-off per session; noted in the PR.
 - **Catch-up overlap**: the folder catch-up now starts its import sooner and its `repairOwnerCacheAfterImport` (foreground, not abortable by Live Watch) can lose its commits to Live Watch writes. This already happens whenever catch-up and Live Watch overlap; not changed here, noted as follow-up if seen.
-- **Repairs of other origins share kind `'startup'`** (switch catch-up repair :1674/:1787, Invoke-sync repair :2591). Aborting them leaves `ownerCacheRepairFailedRef` true, so later syncs take the full-plan path and the idle repair redoes it. Tests cover the startup case; I will add one assertion for the Invoke-sync repair if it is cheap.
+- **Repairs of other origins share kind `'startup'`** (switch catch-up repair :1674/:1787, Invoke-sync repair :2591). Aborting them leaves `ownerCacheRepairFailedRef` true, so later syncs take the full-plan path and the idle repair redoes it. Resolved at approval: they now have kind `catch-up`, Live Watch waits for them, and a test covers the Invoke-sync repair. Test 1 holds the repair in its facet build rather than at its claim, because a claim still pending cannot be stopped.
 - Out of scope, noted only: the 33 s `reconcile_invoke_board_snapshot` write hold; facet rebuild speed.
