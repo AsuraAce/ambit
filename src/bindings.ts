@@ -726,6 +726,9 @@ async inspectComfyuiWorkflowGraph(chunks: Partial<{ [key in string]: string }>) 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Parsing a large file is CPU work, so it runs off the async runtime's workers.
+ */
 async inspectWorkflowCanvas(chunks: Partial<{ [key in string]: string }>) : Promise<Result<WorkflowCanvasReport, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("inspect_workflow_canvas", { chunks }) };
@@ -1238,7 +1241,7 @@ export type WorkflowCanvasNodeMode = "active" | "muted" | "bypassed"
 export type WorkflowCanvasPoint = { x: number; y: number }
 export type WorkflowCanvasPort = { 
 /**
- * The index the file's links use for this port.
+ * The index the file's links use for this port; below `MAX_NODE_PORTS`.
  */
 slot: number; name: string; label: string; dataType: string; typeInferred: boolean; linked: boolean }
 export type WorkflowCanvasReport = { tool: string; source: WorkflowCanvasSource; hasSavedLayout: boolean; 
@@ -1247,7 +1250,8 @@ export type WorkflowCanvasReport = { tool: string; source: WorkflowCanvasSource;
  */
 truncated: boolean; root: WorkflowCanvasLevel; subgraphs: WorkflowCanvasSubgraph[]; 
 /**
- * Full paths (subgraph instance ids, then the node id).
+ * Full paths (subgraph instance ids, then the node id). An API prompt has
+ * one level, so each of its paths is the single prompt id.
  */
 selectedOutputPaths: string[][]; selectedBranchPaths: string[][]; outputAmbiguous: boolean }
 export type WorkflowCanvasSize = { width: number; height: number }

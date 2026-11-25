@@ -104,12 +104,27 @@ single parser: TypeScript does not re-read the JSON.
   different questions.
 - Tool-neutral names (`WorkflowCanvas*`) so the InvokeAI package fills the same
   shape and the UI needs no second renderer.
-- Bounded: a chunk over 32 MiB is ignored; at most 2,000 nodes and 10,000 links
-  per level, 256 subgraph definitions, 10,000 nodes in all, 256 KiB of raw JSON
-  per node and 8 MiB in all. Definitions are listed once each and never expanded
-  into each other, so nesting depth cannot multiply the output (the evaluator
-  keeps the normalizer's depth cap of 16). Hitting a cap sets `truncated` and the
-  UI says so. Malformed or cyclic input is skipped, never a panic.
+- Bounded, in work and in output size, not only in node count:
+    - a chunk over 32 MiB is ignored;
+    - per level, at most 2,000 nodes and 10,000 links;
+    - 256 subgraph definitions;
+    - 10,000 nodes and 50,000 links in all;
+    - per node, 256 inputs, 256 outputs and 256 setting values. A slot index of
+      256 or more drops its link: a slot number never sizes anything, and API
+      prompt outputs exist only for slots a wire uses, never padded up to it;
+    - 50,000 ports, settings and groups in all;
+    - a setting value is cut at 64 KiB, with 16 MiB of setting text in all;
+    - names, titles and types are cut at 256 bytes, and a node whose id is longer
+      is dropped;
+    - raw JSON: 256 KiB per node and 8 MiB in all.
+
+    Definitions are listed once each and never expanded into each other, so
+    nesting depth cannot multiply the output (the evaluator keeps the normalizer's
+    depth cap of 16). Setting names and subgraph-output slots are found through
+    maps, so the work stays linear. Hitting a cap sets `truncated` and the UI says
+    so. Malformed or cyclic input is skipped, never a panic. The command runs on a
+    blocking thread, off the async runtime's workers.
+
 - Read-only. It never writes metadata or the database, never changes the stored
   or archival workflow, and does not bump the parser version.
 - Every string from the file is untrusted. The report passes text on as saved;
@@ -137,7 +152,23 @@ Group { title, pos, size, color? }
 A subgraph's own inputs and outputs are drawn as two boundary nodes in its level
 (`subgraph_input` with the inputs as its outputs, `subgraph_output` the reverse),
 as ComfyUI draws them. A setting that can take a wire is an input port only while
-a wire is attached. Paths are the subgraph instance ids followed by the node id.
+a wire is attached. Paths are the subgraph instance ids followed by the node id;
+an API prompt has one flat level, so its paths are the single prompt id (`30:3`).
+
+Setting names: the file's `inputs[].widget.name` are used only when there is
+exactly one for each saved value other than the seed's control value. Many
+files name only the settings that can take a wire, and pairing those names with
+the first values names the wrong ones. Otherwise each value is matched against
+the prompt node with the same id, and a value nothing matches stays unnamed.
+Subgraph levels get no prompt matching, because several instances can share
+one definition with different values.
+
+What P2 must tolerate:
+
+- positions, sizes and group bounds are finite but may be negative or huge, so
+  the renderer clamps them before layout and the minimap;
+- a link may name a slot its node does not list, so the renderer draws it to
+  the node's edge rather than failing.
 
 API-prompt type inference: a small table of core input names (`model`, `clip`,
 `vae`, `positive`/`negative`/`conditioning`, `samples`/`latent_image`,

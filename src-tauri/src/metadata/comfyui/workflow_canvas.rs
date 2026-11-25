@@ -5,8 +5,12 @@
 //! definition keep their own nodes, positions, groups, typed ports and links,
 //! and bypassed or muted nodes stay visible. It only reads the chunks: nothing is
 //! written back and the stored workflow is untouched.
+//!
+//! Files come from images anyone can make, so every part of the report is
+//! capped: the caps bound the work done and the size of the result, not only
+//! the node count. Anything cut sets `truncated`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use serde_json::Value;
 
@@ -29,6 +33,22 @@ const MAX_LEVEL_LINKS: usize = 10_000;
 const MAX_SUBGRAPHS: usize = 256;
 /// Nodes kept across all levels together.
 const MAX_TOTAL_NODES: usize = 10_000;
+/// Links kept across all levels together.
+const MAX_TOTAL_LINKS: usize = 50_000;
+/// Inputs, and separately outputs, kept on one node. A slot index at or above
+/// this is dropped with its link, so a slot number never sizes anything.
+const MAX_NODE_PORTS: usize = 256;
+/// Saved setting values kept on one node.
+const MAX_NODE_WIDGETS: usize = 256;
+/// Ports, settings and groups kept across the whole report.
+const MAX_TOTAL_ITEMS: usize = 50_000;
+/// A setting value longer than this is cut.
+const MAX_WIDGET_VALUE_BYTES: usize = 64 * 1024;
+/// Setting value text kept across the whole report.
+const MAX_TOTAL_WIDGET_BYTES: usize = 16 * 1024 * 1024;
+/// Names, titles and types are cut to this; a node id longer than this drops
+/// the node, since a cut id would no longer match its links.
+const MAX_LABEL_BYTES: usize = 256;
 /// A node's raw JSON longer than this is left out.
 const MAX_NODE_RAW_JSON_BYTES: usize = 256 * 1024;
 /// Raw JSON kept across all nodes together.
@@ -81,7 +101,7 @@ pub struct WorkflowCanvasSize {
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowCanvasPort {
-    /// The index the file's links use for this port.
+    /// The index the file's links use for this port; below `MAX_NODE_PORTS`.
     pub slot: usize,
     pub name: String,
     pub label: String,
@@ -167,22 +187,29 @@ pub struct WorkflowCanvasReport {
     pub truncated: bool,
     pub root: WorkflowCanvasLevel,
     pub subgraphs: Vec<WorkflowCanvasSubgraph>,
-    /// Full paths (subgraph instance ids, then the node id).
+    /// Full paths (subgraph instance ids, then the node id). An API prompt has
+    /// one level, so each of its paths is the single prompt id.
     pub selected_output_paths: Vec<Vec<String>>,
     pub selected_branch_paths: Vec<Vec<String>>,
     pub output_ambiguous: bool,
 }
 
+/// Parsing a large file is CPU work, so it runs off the async runtime's workers.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn inspect_workflow_canvas(
     chunks: HashMap<String, String>,
 ) -> Result<WorkflowCanvasReport, String> {
-    Ok(build_workflow_canvas_report(&chunks))
+    tauri::async_runtime::spawn_blocking(move || build_workflow_canvas_report(&chunks))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 struct Budget {
     nodes: usize,
+    links: usize,
+    items: usize,
+    widget_bytes: usize,
     raw_json_bytes: usize,
     truncated: bool,
 }
@@ -191,9 +218,66 @@ impl Budget {
     fn new() -> Self {
         Self {
             nodes: MAX_TOTAL_NODES,
+            links: MAX_TOTAL_LINKS,
+            items: MAX_TOTAL_ITEMS,
+            widget_bytes: MAX_TOTAL_WIDGET_BYTES,
             raw_json_bytes: MAX_TOTAL_RAW_JSON_BYTES,
             truncated: false,
         }
+    }
+
+    /// One port, setting or group, if the report still has room for it.
+    fn item(&mut self) -> bool {
+        if self.items == 0 {
+            self.truncated = true;
+            return false;
+        }
+        self.items -= 1;
+        true
+    }
+
+    fn link(&mut self) -> bool {
+        if self.links == 0 {
+            self.truncated = true;
+            return false;
+        }
+        self.links -= 1;
+        true
+    }
+
+    fn label(&mut self, text: &str) -> String {
+        if text.len() > MAX_LABEL_BYTES {
+            self.truncated = true;
+        }
+        clip(text, MAX_LABEL_BYTES).to_string()
+    }
+
+    /// The first `cap` entries, noting when more were saved.
+    fn capped<'a, T>(&mut self, entries: &'a [T], cap: usize) -> &'a [T] {
+        if entries.len() > cap {
+            self.truncated = true;
+        }
+        &entries[..entries.len().min(cap)]
+    }
+
+    fn widget(&mut self, name: Option<&str>, value: &Value) -> Option<WorkflowCanvasWidget> {
+        let value = display_value(value)?;
+        if !self.item() {
+            return None;
+        }
+        let cut = value.len() > MAX_WIDGET_VALUE_BYTES;
+        let value = clip(&value, MAX_WIDGET_VALUE_BYTES);
+        if value.len() > self.widget_bytes {
+            self.truncated = true;
+            return None;
+        }
+        self.widget_bytes -= value.len();
+        self.truncated |= cut;
+        Some(WorkflowCanvasWidget {
+            name: name.map(|name| self.label(name)),
+            is_long_text: cut || value.chars().count() > LONG_TEXT_CHARS || value.contains('\n'),
+            value: value.to_string(),
+        })
     }
 
     fn raw_json(&mut self, node: &Value) -> Option<String> {
@@ -205,6 +289,22 @@ impl Budget {
         self.raw_json_bytes -= json.len();
         Some(json)
     }
+}
+
+/// The longest prefix of `text` within `max` bytes that ends on a character.
+fn clip(text: &str, max: usize) -> &str {
+    if text.len() <= max {
+        return text;
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+fn short_id(id: String) -> Option<String> {
+    (id.len() <= MAX_LABEL_BYTES).then_some(id)
 }
 
 pub(crate) fn build_workflow_canvas_report(
@@ -241,19 +341,19 @@ pub(crate) fn build_workflow_canvas_report(
             .map(|(id, _)| id.clone())
             .collect::<HashSet<_>>();
         let root = workflow_level(workflow, &definition_ids, prompt.as_ref(), &mut budget);
-        let subgraphs = definitions
-            .into_iter()
-            .map(|(id, definition)| WorkflowCanvasSubgraph {
-                name: definition
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or(&id)
-                    .to_string(),
-                level: workflow_level(definition, &definition_ids, None, &mut budget),
-                id,
-            })
-            .collect();
+        let mut subgraphs = Vec::with_capacity(definitions.len());
+        for (id, definition) in definitions {
+            let name = definition
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(&id);
+            let name = budget.label(name);
+            // Several instances can share one definition, so no single prompt
+            // node names its settings.
+            let level = workflow_level(definition, &definition_ids, None, &mut budget);
+            subgraphs.push(WorkflowCanvasSubgraph { id, name, level });
+        }
         (WorkflowCanvasSource::Workflow, root, subgraphs)
     } else if let Some(prompt) = &prompt {
         (
@@ -275,8 +375,8 @@ pub(crate) fn build_workflow_canvas_report(
         } else {
             let report = build_comfyui_workflow_graph_report(&chunks);
             (
-                node_paths(&report.selected_output_node_ids),
-                node_paths(&report.selected_branch_node_ids),
+                node_paths(&report.selected_output_node_ids, source),
+                node_paths(&report.selected_branch_node_ids, source),
                 report.output_ambiguous,
             )
         };
@@ -296,10 +396,14 @@ pub(crate) fn build_workflow_canvas_report(
 }
 
 /// The normalizer names a node inside a subgraph `instance:local`, so the
-/// evaluator's ids split into canvas paths.
-fn node_paths(ids: &[String]) -> Vec<Vec<String>> {
+/// evaluator's ids split into canvas paths. An API prompt is already flat: its
+/// ids, such as `30:3`, are the nodes' own ids in the one level.
+fn node_paths(ids: &[String], source: WorkflowCanvasSource) -> Vec<Vec<String>> {
     ids.iter()
-        .map(|id| id.split(':').map(str::to_string).collect())
+        .map(|id| match source {
+            WorkflowCanvasSource::ApiPrompt => vec![id.clone()],
+            _ => id.split(':').map(str::to_string).collect(),
+        })
         .collect()
 }
 
@@ -315,6 +419,10 @@ fn subgraph_definitions<'a>(workflow: &'a Value, budget: &mut Budget) -> Vec<(St
     let mut kept = Vec::new();
     for definition in definitions {
         let Some(id) = definition.get("id").and_then(value_id) else {
+            continue;
+        };
+        let Some(id) = short_id(id) else {
+            budget.truncated = true;
             continue;
         };
         if !seen.insert(id.clone()) {
@@ -335,13 +443,21 @@ fn workflow_level(
     prompt: Option<&serde_json::Map<String, Value>>,
     budget: &mut Budget,
 ) -> WorkflowCanvasLevel {
-    let mut source_nodes = container
+    let mut source_nodes = Vec::new();
+    for node in container
         .get("nodes")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|node| Some((node.get("id").and_then(value_id)?, node)))
-        .collect::<Vec<_>>();
+    {
+        let Some(id) = node.get("id").and_then(value_id) else {
+            continue;
+        };
+        match short_id(id) {
+            Some(id) => source_nodes.push((id, node)),
+            None => budget.truncated = true,
+        }
+    }
     source_nodes.sort_by(|(left, _), (right, _)| compare_node_ids(left, right));
     source_nodes.dedup_by(|(left, _), (right, _)| left == right);
 
@@ -352,13 +468,11 @@ fn workflow_level(
     }
     budget.nodes -= keep;
 
-    let mut nodes = source_nodes
-        .into_iter()
-        .map(|(id, node)| {
-            let prompt_node = prompt.and_then(|prompt| prompt.get(&id));
-            workflow_node(id, node, definition_ids, prompt_node, budget)
-        })
-        .collect::<Vec<_>>();
+    let mut nodes = Vec::with_capacity(source_nodes.len() + 2);
+    for (id, node) in source_nodes {
+        let prompt_node = prompt.and_then(|prompt| prompt.get(&id));
+        nodes.push(workflow_node(id, node, definition_ids, prompt_node, budget));
+    }
 
     let boundary = boundary_ids(container);
     if let Some((input_id, output_id)) = &boundary {
@@ -368,6 +482,7 @@ fn workflow_level(
             "inputNode",
             "inputs",
             WorkflowCanvasNodeKind::SubgraphInput,
+            budget,
         ));
         nodes.extend(boundary_node(
             container,
@@ -375,17 +490,26 @@ fn workflow_level(
             "outputNode",
             "outputs",
             WorkflowCanvasNodeKind::SubgraphOutput,
+            budget,
         ));
     }
 
     let links = workflow_links(container, &nodes, boundary.as_ref(), budget);
-    let groups = container
+    let mut groups = Vec::new();
+    for group in container
         .get("groups")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(workflow_group)
-        .collect();
+    {
+        let Some(group) = workflow_group(group, budget) else {
+            continue;
+        };
+        if !budget.item() {
+            break;
+        }
+        groups.push(group);
+    }
 
     WorkflowCanvasLevel {
         nodes,
@@ -401,19 +525,19 @@ fn workflow_node(
     prompt_node: Option<&Value>,
     budget: &mut Budget,
 ) -> WorkflowCanvasNode {
-    let node_type = node
+    let raw_type = node
         .get("type")
         .and_then(Value::as_str)
         .filter(|node_type| !node_type.is_empty())
-        .unwrap_or("Unknown")
-        .to_string();
+        .unwrap_or("Unknown");
+    let node_type = budget.label(raw_type);
     let subgraph_id = definition_ids
-        .contains(&node_type)
-        .then(|| node_type.clone());
+        .contains(raw_type)
+        .then(|| raw_type.to_string());
     let kind = if subgraph_id.is_some() {
         WorkflowCanvasNodeKind::Subgraph
     } else {
-        match node_type.as_str() {
+        match raw_type {
             "Reroute" => WorkflowCanvasNodeKind::Reroute,
             "Note" | "MarkdownNote" => WorkflowCanvasNodeKind::Note,
             _ => WorkflowCanvasNodeKind::Node,
@@ -427,41 +551,53 @@ fn workflow_node(
         WorkflowCanvasNodeMode::Active
     };
 
-    let inputs = node
+    let saved_inputs = node
         .get("inputs")
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut inputs = Vec::new();
+    for (slot, input) in budget
+        .capped(saved_inputs, MAX_NODE_PORTS)
+        .iter()
         .enumerate()
-        .filter_map(|(slot, input)| {
-            let linked = input.get("link").is_some_and(|link| !link.is_null());
-            // A setting that can take a wire is listed as an input; it is a port
-            // only while a wire is attached, as ComfyUI draws it.
-            (input.get("widget").is_none() || linked).then(|| saved_port(slot, input, linked))
-        })
-        .collect();
-    let outputs = node
+    {
+        let linked = input.get("link").is_some_and(|link| !link.is_null());
+        // A setting that can take a wire is listed as an input; it is a port
+        // only while a wire is attached, as ComfyUI draws it.
+        if (input.get("widget").is_none() || linked) && budget.item() {
+            inputs.push(saved_port(slot, input, linked, budget));
+        }
+    }
+    let saved_outputs = node
         .get("outputs")
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut outputs = Vec::new();
+    for (slot, output) in budget
+        .capped(saved_outputs, MAX_NODE_PORTS)
+        .iter()
         .enumerate()
-        .map(|(slot, output)| {
-            let linked = output
-                .get("links")
-                .and_then(Value::as_array)
-                .is_some_and(|links| !links.is_empty());
-            saved_port(slot, output, linked)
-        })
-        .collect();
+    {
+        let linked = output
+            .get("links")
+            .and_then(Value::as_array)
+            .is_some_and(|links| !links.is_empty());
+        if budget.item() {
+            outputs.push(saved_port(slot, output, linked, budget));
+        }
+    }
 
+    let title = node
+        .get("title")
+        .and_then(Value::as_str)
+        .filter(|title| !title.is_empty())
+        .map(|title| budget.label(title))
+        .unwrap_or_else(|| node_type.clone());
+    let widgets = workflow_widgets(node, prompt_node, budget);
     WorkflowCanvasNode {
-        title: node
-            .get("title")
-            .and_then(Value::as_str)
-            .filter(|title| !title.is_empty())
-            .unwrap_or(&node_type)
-            .to_string(),
+        title,
         id,
         kind,
         subgraph_id,
@@ -481,34 +617,35 @@ fn workflow_node(
             .map(|(width, height)| WorkflowCanvasSize { width, height }),
         inputs,
         outputs,
-        widgets: workflow_widgets(node, prompt_node),
+        widgets,
         raw_json: budget.raw_json(node),
         node_type,
     }
 }
 
-fn saved_port(slot: usize, port: &Value, linked: bool) -> WorkflowCanvasPort {
-    let name = port
-        .get("name")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("slot_{slot}"));
-    let label = ["label", "localized_name"]
+fn saved_port(slot: usize, port: &Value, linked: bool, budget: &mut Budget) -> WorkflowCanvasPort {
+    let name = match port.get("name").and_then(Value::as_str) {
+        Some(name) => budget.label(name),
+        None => format!("slot_{slot}"),
+    };
+    let label = match ["label", "localized_name"]
         .iter()
         .find_map(|key| port.get(*key).and_then(Value::as_str))
         .filter(|label| !label.is_empty())
-        .unwrap_or(&name)
-        .to_string();
+    {
+        Some(label) => budget.label(label),
+        None => name.clone(),
+    };
+    let data_type = port
+        .get("type")
+        .and_then(Value::as_str)
+        .filter(|data_type| !data_type.is_empty())
+        .unwrap_or(ANY_TYPE);
     WorkflowCanvasPort {
         slot,
         label,
         name,
-        data_type: port
-            .get("type")
-            .and_then(Value::as_str)
-            .filter(|data_type| !data_type.is_empty())
-            .unwrap_or(ANY_TYPE)
-            .to_string(),
+        data_type: budget.label(data_type),
         type_inferred: false,
         linked,
     }
@@ -525,42 +662,47 @@ fn pair(value: &Value) -> Option<(f64, f64)> {
     (first.is_finite() && second.is_finite()).then_some((first, second))
 }
 
-fn workflow_widgets(node: &Value, prompt_node: Option<&Value>) -> Vec<WorkflowCanvasWidget> {
-    match node.get("widgets_values") {
-        Some(Value::Object(values)) => values
-            .iter()
-            .filter_map(|(name, value)| widget(Some(name.clone()), value))
-            .collect(),
-        Some(Value::Array(values)) => {
-            let names = widget_names(node, values, prompt_node);
-            values
-                .iter()
-                .zip(names)
-                .filter_map(|(value, name)| widget(name, value))
-                .collect()
-        }
-        _ => Vec::new(),
-    }
-}
-
-fn widget(name: Option<String>, value: &Value) -> Option<WorkflowCanvasWidget> {
-    let value = display_value(value)?;
-    Some(WorkflowCanvasWidget {
-        name,
-        is_long_text: value.chars().count() > LONG_TEXT_CHARS || value.contains('\n'),
-        value,
-    })
-}
-
-/// The setting name of each saved value. The file names its settings in
-/// `inputs[].widget.name`, in order, but saves an extra control value after a
-/// seed. Older files name none; then a prompt node with the same id names the
-/// values that equal its own (equal values read the same either way).
-fn widget_names(
+fn workflow_widgets(
     node: &Value,
-    values: &[Value],
     prompt_node: Option<&Value>,
-) -> Vec<Option<String>> {
+    budget: &mut Budget,
+) -> Vec<WorkflowCanvasWidget> {
+    let mut widgets = Vec::new();
+    match node.get("widgets_values") {
+        Some(Value::Object(values)) => {
+            if values.len() > MAX_NODE_WIDGETS {
+                budget.truncated = true;
+            }
+            for (name, value) in values.iter().take(MAX_NODE_WIDGETS) {
+                widgets.extend(budget.widget(Some(name), value));
+            }
+        }
+        Some(Value::Array(values)) => {
+            let values = budget.capped(values, MAX_NODE_WIDGETS);
+            let names = widget_names(node, values, prompt_node);
+            for (value, name) in values.iter().zip(names) {
+                widgets.extend(budget.widget(name, value));
+            }
+        }
+        _ => {}
+    }
+    widgets
+}
+
+/// The setting name of each saved value.
+///
+/// The file may name its settings in `inputs[].widget.name`, in order, with an
+/// extra control value saved after a seed. Those names are used only when
+/// there is exactly one for each value other than the control values: many
+/// files list only the settings that can take a wire, and pairing those with
+/// the first values would name the wrong ones. Otherwise a prompt node with the
+/// same id names each value equal to one of its own (equal values read the same
+/// either way), and a value nothing names stays unnamed.
+fn widget_names<'a>(
+    node: &'a Value,
+    values: &[Value],
+    prompt_node: Option<&'a Value>,
+) -> Vec<Option<&'a str>> {
     let declared = node
         .get("inputs")
         .and_then(Value::as_array)
@@ -568,55 +710,66 @@ fn widget_names(
         .flatten()
         .filter_map(|input| input.get("widget")?.get("name")?.as_str())
         .collect::<Vec<_>>();
-
-    let named_by_file = !declared.is_empty();
-    let mut declared = declared.into_iter();
-    let mut literals = prompt_node
-        .and_then(|node| node.get("inputs"))
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-        .filter(|(_, value)| prompt_link(value).is_none())
-        .map(|(name, value)| (name.as_str(), value, false))
-        .collect::<Vec<_>>();
-
-    values
+    let controls = values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let follows_seed =
-                index > 0 && (values[index - 1].is_i64() || values[index - 1].is_u64());
-            if follows_seed
+            index > 0
+                && (values[index - 1].is_i64() || values[index - 1].is_u64())
                 && value
                     .as_str()
                     .is_some_and(|value| CONTROL_AFTER_GENERATE.contains(&value))
-            {
-                return Some("control_after_generate".to_string());
+        })
+        .collect::<Vec<_>>();
+    let settings = controls.iter().filter(|control| !**control).count();
+    let named_by_file = !declared.is_empty() && declared.len() == settings;
+
+    // Each prompt value, keyed so `6` and `6.0` match, with the names still
+    // free to give out in the prompt's own order.
+    let mut by_value: HashMap<String, VecDeque<&str>> = HashMap::new();
+    if !named_by_file {
+        for (name, value) in prompt_node
+            .and_then(|node| node.get("inputs"))
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+            .filter(|(_, value)| prompt_link(value).is_none())
+        {
+            by_value
+                .entry(value_key(value))
+                .or_default()
+                .push_back(name.as_str());
+        }
+    }
+
+    let mut declared = declared.into_iter();
+    values
+        .iter()
+        .zip(controls)
+        .map(|(value, control)| {
+            if control {
+                Some("control_after_generate")
+            } else if named_by_file {
+                declared.next()
+            } else {
+                by_value.get_mut(&value_key(value))?.pop_front()
             }
-            if named_by_file {
-                return declared.next().map(str::to_string);
-            }
-            let literal = literals
-                .iter_mut()
-                .find(|(_, literal, used)| !*used && same_value(literal, value))?;
-            literal.2 = true;
-            Some(literal.0.to_string())
         })
         .collect()
 }
 
 /// The editor and the prompt may save one number as `6` and `6.0`.
-fn same_value(left: &Value, right: &Value) -> bool {
-    match (left.as_f64(), right.as_f64()) {
-        (Some(left), Some(right)) => left == right,
-        _ => left == right,
+fn value_key(value: &Value) -> String {
+    match value.as_f64() {
+        Some(number) => format!("#{number}"),
+        None => value.to_string(),
     }
 }
 
 fn boundary_ids(container: &Value) -> Option<(String, String)> {
     Some((
-        container.get("inputNode")?.get("id").and_then(value_id)?,
-        container.get("outputNode")?.get("id").and_then(value_id)?,
+        short_id(container.get("inputNode")?.get("id").and_then(value_id)?)?,
+        short_id(container.get("outputNode")?.get("id").and_then(value_id)?)?,
     ))
 }
 
@@ -628,6 +781,7 @@ fn boundary_node(
     node_key: &str,
     ports_key: &str,
     kind: WorkflowCanvasNodeKind,
+    budget: &mut Budget,
 ) -> Option<WorkflowCanvasNode> {
     let bounding = container
         .get(node_key)?
@@ -639,20 +793,21 @@ fn boundary_node(
             .and_then(Value::as_f64)
             .filter(|value| value.is_finite())
     };
-    let ports = container
+    let saved = container
         .get(ports_key)
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .enumerate()
-        .map(|(slot, port)| {
-            let linked = port
-                .get("linkIds")
-                .and_then(Value::as_array)
-                .is_some_and(|links| !links.is_empty());
-            saved_port(slot, port, linked)
-        })
-        .collect::<Vec<_>>();
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut ports = Vec::new();
+    for (slot, port) in budget.capped(saved, MAX_NODE_PORTS).iter().enumerate() {
+        let linked = port
+            .get("linkIds")
+            .and_then(Value::as_array)
+            .is_some_and(|links| !links.is_empty());
+        if budget.item() {
+            ports.push(saved_port(slot, port, linked, budget));
+        }
+    }
     let (title, inputs, outputs) = if kind == WorkflowCanvasNodeKind::SubgraphInput {
         ("Inputs", Vec::new(), ports)
     } else {
@@ -687,6 +842,9 @@ fn workflow_links(
         .iter()
         .map(|node| node.id.as_str())
         .collect::<HashSet<_>>();
+    let output_slots = boundary
+        .map(|_| boundary_output_slots(container))
+        .unwrap_or_default();
     let mut seen = HashSet::new();
     let mut links = Vec::new();
     for raw in container
@@ -696,13 +854,17 @@ fn workflow_links(
         .flatten()
     {
         let Some(link) =
-            parse_workflow_edge(raw).or_else(|| boundary_edge(raw, container, boundary))
+            parse_workflow_edge(raw).or_else(|| boundary_edge(raw, boundary, &output_slots))
         else {
             continue;
         };
         if !node_ids.contains(link.source_id.as_str())
             || !node_ids.contains(link.target_id.as_str())
         {
+            continue;
+        }
+        if link.source_slot >= MAX_NODE_PORTS || link.target_slot >= MAX_NODE_PORTS {
+            budget.truncated = true;
             continue;
         }
         let key = (
@@ -718,16 +880,20 @@ fn workflow_links(
             budget.truncated = true;
             break;
         }
+        if !budget.link() {
+            break;
+        }
+        let data_type = if link.link_type.is_empty() {
+            ANY_TYPE.to_string()
+        } else {
+            budget.label(&link.link_type)
+        };
         links.push(WorkflowCanvasLink {
             from_node: link.source_id,
             from_slot: link.source_slot,
             to_node: link.target_id,
             to_slot: link.target_slot,
-            data_type: if link.link_type.is_empty() {
-                ANY_TYPE.to_string()
-            } else {
-                link.link_type
-            },
+            data_type,
             type_inferred: false,
         });
     }
@@ -740,12 +906,37 @@ fn workflow_links(
     links
 }
 
+/// Each link id a subgraph output lists in `linkIds`, with that output's slot;
+/// the first output to list an id keeps it.
+fn boundary_output_slots(container: &Value) -> HashMap<String, usize> {
+    let mut slots = HashMap::new();
+    for (slot, output) in container
+        .get("outputs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(MAX_NODE_PORTS)
+        .enumerate()
+    {
+        for id in output
+            .get("linkIds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(value_id)
+        {
+            slots.entry(id).or_insert(slot);
+        }
+    }
+    slots
+}
+
 /// Some files save a link into a subgraph's outputs with slot -1 and name the
 /// slot only through that output's `linkIds`.
 fn boundary_edge(
     raw: &Value,
-    container: &Value,
     boundary: Option<&(String, String)>,
+    output_slots: &HashMap<String, usize>,
 ) -> Option<WorkflowEdge> {
     let (_, output_id) = boundary?;
     let target_id = raw.get("target_id").and_then(value_id)?;
@@ -753,19 +944,7 @@ fn boundary_edge(
         return None;
     }
     let link_id = raw.get("id").and_then(value_id)?;
-    let target_slot = container
-        .get("outputs")?
-        .as_array()?
-        .iter()
-        .position(|output| {
-            output
-                .get("linkIds")
-                .and_then(Value::as_array)
-                .is_some_and(|ids| {
-                    ids.iter()
-                        .any(|id| value_id(id).as_deref() == Some(&link_id))
-                })
-        })?;
+    let target_slot = *output_slots.get(&link_id)?;
     Some(WorkflowEdge {
         link_id: Some(link_id),
         source_id: raw.get("origin_id").and_then(value_id)?,
@@ -780,7 +959,7 @@ fn boundary_edge(
     })
 }
 
-fn workflow_group(group: &Value) -> Option<WorkflowCanvasGroup> {
+fn workflow_group(group: &Value, budget: &mut Budget) -> Option<WorkflowCanvasGroup> {
     let bounding = group.get("bounding")?.as_array()?;
     let at = |index: usize| {
         bounding
@@ -788,20 +967,16 @@ fn workflow_group(group: &Value) -> Option<WorkflowCanvasGroup> {
             .and_then(Value::as_f64)
             .filter(|value| value.is_finite())
     };
+    let (x, y, width, height) = (at(0)?, at(1)?, at(2)?, at(3)?);
     Some(WorkflowCanvasGroup {
-        title: group
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        pos: WorkflowCanvasPoint {
-            x: at(0)?,
-            y: at(1)?,
-        },
-        size: WorkflowCanvasSize {
-            width: at(2)?,
-            height: at(3)?,
-        },
+        title: budget.label(
+            group
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+        ),
+        pos: WorkflowCanvasPoint { x, y },
+        size: WorkflowCanvasSize { width, height },
         color: group
             .get("color")
             .and_then(Value::as_str)
@@ -818,7 +993,7 @@ fn is_hex_color(value: &str) -> bool {
 }
 
 /// `[source id, output slot]` when an API prompt input is a wire.
-fn prompt_link(value: &Value) -> Option<(String, usize)> {
+fn prompt_link(value: &Value) -> Option<(String, u64)> {
     let pair = value.as_array()?;
     if pair.len() != 2 {
         return None;
@@ -827,8 +1002,7 @@ fn prompt_link(value: &Value) -> Option<(String, usize)> {
         .as_str()
         .map(str::to_string)
         .or_else(|| pair[0].as_u64().map(|id| id.to_string()))?;
-    let slot = usize::try_from(pair[1].as_u64()?).ok()?;
-    Some((source, slot))
+    Some((source, pair[1].as_u64()?))
 }
 
 /// An API prompt saves no types; these input names say what flows in.
@@ -851,11 +1025,17 @@ fn prompt_level(
     prompt: &serde_json::Map<String, Value>,
     budget: &mut Budget,
 ) -> WorkflowCanvasLevel {
-    let mut ids = prompt
-        .iter()
-        .filter(|(_, node)| node.is_object())
-        .map(|(id, _)| id.as_str())
-        .collect::<Vec<_>>();
+    let mut ids = Vec::new();
+    for (id, node) in prompt {
+        if !node.is_object() {
+            continue;
+        }
+        if id.len() > MAX_LABEL_BYTES {
+            budget.truncated = true;
+            continue;
+        }
+        ids.push(id.as_str());
+    }
     ids.sort_by(|left, right| compare_node_ids(left, right));
     let keep = ids.len().min(MAX_LEVEL_NODES).min(budget.nodes);
     if keep < ids.len() {
@@ -869,12 +1049,12 @@ fn prompt_level(
     let mut nodes = Vec::new();
     for id in &ids {
         let node = &prompt[*id];
-        let node_type = node
+        let raw_type = node
             .get("class_type")
             .and_then(Value::as_str)
             .filter(|node_type| !node_type.is_empty())
-            .unwrap_or("Unknown")
-            .to_string();
+            .unwrap_or("Unknown");
+        let node_type = budget.label(raw_type);
         let mut inputs = Vec::new();
         let mut widgets = Vec::new();
         for (name, value) in node
@@ -885,19 +1065,33 @@ fn prompt_level(
         {
             match prompt_link(value).filter(|(source, _)| kept.contains(source.as_str())) {
                 Some((source, from_slot)) => {
+                    // A slot is an index; one this large is not a real output.
+                    let Some(from_slot) = usize::try_from(from_slot)
+                        .ok()
+                        .filter(|slot| *slot < MAX_NODE_PORTS)
+                    else {
+                        budget.truncated = true;
+                        continue;
+                    };
+                    if inputs.len() == MAX_NODE_PORTS {
+                        budget.truncated = true;
+                        continue;
+                    }
+                    if !budget.item() {
+                        continue;
+                    }
                     let data_type = inferred_input_type(name);
                     let slot = inputs.len();
+                    let name = budget.label(name);
                     inputs.push(WorkflowCanvasPort {
                         slot,
-                        name: name.clone(),
                         label: name.clone(),
+                        name,
                         data_type: data_type.to_string(),
                         type_inferred: data_type != ANY_TYPE,
                         linked: true,
                     });
-                    if links.len() == MAX_LEVEL_LINKS {
-                        budget.truncated = true;
-                    } else {
+                    if links.len() < MAX_LEVEL_LINKS && budget.link() {
                         links.push(WorkflowCanvasLink {
                             from_node: source,
                             from_slot,
@@ -906,20 +1100,29 @@ fn prompt_level(
                             data_type: data_type.to_string(),
                             type_inferred: data_type != ANY_TYPE,
                         });
+                    } else {
+                        budget.truncated = true;
                     }
                 }
-                None => widgets.extend(widget(Some(name.clone()), value)),
+                None => {
+                    if widgets.len() == MAX_NODE_WIDGETS {
+                        budget.truncated = true;
+                    } else {
+                        widgets.extend(budget.widget(Some(name), value));
+                    }
+                }
             }
         }
+        let title = node
+            .get("_meta")
+            .and_then(|meta| meta.get("title"))
+            .and_then(Value::as_str)
+            .filter(|title| !title.is_empty())
+            .map(|title| budget.label(title))
+            .unwrap_or_else(|| node_type.clone());
         nodes.push(WorkflowCanvasNode {
             id: (*id).to_string(),
-            title: node
-                .get("_meta")
-                .and_then(|meta| meta.get("title"))
-                .and_then(Value::as_str)
-                .filter(|title| !title.is_empty())
-                .unwrap_or(&node_type)
-                .to_string(),
+            title,
             node_type,
             kind: WorkflowCanvasNodeKind::Node,
             subgraph_id: None,
@@ -934,36 +1137,44 @@ fn prompt_level(
         });
     }
 
-    // Outputs exist only as the slots that wires leave from.
+    // Outputs exist only as the slots that wires leave from; unused slots
+    // between them are not made up.
     let index = nodes
         .iter()
         .enumerate()
         .map(|(position, node)| (node.id.clone(), position))
         .collect::<HashMap<_, _>>();
+    let mut outputs: HashMap<usize, BTreeMap<usize, WorkflowCanvasPort>> = HashMap::new();
     for link in &links {
         let Some(&position) = index.get(&link.from_node) else {
             continue;
         };
-        let outputs = &mut nodes[position].outputs;
-        while outputs.len() <= link.from_slot {
-            let slot = outputs.len();
-            outputs.push(WorkflowCanvasPort {
-                slot,
-                name: format!("output_{slot}"),
-                label: format!("output_{slot}"),
-                data_type: ANY_TYPE.to_string(),
-                type_inferred: false,
-                linked: false,
-            });
-        }
-        let output = &mut outputs[link.from_slot];
-        output.linked = true;
+        let output = match outputs.entry(position).or_default().entry(link.from_slot) {
+            std::collections::btree_map::Entry::Occupied(slot) => slot.into_mut(),
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                if !budget.item() {
+                    continue;
+                }
+                let name = format!("output_{}", link.from_slot);
+                slot.insert(WorkflowCanvasPort {
+                    slot: link.from_slot,
+                    label: name.clone(),
+                    name,
+                    data_type: ANY_TYPE.to_string(),
+                    type_inferred: false,
+                    linked: true,
+                })
+            }
+        };
         if output.data_type == ANY_TYPE && link.data_type != ANY_TYPE {
             output.data_type = link.data_type.clone();
             output.name = link.data_type.clone();
             output.label = link.data_type.clone();
             output.type_inferred = true;
         }
+    }
+    for (position, slots) in outputs {
+        nodes[position].outputs = slots.into_values().collect();
     }
     links.sort_by(|left, right| {
         compare_node_ids(&left.to_node, &right.to_node)
@@ -1013,6 +1224,45 @@ mod tests {
 
     fn path(ids: &[&str]) -> Vec<String> {
         ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    /// The node a selection path leads to: each segment but the last is a
+    /// subgraph instance whose definition is the next level.
+    fn resolve<'a>(
+        report: &'a WorkflowCanvasReport,
+        path: &[String],
+    ) -> Option<&'a WorkflowCanvasNode> {
+        let (last, instances) = path.split_last()?;
+        let mut level = &report.root;
+        for instance in instances {
+            let definition = level
+                .nodes
+                .iter()
+                .find(|node| &node.id == instance)?
+                .subgraph_id
+                .as_deref()?;
+            level = &report
+                .subgraphs
+                .iter()
+                .find(|subgraph| subgraph.id == definition)?
+                .level;
+        }
+        level.nodes.iter().find(|node| &node.id == last)
+    }
+
+    fn timed<T>(build: impl FnOnce() -> T) -> T {
+        let started = Instant::now();
+        let result = build();
+        let elapsed = started.elapsed();
+        // Unoptimised test builds included; release builds are far faster.
+        assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
+        result
+    }
+
+    fn json_bytes(report: &WorkflowCanvasReport) -> usize {
+        serde_json::to_string(report)
+            .expect("report serialises")
+            .len()
     }
 
     // The view must show a saved workflow as ComfyUI drew it: where each node
@@ -1258,7 +1508,8 @@ mod tests {
         assert!(report.root.nodes.iter().all(|node| node.pos.is_none()));
         assert!(report.subgraphs.is_empty());
         assert_eq!(report.selected_output_paths, [path(&["29"])]);
-        assert!(report.selected_branch_paths.contains(&path(&["30", "3"])));
+        // The prompt is one flat level whose node is `30:3` itself.
+        assert!(report.selected_branch_paths.contains(&path(&["30:3"])));
 
         let sampler = node(&report.root, "30:3");
         let model = sampler
@@ -1281,7 +1532,10 @@ mod tests {
         }));
         // Every source slot a wire leaves from exists as an output.
         for link in &report.root.links {
-            assert!(node(&report.root, &link.from_node).outputs.len() > link.from_slot);
+            assert!(node(&report.root, &link.from_node)
+                .outputs
+                .iter()
+                .any(|port| port.slot == link.from_slot));
         }
     }
 
@@ -1418,6 +1672,18 @@ mod tests {
                 let report = build_workflow_canvas_report(&chunks);
                 assert_eq!(report, build_workflow_canvas_report(&chunks), "{path:?}");
                 assert!(!report.truncated, "{path:?}");
+                // The view highlights the selection by these paths, so each one
+                // must lead to a node through the subgraph levels.
+                for selected in report
+                    .selected_output_paths
+                    .iter()
+                    .chain(&report.selected_branch_paths)
+                {
+                    assert!(
+                        resolve(&report, selected).is_some(),
+                        "{path:?} {selected:?}"
+                    );
+                }
                 let levels = std::iter::once(&report.root)
                     .chain(report.subgraphs.iter().map(|subgraph| &subgraph.level));
                 for level in levels {
@@ -1503,5 +1769,234 @@ mod tests {
         assert_eq!(node(&report.root, "1").widgets.len(), 1);
         assert!(node(&report.root, "1").widgets[0].is_long_text);
         assert!(node(&report.root, "2").raw_json.is_some());
+    }
+
+    // Many files name only the settings that can take a wire. Pairing those
+    // names with the first values would show a wrong label on a real value,
+    // which is worse than no label.
+    #[test]
+    fn settings_the_file_names_only_in_part_are_named_by_the_prompt_or_not_at_all() {
+        let report = build_workflow_canvas_report(&fixture(
+            "official_examples/sdxl/sdxl_simple_example.chunks.json",
+        ));
+        let names = [
+            Some("add_noise"),
+            Some("noise_seed"),
+            Some("control_after_generate"),
+            Some("steps"),
+            Some("cfg"),
+            Some("sampler_name"),
+            Some("scheduler"),
+            Some("start_at_step"),
+            Some("end_at_step"),
+            Some("return_with_leftover_noise"),
+        ];
+        let base = node(&report.root, "10");
+        assert_eq!(widget_names(base), names);
+        assert_eq!(base.widgets[3].value, "25");
+        assert_eq!(base.widgets[8].value, "20");
+        let refiner = node(&report.root, "11");
+        assert_eq!(widget_names(refiner), names);
+        assert_eq!(refiner.widgets[7].value, "20");
+        assert_eq!(refiner.widgets[8].value, "10000");
+
+        // Inside a subgraph no prompt node names the values, so only the seed's
+        // control value, which is recognised by itself, gets a name.
+        let report = build_workflow_canvas_report(&fixture(
+            "official_catalog/02_qwen_Image_edit_subgraphed.chunks.json",
+        ));
+        let sampler = node(&report.subgraphs[0].level, "137");
+        assert_eq!(
+            widget_names(sampler),
+            [
+                None,
+                Some("control_after_generate"),
+                None,
+                None,
+                None,
+                None,
+                None
+            ]
+        );
+    }
+
+    // A bypassed node is left out of the prompt ComfyUI runs, but it is part
+    // of the saved workflow and the view shows it, dimmed.
+    #[test]
+    fn bypassed_nodes_missing_from_the_prompt_are_still_drawn() {
+        for (fixture_name, ids) in [
+            (
+                "official_examples/flux2/flux2_example.chunks.json",
+                &["43", "39"][..],
+            ),
+            (
+                "official_examples/z_image/z_image_turbo_example.chunks.json",
+                &["11"][..],
+            ),
+        ] {
+            let chunks = fixture(fixture_name);
+            let prompt: Value = serde_json::from_str(&chunks["prompt"]).expect("prompt");
+            let report = build_workflow_canvas_report(&chunks);
+
+            assert_eq!(report.source, WorkflowCanvasSource::Workflow);
+            for id in ids {
+                assert!(prompt.get(*id).is_none(), "{fixture_name} {id}");
+                assert_eq!(
+                    node(&report.root, id).mode,
+                    WorkflowCanvasNodeMode::Bypassed,
+                    "{fixture_name} {id}"
+                );
+            }
+        }
+    }
+
+    // A slot number is an index, not a size: a tiny prompt naming slot 10^9
+    // must not build a billion ports.
+    #[test]
+    fn a_huge_prompt_slot_is_dropped_not_padded() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "A", "inputs": {} },
+                "2": { "class_type": "B", "inputs": {
+                    "a": ["1", 10_000_000u64],
+                    "b": ["1", 1_000_000_000u64],
+                    "c": ["1", u64::MAX],
+                    "d": ["1", 3]
+                } },
+                "3": { "class_type": "SaveImage", "inputs": { "images": ["2", 0] } }
+            })
+            .to_string(),
+        )]);
+
+        let report = timed(|| build_workflow_canvas_report(&chunks));
+
+        assert_eq!(report.source, WorkflowCanvasSource::ApiPrompt);
+        assert!(report.truncated);
+        let source = node(&report.root, "1");
+        assert_eq!(
+            source
+                .outputs
+                .iter()
+                .map(|port| port.slot)
+                .collect::<Vec<_>>(),
+            [3]
+        );
+        assert_eq!(node(&report.root, "2").inputs.len(), 1);
+        assert!(json_bytes(&report) < 16 * 1024);
+    }
+
+    // Naming settings must stay linear: a node with tens of thousands of
+    // values and a matching prompt node used to take seconds.
+    #[test]
+    fn naming_many_settings_stays_fast_and_capped() {
+        let values = (0..20_000).map(|value| json!(value)).collect::<Vec<_>>();
+        let inputs = (0..20_000)
+            .map(|value| (format!("setting_{value}"), json!(value)))
+            .collect::<serde_json::Map<_, _>>();
+        let chunks = HashMap::from([
+            (
+                "workflow".to_string(),
+                json!({ "nodes": [{ "id": 1, "type": "A", "widgets_values": values }], "links": [] })
+                    .to_string(),
+            ),
+            (
+                "prompt".to_string(),
+                json!({
+                    "1": { "class_type": "A", "inputs": inputs },
+                    "2": { "class_type": "SaveImage", "inputs": { "images": ["1", 0] } }
+                })
+                .to_string(),
+            ),
+        ]);
+
+        let report = timed(|| build_workflow_canvas_report(&chunks));
+
+        assert!(report.truncated);
+        let widgets = &node(&report.root, "1").widgets;
+        assert_eq!(widgets.len(), MAX_NODE_WIDGETS);
+        assert_eq!(widgets[7].name.as_deref(), Some("setting_7"));
+    }
+
+    // Finding a subgraph output's slot by link id is one lookup, however many
+    // ids the outputs list.
+    #[test]
+    fn subgraph_output_slots_are_found_in_one_pass() {
+        let link_ids = (0..100_000).map(|id| json!(id)).collect::<Vec<_>>();
+        let links = (0..2_000)
+            .map(|id| {
+                json!({ "id": id, "origin_id": 1, "origin_slot": 0, "target_id": -20, "target_slot": -1, "type": "IMAGE" })
+            })
+            .collect::<Vec<_>>();
+        let chunks = workflow_chunks(json!({
+            "nodes": [{ "id": 1, "type": "Sub" }],
+            "links": [],
+            "definitions": { "subgraphs": [{
+                "id": "Sub",
+                "inputNode": { "id": -10, "bounding": [0, 0, 10, 10] },
+                "outputNode": { "id": -20, "bounding": [0, 0, 10, 10] },
+                "inputs": [],
+                "outputs": [{ "name": "image", "type": "IMAGE", "linkIds": link_ids }],
+                "nodes": [{ "id": 1, "type": "A", "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [0] }] }],
+                "links": links
+            }] }
+        }));
+
+        let report = timed(|| build_workflow_canvas_report(&chunks));
+
+        // The 2,000 saved links are one wire once duplicates are merged.
+        assert_eq!(
+            report.subgraphs[0].level.links,
+            [WorkflowCanvasLink {
+                from_node: "1".to_string(),
+                from_slot: 0,
+                to_node: "-20".to_string(),
+                to_slot: 0,
+                data_type: "IMAGE".to_string(),
+                type_inferred: false,
+            }]
+        );
+    }
+
+    // Ports, settings and their text are capped per node and across the
+    // report, so a few megabytes of input cannot become hundreds of megabytes.
+    #[test]
+    fn ports_settings_and_text_are_capped_per_node_and_in_total() {
+        let wide = |id: usize| {
+            json!({
+                "id": id, "type": "A",
+                "inputs": (0..1_000).map(|slot| json!({ "name": format!("in{slot}"), "type": "X" })).collect::<Vec<_>>(),
+                "outputs": (0..1_000).map(|slot| json!({ "name": format!("out{slot}"), "type": "X", "links": [] })).collect::<Vec<_>>(),
+                "widgets_values": (0..1_000).map(|value| json!(value)).collect::<Vec<_>>()
+            })
+        };
+        let long_text = "x".repeat(MAX_WIDGET_VALUE_BYTES * 2);
+        // About 10 MB, under the chunk cap; 100 nodes of 768 kept items each
+        // pass the report's total.
+        let mut nodes = (1..100).map(wide).collect::<Vec<_>>();
+        nodes.push(json!({ "id": 999, "type": "Note", "title": "t".repeat(10_000), "widgets_values": [long_text] }));
+        let chunks = workflow_chunks(json!({ "nodes": nodes, "links": [] }));
+
+        let report = timed(|| build_workflow_canvas_report(&chunks));
+
+        assert!(report.truncated);
+        let first = node(&report.root, "1");
+        assert_eq!(first.inputs.len(), MAX_NODE_PORTS);
+        assert_eq!(first.outputs.len(), MAX_NODE_PORTS);
+        assert_eq!(first.widgets.len(), MAX_NODE_WIDGETS);
+        let items = report
+            .root
+            .nodes
+            .iter()
+            .map(|node| node.inputs.len() + node.outputs.len() + node.widgets.len())
+            .sum::<usize>();
+        assert!(items <= MAX_TOTAL_ITEMS);
+        let note = node(&report.root, "999");
+        assert_eq!(note.title.len(), MAX_LABEL_BYTES);
+        assert!(note
+            .widgets
+            .iter()
+            .all(|widget| widget.value.len() <= MAX_WIDGET_VALUE_BYTES));
+        assert!(json_bytes(&report) < 64 * 1024 * 1024);
     }
 }
