@@ -418,6 +418,13 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     {
+        name: 'inspectWorkflowCanvas',
+        invokeName: 'inspect_workflow_canvas',
+        args: [{ workflow: '{}' }],
+        payload: { chunks: { workflow: '{}' } },
+        returnsResult: true,
+    },
+    {
         name: 'getFileSizesBulk',
         invokeName: 'get_file_sizes_bulk',
         args: [['C:/image.png']],
