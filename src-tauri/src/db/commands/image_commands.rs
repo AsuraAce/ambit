@@ -3,7 +3,7 @@ use crate::db::facets::FacetResourceTouches;
 use crate::db::ImageRecord;
 use crate::metadata::photo::SourceKind;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
@@ -459,21 +459,30 @@ pub fn refresh_privacy_mask_index_for_conn(
     })
 }
 
-fn valid_active_replacement_ids(
+const ACTIVE_REPLACEMENT_CHUNK: usize = 500;
+
+fn active_replacement_paths_sql(id_count: usize) -> String {
+    let placeholders = vec!["?"; id_count].join(", ");
+    // `+` keeps the planner off idx_images_thumbnail_source: nearly every row is 'ambit', so that
+    // index scans the whole library for each chunk, and this read runs under the write lock (#602).
+    format!(
+        "SELECT id, thumbnail_path
+         FROM images
+         WHERE +thumbnail_source = 'ambit'
+           AND LOWER(thumbnail_path) LIKE '%.replacement.webp'
+           AND id IN ({placeholders})"
+    )
+}
+
+/// The batch's rows whose active thumbnail is an Ambit replacement, as id → thumbnail path.
+fn active_replacement_paths(
     conn: &Connection,
     images: &[ImageRecord],
-) -> Result<BTreeSet<String>, String> {
-    let mut valid_ids = BTreeSet::new();
+) -> Result<BTreeMap<String, String>, String> {
+    let mut paths = BTreeMap::new();
 
-    for chunk in images.chunks(500) {
-        let placeholders = vec!["?"; chunk.len()].join(", ");
-        let query = format!(
-            "SELECT id, thumbnail_path
-             FROM images
-             WHERE thumbnail_source = 'ambit'
-               AND LOWER(thumbnail_path) LIKE '%.replacement.webp'
-               AND id IN ({placeholders})"
-        );
+    for chunk in images.chunks(ACTIVE_REPLACEMENT_CHUNK) {
+        let query = active_replacement_paths_sql(chunk.len());
         let ids = chunk
             .iter()
             .map(|image| image.id.as_str())
@@ -487,46 +496,95 @@ fn valid_active_replacement_ids(
 
         for row in rows {
             let (id, path) = row.map_err(|error| error.to_string())?;
-            let Ok(file) = std::fs::File::open(path) else {
-                continue;
-            };
-            // Only preserve decodable generated thumbnails, not merely readable files.
-            // Bound validation to the 512px repair output and a small encoded file.
-            const MAX_THUMBNAIL_BYTES: u64 = 4 * 1024 * 1024;
-            if !file.metadata().is_ok_and(|metadata| {
-                metadata.is_file() && (1..=MAX_THUMBNAIL_BYTES).contains(&metadata.len())
-            }) {
-                continue;
-            }
-            let mut reader = image::ImageReader::with_format(
-                std::io::BufReader::new(file),
-                image::ImageFormat::WebP,
-            );
-            let mut limits = image::Limits::default();
-            limits.max_image_width = Some(512);
-            limits.max_image_height = Some(512);
-            limits.max_alloc = Some(MAX_THUMBNAIL_BYTES);
-            reader.limits(limits);
-            if reader.decode().is_ok() {
-                valid_ids.insert(id);
-            }
+            paths.insert(id, path);
         }
     }
 
-    Ok(valid_ids)
+    Ok(paths)
+}
+
+fn is_decodable_replacement_thumbnail(path: &str) -> bool {
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    // Only preserve decodable generated thumbnails, not merely readable files.
+    // Bound validation to the 512px repair output and a small encoded file.
+    const MAX_THUMBNAIL_BYTES: u64 = 4 * 1024 * 1024;
+    if !file.metadata().is_ok_and(|metadata| {
+        metadata.is_file() && (1..=MAX_THUMBNAIL_BYTES).contains(&metadata.len())
+    }) {
+        return false;
+    }
+    let mut reader =
+        image::ImageReader::with_format(std::io::BufReader::new(file), image::ImageFormat::WebP);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(512);
+    limits.max_image_height = Some(512);
+    limits.max_alloc = Some(MAX_THUMBNAIL_BYTES);
+    reader.limits(limits);
+    reader.decode().is_ok()
+}
+
+/// Decodes the batch's replacement thumbnails before the write transaction opens, so the decode
+/// does not hold SQLite's write lock (#602). Returns id → path for each decodable one.
+fn decodable_replacement_paths(
+    conn: &Connection,
+    images: &[ImageRecord],
+) -> Result<BTreeMap<String, String>, String> {
+    let mut paths = active_replacement_paths(conn, images)?;
+    paths.retain(|_, path| is_decodable_replacement_thumbnail(path));
+    Ok(paths)
+}
+
+/// Runs inside the write transaction. A replacement path that still matches the one decoded before
+/// the transaction is trusted; any other (changed, or added since that read) is decoded here.
+fn valid_active_replacement_ids(
+    tx: &Connection,
+    images: &[ImageRecord],
+    decoded_before_transaction: &BTreeMap<String, String>,
+) -> Result<BTreeSet<String>, String> {
+    Ok(active_replacement_paths(tx, images)?
+        .into_iter()
+        .filter(|(id, path)| {
+            decoded_before_transaction.get(id) == Some(path)
+                || is_decodable_replacement_thumbnail(path)
+        })
+        .map(|(id, _)| id)
+        .collect())
 }
 
 fn save_images_batch_inner(
     conn: &rusqlite::Connection,
     images: &[ImageRecord],
 ) -> Result<usize, String> {
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let decoded_replacements = decodable_replacement_paths(conn, images)?;
+    save_images_batch_with_decoded_replacements(conn, images, &decoded_replacements)
+}
+
+fn save_images_batch_with_decoded_replacements(
+    conn: &rusqlite::Connection,
+    images: &[ImageRecord],
+    decoded_replacements: &BTreeMap<String, String>,
+) -> Result<usize, String> {
+    // Immediate: a deferred transaction that reads first cannot wait on the busy timeout when it
+    // upgrades to a write, so it failed at once while another connection held the lock (#602).
+    let entry_started = Instant::now();
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(|error| {
+        log::warn!(
+            "[DB] image batch transaction entry failed sqlite_extended_code={} wait_ms={} records={}",
+            sqlite_extended_code(&error),
+            entry_started.elapsed().as_millis(),
+            images.len()
+        );
+        error.to_string()
+    })?;
     let _hold = crate::db::write_hold::WriteHold::begin("images.save_batch");
 
     {
         use crate::{db::reparse::CURRENT_PHOTO_REFRESH_VERSION, metadata::CURRENT_PARSER_VERSION};
 
-        let valid_replacement_ids = valid_active_replacement_ids(&tx, images)?;
+        let valid_replacement_ids =
+            valid_active_replacement_ids(&tx, images, decoded_replacements)?;
         let invoke_source_path_matches_scope =
             literal_invoke_images_prefix_sql("?2", "scope.images_root");
         let preserve_active_replacement_sql = "images.thumbnail_source = 'ambit'
@@ -2674,27 +2732,8 @@ pub async fn commit_active_invoke_scope_cache(
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
-    run_blocking(app, move |conn| {
-        // Retry loop for database lock issues
-        let max_retries = 5;
-        let mut retry_delay_ms = 100;
-
-        for attempt in 0..max_retries {
-            let result = save_images_batch_inner(conn, &images);
-
-            match result {
-                Ok(count) => return Ok(count),
-                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
-                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
-                    retry_delay_ms *= 2;
-                    continue;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Err("Failed to save images after max retries".to_string())
-    })
-    .await
+    // No retry: the immediate transaction already waits out a write hold on the busy timeout.
+    run_blocking(app, move |conn| save_images_batch_inner(conn, &images)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -3585,6 +3624,7 @@ mod tests {
     use crate::db::{migrations::init_db, ImageRecord};
     use rusqlite::{params, Connection, Transaction, TransactionBehavior};
     use std::{
+        collections::BTreeMap,
         fs,
         path::{Path, PathBuf},
         sync::{
@@ -8720,5 +8760,204 @@ mod tests {
                 ]
             );
         }
+    }
+
+    /// Another connection takes the write lock, signals, holds it for `hold`, then commits.
+    fn hold_write_lock(db_path: &Path, hold: Duration) -> thread::JoinHandle<()> {
+        let db_path = db_path.to_owned();
+        let (locked_tx, locked_rx) = mpsc::sync_channel(0);
+        let holder = thread::spawn(move || {
+            let conn = Connection::open(&db_path).expect("open holder");
+            crate::db::configure_connection(&conn).expect("configure holder");
+            conn.execute_batch("BEGIN IMMEDIATE")
+                .expect("holder takes the write lock");
+            conn.execute(
+                "INSERT INTO collections (id, name, created_at) VALUES ('holder', 'Holder', 1)",
+                [],
+            )
+            .expect("holder writes");
+            locked_tx.send(()).expect("signal holder lock");
+            thread::sleep(hold);
+            conn.execute_batch("COMMIT").expect("holder commits");
+        });
+        locked_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("holder acquired the write lock");
+        holder
+    }
+
+    #[test]
+    fn save_images_batch_waits_out_a_write_hold_longer_than_the_old_retry_budget() {
+        // A background job can hold the write lock for many seconds (29 s in #547). An import that
+        // fails during the hold loses its files, so it must wait for the lock instead (#602).
+        // The old retry loop gave up after about 1.5 s, so hold well past that.
+        let (_temporary_database, db_path) = migrated_file_database("save-batch-waits");
+        let conn = Connection::open(&db_path).unwrap();
+        crate::db::configure_connection(&conn).unwrap();
+        let hold = Duration::from_millis(3_500);
+        let holder = hold_write_lock(&db_path, hold);
+
+        let started = Instant::now();
+        let saved =
+            super::save_images_batch_inner(&conn, &[create_image_record("waited", 100, 200, "{}")]);
+        let waited = started.elapsed();
+        holder.join().unwrap();
+
+        assert_eq!(saved, Ok(1));
+        assert!(
+            waited >= hold - Duration::from_millis(200),
+            "the batch should have waited for the hold, waited {waited:?}"
+        );
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE id = 'waited'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn save_images_batch_returns_an_error_when_a_hold_outlasts_the_busy_timeout() {
+        // The wait is bounded by the busy timeout: a hold longer than it must fail the batch, so
+        // the caller can report or retry it, rather than hang the import.
+        let (_temporary_database, db_path) = migrated_file_database("save-batch-times-out");
+        let conn = Connection::open(&db_path).unwrap();
+        crate::db::configure_connection(&conn).unwrap();
+        conn.busy_timeout(Duration::from_millis(200)).unwrap();
+        let holder = hold_write_lock(&db_path, Duration::from_secs(2));
+
+        let started = Instant::now();
+        let saved = super::save_images_batch_inner(
+            &conn,
+            &[create_image_record("timed-out", 100, 200, "{}")],
+        );
+        let waited = started.elapsed();
+        holder.join().unwrap();
+
+        let error = saved.expect_err("a hold past the busy timeout must fail the batch");
+        assert!(error.contains("database is locked"), "{error}");
+        assert!(waited < Duration::from_millis(1_500), "waited {waited:?}");
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE id = 'timed-out'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    fn replacement_fixture_dir(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("ambit-{name}-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create thumbnail fixture directory");
+        dir
+    }
+
+    fn save_replacement_row(conn: &Connection, id: &str, replacement_path: &Path) {
+        let mut repaired = create_image_record(id, 100, 200, "{}");
+        repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
+        super::save_images_batch_with_decoded_replacements(conn, &[repaired], &BTreeMap::new())
+            .expect("save repaired row");
+    }
+
+    fn rescanned_record(id: &str, canonical_path: &Path) -> ImageRecord {
+        let mut rescanned = create_image_record(id, 101, 201, r#"{"positivePrompt":"rescan"}"#);
+        rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
+        rescanned
+    }
+
+    #[test]
+    fn save_images_batch_does_not_trust_a_replacement_path_that_changed_after_it_was_decoded() {
+        // Replacements are decoded before the write lock so the decode does not block other
+        // writers (#602). If the row's replacement path changed in between, the earlier decode says
+        // nothing about the new file: it is checked again, and a broken one is not kept.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let dir = replacement_fixture_dir("replacement-changed");
+        let canonical_path = dir.join("img-changed.webp");
+        let replacement_path = dir.join("img-changed.replacement.webp");
+        fs::write(&canonical_path, b"canonical").unwrap();
+        fs::write(&replacement_path, b"not a webp").unwrap();
+        save_replacement_row(&conn, "img-changed", &replacement_path);
+        let decoded_earlier = BTreeMap::from([(
+            "img-changed".to_string(),
+            dir.join("img-changed-old.replacement.webp")
+                .to_string_lossy()
+                .to_string(),
+        )]);
+
+        super::save_images_batch_with_decoded_replacements(
+            &conn,
+            &[rescanned_record("img-changed", &canonical_path)],
+            &decoded_earlier,
+        )
+        .expect("rescan row");
+
+        let row = fetch_thumbnail_state(&conn, "img-changed");
+        assert_eq!(row.0, canonical_path.to_string_lossy());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn save_images_batch_keeps_a_replacement_added_after_the_pre_transaction_read() {
+        // A thumbnail repair can commit a replacement between the read before the lock and the
+        // transaction. A rescan must not overwrite it just because the earlier read missed it.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let dir = replacement_fixture_dir("replacement-added");
+        let canonical_path = dir.join("img-added.webp");
+        let replacement_path = dir.join("img-added.replacement.webp");
+        fs::write(&canonical_path, b"canonical").unwrap();
+        image::RgbaImage::from_pixel(512, 512, image::Rgba([0, 128, 255, 255]))
+            .save(&replacement_path)
+            .unwrap();
+        save_replacement_row(&conn, "img-added", &replacement_path);
+
+        super::save_images_batch_with_decoded_replacements(
+            &conn,
+            &[rescanned_record("img-added", &canonical_path)],
+            &BTreeMap::new(),
+        )
+        .expect("rescan row");
+
+        let row = fetch_thumbnail_state(&conn, "img-added");
+        assert_eq!(row.0, replacement_path.to_string_lossy());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn replacement_read_looks_rows_up_by_id() {
+        // This read runs under the write lock (#602). Through the thumbnail_source index it reads
+        // every Ambit row, nearly the whole library, for each 500-id chunk, so every other writer
+        // waits on a cost that grows with the library instead of the batch.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let mut stmt = conn
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN {}",
+                super::active_replacement_paths_sql(super::ACTIVE_REPLACEMENT_CHUNK)
+            ))
+            .expect("explain replacement read");
+        let ids: Vec<String> = (0..super::ACTIVE_REPLACEMENT_CHUNK)
+            .map(|i| format!("id-{i}"))
+            .collect();
+        let plan: Vec<String> = stmt
+            .query_map(rusqlite::params_from_iter(&ids), |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("plan rows")
+            .collect::<Result<_, _>>()
+            .expect("plan");
+        assert!(
+            plan.iter().all(|step| step.contains("(id=?)")),
+            "replacement read must look rows up by id: {plan:?}"
+        );
     }
 }
