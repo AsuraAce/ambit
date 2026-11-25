@@ -6,7 +6,7 @@ import { unwrap } from '../utils/spectaUtils';
 import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
 import { startupDiagnostics } from '../utils/startupDiagnostics';
 import { createEmptyTouchedFacetResources, mergeTouchedFacetResources, orderFacetTypes } from '../utils/touchedFacetTypes';
-import { formatStableImportProgress } from '../utils/importProgress';
+import { formatImportRefreshProgress, formatStableImportProgress } from '../utils/importProgress';
 import { formatUnscannableRootsWarning, isImportSourceCancelled, isImportSourceCompleted } from '../utils/importSourceStatus';
 import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
 
@@ -25,6 +25,7 @@ interface ImportOptions {
     waitForStableFiles?: boolean;
     deferFacetCacheRefresh?: boolean;
     abortSignal?: AbortSignal;
+    onRefreshStart?: () => void;
 }
 
 interface FolderScanOptions {
@@ -228,6 +229,7 @@ export function useFolderMonitor({
                                     waitForStableFiles: true,
                                     deferFacetCacheRefresh: true,
                                     abortSignal: abortCtrl.signal,
+                                    onRefreshStart: () => setProgressForRun(importRunId, formatImportRefreshProgress('Startup')),
                                     onProgress: (current) => {
                                         // Add accumulated count from previous batches
                                         const actualCurrent = globalCurrent + current;
@@ -466,6 +468,7 @@ export function useFolderMonitor({
                         forceRescan: true,
                         waitForStableFiles: true,
                         abortSignal: abortCtrl.signal,
+                        onRefreshStart: () => setProgressForRun(importRunId, formatImportRefreshProgress(source)),
                         onProgress: (c) =>
                             setProgressForRun(
                                 importRunId,

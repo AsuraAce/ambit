@@ -4,6 +4,9 @@ export type ImportMediaKind = 'images' | 'videos' | 'media';
 
 type ImportProgressPhase = 'scanning' | 'importing' | 'finalizing';
 
+// The files are written and the library refresh runs; the import run stays open through it (#603).
+export const IMPORT_REFRESH_PHASE = 'refreshing';
+
 interface StableImportProgressOptions {
     current: number;
     total: number;
@@ -55,3 +58,12 @@ export const formatStableImportProgress = ({
 
     return progress;
 };
+
+/** The run's progress while the post-import library refresh runs: no counts, and the dock offers no Cancel. */
+export const formatImportRefreshProgress = (prefix?: string): SyncProgress => ({
+    current: 0,
+    total: 0,
+    message: withPrefix('Refreshing library...', prefix),
+    phase: IMPORT_REFRESH_PHASE,
+    mode: 'indeterminate',
+});
