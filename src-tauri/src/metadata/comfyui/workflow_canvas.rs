@@ -1254,6 +1254,7 @@ mod tests {
         let started = Instant::now();
         let result = build();
         let elapsed = started.elapsed();
+        eprintln!("canvas build took {elapsed:?}");
         // Unoptimised test builds included; release builds are far faster.
         assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
         result
@@ -1886,67 +1887,62 @@ mod tests {
         assert!(json_bytes(&report) < 16 * 1024);
     }
 
-    // Naming settings must stay linear: a node with tens of thousands of
-    // values and a matching prompt node used to take seconds.
+    // Naming settings must stay linear in the prompt node's size. Values the
+    // prompt does not hold are the worst case for a scan: each one reads every
+    // prompt input. Only the canvas level is timed, not the evaluator.
     #[test]
-    fn naming_many_settings_stays_fast_and_capped() {
-        let values = (0..20_000).map(|value| json!(value)).collect::<Vec<_>>();
-        let inputs = (0..20_000)
+    fn naming_settings_against_a_huge_prompt_node_stays_fast() {
+        let mut values = (0..MAX_NODE_WIDGETS - 1)
+            .map(|value| json!(format!("absent_{value}")))
+            .collect::<Vec<_>>();
+        values.push(json!("needle"));
+        let mut inputs = (0..300_000)
             .map(|value| (format!("setting_{value}"), json!(value)))
             .collect::<serde_json::Map<_, _>>();
-        let chunks = HashMap::from([
-            (
-                "workflow".to_string(),
-                json!({ "nodes": [{ "id": 1, "type": "A", "widgets_values": values }], "links": [] })
-                    .to_string(),
-            ),
-            (
-                "prompt".to_string(),
-                json!({
-                    "1": { "class_type": "A", "inputs": inputs },
-                    "2": { "class_type": "SaveImage", "inputs": { "images": ["1", 0] } }
-                })
-                .to_string(),
-            ),
-        ]);
+        inputs.insert("zz_last".to_string(), json!("needle"));
+        let prompt = json!({ "1": { "class_type": "A", "inputs": inputs } });
+        let prompt = prompt.as_object().expect("prompt object");
+        let workflow = json!({ "nodes": [{ "id": 1, "type": "A", "widgets_values": values }] });
 
-        let report = timed(|| build_workflow_canvas_report(&chunks));
+        let level =
+            timed(|| workflow_level(&workflow, &HashSet::new(), Some(prompt), &mut Budget::new()));
 
-        assert!(report.truncated);
-        let widgets = &node(&report.root, "1").widgets;
-        assert_eq!(widgets.len(), MAX_NODE_WIDGETS);
-        assert_eq!(widgets[7].name.as_deref(), Some("setting_7"));
+        let names = widget_names(node(&level, "1"));
+        assert_eq!(names.len(), MAX_NODE_WIDGETS);
+        assert!(names[..MAX_NODE_WIDGETS - 1].iter().all(Option::is_none));
+        assert_eq!(names[MAX_NODE_WIDGETS - 1], Some("zz_last"));
     }
 
     // Finding a subgraph output's slot by link id is one lookup, however many
-    // ids the outputs list.
+    // ids the outputs list. The links' ids sit at the end of a long list, the
+    // worst case for a scan. Only the canvas level is timed, not the evaluator.
     #[test]
     fn subgraph_output_slots_are_found_in_one_pass() {
-        let link_ids = (0..100_000).map(|id| json!(id)).collect::<Vec<_>>();
-        let links = (0..2_000)
+        let link_ids = (0..200_000)
+            .chain(200_000..210_000)
+            .map(|id| json!(id))
+            .collect::<Vec<_>>();
+        let links = (200_000..210_000)
             .map(|id| {
                 json!({ "id": id, "origin_id": 1, "origin_slot": 0, "target_id": -20, "target_slot": -1, "type": "IMAGE" })
             })
             .collect::<Vec<_>>();
-        let chunks = workflow_chunks(json!({
-            "nodes": [{ "id": 1, "type": "Sub" }],
-            "links": [],
-            "definitions": { "subgraphs": [{
-                "id": "Sub",
-                "inputNode": { "id": -10, "bounding": [0, 0, 10, 10] },
-                "outputNode": { "id": -20, "bounding": [0, 0, 10, 10] },
-                "inputs": [],
-                "outputs": [{ "name": "image", "type": "IMAGE", "linkIds": link_ids }],
-                "nodes": [{ "id": 1, "type": "A", "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [0] }] }],
-                "links": links
-            }] }
-        }));
+        let definition = json!({
+            "id": "Sub",
+            "inputNode": { "id": -10, "bounding": [0, 0, 10, 10] },
+            "outputNode": { "id": -20, "bounding": [0, 0, 10, 10] },
+            "inputs": [],
+            "outputs": [{ "name": "image", "type": "IMAGE", "linkIds": link_ids }],
+            "nodes": [{ "id": 1, "type": "A", "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [0] }] }],
+            "links": links
+        });
 
-        let report = timed(|| build_workflow_canvas_report(&chunks));
+        let level =
+            timed(|| workflow_level(&definition, &HashSet::new(), None, &mut Budget::new()));
 
-        // The 2,000 saved links are one wire once duplicates are merged.
+        // The 10,000 saved links are one wire once duplicates are merged.
         assert_eq!(
-            report.subgraphs[0].level.links,
+            level.links,
             [WorkflowCanvasLink {
                 from_node: "1".to_string(),
                 from_slot: 0,
@@ -1975,9 +1971,12 @@ mod tests {
         // pass the report's total.
         let mut nodes = (1..100).map(wide).collect::<Vec<_>>();
         nodes.push(json!({ "id": 999, "type": "Note", "title": "t".repeat(10_000), "widgets_values": [long_text] }));
-        let chunks = workflow_chunks(json!({ "nodes": nodes, "links": [] }));
+        let workflow = json!({ "nodes": nodes, "links": [] });
 
-        let report = timed(|| build_workflow_canvas_report(&chunks));
+        // Only the canvas level is timed; the evaluator's selection step on
+        // this input is tracked separately (#615).
+        timed(|| workflow_level(&workflow, &HashSet::new(), None, &mut Budget::new()));
+        let report = build_workflow_canvas_report(&workflow_chunks(workflow));
 
         assert!(report.truncated);
         let first = node(&report.root, "1");
