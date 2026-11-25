@@ -1045,6 +1045,38 @@ describe('useImportOps', () => {
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
     });
 
+    // #603: a directory scan and a folder resync own their run too, and show the refresh while it runs.
+    it.each(['scanDirectory', 'resyncFolder'] as const)('shows the library refresh while a %s refreshes', async (operation) => {
+        const refresh = deferred<void>();
+        mocks.refreshMetadata.mockReturnValueOnce(refresh.promise);
+        mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch/new.png', modified: 1, size: 2 }] });
+        mocks.processNativePaths.mockResolvedValueOnce(
+            importResult({ images: [importedImage('new')], stats: { processed: 1, imported: 1, skipped: 0, errors: 0 } })
+        );
+        const { result } = renderImportOps();
+
+        let done!: Promise<unknown>;
+        act(() => {
+            done =
+                operation === 'scanDirectory'
+                    ? result.current.scanDirectory('C:/watch')
+                    : result.current.resyncFolder({ id: 'inc', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }, vi.fn());
+        });
+        try {
+            await waitFor(() => expect(mocks.refreshMetadata).toHaveBeenCalledTimes(1));
+            expect(useLibraryStore.getState().isImporting).toBe(true);
+            expect(useLibraryStore.getState().importProgress).toEqual(
+                expect.objectContaining({ message: 'Refreshing library...', phase: 'refreshing' })
+            );
+        } finally {
+            await act(async () => {
+                refresh.resolve();
+                await done;
+            });
+        }
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+    });
+
     it('resyncs full and incremental folders and preserves cancellation results', async () => {
         const updateLastScanned = vi.fn();
         mocks.scanDirectoryWithStats.mockResolvedValueOnce({ status: 'ok', data: [] });

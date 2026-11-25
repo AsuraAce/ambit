@@ -449,7 +449,10 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 );
                 reportUnscannableRoots(result);
                 if (!result.wasCancelled && result.images.length > 0) {
-                    await commitImportResult(result, { toastMode: 'compact' });
+                    await commitImportResult(result, {
+                        toastMode: 'compact',
+                        onRefreshStart: () => setImportProgressForRun(importRunId, formatImportRefreshProgress()),
+                    });
                 }
             } catch (e) {
                 console.error(`Failed to scan directory ${dirPath}`, e);
@@ -524,7 +527,10 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 );
 
                 if (!result.wasCancelled && result.images.length > 0) {
-                    await commitImportResult(result, { toastMode: 'compact' });
+                    await commitImportResult(result, {
+                        toastMode: 'compact',
+                        onRefreshStart: () => setImportProgressForRun(importRunId, formatImportRefreshProgress()),
+                    });
                 }
                 if (result.wasCancelled) {
                     return { newFiles: result.images.length, totalScanned: filesToScan.length };
