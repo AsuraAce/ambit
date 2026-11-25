@@ -546,20 +546,28 @@ export const SyncProvider: React.FC<{
                             await clearCollectionOwnerScopeCaches();
                             assertCurrentCollections();
                             await invokeSyncTrace.measure(traceOperationId, 'facet-cache', () =>
-                                measureStartupPhase('facets', () => rebuildFacetCacheStrict({ signal }))
+                                measureStartupPhase('facets', () => rebuildFacetCacheStrict({ signal }), null, signal)
                             );
                         } else {
                             if (resourceCount > 0 && resourceCount <= 64) {
                                 await invokeSyncTrace.measure(traceOperationId, 'facet-cache', () =>
-                                    measureStartupPhase('facets', () =>
-                                        refreshFacetCacheForResourcesStrict(cacheRepair.resources, { signal })
+                                    measureStartupPhase(
+                                        'facets',
+                                        () => refreshFacetCacheForResourcesStrict(cacheRepair.resources, { signal }),
+                                        null,
+                                        signal
                                     )
                                 );
                                 assertCurrentCollections();
                             }
                             if (facetTypes.length > 0) {
                                 await invokeSyncTrace.measure(traceOperationId, 'facet-cache', () =>
-                                    measureStartupPhase('facets', () => rebuildFacetCacheIncrementalBatchStrict(facetTypes, { signal }))
+                                    measureStartupPhase(
+                                        'facets',
+                                        () => rebuildFacetCacheIncrementalBatchStrict(facetTypes, { signal }),
+                                        null,
+                                        signal
+                                    )
                                 );
                                 assertCurrentCollections();
                             }
@@ -576,26 +584,31 @@ export const SyncProvider: React.FC<{
                     await publishOwnerScopeView(generation, assertCurrentCollections, traceOperationId, isBackgroundRepair);
                     if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
                         await invokeSyncTrace.measure(traceOperationId, 'previews', () =>
-                            measureStartupPhase('collections', async () => {
-                                // Both loops must have stopped before this settles: a loop still inside a
-                                // query when the other rejects would otherwise write after the caller has
-                                // moved on to another scope.
-                                const results = await Promise.allSettled([
-                                    refreshSmartCounts({
-                                        includeArchived: true,
-                                        includePromptSearch: true,
-                                        consistency: 'authoritative',
-                                        signal,
-                                    }),
-                                    refreshCollectionThumbnails(false, true, {
-                                        consistency: 'authoritative',
-                                        signal,
-                                    }),
-                                ]);
-                                for (const result of results) {
-                                    if (result.status === 'rejected') throw result.reason;
-                                }
-                            })
+                            measureStartupPhase(
+                                'collections',
+                                async () => {
+                                    // Both loops must have stopped before this settles: a loop still inside a
+                                    // query when the other rejects would otherwise write after the caller has
+                                    // moved on to another scope.
+                                    const results = await Promise.allSettled([
+                                        refreshSmartCounts({
+                                            includeArchived: true,
+                                            includePromptSearch: true,
+                                            consistency: 'authoritative',
+                                            signal,
+                                        }),
+                                        refreshCollectionThumbnails(false, true, {
+                                            consistency: 'authoritative',
+                                            signal,
+                                        }),
+                                    ]);
+                                    for (const result of results) {
+                                        if (result.status === 'rejected') throw result.reason;
+                                    }
+                                },
+                                null,
+                                signal
+                            )
                         );
                     }
                     assertCurrentCollections();
@@ -624,7 +637,7 @@ export const SyncProvider: React.FC<{
                     ownerCacheRepairFailedRef.current = false;
                     return cacheRepair;
                 } catch (error) {
-                    finishCache('failed', error);
+                    finishCache(signal?.aborted ? 'cancelled' : 'failed', error);
                     if (requiresCacheBuild) {
                         ownerCacheRepairFailedRef.current = true;
                         await abortInvokeScopeCacheClaim(claim, 'owner-scope refresh');

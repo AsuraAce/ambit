@@ -511,7 +511,8 @@ export const markReactMounted = () => {
 export async function measureStartupPhase<T>(
     phase: StartupPhase,
     work: () => Promise<T>,
-    cacheAction: StartupCacheAction | null = null
+    cacheAction: StartupCacheAction | null = null,
+    signal?: AbortSignal
 ): Promise<T> {
     const finish = startupDiagnostics.start(phase, cacheAction);
     try {
@@ -519,7 +520,8 @@ export async function measureStartupPhase<T>(
         finish();
         return result;
     } catch (error) {
-        finish('failed', error);
+        // A stop requested through the signal is expected, not a failure.
+        finish(signal?.aborted ? 'cancelled' : 'failed', error);
         throw error;
     }
 }

@@ -3693,6 +3693,67 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({ scopeKey: 'test-scope', generation: 5 });
         });
 
+        // A stop through the build's own signal is expected; only a real failure is an error (#592).
+        const spyJournal = () => {
+            const journal: { phase: string; status: string }[] = [];
+            const realStart = startupDiagnostics.start.bind(startupDiagnostics);
+            const spy = vi.spyOn(startupDiagnostics, 'start').mockImplementation((phase, ...rest) => {
+                const finish = realStart(phase, ...rest);
+                return (status, error) => {
+                    journal.push({ phase, status: status ?? 'completed' });
+                    finish(status, error);
+                };
+            });
+            journalSpy = spy;
+            return journal;
+        };
+        let journalSpy: { mockRestore: () => void } | undefined;
+        afterEach(() => journalSpy?.mockRestore());
+
+        it('journals the facets and owner-cache phases of a build stopped by a switch as cancelled (#592)', async () => {
+            const { getSync } = await startView({ cacheRepair: planOf('restored') });
+            const facets = holdFacetBuild();
+            mocks.applyInvokeOwnerScope.mockResolvedValue({ ...switchedApplyResult, cacheRepair: planOf('selective') });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 5));
+            const journal = spyJournal();
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+            await waitFor(() => expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalled());
+            act(() => useInvokeOwnerScopeStore.getState().operation?.cancel?.());
+            await act(async () => {
+                await expect(switching).resolves.toBe(false);
+            });
+
+            expect(facets.wasStopped()).toBe(true);
+            expect(journal).toContainEqual({ phase: 'facets', status: 'cancelled' });
+            expect(journal).toContainEqual({ phase: 'owner-cache', status: 'cancelled' });
+            expect(journal.filter((entry) => entry.status === 'failed')).toEqual([]);
+        });
+
+        it('still journals a real facet failure as failed (#592)', async () => {
+            const { getSync } = await startView({ cacheRepair: planOf('restored') });
+            mocks.refreshFacetCacheForResourcesStrict.mockRejectedValueOnce(new Error('facet build broke'));
+            mocks.applyInvokeOwnerScope.mockResolvedValue({ ...switchedApplyResult, cacheRepair: planOf('selective') });
+            mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 5));
+            const journal = spyJournal();
+
+            let switching!: Promise<boolean>;
+            act(() => {
+                switching = selectOwnerB(getSync());
+            });
+            await waitFor(() => expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalled());
+            await act(async () => {
+                await switching.catch(() => undefined);
+            });
+
+            expect(journal).toContainEqual({ phase: 'facets', status: 'failed' });
+            expect(journal).toContainEqual({ phase: 'owner-cache', status: 'failed' });
+            expect(journal.filter((entry) => entry.status === 'cancelled')).toEqual([]);
+        });
+
         it('makes the startup catch-up wait for a user switch started from Settings (#533)', async () => {
             // A catch-up import during the switch dirties the new owner's cache and gets its commit rejected.
             const { getSync } = await startView({ cacheRepair: planOf('restored') });
