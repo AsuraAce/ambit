@@ -450,8 +450,11 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 const result = await processNativePaths(
                     [dirPath],
                     thumbDir,
-                    (current, total, message) => {
-                        setImportProgressForRun(importRunId, { current, total, message });
+                    (current, total, message, meta) => {
+                        setImportProgressForRun(
+                            importRunId,
+                            meta?.waitingForDatabase ? formatImportDatabaseWaitProgress(current, total) : { current, total, message }
+                        );
                     },
                     undefined,
                     abortCtrl.signal,
@@ -527,8 +530,11 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                 const result = await processNativePaths(
                     filesToScan,
                     thumbDir,
-                    (current, total, message) => {
-                        setImportProgressForRun(importRunId, { current, total, message });
+                    (current, total, message, meta) => {
+                        setImportProgressForRun(
+                            importRunId,
+                            meta?.waitingForDatabase ? formatImportDatabaseWaitProgress(current, total) : { current, total, message }
+                        );
                     },
                     variant,
                     abortCtrl.signal,

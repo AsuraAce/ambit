@@ -3,6 +3,7 @@ import {
     processFoldersUnified,
     processNativePaths,
     processTargetedFiles,
+    IMPORT_DATABASE_WAIT_NOTICE_MS,
     processWebFiles,
     scanResourceThumbnails,
     WEB_IMAGE_LOAD_TIMEOUT_MS,
@@ -636,6 +637,45 @@ describe('processTargetedFiles', () => {
             touchedFacetTypes: ['checkpoints', 'loras', 'tools'],
         });
         infoSpy.mockRestore();
+    });
+
+    // #609: a batch insert held past the notice delay is reported through the folder import's progress callback,
+    // and cleared when the insert ends. Dropping the wrap or the progress adapter's flag fails this.
+    it('reports a held batch insert as waiting for the library database, then clears it', async () => {
+        vi.useFakeTimers();
+        try {
+            mocks.getExistingMetadata.mockResolvedValue(new Map());
+            mocks.scanImagesBulk.mockResolvedValueOnce([
+                { metadata: {}, timestamp: 1, width: 1, height: 1, fileSize: 1, thumbnail: 'C:/thumbs/a.webp', originalChunks: {} },
+            ]);
+            let releaseInsert!: () => void;
+            mocks.insertImagesBatch.mockReturnValueOnce(new Promise<void>((resolve) => (releaseInsert = resolve)));
+            const onProgress = vi.fn();
+
+            const run = processFoldersUnified([{ path: 'C:/library' }], { onProgress, forceRescan: true, deferFacetCacheRefresh: true });
+            await vi.advanceTimersByTimeAsync(IMPORT_DATABASE_WAIT_NOTICE_MS - 1);
+            expect(onProgress.mock.calls.some(([, , , meta]) => meta?.waitingForDatabase === true)).toBe(false);
+
+            await vi.advanceTimersByTimeAsync(1);
+            expect(onProgress).toHaveBeenCalledWith(
+                expect.any(Number),
+                expect.any(Number),
+                'Waiting for the library database...',
+                expect.objectContaining({ waitingForDatabase: true })
+            );
+
+            releaseInsert();
+            await run;
+            expect(onProgress).toHaveBeenCalledWith(
+                expect.any(Number),
+                expect.any(Number),
+                'Importing images...',
+                expect.objectContaining({ waitingForDatabase: false })
+            );
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     // #384: the folder scan refuses a folder outside the scope, and a typed folder

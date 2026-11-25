@@ -9,7 +9,7 @@ import { normalizePath } from '../../../utils/pathUtils';
 import { ensureFolderAccessible, pickLibraryFolder, requestLibraryFolderGrant } from '../../../services/assetScope';
 import { unwrap } from '../../../utils/spectaUtils';
 import { isImportSourceCompleted } from '../../../utils/importSourceStatus';
-import { formatStableImportProgress } from '../../../utils/importProgress';
+import { formatImportDatabaseWaitProgress, formatStableImportProgress } from '../../../utils/importProgress';
 import { processNativePaths, type ImportResult } from '../../../services/importService';
 import { isBrowserMockMode } from '../../../services/runtime';
 import { getThumbnailDir } from '../../../services/thumbnailService';
@@ -164,16 +164,18 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
                                 const result = await processNativePaths(
                                     changedPaths,
                                     thumbDir,
-                                    (current, total, _message) => {
+                                    (current, total, _message, meta) => {
                                         setImportProgressForRun(
                                             importRunId,
-                                            formatStableImportProgress({
-                                                current,
-                                                total,
-                                                sourceCount: 1,
-                                                phase: 'importing',
-                                                sourcePath: path,
-                                            })
+                                            meta?.waitingForDatabase
+                                                ? formatImportDatabaseWaitProgress(current, total)
+                                                : formatStableImportProgress({
+                                                      current,
+                                                      total,
+                                                      sourceCount: 1,
+                                                      phase: 'importing',
+                                                      sourcePath: path,
+                                                  })
                                         );
                                     },
                                     variant as GeneratorTool | undefined,
@@ -228,16 +230,18 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
                                     const result = await processNativePaths(
                                         repairPaths,
                                         thumbDir,
-                                        (current, total, _message) => {
+                                        (current, total, _message, meta) => {
                                             setImportProgressForRun(
                                                 importRunId,
-                                                formatStableImportProgress({
-                                                    current,
-                                                    total,
-                                                    sourceCount: 1,
-                                                    phase: 'importing',
-                                                    sourcePath: path,
-                                                })
+                                                meta?.waitingForDatabase
+                                                    ? formatImportDatabaseWaitProgress(current, total)
+                                                    : formatStableImportProgress({
+                                                          current,
+                                                          total,
+                                                          sourceCount: 1,
+                                                          phase: 'importing',
+                                                          sourcePath: path,
+                                                      })
                                             );
                                         },
                                         variant as GeneratorTool | undefined,

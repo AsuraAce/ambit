@@ -646,6 +646,31 @@ describe('useFoldersTabLogic', () => {
         updateLastScanned.mockRestore();
     });
 
+    // #609: the rescan's progress line turns into the database wait while a batch insert is held.
+    it('shows the database wait in the import progress while a rescan batch waits', async () => {
+        const settings = {
+            ...baseSettings,
+            monitoredFolders: [
+                { id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10, variant: GeneratorTool.COMFYUI },
+            ],
+        };
+        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'C:/Watch/new.png', modified: 1, size: 1, mediaType: 'image' }],
+        });
+        let phaseWhileWaiting: string | undefined;
+        vi.mocked(processNativePaths).mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress?.(1, 2, 'Waiting for the library database...', { waitingForDatabase: true });
+            phaseWhileWaiting = useLibraryStore.getState().importProgress?.phase;
+            progress?.(1, 2, 'Importing images...', { waitingForDatabase: false });
+            return emptyImportResult({ images: [{ id: 'new' } as never], handledPaths: ['C:/Watch/new.png'] });
+        });
+        const { result } = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
+        await act(async () => result.current.handleRescan('one', 'C:/Watch', GeneratorTool.COMFYUI));
+
+        expect(phaseWhileWaiting).toBe('waiting-database');
+    });
+
     it('repairs missed files and handles no-change rescans', async () => {
         const updateLastScanned = vi.spyOn(useSettingsStore.getState(), 'updateFolderLastScanned').mockImplementation(vi.fn());
         const settings = {

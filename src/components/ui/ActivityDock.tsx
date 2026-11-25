@@ -307,7 +307,8 @@ export const ActivityDock: React.FC<ActivityDockProps> = ({ isViewerOpen = false
         label = isRefreshPhase ? 'Refreshing' : 'Importing';
         supportsCancel = !!importAbortController && !isRefreshPhase;
         // Cancel stays, but it is only checked between batches, so it waits out the database hold.
-        if (importProgress?.phase === IMPORT_DATABASE_WAIT_PHASE) footerMessage = 'Cancel takes effect after the current batch.';
+        if (supportsCancel && importProgress?.phase === IMPORT_DATABASE_WAIT_PHASE)
+            footerMessage = 'Cancel takes effect after the current batch.';
     } else if (isManualSyncing) {
         progress = isInvokePresentation ? invokeOperation!.progress : syncProgress;
         label = invokePresentation.isOwnerSwitchPreparing
