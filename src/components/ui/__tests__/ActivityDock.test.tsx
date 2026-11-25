@@ -5,7 +5,7 @@ import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
 import { invoke } from '@tauri-apps/api/core';
 import { useResourceRemovalStore } from '../../../stores/resourceRemovalStore';
-import { formatImportRefreshProgress } from '../../../utils/importProgress';
+import { formatImportDatabaseWaitProgress, formatImportRefreshProgress } from '../../../utils/importProgress';
 import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../../stores/invokeOwnerScopeStore';
 
 vi.mock('framer-motion', () => ({
@@ -88,6 +88,22 @@ describe('ActivityDock', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    // #609: a batch waiting for the library database keeps Cancel, and says Cancel applies after the batch.
+    it('shows the database wait with Cancel and its late-effect note', () => {
+        useLibraryStore.setState({
+            isImporting: true,
+            importAbortController: new AbortController(),
+            importProgress: formatImportDatabaseWaitProgress(300, 900),
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Importing')).toBeTruthy();
+        expect(screen.getByText('Waiting for the library database...')).toBeTruthy();
+        expect(screen.getByText('Cancel takes effect after the current batch.')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
     });
 
     // #603: Cancel cannot stop the post-import library refresh, so its phase offers none; the import offers it.

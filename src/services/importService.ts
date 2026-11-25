@@ -86,6 +86,32 @@ export interface ImportProgressMeta {
     sourceCount?: number;
     sourcePath?: string;
     rawMessage?: string;
+    /** The batch insert has waited past IMPORT_DATABASE_WAIT_NOTICE_MS for the library database; false clears it. */
+    waitingForDatabase?: boolean;
+}
+
+/** How long a batch insert may take before the dock says the import is waiting for the library database. */
+export const IMPORT_DATABASE_WAIT_NOTICE_MS = 3000;
+
+/** Runs a batch insert; if it takes longer than the notice delay, reports the wait, then reports it cleared on every exit. */
+export async function runWithDatabaseWaitNotice<T>(
+    onProgress: ImportProgressCallback | undefined,
+    current: number,
+    total: number,
+    insert: () => Promise<T>
+): Promise<T> {
+    if (!onProgress) return insert();
+    let noticeShown = false;
+    const timer = setTimeout(() => {
+        noticeShown = true;
+        onProgress(current, total, 'Waiting for the library database...', { waitingForDatabase: true });
+    }, IMPORT_DATABASE_WAIT_NOTICE_MS);
+    try {
+        return await insert();
+    } finally {
+        clearTimeout(timer);
+        if (noticeShown) onProgress(current, total, 'Importing images...', { waitingForDatabase: false });
+    }
 }
 
 export type ImportProgressCallback = (current: number, total: number, message?: string, meta?: ImportProgressMeta) => void;
@@ -463,8 +489,8 @@ async function processImageFileEntries(
                     const upsertStartedAt = liveWatchNow();
                     // Display falls back to the original, but the database must not store it as the
                     // thumbnail: the upsert would overwrite an existing generated one.
-                    await insertImagesBatch(
-                        imagesToUpdate.map((img) => (img.thumbnailUrl === img.url ? { ...img, thumbnailUrl: '' } : img))
+                    await runWithDatabaseWaitNotice(onProgress, Math.min(i + BATCH_SIZE, totalToProcess), totalToProcess, () =>
+                        insertImagesBatch(imagesToUpdate.map((img) => (img.thumbnailUrl === img.url ? { ...img, thumbnailUrl: '' } : img)))
                     );
                     upsertMs = elapsedMs(upsertStartedAt);
                     if (abortSignal?.aborted) {
@@ -731,7 +757,7 @@ async function processMediaFileEntries(
         stats,
         {
             ...options,
-            onProgress: (current, _imageTotal, message) => options.onProgress?.(current, total, message),
+            onProgress: (current, _imageTotal, message, meta) => options.onProgress?.(current, total, message, meta),
         },
         defaultTool
     );
@@ -742,7 +768,7 @@ async function processMediaFileEntries(
 
     const videos = await processVideoFileEntries(videoEntries, stats, {
         ...options,
-        onProgress: (current, _videoTotal, message) => options.onProgress?.(imageEntries.length + current, total, message),
+        onProgress: (current, _videoTotal, message, meta) => options.onProgress?.(imageEntries.length + current, total, message, meta),
     });
 
     return {
@@ -928,7 +954,7 @@ export async function processFoldersUnified(
         }
 
         // Adapter maps "Current Task Progress" -> "Global Progress"
-        const progressAdapter = (current: number, _total: number, message?: string) => {
+        const progressAdapter = (current: number, _total: number, message?: string, meta?: ImportProgressMeta) => {
             if (onProgress) {
                 // current in batch + previously processed
                 const actualCurrent = globalProcessed + current;
@@ -940,6 +966,7 @@ export async function processFoldersUnified(
                     sourceCount: processingTasks.length,
                     sourcePath: task.sourcePaths[0],
                     rawMessage: message,
+                    waitingForDatabase: meta?.waitingForDatabase,
                 });
             }
         };

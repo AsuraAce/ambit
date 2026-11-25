@@ -67,3 +67,14 @@ export const formatImportRefreshProgress = (prefix?: string): SyncProgress => ({
     phase: IMPORT_REFRESH_PHASE,
     mode: 'indeterminate',
 });
+
+// A batch insert is waiting for the library database; Cancel still works but only applies after the batch.
+export const IMPORT_DATABASE_WAIT_PHASE = 'waiting-database';
+
+/** The run's progress while a batch waits for the library database: the counts stay, the dock explains the wait. */
+export const formatImportDatabaseWaitProgress = (current: number, total: number, prefix?: string): SyncProgress => ({
+    current,
+    total,
+    message: withPrefix('Waiting for the library database...', prefix),
+    phase: IMPORT_DATABASE_WAIT_PHASE,
+});

@@ -16,7 +16,12 @@ import {
 } from '../services/importService';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
-import { formatImportRefreshProgress, formatStableImportProgress, type ImportMediaKind } from '../utils/importProgress';
+import {
+    formatImportDatabaseWaitProgress,
+    formatImportRefreshProgress,
+    formatStableImportProgress,
+    type ImportMediaKind,
+} from '../utils/importProgress';
 import { formatUnscannableRootsWarning } from '../utils/importSourceStatus';
 import { getThumbnailDir } from '../services/thumbnailService';
 import { ensureFolderAccessible } from '../services/assetScope';
@@ -267,7 +272,10 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                     if (externalOnProgress) {
                         externalOnProgress(current, total, message, meta);
                     } else if (importRunId) {
-                        setImportProgressForRun(importRunId, { current, total, message });
+                        setImportProgressForRun(
+                            importRunId,
+                            meta?.waitingForDatabase ? formatImportDatabaseWaitProgress(current, total) : { current, total, message }
+                        );
                     }
                 };
 
@@ -353,14 +361,16 @@ export const useImportOps = ({ images, setImages, refreshCollections, settings: 
                     onProgress: (current, total, _message, meta) => {
                         setImportProgressForRun(
                             importRunId,
-                            formatStableImportProgress({
-                                current,
-                                total,
-                                sourceCount: folders.length,
-                                phase: meta?.phase === 'scanning' ? 'scanning' : total > 0 ? 'importing' : 'scanning',
-                                sourceIndex: meta?.sourceIndex,
-                                sourcePath: meta?.sourcePath ?? folders[0]?.path,
-                            })
+                            meta?.waitingForDatabase
+                                ? formatImportDatabaseWaitProgress(current, total)
+                                : formatStableImportProgress({
+                                      current,
+                                      total,
+                                      sourceCount: folders.length,
+                                      phase: meta?.phase === 'scanning' ? 'scanning' : total > 0 ? 'importing' : 'scanning',
+                                      sourceIndex: meta?.sourceIndex,
+                                      sourcePath: meta?.sourcePath ?? folders[0]?.path,
+                                  })
                         );
                     },
                     abortSignal: abortCtrl.signal,

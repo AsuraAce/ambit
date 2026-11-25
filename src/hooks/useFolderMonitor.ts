@@ -6,7 +6,7 @@ import { unwrap } from '../utils/spectaUtils';
 import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
 import { startupDiagnostics } from '../utils/startupDiagnostics';
 import { createEmptyTouchedFacetResources, mergeTouchedFacetResources, orderFacetTypes } from '../utils/touchedFacetTypes';
-import { formatImportRefreshProgress, formatStableImportProgress } from '../utils/importProgress';
+import { formatImportDatabaseWaitProgress, formatImportRefreshProgress, formatStableImportProgress } from '../utils/importProgress';
 import { formatUnscannableRootsWarning, isImportSourceCancelled, isImportSourceCompleted } from '../utils/importSourceStatus';
 import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
 
@@ -230,19 +230,21 @@ export function useFolderMonitor({
                                     deferFacetCacheRefresh: true,
                                     abortSignal: abortCtrl.signal,
                                     onRefreshStart: () => setProgressForRun(importRunId, formatImportRefreshProgress('Startup')),
-                                    onProgress: (current) => {
+                                    onProgress: (current, _total, _message, meta) => {
                                         // Add accumulated count from previous batches
                                         const actualCurrent = globalCurrent + current;
                                         setProgressForRun(
                                             importRunId,
-                                            formatStableImportProgress({
-                                                current: actualCurrent,
-                                                total: totalFilesFound,
-                                                sourceCount: tasks.length,
-                                                phase: 'importing',
-                                                prefix: 'Startup',
-                                                sourceIndex: taskIndex + 1,
-                                            })
+                                            meta?.waitingForDatabase
+                                                ? formatImportDatabaseWaitProgress(actualCurrent, totalFilesFound, 'Startup')
+                                                : formatStableImportProgress({
+                                                      current: actualCurrent,
+                                                      total: totalFilesFound,
+                                                      sourceCount: tasks.length,
+                                                      phase: 'importing',
+                                                      prefix: 'Startup',
+                                                      sourceIndex: taskIndex + 1,
+                                                  })
                                         );
                                     },
                                 });
@@ -469,17 +471,19 @@ export function useFolderMonitor({
                         waitForStableFiles: true,
                         abortSignal: abortCtrl.signal,
                         onRefreshStart: () => setProgressForRun(importRunId, formatImportRefreshProgress(source)),
-                        onProgress: (c) =>
+                        onProgress: (c, _total, _message, meta) =>
                             setProgressForRun(
                                 importRunId,
-                                formatStableImportProgress({
-                                    current: currentCount + c,
-                                    total: totalFilesFound,
-                                    sourceCount: tasks.length,
-                                    phase: 'importing',
-                                    prefix: source,
-                                    sourceIndex: taskIndex + 1,
-                                })
+                                meta?.waitingForDatabase
+                                    ? formatImportDatabaseWaitProgress(currentCount + c, totalFilesFound, source)
+                                    : formatStableImportProgress({
+                                          current: currentCount + c,
+                                          total: totalFilesFound,
+                                          sourceCount: tasks.length,
+                                          phase: 'importing',
+                                          prefix: source,
+                                          sourceIndex: taskIndex + 1,
+                                      })
                             ),
                     });
                     if ((result && result.wasCancelled) || abortCtrl.signal.aborted) {
