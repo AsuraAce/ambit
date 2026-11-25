@@ -125,11 +125,11 @@ describe('ImageCard', () => {
     // mount is the visibility check. A lazy image lets the browser hold the request until its own
     // visibility check reruns, which a composited transform animation can skip; the tile then stays
     // grey until a hover changes its style. jsdom cannot model that timing, so this pins the
-    // loading mode: a tile's own thumbnail is small and loads at mount, while a tile still showing
-    // its original file stays lazy so a fast scroll through the buffer does not decode originals.
-    it('chooses the loading mode by thumbnail kind', () => {
+    // loading mode. #621: a tile without its own thumbnail shows its original and stalled the same
+    // way while it stayed lazy, so no tile kind may depend on the browser's lazy trigger.
+    it('loads every tile eagerly, because VirtualGrid already limits mounted tiles', () => {
         const { unmount } = setup({ image: image({ url: 'source.png', thumbnailUrl: 'source.png' }) });
-        expect(smartImageMocks.props.at(-1)?.loading).toBe('lazy');
+        expect(smartImageMocks.props.at(-1)?.loading).toBe('eager');
         unmount();
 
         setup({ image: image({ url: 'source.png', thumbnailUrl: 'thumb.png' }) });
