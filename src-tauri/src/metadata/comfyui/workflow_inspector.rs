@@ -208,7 +208,7 @@ fn compare_display_edges(
         .then_with(|| left.source_output_slot.cmp(&right.source_output_slot))
 }
 
-fn has_valid_api_prompt(chunks: &HashMap<String, String>) -> bool {
+pub(crate) fn has_valid_api_prompt(chunks: &HashMap<String, String>) -> bool {
     let Some(prompt) = chunks.get("prompt") else {
         return false;
     };
@@ -259,7 +259,7 @@ fn display_inputs(node: &Value) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn display_value(value: &Value) -> Option<String> {
+pub(crate) fn display_value(value: &Value) -> Option<String> {
     match value {
         Value::Null => Some("null".to_string()),
         Value::Bool(value) => Some(value.to_string()),
