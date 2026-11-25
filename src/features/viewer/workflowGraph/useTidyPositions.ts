@@ -4,10 +4,34 @@ import type { LayoutInput, LayoutRequest, LayoutResponse } from './tidyLayout';
 
 export const createLayoutWorker = (): Worker => new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' });
 
-export const layoutInputFor = (model: GraphModel): LayoutInput => ({
-    nodes: model.nodes.map((node) => ({ id: node.id, width: node.width, height: node.height })),
-    edges: model.links.map((link) => ({ from: link.from, to: link.to })),
-});
+/**
+ * The worker sees each node by its index, never the file's id: an id such as `__proto__` would break the
+ * layout's keyed objects, and file strings stay in the view.
+ */
+export const layoutInputFor = (model: GraphModel): LayoutInput => {
+    const index = new Map(model.nodes.map((node, i) => [node.id, String(i)]));
+    return {
+        nodes: model.nodes.map((node, i) => ({ id: String(i), width: node.width, height: node.height })),
+        edges: model.links.flatMap((link) => {
+            const from = index.get(link.from);
+            const to = index.get(link.to);
+            return from !== undefined && to !== undefined ? [{ from, to }] : [];
+        }),
+    };
+};
+
+/** Maps the worker's index-keyed answer back to the file's node ids. */
+export const positionsFromLayout = (model: GraphModel, laid: Record<string, { x: number; y: number }>): Positions => {
+    const positions: Positions = new Map();
+    model.nodes.forEach((node, i) => {
+        const key = String(i);
+        if (Object.prototype.hasOwnProperty.call(laid, key)) positions.set(node.id, laid[key]);
+    });
+    return positions;
+};
+
+/** A layout still running after this long is stopped, and the file's own positions stay on screen. */
+export const LAYOUT_TIME_CAP_MS = 10_000;
 
 export type TidyStatus = 'idle' | 'pending' | 'ready' | 'failed';
 
@@ -34,23 +58,27 @@ export const useTidyPositions = (
         }
         const requestId = 1;
         const finish = (next: { positions: Positions | null; failed: boolean }) => {
+            if (done) return;
             done = true;
+            window.clearTimeout(timer);
             setResult(next);
             worker.terminate();
         };
+        const timer = window.setTimeout(() => finish({ positions: null, failed: true }), LAYOUT_TIME_CAP_MS);
         worker.onmessage = (event: MessageEvent<LayoutResponse>) => {
             const response = event.data;
             if (response.requestId !== requestId) return;
             finish(
                 'error' in response
                     ? { positions: null, failed: true }
-                    : { positions: new Map(Object.entries(response.positions)), failed: false }
+                    : { positions: positionsFromLayout(model, response.positions), failed: false }
             );
         };
         worker.onerror = () => finish({ positions: null, failed: true });
         const request: LayoutRequest = { requestId, input: layoutInputFor(model) };
         worker.postMessage(request);
         return () => {
+            window.clearTimeout(timer);
             // Stopped before it answered (unmount, or a development double mount): a later run starts again.
             if (!done) startedRef.current = false;
             worker.terminate();

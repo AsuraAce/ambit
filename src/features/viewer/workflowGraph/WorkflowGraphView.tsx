@@ -34,6 +34,12 @@ const PAN_THRESHOLD = 3;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** In far mode wires and node labels stop growing at these scales; group titles keep growing. */
+const WIRE_SCALE_CAP = 2.4;
+const LABEL_SCALE_CAP = 2.1;
+/** Rounds a scale to an eighth of an octave, so continuous zoom changes it in a few steps. */
+const stepped = (scale: number) => Number((2 ** (Math.round(Math.log2(scale) * 8) / 8)).toFixed(4));
+
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /** The full-screen, read-only workflow graph. Rendered by WorkflowInspector, so the viewer's privacy gate unmounts it. */
@@ -68,8 +74,13 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const worldRef = React.useRef<HTMLDivElement>(null);
     const dotsRef = React.useRef<HTMLDivElement>(null);
     const zoomRef = React.useRef<HTMLSpanElement>(null);
+    const wiresRef = React.useRef<SVGSVGElement>(null);
+    const groupsRef = React.useRef<HTMLDivElement>(null);
     const viewRef = React.useRef<View>({ x: 0, y: 0, s: 1 });
     const flightRef = React.useRef<number | null>(null);
+    const frameRef = React.useRef<number | null>(null);
+    const rectRef = React.useRef<DOMRect | null>(null);
+    const writtenRef = React.useRef({ far: false, wire: '1', label: '1', group: '1' });
 
     // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
     const setGraphOpen = useWorkflowGraphStore((state) => state.setOpen);
@@ -80,14 +91,30 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     }, [setGraphOpen]);
 
     // Pan and zoom never re-render React: one transform on the world, the dot grid and the readout.
+    // Far mode keeps wires, labels and group titles readable by scaling them against the zoom. Each scale is
+    // written in eighth-octave steps, only when its step changes, and only on the element that holds what it
+    // scales: a custom property restyles everything below where it is set.
     const apply = React.useCallback(() => {
         const { x, y, s } = viewRef.current;
         const world = worldRef.current;
         if (world) {
             world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
             const far = s < FAR_SCALE;
-            world.classList.toggle('far', far);
-            world.style.setProperty('--inv', far ? String(1 / s) : '1');
+            const inv = far ? 1 / s : 1;
+            const written = writtenRef.current;
+            if (far !== written.far) {
+                written.far = far;
+                world.classList.toggle('far', far);
+            }
+            const write = (key: 'wire' | 'label' | 'group', element: HTMLElement | SVGElement | null, scale: number) => {
+                const value = String(stepped(scale));
+                if (value === written[key] || !element) return;
+                written[key] = value;
+                element.style.setProperty(`--wg-${key}-k`, value);
+            };
+            write('wire', wiresRef.current, Math.min(inv, WIRE_SCALE_CAP));
+            write('label', world, Math.min(inv, LABEL_SCALE_CAP));
+            write('group', groupsRef.current, inv);
         }
         const dots = dotsRef.current;
         if (dots) {
@@ -97,10 +124,38 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (zoomRef.current) zoomRef.current.textContent = `${Math.round(s * 100)}%`;
     }, []);
 
+    // Wheel and pointer input can arrive several times a frame: the view is drawn once per frame.
+    const scheduleApply = React.useCallback(() => {
+        if (frameRef.current !== null) return;
+        frameRef.current = requestAnimationFrame(() => {
+            frameRef.current = null;
+            apply();
+        });
+    }, [apply]);
+    React.useEffect(
+        () => () => {
+            if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+        },
+        []
+    );
+
     const stopFlight = () => {
         if (flightRef.current !== null) cancelAnimationFrame(flightRef.current);
         flightRef.current = null;
     };
+
+    // The canvas fills the window, so its rect changes only on resize; reading it per event forces layout.
+    const canvasRect = React.useCallback(() => {
+        if (!rectRef.current && canvasRef.current) rectRef.current = canvasRef.current.getBoundingClientRect();
+        return rectRef.current;
+    }, []);
+    React.useEffect(() => {
+        const forget = () => {
+            rectRef.current = null;
+        };
+        window.addEventListener('resize', forget);
+        return () => window.removeEventListener('resize', forget);
+    }, []);
 
     const flyTo = React.useCallback(
         (target: View) => {
@@ -128,10 +183,10 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         [apply]
     );
 
-    const viewportSize = () => {
-        const rect = canvasRef.current?.getBoundingClientRect();
+    const viewportSize = React.useCallback(() => {
+        const rect = canvasRect();
         return { w: rect?.width || window.innerWidth, h: rect?.height || window.innerHeight };
-    };
+    }, [canvasRect]);
 
     // Handlers read the latest drawing through a ref, so key and wheel listeners bind once.
     const latest = React.useRef({ positions, foldedNodes, foldedGroups, scene });
@@ -144,7 +199,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (!current.positions) return;
         const bounds = boundsOf(model, current.positions, current.foldedNodes, current.foldedGroups, current.scene);
         if (bounds) flyTo(fitView(bounds, viewportSize()));
-    }, [flyTo, model]);
+    }, [flyTo, model, viewportSize]);
 
     const zoomBy = React.useCallback(
         (factor: number) => {
@@ -153,7 +208,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             viewRef.current = zoomAt(viewRef.current, factor, w / 2, h / 2);
             apply();
         },
-        [apply]
+        [apply, viewportSize]
     );
 
     // First view once there is something to show; later layout switches glide and refit.
@@ -193,30 +248,28 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         onCloseRef.current = onClose;
     }, [onClose]);
 
-    // Keys the graph owns. Every other viewer key does nothing while it is open.
+    // Keys the graph owns. Every other viewer key does nothing while it is open. It listens in the capture
+    // phase and stops a key it handles, so no listener registered later (the viewer's) sees it too.
     React.useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             const target = event.target;
             if (target instanceof HTMLElement && (target.matches('input, textarea, select') || target.isContentEditable)) return;
-            if (event.key === 'Escape') {
+            const own = (action: () => void) => {
                 event.preventDefault();
-                onCloseRef.current();
+                event.stopImmediatePropagation();
+                action();
+            };
+            if (event.key === 'Escape') {
+                own(() => onCloseRef.current());
                 return;
             }
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (event.key === 'f' || event.key === 'F') {
-                event.preventDefault();
-                fit();
-            } else if (event.key === '+' || event.key === '=') {
-                event.preventDefault();
-                zoomBy(1.2);
-            } else if (event.key === '-') {
-                event.preventDefault();
-                zoomBy(1 / 1.2);
-            }
+            if (event.key === 'f' || event.key === 'F') own(fit);
+            else if (event.key === '+' || event.key === '=') own(() => zoomBy(1.2));
+            else if (event.key === '-') own(() => zoomBy(1 / 1.2));
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, [fit, zoomBy]);
 
     // The wheel zooms around the pointer; it needs a non-passive listener to keep the page still.
@@ -226,15 +279,15 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         const handleWheel = (event: WheelEvent) => {
             event.preventDefault();
             stopFlight();
-            const rect = canvas.getBoundingClientRect();
+            const rect = canvasRect();
             const factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.012 : 0.0016));
-            viewRef.current = zoomAt(viewRef.current, factor, event.clientX - rect.left, event.clientY - rect.top);
-            apply();
+            viewRef.current = zoomAt(viewRef.current, factor, event.clientX - (rect?.left ?? 0), event.clientY - (rect?.top ?? 0));
+            scheduleApply();
             setInteracted(true);
         };
         canvas.addEventListener('wheel', handleWheel, { passive: false });
         return () => canvas.removeEventListener('wheel', handleWheel);
-    }, [apply]);
+    }, [canvasRect, scheduleApply]);
 
     const dragRef = React.useRef<{ id: number; x: number; y: number; view: View; panning: boolean } | null>(null);
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -255,7 +308,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             setInteracted(true);
         }
         viewRef.current = { ...drag.view, x: drag.view.x + dx, y: drag.view.y + dy };
-        apply();
+        scheduleApply();
     };
     const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
         if (dragRef.current?.id !== event.pointerId) return;
@@ -280,30 +333,39 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
 
     // A modal layer: Tab stays inside it.
     const trapTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
-        if (event.key !== 'Tab' || !rootRef.current) return;
-        const items = Array.from(rootRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+        const root = rootRef.current;
+        if (event.key !== 'Tab' || !root) return;
+        const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE));
         if (items.length === 0) return;
         const first = items[0];
         const last = items[items.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+        const active = document.activeElement;
+        if (event.shiftKey && (active === first || active === root)) {
             event.preventDefault();
             last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        } else if (!event.shiftKey && (active === last || active === root)) {
             event.preventDefault();
             first.focus();
         }
     };
+    // A click on the canvas would leave focus on the page behind; the layer keeps it, so the trap still holds.
+    const keepFocus = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.target instanceof Element && event.target.closest(FOCUSABLE)) return;
+        rootRef.current?.focus({ preventScroll: true });
+    };
 
     const hint =
-        layout === 'tidy' && tidy.status === 'pending'
-            ? 'Laying out the workflow…'
-            : layout === 'tidy' && tidy.status === 'failed'
-              ? 'Ambit could not lay out this workflow.'
-              : interacted
-                ? null
-                : !canShowSaved
-                  ? 'Laid out by Ambit: this file has no positions.'
-                  : 'Drag the empty space to move around · wheel to zoom';
+        model.nodes.length === 0
+            ? 'This level of the workflow has no nodes.'
+            : layout === 'tidy' && tidy.status === 'pending'
+              ? 'Laying out the workflow…'
+              : layout === 'tidy' && tidy.status === 'failed'
+                ? 'Ambit could not lay out this workflow.'
+                : interacted
+                  ? null
+                  : !canShowSaved
+                    ? 'Laid out by Ambit: this file has no positions.'
+                    : 'Drag the empty space to move around · wheel to zoom';
 
     return (
         <div
@@ -312,7 +374,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             role="dialog"
             aria-modal="true"
             aria-label="Workflow graph"
+            tabIndex={-1}
             onKeyDown={trapTab}
+            onPointerDown={keepFocus}
         >
             <header className="wg-appbar">
                 <button ref={backRef} type="button" className="wg-tbtn" onClick={onClose}>
@@ -345,7 +409,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 <div ref={worldRef} className="wg-world" data-testid="workflow-graph-world">
                     {positions ? (
                         <>
-                            <svg className="wg-wires" aria-hidden="true">
+                            <svg ref={wiresRef} className="wg-wires" aria-hidden="true">
                                 {wires.map((wire) => (
                                     <path
                                         key={wire.key}
@@ -354,42 +418,44 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                     />
                                 ))}
                             </svg>
-                            {model.groups.map((group) => {
-                                if (scene.hiddenGroups.has(group.key)) return null;
-                                const shut = foldedGroups.has(group.key);
-                                const box = groupBox(group, shut);
-                                const style = {
-                                    transform: `translate(${box.x}px, ${box.y}px)`,
-                                    width: box.w,
-                                    height: box.h,
-                                    // In Familiar this is the file's own colour, checked to be plain hex: user content,
-                                    // as docs/design-system.md "Exceptions" allows.
-                                    '--gc': groupColour(group.color, palette),
-                                } as React.CSSProperties;
-                                return (
-                                    <div key={group.key} className={shut ? 'wg-group shut' : 'wg-group'} style={style}>
-                                        <div className="wg-gh">
-                                            <span className="wg-gt">{group.title}</span>
-                                            <span className="wg-gn">{group.members.length} nodes</span>
-                                            <button
-                                                type="button"
-                                                className="wg-cb"
-                                                aria-label={shut ? `Unfold group ${group.title}` : `Fold group ${group.title}`}
-                                                aria-expanded={!shut}
-                                                onClick={() => toggleGroup(group.key)}
-                                            >
-                                                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
-                                            </button>
+                            <div ref={groupsRef} className="wg-groups">
+                                {model.groups.map((group) => {
+                                    if (scene.hiddenGroups.has(group.key)) return null;
+                                    const shut = foldedGroups.has(group.key);
+                                    const box = groupBox(group, shut);
+                                    const style = {
+                                        transform: `translate(${box.x}px, ${box.y}px)`,
+                                        width: box.w,
+                                        height: box.h,
+                                        // In Familiar this is the file's own colour, checked to be plain hex: user content,
+                                        // as docs/design-system.md "Exceptions" allows.
+                                        '--gc': groupColour(group.color, palette),
+                                    } as React.CSSProperties;
+                                    return (
+                                        <div key={group.key} className={shut ? 'wg-group shut' : 'wg-group'} style={style}>
+                                            <div className="wg-gh">
+                                                <span className="wg-gt">{group.title}</span>
+                                                <span className="wg-gn">{group.members.length} nodes</span>
+                                                <button
+                                                    type="button"
+                                                    className="wg-cb"
+                                                    aria-label={shut ? `Unfold group ${group.title}` : `Fold group ${group.title}`}
+                                                    aria-expanded={!shut}
+                                                    onClick={() => toggleGroup(group.key)}
+                                                >
+                                                    <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                            {shut ? (
+                                                <>
+                                                    <span className="wg-gport" style={{ left: -5 }} />
+                                                    <span className="wg-gport" style={{ right: -5 }} />
+                                                </>
+                                            ) : null}
                                         </div>
-                                        {shut ? (
-                                            <>
-                                                <span className="wg-gport" style={{ left: -5 }} />
-                                                <span className="wg-gport" style={{ right: -5 }} />
-                                            </>
-                                        ) : null}
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
                             {model.nodes.map((node) => {
                                 const at = positions.get(node.id);
                                 if (!at || scene.hiddenBy.has(node.id)) return null;
@@ -415,7 +481,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                     <button type="button" className="wg-tbtn" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
                         <Minus aria-hidden="true" className="h-4 w-4" />
                     </button>
-                    <span ref={zoomRef} className="wg-zoomv" aria-label="Zoom level">
+                    <span ref={zoomRef} className="wg-zoomv">
                         100%
                     </span>
                     <button type="button" className="wg-tbtn" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>

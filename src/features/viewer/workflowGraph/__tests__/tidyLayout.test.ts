@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildGraphModel } from '../graphModel';
 import { handleLayoutRequest, type LayoutInput } from '../tidyLayout';
-import { layoutInputFor } from '../useTidyPositions';
+import { layoutInputFor, positionsFromLayout } from '../useTidyPositions';
 import { canvasLink, canvasNode, level, port } from './canvasFixtures';
 
 const chain: LayoutInput = {
@@ -58,6 +58,27 @@ describe('layout worker contract', () => {
         const input = layoutInputFor(model);
         expect(JSON.stringify(input)).not.toContain('secret');
         expect(Object.keys(input.nodes[0]).sort()).toEqual(['height', 'id', 'width']);
-        expect(input.edges).toEqual([{ from: 'a', to: 'b' }]);
+        // Not even the file's ids: the worker sees indexes.
+        expect(input.nodes.map((node) => node.id)).toEqual(['0', '1']);
+        expect(input.edges).toEqual([{ from: '0', to: '1' }]);
+    });
+
+    // Node ids come from the file. Ones that name object built-ins must still lay out, each in its own place.
+    it('lays out nodes whose ids name object built-ins', () => {
+        const ids = ['__proto__', 'constructor', 'toString', 'hasOwnProperty'];
+        const model = buildGraphModel(
+            level(
+                ids.map((id) => canvasNode(id, { inputs: [port(0, 'LATENT')], outputs: [port(0, 'LATENT')] })),
+                [canvasLink('__proto__', 0, 'constructor', 0), canvasLink('constructor', 0, 'toString', 0)]
+            )
+        );
+        const response = handleLayoutRequest({ requestId: 1, input: layoutInputFor(model) });
+        if ('error' in response) throw new Error('layout failed');
+        const positions = positionsFromLayout(model, response.positions);
+        expect([...positions.keys()].sort()).toEqual([...ids].sort());
+        const proto = positions.get('__proto__');
+        const ctor = positions.get('constructor');
+        if (!proto || !ctor) throw new Error('missing position');
+        expect(proto.x).toBeLessThan(ctor.x);
     });
 });

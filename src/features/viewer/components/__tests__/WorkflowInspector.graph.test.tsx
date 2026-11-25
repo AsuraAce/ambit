@@ -66,12 +66,18 @@ beforeEach(() => {
 afterEach(() => useWorkflowGraphStore.setState({ open: false }));
 
 describe('WorkflowInspector graph button', () => {
-    it('reads the canvas from the file chunks and opens the graph over the page', async () => {
+    // Reading a large canvas costs hundreds of milliseconds: it happens on open, not for every item browsed.
+    it('reads the canvas from the file chunks only when the graph is opened', async () => {
         render(<WorkflowInspector image={makeImage()} />);
-        expect(mockInspectWorkflowCanvas).toHaveBeenCalledWith({ workflow: workflowJson });
-        await waitFor(() => expect(graphButton().getAttribute('aria-disabled')).toBeNull());
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(mockInspectWorkflowCanvas).not.toHaveBeenCalled();
+        expect(graphButton().getAttribute('aria-disabled')).toBeNull();
         fireEvent.click(graphButton());
-        const dialog = await screen.findByRole('dialog', { name: 'Workflow graph' });
+        expect(mockInspectWorkflowCanvas).toHaveBeenCalledWith({ workflow: workflowJson });
+        // The first test loads the graph's lazy chunk.
+        const dialog = await screen.findByRole('dialog', { name: 'Workflow graph' }, { timeout: 5000 });
         // Portalled to the body, so no ancestor's overflow or stacking clips it.
         expect(dialog.parentElement).toBe(document.body);
         expect(useWorkflowGraphStore.getState().open).toBe(true);
@@ -116,8 +122,10 @@ describe('WorkflowInspector graph button', () => {
     it('stays shut when the backend finds nothing it can draw', async () => {
         mockInspectWorkflowCanvas.mockResolvedValue({ status: 'ok', data: report(level([]), { source: 'none' }) });
         render(<WorkflowInspector image={makeImage()} />);
-        await waitFor(() => expect(graphReason()).toContain('no ComfyUI graph that Ambit can draw'));
         fireEvent.click(graphButton());
+        await waitFor(() => expect(graphReason()).toContain('no ComfyUI graph that Ambit can draw'));
+        expect(graphButton().getAttribute('aria-disabled')).toBe('true');
         expect(graphDialog()).toBeNull();
+        expect(useWorkflowGraphStore.getState().open).toBe(false);
     });
 });

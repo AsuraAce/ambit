@@ -74,7 +74,8 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    overflow: hidden;
+    /* clip, not hidden: a hidden box still scrolls when focus lands on an off-screen button. */
+    overflow: clip;
     cursor: default;
     touch-action: none;
     user-select: none;
@@ -96,7 +97,6 @@
     left: 0;
     top: 0;
     transform-origin: 0 0;
-    --inv: 1;
 }
 
 .wg-wires {
@@ -125,7 +125,7 @@
 }
 
 .wg-world.far .wg-wire {
-    stroke-width: calc(var(--wg-ww) * min(var(--inv), 2.4));
+    stroke-width: calc(var(--wg-ww) * var(--wg-wire-k, 1));
 }
 
 .t-model {
@@ -205,7 +205,7 @@
 }
 
 .wg-group .wg-gt {
-    font-size: calc(15px * var(--inv));
+    font-size: calc(15px * var(--wg-group-k, 1));
     font-weight: 700;
     color: color-mix(in srgb, var(--gc), var(--graph-text) 55%);
     white-space: nowrap;
@@ -507,7 +507,7 @@
     pointer-events: none;
     font-weight: 700;
     color: var(--graph-text);
-    font-size: calc(12px * min(var(--inv), 2.1));
+    font-size: calc(12px * var(--wg-label-k, 1));
     line-height: 1.15;
     overflow: hidden;
     border-radius: 8px;

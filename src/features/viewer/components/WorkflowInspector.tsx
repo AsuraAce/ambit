@@ -993,21 +993,25 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const graphButtonRef = React.useRef<HTMLSpanElement>(null);
     const graphWasOpen = React.useRef(false);
 
+    // The canvas is read when the graph is opened, not for every item shown: a large workflow takes hundreds of
+    // milliseconds to read and carries each node's saved JSON, which only the open graph uses.
+    const canvasWanted = graphOpen && isComfyUi && canvasChunks !== null && canvasReport === undefined;
     React.useEffect(() => {
-        if (!isComfyUi || !canvasChunks) return;
+        if (!canvasWanted || !canvasChunks) return;
         let cancelled = false;
+        const settle = (report: WorkflowCanvasReport | null) => {
+            if (cancelled) return;
+            setCanvas({ chunks: canvasChunks, report });
+            if (!report || report.source === 'none') setGraphOpen(false);
+        };
         commands
             .inspectWorkflowCanvas(canvasChunks)
-            .then((result) => {
-                if (!cancelled) setCanvas({ chunks: canvasChunks, report: result.status === 'ok' ? result.data : null });
-            })
-            .catch(() => {
-                if (!cancelled) setCanvas({ chunks: canvasChunks, report: null });
-            });
+            .then((result) => settle(result.status === 'ok' ? result.data : null))
+            .catch(() => settle(null));
         return () => {
             cancelled = true;
         };
-    }, [canvasChunks, isComfyUi]);
+    }, [canvasChunks, canvasWanted]);
 
     // Closing the graph returns focus to the button that opened it.
     React.useEffect(() => {
@@ -1023,11 +1027,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         ? 'The graph view draws ComfyUI workflows only.'
         : !canvasChunks
           ? 'No workflow was found in this file.'
-          : canvasReport === undefined
-            ? 'Reading the workflow…'
-            : !canvasReport || canvasReport.source === 'none'
-              ? 'This file has no ComfyUI graph that Ambit can draw.'
-              : null;
+          : canvasReport === null || canvasReport?.source === 'none'
+            ? 'This file has no ComfyUI graph that Ambit can draw.'
+            : null;
+    const graphButtonHint = graphUnavailableReason ?? (canvasWanted ? 'Reading the workflow…' : 'See the whole workflow as a node graph');
 
     // Lazy Load Workflow if missing
     React.useEffect(() => {
@@ -1170,7 +1173,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                         if (!graphUnavailableReason) setGraphOpen(true);
                                     }}
                                     label="Open the workflow graph"
-                                    content={graphUnavailableReason ?? 'See the whole workflow as a node graph'}
+                                    content={graphButtonHint}
                                     aria-disabled={graphUnavailableReason ? true : undefined}
                                     className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 ${
                                         graphUnavailableReason
