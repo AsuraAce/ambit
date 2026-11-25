@@ -77,4 +77,4 @@ windows-core = "0.62.2"
 
 [dev-dependencies]
 tauri = { version = "2.11.2", features = ["test"] }
-sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["sqlite", "runtime-tokio"] }
