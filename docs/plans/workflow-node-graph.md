@@ -1,6 +1,15 @@
 # Workflow Node Graph
 
-Status: Draft (awaiting planner approval)
+Status: Approved 2026-11-25. P1 in progress.
+
+Approval conditions (planner): render every file string as plain text (no
+`dangerouslySetInnerHTML`, no markdown to HTML without the app's own sanitiser)
+and never in a selector, class name or URL; accept group colours only as plain
+hex; list and test every `keydown` listener that can fire while the graph is open
+(viewer, App-level shortcuts, gallery, slideshow, search hotkeys); keep the portal
+owned by `WorkflowInspector` and never log node text, prompts or raw JSON; state
+the P1 caps; run the perf gate only on a copied profile; send DECISION NEEDED if
+roving focus passes about 300 lines or a second pass.
 
 Issue: [#452](https://github.com/AsuraAce/ambit/issues/452). Picked design: UX-L267
 "Full canvas" (UI-UX Vault, gallery UX-G30). Posture: Assure (new Rust command,
@@ -95,30 +104,40 @@ single parser: TypeScript does not re-read the JSON.
   different questions.
 - Tool-neutral names (`WorkflowCanvas*`) so the InvokeAI package fills the same
   shape and the UI needs no second renderer.
-- Bounded like the normalizer: per-level node and link caps, subgraph count and
-  depth caps, a byte cap on raw JSON; hitting one sets `truncated` and the UI says
-  so. Malformed or cyclic definitions produce an empty level, never a panic.
+- Bounded: a chunk over 32 MiB is ignored; at most 2,000 nodes and 10,000 links
+  per level, 256 subgraph definitions, 10,000 nodes in all, 256 KiB of raw JSON
+  per node and 8 MiB in all. Definitions are listed once each and never expanded
+  into each other, so nesting depth cannot multiply the output (the evaluator
+  keeps the normalizer's depth cap of 16). Hitting a cap sets `truncated` and the
+  UI says so. Malformed or cyclic input is skipped, never a panic.
 - Read-only. It never writes metadata or the database, never changes the stored
   or archival workflow, and does not bump the parser version.
+- Every string from the file is untrusted. The report passes text on as saved;
+  the UI renders it only as plain text and never puts it into a selector, class
+  name or URL. A group colour is kept only when it matches `#` plus 3 to 8 hex
+  digits.
 
-Shape (Specta-exported; final field names settle in P1 review):
+Shape, as built in P1 (`src/bindings.ts` is generated from it):
 
 ```text
-WorkflowCanvasReport { tool: "comfyui", source: "workflow" | "api_prompt" | "none",
-  has_saved_layout, truncated, root: CanvasLevel, subgraphs: Vec<CanvasSubgraph>,
-  selected_output_paths, selected_branch_paths, output_ambiguous }
-CanvasSubgraph { id, name, level: CanvasLevel, inputs: Vec<CanvasPort>,
-  outputs: Vec<CanvasPort>, input_pos, output_pos }
-CanvasLevel { nodes: Vec<CanvasNode>, links: Vec<CanvasLink>, groups: Vec<CanvasGroup> }
-CanvasNode { id, path, node_type, title, kind: node|reroute|note|subgraph,
-  subgraph_id, mode: active|muted|bypassed, collapsed, pos: Option<[f64;2]>,
-  size: Option<[f64;2]>, inputs: Vec<CanvasPort>, outputs: Vec<CanvasPort>,
-  widgets: Vec<CanvasWidget>, raw_json }
-CanvasPort { name, label, data_type, type_inferred, slot }
-CanvasWidget { name, value, is_long_text }
-CanvasLink { id, from_node, from_slot, to_node, to_slot, data_type, type_inferred }
-CanvasGroup { title, bounds: [f64;4], color: Option<String> }
+WorkflowCanvasReport { tool: "comfyui", source: none | workflow | api_prompt,
+  hasSavedLayout, truncated, root: Level, subgraphs: [{ id, name, level: Level }],
+  selectedOutputPaths, selectedBranchPaths: string[][], outputAmbiguous }
+Level { nodes, links, groups }
+Node { id, nodeType, title, kind: node | reroute | note | subgraph |
+  subgraph_input | subgraph_output, subgraphId?, mode: active | muted | bypassed,
+  collapsed, pos?: {x, y}, size?: {width, height}, inputs, outputs, widgets,
+  rawJson? }
+Port { slot, name, label, dataType, typeInferred, linked }
+Widget { name?, value, isLongText }
+Link { fromNode, fromSlot, toNode, toSlot, dataType, typeInferred }
+Group { title, pos, size, color? }
 ```
+
+A subgraph's own inputs and outputs are drawn as two boundary nodes in its level
+(`subgraph_input` with the inputs as its outputs, `subgraph_output` the reverse),
+as ComfyUI draws them. A setting that can take a wire is an input port only while
+a wire is attached. Paths are the subgraph instance ids followed by the node id.
 
 API-prompt type inference: a small table of core input names (`model`, `clip`,
 `vae`, `positive`/`negative`/`conditioning`, `samples`/`latent_image`,

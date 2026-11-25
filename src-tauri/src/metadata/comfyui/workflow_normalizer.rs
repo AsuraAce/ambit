@@ -1218,6 +1218,11 @@ fn target_widget_name<'a>(
         .as_str()
 }
 
+/// One saved link, in either the array or the object form, as an owned edge.
+pub(crate) fn parse_workflow_edge(value: &Value) -> Option<WorkflowEdge> {
+    parse_borrowed_edge(value).map(BorrowedWorkflowEdge::into_owned)
+}
+
 fn parse_borrowed_edge(value: &Value) -> Option<BorrowedWorkflowEdge<'_>> {
     if let Some(edge) = value.as_array() {
         return Some(BorrowedWorkflowEdge {
@@ -1320,7 +1325,7 @@ fn namespace_id(prefix: &str, id: &str) -> String {
     }
 }
 
-fn value_id(value: &Value) -> Option<String> {
+pub(crate) fn value_id(value: &Value) -> Option<String> {
     value
         .as_str()
         .map(str::to_string)
@@ -1352,11 +1357,11 @@ fn value_usize(value: &Value) -> Option<usize> {
         .or_else(|| value.as_i64().and_then(|value| usize::try_from(value).ok()))
 }
 
-fn is_muted(node: &Value) -> bool {
+pub(crate) fn is_muted(node: &Value) -> bool {
     node.get("mode").and_then(Value::as_i64) == Some(2)
 }
 
-fn is_bypassed(node: &Value) -> bool {
+pub(crate) fn is_bypassed(node: &Value) -> bool {
     node.get("mode").and_then(Value::as_i64) == Some(4)
 }
 

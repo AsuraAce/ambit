@@ -726,6 +726,14 @@ async inspectComfyuiWorkflowGraph(chunks: Partial<{ [key in string]: string }>) 
     else return { status: "error", error: e  as any };
 }
 },
+async inspectWorkflowCanvas(chunks: Partial<{ [key in string]: string }>) : Promise<Result<WorkflowCanvasReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inspect_workflow_canvas", { chunks }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async clearModelCache() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_model_cache") };
@@ -1208,6 +1216,48 @@ export type VideoImportOutcome = { status: string; asset: VideoAssetRecord | nul
 export type VideoMetadataConflict = { field: string; selectedValue: string; ignoredValue: string; ignoredSource: MetadataEvidenceSource }
 export type VideoMetadataDiagnostic = { code: string; message: string }
 export type VideoPosterResult = { assetId: string; thumbnailPath: string; thumbnailSource: string }
+export type WorkflowCanvasGroup = { title: string; pos: WorkflowCanvasPoint; size: WorkflowCanvasSize; 
+/**
+ * The file's colour, only when it is a plain hex colour.
+ */
+color: string | null }
+export type WorkflowCanvasLevel = { nodes: WorkflowCanvasNode[]; links: WorkflowCanvasLink[]; groups: WorkflowCanvasGroup[] }
+export type WorkflowCanvasLink = { fromNode: string; fromSlot: number; toNode: string; toSlot: number; dataType: string; typeInferred: boolean }
+export type WorkflowCanvasNode = { 
+/**
+ * The id inside its level. A full path is the breadcrumb of subgraph
+ * instance ids followed by this id.
+ */
+id: string; nodeType: string; title: string; kind: WorkflowCanvasNodeKind; subgraphId: string | null; mode: WorkflowCanvasNodeMode; collapsed: boolean; pos: WorkflowCanvasPoint | null; size: WorkflowCanvasSize | null; inputs: WorkflowCanvasPort[]; outputs: WorkflowCanvasPort[]; widgets: WorkflowCanvasWidget[]; 
+/**
+ * The node as saved, for the side panel's copy; None past the byte caps.
+ */
+rawJson: string | null }
+export type WorkflowCanvasNodeKind = "node" | "reroute" | "note" | "subgraph" | "subgraph_input" | "subgraph_output"
+export type WorkflowCanvasNodeMode = "active" | "muted" | "bypassed"
+export type WorkflowCanvasPoint = { x: number; y: number }
+export type WorkflowCanvasPort = { 
+/**
+ * The index the file's links use for this port.
+ */
+slot: number; name: string; label: string; dataType: string; typeInferred: boolean; linked: boolean }
+export type WorkflowCanvasReport = { tool: string; source: WorkflowCanvasSource; hasSavedLayout: boolean; 
+/**
+ * A cap was reached, so part of the file is not shown.
+ */
+truncated: boolean; root: WorkflowCanvasLevel; subgraphs: WorkflowCanvasSubgraph[]; 
+/**
+ * Full paths (subgraph instance ids, then the node id).
+ */
+selectedOutputPaths: string[][]; selectedBranchPaths: string[][]; outputAmbiguous: boolean }
+export type WorkflowCanvasSize = { width: number; height: number }
+export type WorkflowCanvasSource = "none" | "workflow" | "api_prompt"
+export type WorkflowCanvasSubgraph = { id: string; name: string; level: WorkflowCanvasLevel }
+export type WorkflowCanvasWidget = { 
+/**
+ * None when the file does not say which setting this value belongs to.
+ */
+name: string | null; value: string; isLongText: boolean }
 
 /** tauri-specta globals **/
 
