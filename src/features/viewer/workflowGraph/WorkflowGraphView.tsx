@@ -116,13 +116,18 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (!drawing) {
             const inputs = farInputs.current;
             if (!inputs.positions) return;
+            const laidOut = new Map<string, number>();
+            worldRef.current?.querySelectorAll<HTMLElement>('[data-node-id]').forEach((element) => {
+                if (element.offsetHeight > 0) laidOut.set(element.dataset.nodeId ?? '', element.offsetHeight);
+            });
             const farScene = farSceneFor(
                 inputs.model,
                 inputs.positions,
                 inputs.foldedNodes,
                 inputs.foldedGroups,
                 inputs.scene,
-                inputs.wires
+                inputs.wires,
+                laidOut
             );
             drawing = prepareFarDrawing(ctx, farScene, readFarPalette(layer));
             farDrawingRef.current = drawing;

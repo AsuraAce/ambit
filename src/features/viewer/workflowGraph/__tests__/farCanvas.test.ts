@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { drawFarScene, farSceneFor, prepareFarDrawing, type FarPalette } from '../farCanvas';
+import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarPalette } from '../farCanvas';
 import { groupBox, nodeHeight, sceneFor, wirePaths } from '../geometry';
 import { buildGraphModel, savedPositions } from '../graphModel';
 import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
@@ -46,10 +46,42 @@ describe('farSceneFor', () => {
         expect(far.nodes[1].nodeType).toBeNull();
     });
 
+    // The HTML only sets a minimum height, so a node can lay out shorter than the model estimates.
+    it('uses the laid-out height of a node when the view measured one', () => {
+        const scene = sceneFor(model, 'saved', new Set());
+        const far = farSceneFor(model, positions, new Set(), new Set(), scene, [], new Map([['2', 77]]));
+        expect(far.nodes.find((node) => node.id === '2')?.h).toBe(77);
+        expect(far.nodes.find((node) => node.id === '1')?.h).toBe(nodeHeight(model.nodes[0], false));
+    });
+
     it('leaves out the members of a folded group and draws the group shut', () => {
         const { far } = farScene(new Set(), new Set([groupKey]));
         expect(far.nodes.map((node) => node.id)).toEqual(['2', '3', '4']);
         expect(far.groups).toEqual([{ key: groupKey, title: 'Loaders', shut: true, ...groupBox(model.groups[0], true) }]);
+    });
+});
+
+describe('readFarPalette', () => {
+    // A workflow often starts with a Note: its colours must not paint every other far box.
+    it('takes the node looks from real nodes, never from a note', () => {
+        const layer = document.createElement('div');
+        layer.innerHTML = [
+            '<div class="wg-node note" style="background-color: rgb(1, 1, 1)"></div>',
+            '<div class="wg-node note bypass" style="background-color: rgb(2, 2, 2)"></div>',
+            '<div class="wg-node note mute" style="background-color: rgb(3, 3, 3)"></div>',
+            '<div class="wg-node" style="background-color: rgb(10, 10, 10)"></div>',
+            '<div class="wg-node bypass" style="background-color: rgb(20, 20, 20)"></div>',
+            '<div class="wg-node mute" style="background-color: rgb(30, 30, 30)"></div>',
+        ].join('');
+        document.body.appendChild(layer);
+        try {
+            const palette = readFarPalette(layer);
+            expect(palette.node.plain.fill).toBe('rgb(10, 10, 10)');
+            expect(palette.node.bypass.fill).toBe('rgb(20, 20, 20)');
+            expect(palette.node.mute.fill).toBe('rgb(30, 30, 30)');
+        } finally {
+            layer.remove();
+        }
     });
 });
 

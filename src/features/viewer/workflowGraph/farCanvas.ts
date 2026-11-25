@@ -26,14 +26,18 @@ export interface FarScene {
     wires: WirePath[];
 }
 
-/** What the HTML view would show, as plain boxes. Hidden members of folded groups are left out, as there. */
+/**
+ * What the HTML view would show, as plain boxes. Hidden members of folded groups are left out, as there. The HTML
+ * sets only a minimum height, so a node's laid-out height, when given, wins over the model's estimate.
+ */
 export const farSceneFor = (
     model: GraphModel,
     positions: Positions,
     foldedNodes: ReadonlySet<string>,
     foldedGroups: ReadonlySet<string>,
     scene: Scene,
-    wires: WirePath[]
+    wires: WirePath[],
+    laidOut: ReadonlyMap<string, number> = new Map()
 ): FarScene => ({
     groups: model.groups
         .filter((group) => !scene.hiddenGroups.has(group.key))
@@ -45,7 +49,7 @@ export const farSceneFor = (
         const at = positions.get(node.id);
         if (!at || scene.hiddenBy.has(node.id)) return [];
         const folded = foldedNodes.has(node.id);
-        const h = nodeHeight(node, folded);
+        const h = laidOut.get(node.id) ?? nodeHeight(node, folded);
         const variant =
             node.kind === 'reroute' ? 'reroute' : node.mode === 'bypassed' ? 'bypass' : node.mode === 'muted' ? 'mute' : 'plain';
         return [
@@ -88,7 +92,8 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
             dashed: style.borderLeftStyle === 'dashed',
         };
     };
-    const plain = nodeStyle('.wg-node:not(.reroute):not(.bypass):not(.mute)', null);
+    // Notes have their own colours in the HTML, so they never stand in for the other looks.
+    const plain = nodeStyle('.wg-node:not(.reroute):not(.bypass):not(.mute):not(.note)', null);
     const wire: FarPalette['wire'] = {};
     layer.querySelectorAll<SVGPathElement>('.wg-wire').forEach((path) => {
         const type = /\bt-([a-z]+)\b/.exec(path.getAttribute('class') ?? '')?.[1] as WireType | undefined;
@@ -109,8 +114,8 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
         muted,
         node: {
             plain,
-            bypass: nodeStyle('.wg-node.bypass', plain),
-            mute: nodeStyle('.wg-node.mute', { ...plain, alpha: 0.45 }),
+            bypass: nodeStyle('.wg-node.bypass:not(.note)', plain),
+            mute: nodeStyle('.wg-node.mute:not(.note)', { ...plain, alpha: 0.45 }),
             reroute: nodeStyle('.wg-node.reroute', plain),
         },
         wire,
