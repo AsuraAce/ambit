@@ -4249,6 +4249,38 @@ describe('Library Integration (Provider Stack)', () => {
                 await expectLiveWatchWaitsForSwitchRepair(getSync, facets);
             });
 
+            it('makes Live Watch wait for the repair after a switch catch-up that imported images', async () => {
+                const { getSync } = await startOwnerA();
+                // B's source changed, so its catch-up imports; the restored plan defers no repair of its own.
+                mocks.getInvokeDbSnapshot.mockResolvedValue({
+                    status: 'ok',
+                    data: { dbPath: discovery.dbPath, files: [{ path: discovery.dbPath, exists: true, size: 2000, modifiedMs: 200 }] },
+                });
+                mocks.syncImages.mockResolvedValueOnce({
+                    ...createNoopInvokeSyncResult(),
+                    imported: 1,
+                    maxTimestamp: 200,
+                    touchedFacetTypes: ['loras'],
+                    touchedFacetResources: resources,
+                });
+                mocks.refreshFacetCacheForResourcesStrict.mockClear();
+                const facets = holdFacetBuild();
+                // The switch's own refresh finds B's cache restored; the repair after its catch-up has work.
+                mocks.beginActiveInvokeScopeCacheBuild
+                    .mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('restored'), 5))
+                    .mockResolvedValueOnce(createInvokeScopeCacheClaim(planOf('selective'), 6));
+                applyOwnerB(planOf('restored'));
+                let switching!: Promise<boolean>;
+                act(() => {
+                    switching = selectOwnerB(getSync());
+                });
+
+                await expectLiveWatchWaitsForSwitchRepair(getSync, facets);
+                await act(async () => {
+                    expect(await switching).toBe(true);
+                });
+            });
+
             it('makes Live Watch wait for the repair a cancelled switch catch-up leaves behind the view', async () => {
                 const { getSync } = await startOwnerA();
                 mocks.getInvokeDbSnapshot.mockResolvedValue({
