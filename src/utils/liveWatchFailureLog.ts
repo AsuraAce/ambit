@@ -43,11 +43,14 @@ export const logLiveWatchFailure = (summary: LiveWatchFailureSummary): void => {
     writeWarning(formatLiveWatchFailure(summary));
 };
 
-export const formatLiveWatchRepairStopped = (kind: 'startup'): string =>
+/** The background owner-cache repair kinds Live Watch can stop. */
+export type LiveWatchStoppableRepairKind = 'startup' | 'idle' | 'catch-up';
+
+export const formatLiveWatchRepairStopped = (kind: LiveWatchStoppableRepairKind): string =>
     `[LiveWatch] owner-cache repair stopped for an import kind=${kind} reason=live_import; the idle repair redoes it`;
 
 /** Writes to Ambit.log at WARN that Live Watch stopped a background owner-cache repair. Never throws. */
-export const logLiveWatchRepairStopped = (kind: 'startup'): void => {
+export const logLiveWatchRepairStopped = (kind: LiveWatchStoppableRepairKind): void => {
     writeWarning(formatLiveWatchRepairStopped(kind));
 };
 

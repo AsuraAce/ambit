@@ -82,7 +82,7 @@ const updateInvokeOperation = (id: symbol, patch: Partial<InvokeOperationState>)
     useInvokeOwnerScopeStore.getState().setOperation((previous) => (previous?.id === id ? { ...previous, ...patch } : previous));
 };
 
-type OwnerCacheRepairKind = 'startup' | 'idle' | 'catch-up';
+type OwnerCacheRepairKind = 'startup' | 'idle' | 'catch-up' | 'switch';
 
 // Imports and syncs must be quiet this long before the owner cache is repaired in the background.
 const OWNER_CACHE_IDLE_REPAIR_DELAY_MS = 30_000;
@@ -336,10 +336,10 @@ export const SyncProvider: React.FC<{
     // A startup cache repair that runs after the library is shown (#430). Work that claims the
     // cache or writes images waits for it; an owner-scope change aborts it first.
     // `idle` repairs follow imports and give way to them; `startup` repairs follow the startup
-    // preparation and give way to Live Watch; `catch-up` repairs follow a switch's or an InvokeAI
-    // catch-up and build that scope's cache, so imports wait for them.
+    // preparation and `catch-up` repairs an InvokeAI catch-up of the same scope, and both give way
+    // to Live Watch; `switch` repairs build a newly switched scope's cache, so imports wait for them.
     // `scope` and `draft` identify the cache it builds, so a switch to that same cache can reuse it (#533).
-    // `stoppableByLiveImport` is false when this repair, or one it chains after, is a catch-up repair.
+    // `stoppableByLiveImport` is false when this repair, or one it chains after, is a switch repair.
     const backgroundOwnerCacheRepairRef = useRef<{
         promise: Promise<void>;
         controller: AbortController;
@@ -409,12 +409,13 @@ export const SyncProvider: React.FC<{
         const running = backgroundOwnerCacheRepairRef.current;
         if (running?.kind === 'idle') running.controller.abort();
     }, []);
-    // Live Watch also stops the startup preparation's repair: waiting it out held new files for
-    // minutes. The idle repair after the import redoes it. Returns whether a repair was stopped.
+    // Live Watch also stops startup and catch-up repairs of the current scope: waiting them out
+    // held new files for minutes. The idle repair after the import redoes them. Returns whether a
+    // repair was stopped.
     const stopOwnerCacheRepairForLiveImport = useCallback((): boolean => {
         const running = backgroundOwnerCacheRepairRef.current;
-        if (!running?.stoppableByLiveImport || running.controller.signal.aborted) return false;
-        if (running.kind === 'startup') logLiveWatchRepairStopped(running.kind);
+        if (!running?.stoppableByLiveImport || running.kind === 'switch' || running.controller.signal.aborted) return false;
+        logLiveWatchRepairStopped(running.kind);
         running.controller.abort();
         return true;
     }, []);
@@ -726,7 +727,7 @@ export const SyncProvider: React.FC<{
                 controller,
                 kind,
                 // Stopping a repair also stops the ones it chains after.
-                stoppableByLiveImport: kind !== 'catch-up' && (previous?.stoppableByLiveImport ?? true),
+                stoppableByLiveImport: kind !== 'switch' && (previous?.stoppableByLiveImport ?? true),
                 scope: useInvokeOwnerScopeStore.getState().ownerScopeState.scope,
                 draft: getInvokeConnectionDraft(settingsRef.current),
             };
@@ -1689,7 +1690,7 @@ export const SyncProvider: React.FC<{
                 if (outcome.status !== 'completed')
                     throw new Error(('message' in outcome && outcome.message) || 'Synchronization did not complete.');
                 // Chains after any repair the catch-up started; one that already committed finds the cache restored.
-                if (cacheRepairDeferred) startBackgroundOwnerCacheRepair(undefined, 'catch-up');
+                if (cacheRepairDeferred) startBackgroundOwnerCacheRepair(undefined, 'switch');
                 updateInvokeOperation(token, { phase: 'completed', cancel: undefined, message: 'Synchronization complete.' });
                 return { ...outcome, viewCommitted };
             } catch (error) {
@@ -1802,7 +1803,7 @@ export const SyncProvider: React.FC<{
                         await publish({ lastSyncedAt: targetCursor, invokeDbSnapshot: targetSnapshot, invokeDbSnapshots: snapshots });
                         // A deferred view is the target's own restored cache: repair it behind the view,
                         // where a later switch can stop it, instead of recounting it in the foreground.
-                        if (cacheRepairDeferred) startBackgroundOwnerCacheRepair(undefined, 'catch-up');
+                        if (cacheRepairDeferred) startBackgroundOwnerCacheRepair(undefined, 'switch');
                         else await refreshAfterOwnerScopeChange();
                     } catch (recoveryError) {
                         message += ` Recovery needs attention: ${String(recoveryError)}`;
@@ -2606,6 +2607,9 @@ export const SyncProvider: React.FC<{
                             throwIfInvokeAborted(ctrl.signal);
                         }
                         await invokeSyncTrace.measure(operationId, 'checkpoint', () => persistInvokeSnapshot(snapshotCursor));
+                        // A switch's catch-up builds the new owner's cache; any other catch-up repairs
+                        // the current scope, which Live Watch may stop and the idle repair redoes.
+                        const repairKind = options.ownerTransitionToken ? 'switch' : 'catch-up';
                         startBackgroundOwnerCacheRepair(async (signal) => {
                             if (ownerCacheRepairFailedRef.current) {
                                 // The claim plan still holds what the failed repair left dirty, so
@@ -2627,14 +2631,17 @@ export const SyncProvider: React.FC<{
                                 throwIfInvokeAborted(signal);
                                 if (claim.cacheRepair.action !== 'restored') {
                                     await unwrap(
-                                        commands.commitActiveInvokeScopeCache({ scopeKey: claim.scopeKey, generation: claim.generation })
+                                        commands.commitActiveInvokeScopeCache({
+                                            scopeKey: claim.scopeKey,
+                                            generation: claim.generation,
+                                        })
                                     );
                                 }
                             } catch (error) {
                                 await abortInvokeScopeCacheClaim(claim, 'startup filter refresh');
                                 throw error;
                             }
-                        }, 'catch-up');
+                        }, repairKind);
                         syncOutcome = { status: 'completed' };
                         return syncOutcome;
                     } else {
@@ -2943,10 +2950,12 @@ export const SyncProvider: React.FC<{
 
                 while (pendingTargetedPathsRef.current.size > 0) {
                     // Imports would invalidate a running cache repair; new paths keep queueing meanwhile.
-                    // An idle or startup repair is stopped and only waited for until it settles;
-                    // a catch-up repair builds a switched scope's cache and is waited out.
-                    if (stopOwnerCacheRepairForLiveImport()) stoppedRepair = true;
-                    await waitForBackgroundOwnerCacheRepair();
+                    // A repair of the current scope is stopped and only waited for until it settles,
+                    // including one that starts during the wait; a switch repair is waited out.
+                    for (let running = backgroundOwnerCacheRepairRef.current; running; running = backgroundOwnerCacheRepairRef.current) {
+                        if (stopOwnerCacheRepairForLiveImport()) stoppedRepair = true;
+                        await running.promise;
+                    }
                     const cyclePerfContext = pendingTargetedPerfRef.current;
                     const nextBatch = Array.from(pendingTargetedPathsRef.current);
                     pendingTargetedPathsRef.current.clear();
@@ -3093,7 +3102,6 @@ export const SyncProvider: React.FC<{
             reportLiveImagesReceived,
             startLiveWatchSession,
             updateLiveWatchSession,
-            waitForBackgroundOwnerCacheRepair,
             stopOwnerCacheRepairForLiveImport,
             scheduleOwnerCacheIdleRepair,
         ]
