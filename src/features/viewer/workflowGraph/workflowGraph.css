@@ -1,0 +1,683 @@
+/* Workflow graph: ported from the vault piece UX-L267 (Full canvas). Always a dark canvas. */
+
+.wg-layer {
+    --wg-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --wg-spring: cubic-bezier(0.16, 1, 0.3, 1);
+    --wg-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --wg-ww: 2.2px;
+
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--graph-canvas);
+    color: var(--graph-text);
+    font-size: 13px;
+    line-height: 1.45;
+    outline: none;
+    -webkit-font-smoothing: antialiased;
+}
+
+.wg-layer *,
+.wg-layer *::before,
+.wg-layer *::after {
+    box-sizing: border-box;
+}
+
+.wg-layer button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+/* App bar */
+.wg-appbar {
+    height: 46px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px;
+    background-color: var(--graph-surface);
+    border-bottom: 1px solid var(--graph-line);
+}
+
+.wg-appbar .wg-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.wg-badge {
+    flex: none;
+    padding: 1px 8px;
+    border-radius: 99px;
+    border: 1px solid var(--graph-line-hi);
+    color: var(--graph-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.wg-appbar .wg-count {
+    margin-left: auto;
+    flex: none;
+    color: var(--graph-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Canvas */
+.wg-canvas {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    cursor: default;
+    touch-action: none;
+    user-select: none;
+}
+
+.wg-canvas.panning {
+    cursor: grabbing;
+}
+
+.wg-dots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle, var(--graph-dot) 1px, transparent 1.2px);
+}
+
+.wg-world {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+    --inv: 1;
+}
+
+.wg-wires {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: visible;
+    pointer-events: none;
+    transition: opacity 200ms var(--wg-out);
+}
+
+.wg-world.moving .wg-wires {
+    opacity: 0;
+}
+
+.wg-wire {
+    fill: none;
+    stroke-width: var(--wg-ww);
+    stroke-linecap: round;
+}
+
+.wg-wire.bypassed {
+    stroke-dasharray: 6 5;
+}
+
+.wg-world.far .wg-wire {
+    stroke-width: calc(var(--wg-ww) * min(var(--inv), 2.4));
+}
+
+.t-model {
+    --pc: var(--wire-model);
+}
+
+.t-clip {
+    --pc: var(--wire-clip);
+}
+
+.t-vae {
+    --pc: var(--wire-vae);
+}
+
+.t-cond {
+    --pc: var(--wire-cond);
+}
+
+.t-latent {
+    --pc: var(--wire-latent);
+}
+
+.t-noise {
+    --pc: var(--wire-noise);
+}
+
+.t-image {
+    --pc: var(--wire-image);
+}
+
+.t-upscale {
+    --pc: var(--wire-upscale);
+}
+
+.t-mask {
+    --pc: var(--wire-mask);
+}
+
+.t-control {
+    --pc: var(--wire-control);
+}
+
+.t-meta {
+    --pc: var(--wire-meta);
+}
+
+.t-any {
+    --pc: var(--wire-any);
+}
+
+.wg-wire {
+    stroke: var(--pc);
+}
+
+/* Groups */
+.wg-group {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--gc) 42%, transparent);
+    background: color-mix(in srgb, var(--gc) 9%, transparent);
+}
+
+.wg-group .wg-gh {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    pointer-events: auto;
+}
+
+.wg-group .wg-gt {
+    font-size: calc(15px * var(--inv));
+    font-weight: 700;
+    color: color-mix(in srgb, var(--gc), var(--graph-text) 55%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.wg-group .wg-gn {
+    font-size: 11px;
+    color: var(--graph-muted);
+    white-space: nowrap;
+}
+
+.wg-world.far .wg-group .wg-gn,
+.wg-world.far .wg-group .wg-cb {
+    display: none;
+}
+
+.wg-group.shut {
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--gc) 16%, var(--graph-surface));
+    box-shadow: 0 8px 22px var(--graph-shadow);
+}
+
+.wg-group.shut .wg-gh {
+    height: 100%;
+}
+
+.wg-gport {
+    position: absolute;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    margin-top: -4.5px;
+    border-radius: 50%;
+    background: var(--graph-muted);
+    border: 2px solid var(--graph-surface);
+}
+
+/* Fold buttons */
+.wg-cb {
+    margin-left: auto;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--graph-muted);
+    padding: 0;
+}
+
+.wg-cb:hover {
+    color: var(--graph-text);
+    border-color: var(--graph-line-hi);
+    background: var(--graph-hover);
+}
+
+.wg-cb svg {
+    transition: transform 260ms var(--wg-spring);
+}
+
+.shut > .wg-gh .wg-cb svg,
+.wg-node.shut .wg-cb svg {
+    transform: rotate(-90deg);
+}
+
+/* Nodes */
+.wg-node {
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 8px;
+    background: var(--graph-surface);
+    border: 1px solid var(--graph-line-hi);
+    border-top-color: var(--graph-line-top);
+    box-shadow: 0 6px 18px var(--graph-shadow);
+}
+
+.wg-world.moving .wg-node {
+    transition: transform 620ms var(--wg-spring);
+}
+
+.wg-node.bypass {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--graph-ember) 55%, transparent);
+    background: color-mix(in srgb, var(--graph-ember-deep) 30%, var(--graph-surface));
+}
+
+.wg-node.bypass .wg-nb {
+    opacity: 0.55;
+}
+
+.wg-node.mute {
+    opacity: 0.45;
+}
+
+.wg-nh {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px 0 9px;
+    border-bottom: 1px solid var(--graph-line);
+    border-radius: 8px 8px 0 0;
+    background: linear-gradient(180deg, var(--graph-wash), transparent);
+}
+
+.wg-node.shut .wg-nh {
+    border-bottom-color: transparent;
+    border-radius: 8px;
+}
+
+.wg-cat {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    background: var(--graph-hover);
+    color: var(--graph-muted);
+}
+
+.wg-nt {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.wg-mark {
+    flex: none;
+    margin-left: auto;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    color: var(--graph-ember);
+    border: 1px solid color-mix(in srgb, var(--graph-ember) 40%, transparent);
+}
+
+.wg-mark.mute {
+    color: var(--graph-muted);
+    border-color: var(--graph-line-hi);
+}
+
+.wg-mark + .wg-cb {
+    margin-left: 2px;
+}
+
+.wg-nb {
+    padding: 5px 0 8px;
+}
+
+.wg-slots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.wg-slot {
+    position: relative;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+    color: var(--graph-muted);
+    padding: 0 12px;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.wg-slot span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wg-slot.i {
+    grid-column: 1;
+}
+
+.wg-slot.o {
+    grid-column: 2;
+    justify-content: flex-end;
+}
+
+.wg-port {
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    margin-top: -5px;
+    border-radius: 50%;
+    border: 2px solid var(--pc);
+    background: var(--graph-surface);
+}
+
+.wg-port.on {
+    background: var(--pc);
+}
+
+.wg-slot.i .wg-port {
+    left: -5.5px;
+}
+
+.wg-slot.o .wg-port {
+    right: -5.5px;
+}
+
+.wg-wg {
+    margin: 3px 8px 0;
+    min-height: 22px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    border-radius: 5px;
+    background: var(--graph-wash);
+    border: 1px solid var(--graph-wash);
+    font-size: 11px;
+}
+
+.wg-wg .k {
+    color: var(--graph-muted);
+    white-space: nowrap;
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wg-wg .v {
+    margin-left: auto;
+    color: var(--graph-body);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.wg-wg.txt {
+    display: block;
+    padding: 6px 8px;
+}
+
+.wg-wg.txt .v {
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-align: left;
+    line-height: 1.45;
+}
+
+.wg-node.note {
+    background: color-mix(in srgb, var(--graph-harbor-deep) 60%, var(--graph-surface));
+    border-color: color-mix(in srgb, var(--graph-harbor) 45%, transparent);
+}
+
+.wg-node.note .wg-nb {
+    padding: 8px 11px 10px;
+    color: var(--graph-body);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: hidden;
+}
+
+.wg-node.reroute {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    padding: 0;
+    background: var(--graph-raised);
+}
+
+.wg-node.reroute .wg-port {
+    top: 50%;
+}
+
+.wg-far {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    padding: 4px 10px;
+    pointer-events: none;
+    font-weight: 700;
+    color: var(--graph-text);
+    font-size: calc(12px * min(var(--inv), 2.1));
+    line-height: 1.15;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.wg-far small {
+    display: block;
+    font-weight: 500;
+    color: var(--graph-muted);
+    font-size: 0.72em;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wg-world.far .wg-node:not(.reroute) .wg-nb,
+.wg-world.far .wg-node .wg-nh > * {
+    visibility: hidden;
+}
+
+.wg-world.far .wg-node:not(.reroute) .wg-far {
+    display: flex;
+}
+
+.wg-world.far .wg-node .wg-nh {
+    border-bottom-color: transparent;
+    background: none;
+}
+
+/* Floating controls */
+.wg-frost {
+    background: var(--graph-frost);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid var(--graph-line-hi);
+    box-shadow: 0 10px 30px var(--graph-shadow);
+}
+
+.wg-tb {
+    position: absolute;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px;
+    border-radius: 10px;
+}
+
+.wg-tb.bottom-left {
+    left: 14px;
+    bottom: 14px;
+}
+
+.wg-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--graph-line-hi);
+    margin: 0 2px;
+}
+
+.wg-tbtn {
+    height: 28px;
+    min-width: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--graph-body);
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+        background 150ms,
+        color 150ms,
+        border-color 150ms;
+}
+
+.wg-tbtn:hover {
+    background: var(--graph-hover);
+    color: var(--graph-text);
+}
+
+.wg-tbtn:focus-visible,
+.wg-seg button:focus-visible,
+.wg-cb:focus-visible {
+    outline: 2px solid var(--graph-sage);
+    outline-offset: 1px;
+}
+
+.wg-zoomv {
+    min-width: 44px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--graph-muted);
+    font-size: 12px;
+}
+
+.wg-kbd {
+    display: inline-block;
+    min-width: 17px;
+    padding: 0 4px;
+    border-radius: 4px;
+    border: 1px solid var(--graph-line-hi);
+    color: var(--graph-hint);
+    font-size: 10px;
+    line-height: 15px;
+    text-align: center;
+}
+
+.wg-seg {
+    position: relative;
+    display: flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--graph-shade);
+    border: 1px solid var(--graph-line);
+}
+
+.wg-seg button {
+    position: relative;
+    height: 24px;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--graph-muted);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    transition:
+        color 180ms,
+        background 320ms var(--wg-spring);
+}
+
+.wg-seg button[aria-pressed='true'] {
+    color: var(--graph-text);
+    background: var(--graph-raised);
+    border-color: var(--graph-line-hi);
+}
+
+.wg-seg button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.wg-hint {
+    position: absolute;
+    z-index: 20;
+    left: 50%;
+    top: 14px;
+    translate: -50% 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 99px;
+    font-size: 12px;
+    color: var(--graph-body);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wg-world.moving .wg-node,
+    .wg-wires,
+    .wg-cb svg {
+        transition: none;
+    }
+}
