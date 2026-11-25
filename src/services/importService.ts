@@ -116,6 +116,18 @@ export async function runWithDatabaseWaitNotice<T>(
 
 export type ImportProgressCallback = (current: number, total: number, message?: string, meta?: ImportProgressMeta) => void;
 
+/** Re-reports progress with new counts, passing meta on only when the source had some. */
+const forwardProgress = (
+    onProgress: ImportProgressCallback | undefined,
+    current: number,
+    total: number,
+    message: string | undefined,
+    meta: ImportProgressMeta | undefined
+): void => {
+    if (meta) onProgress?.(current, total, message, meta);
+    else onProgress?.(current, total, message);
+};
+
 export interface ImportOptions {
     onProgress?: ImportProgressCallback;
     abortSignal?: AbortSignal;
@@ -757,7 +769,7 @@ async function processMediaFileEntries(
         stats,
         {
             ...options,
-            onProgress: (current, _imageTotal, message, meta) => options.onProgress?.(current, total, message, meta),
+            onProgress: (current, _imageTotal, message, meta) => forwardProgress(options.onProgress, current, total, message, meta),
         },
         defaultTool
     );
@@ -768,7 +780,8 @@ async function processMediaFileEntries(
 
     const videos = await processVideoFileEntries(videoEntries, stats, {
         ...options,
-        onProgress: (current, _videoTotal, message, meta) => options.onProgress?.(imageEntries.length + current, total, message, meta),
+        onProgress: (current, _videoTotal, message, meta) =>
+            forwardProgress(options.onProgress, imageEntries.length + current, total, message, meta),
     });
 
     return {
