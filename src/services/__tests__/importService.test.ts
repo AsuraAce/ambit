@@ -1,5 +1,6 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    LIVE_WATCH_IMPORT_THUMBNAIL_CAP,
     processFoldersUnified,
     processNativePaths,
     processTargetedFiles,
@@ -28,6 +29,13 @@ const mocks = vi.hoisted(() => ({
     cancelVideoImport: vi.fn(),
     ensureFolderAccessible: vi.fn(async (_path: string) => true),
     filterAccessibleFolders: vi.fn(async (paths: string[]) => paths),
+    getThumbnailDir: vi.fn(),
+}));
+
+const APP_THUMBNAIL_DIR = 'C:/AppData/ambit/.thumbnails';
+
+vi.mock('../thumbnailService', () => ({
+    getThumbnailDir: mocks.getThumbnailDir,
 }));
 
 vi.mock('../assetScope', () => ({
@@ -100,6 +108,7 @@ describe('processTargetedFiles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.listen.mockResolvedValue(vi.fn());
+        mocks.getThumbnailDir.mockResolvedValue(APP_THUMBNAIL_DIR);
         mocks.insertImagesBatch.mockResolvedValue(undefined);
         mocks.rebuildFacetCache.mockResolvedValue(0);
         mocks.dbSelect.mockResolvedValue([]);
@@ -375,7 +384,14 @@ describe('processTargetedFiles', () => {
         expect(result.stats.skipped).toBe(1);
         expect(result.stats.imported).toBe(1);
         expect(result.handledPaths).toEqual(['C:/library/fresh.png']);
-        expect(mocks.scanImagesBulk).toHaveBeenCalledWith(['C:/library/fresh.png'], '', true, true, undefined, expect.any(String));
+        expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
+            ['C:/library/fresh.png'],
+            APP_THUMBNAIL_DIR,
+            false,
+            true,
+            undefined,
+            expect.any(String)
+        );
     });
 
     it('preserves user row state and avoids upsert when timestamp and size are unchanged', async () => {
@@ -988,7 +1004,7 @@ describe('processTargetedFiles', () => {
         expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
             ['C:/drop/b.png', 'C:/drop/a.png'],
             '',
-            false,
+            true,
             true,
             undefined,
             expect.any(String)
@@ -1683,6 +1699,84 @@ describe('processTargetedFiles', () => {
         const persisted = mocks.insertImagesBatch.mock.calls[0][0] as AIImage[];
         expect(persisted[0].thumbnailUrl).toBe('');
         expect(result.images[0].thumbnailUrl).toBe(result.images[0].url);
+    });
+
+    describe('thumbnails during import', () => {
+        const scannedWithThumbnail = (path: string) => ({
+            path,
+            metadata: { tool: 'ComfyUI', model: 'Live Model' },
+            timestamp: 9000,
+            width: 1024,
+            height: 1024,
+            fileSize: 4_000_000,
+            thumbnail: `${APP_THUMBNAIL_DIR}/live.webp`,
+            thumbnailSource: 'ambit',
+            thumbnailVersion: 3,
+            microThumbnail: 'mini-live',
+            originalChunks: {},
+        });
+
+        it('makes Live Watch thumbnails in the row insert, so a new image never waits for the healer', async () => {
+            mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+            mocks.scanImagesBulk.mockResolvedValueOnce([scannedWithThumbnail('C:/library/live.png')]);
+
+            await processTargetedFiles(['C:/library/live.png'], { forceRescan: true, waitForStableFiles: false });
+
+            expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
+                ['C:/library/live.png'],
+                APP_THUMBNAIL_DIR,
+                false,
+                true,
+                undefined,
+                expect.any(String)
+            );
+            // One insert carries the row and its thumbnail; no second write dirties the owner cache.
+            expect(mocks.insertImagesBatch).toHaveBeenCalledTimes(1);
+            const [persisted] = mocks.insertImagesBatch.mock.calls[0][0] as AIImage[];
+            expect(persisted.thumbnailUrl).toBe(`asset://${APP_THUMBNAIL_DIR}/live.webp`);
+            expect(persisted.thumbnailSource).toBe('ambit');
+            expect(persisted.thumbnailVersion).toBe(3);
+            expect(persisted.microThumbnail).toBe('mini-live');
+        });
+
+        it('leaves a Live Watch burst over the cap to the healer, so a large drop imports as fast as before', async () => {
+            const paths = Array.from({ length: LIVE_WATCH_IMPORT_THUMBNAIL_CAP + 1 }, (_, index) => `C:/library/burst-${index}.png`);
+            mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+            mocks.scanImagesBulk.mockResolvedValueOnce([]);
+
+            await processTargetedFiles(paths, { forceRescan: true });
+
+            expect(mocks.getThumbnailDir).not.toHaveBeenCalled();
+            expect(mocks.scanImagesBulk).toHaveBeenCalledWith(expect.any(Array), '', true, true, undefined, expect.any(String));
+        });
+
+        it('still imports a Live Watch batch when the thumbnail folder cannot be resolved', async () => {
+            mocks.getThumbnailDir.mockResolvedValueOnce(undefined);
+            mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+
+            await processTargetedFiles(['C:/library/live.png'], { forceRescan: true });
+
+            expect(mocks.scanImagesBulk).toHaveBeenCalledWith(['C:/library/live.png'], '', true, true, undefined, expect.any(String));
+        });
+
+        it('keeps folder imports and catch-ups background-only, so their speed does not change', async () => {
+            mocks.getExistingMetadata.mockResolvedValue(new Map());
+            mocks.scanDirectoryWithStats.mockResolvedValue({
+                status: 'ok',
+                data: [{ path: 'C:/library/folder.png', modified: 1000, size: 100 }],
+            });
+            mocks.scanImagesBulk.mockResolvedValue([scannedWithThumbnail('C:/library/folder.png')]);
+
+            await processNativePaths(['C:/library'], undefined, undefined, undefined, undefined, false, true);
+            await processFoldersUnified([{ path: 'C:/library' }], { forceRescan: true });
+
+            expect(mocks.getThumbnailDir).not.toHaveBeenCalled();
+            expect(mocks.scanImagesBulk).toHaveBeenCalledTimes(2);
+            for (const call of mocks.scanImagesBulk.mock.calls) {
+                expect(call[1]).toBe('');
+                expect(call[2]).toBe(true);
+            }
+        });
     });
 
     it('maps sparse native metadata to safe image defaults', async () => {
