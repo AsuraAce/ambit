@@ -1167,7 +1167,12 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
 /**
  * Error message if scan failed or resulted in a partial result
  */
-error: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null }
+error: string | null; 
+/**
+ * Why a requested thumbnail was not made. The scan itself succeeded, so the
+ * image still imports and the healer retries the thumbnail later.
+ */
+thumbnailError: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null }
 export type SourceKind = "generated" | "photograph" | "other"
 /**
  * A bound parameter or a result value: the SQLite types the count reads use.

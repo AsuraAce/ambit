@@ -121,6 +121,7 @@ pub async fn scan_images_bulk(
                         chunks: std::collections::HashMap::new(),
                         metadata: None,
                         error: Some(e),
+                        thumbnail_error: None,
                     });
 
                     let current =

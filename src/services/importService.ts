@@ -27,6 +27,7 @@ import {
 import { classifyImportFailure, type LiveImportFailureKind } from '../utils/liveWatchFailureLog';
 import { listenWithCleanup } from '../utils/tauriListener';
 import { cancelVideoImport, importVideoPaths, type VideoImportSummary } from './videoService';
+import { getThumbnailDir } from './thumbnailService';
 
 /**
  * Queries the database for paths that already exist.
@@ -134,6 +135,8 @@ export interface ImportOptions {
     isStartup?: boolean;
     forceRescan?: boolean;
     skipThumbnail?: boolean;
+    /** Folder for thumbnails made during the scan; without it the scan makes none. */
+    thumbnailDir?: string;
     waitForStableFiles?: boolean;
     deferFacetCacheRefresh?: boolean;
     preserveSourceBoundaries?: boolean;
@@ -244,7 +247,8 @@ async function processImageFileEntries(
     touchedFacetResources: TouchedFacetResources;
     wasCancelled: boolean;
 }> {
-    const { onProgress, abortSignal, forceRescan, skipThumbnail = true, waitForStableFiles, perfContext } = options;
+    const { onProgress, abortSignal, forceRescan, skipThumbnail = true, thumbnailDir, waitForStableFiles, perfContext } = options;
+    const makeThumbnails = !skipThumbnail && !!thumbnailDir;
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
     const failedPaths: string[] = [];
@@ -351,7 +355,14 @@ async function processImageFileEntries(
 
             // true for extractWorkflow (always want full metadata)
             const scanStartedAt = liveWatchNow();
-            const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool, nativeProgressRunId);
+            const results = await scanImagesBulk(
+                chunk,
+                makeThumbnails ? thumbnailDir : '',
+                !makeThumbnails,
+                true,
+                defaultTool,
+                nativeProgressRunId
+            );
             const scanMs = elapsedMs(scanStartedAt);
             if (abortSignal?.aborted) {
                 wasCancelled = true;
@@ -370,6 +381,10 @@ async function processImageFileEntries(
                     failedPaths.push(normalizePath(path));
                     failureKind ??= classifyImportFailure(info.errorReason, 'scan_error');
                     continue; // Skip valid object creation if hard error
+                }
+                if (info.thumbnailError) {
+                    // The row still imports without a thumbnail; the healer makes it later.
+                    console.warn('[Import] Thumbnail not made during import; leaving it to the healer:', info.thumbnailError);
                 }
 
                 const mappedMetadata = mapMetadata(info.metadata);
@@ -1156,10 +1171,14 @@ export const processNativePaths = async (
         forceRescan,
         waitForStableFiles,
         deferFacetCacheRefresh,
-        skipThumbnail: false,
+        // Folder imports and catch-ups leave thumbnails to the background healer.
+        skipThumbnail: true,
         preserveSourceBoundaries: false,
     });
 };
+
+/** The largest Live Watch batch that makes thumbnails during import; larger batches leave them to the healer. */
+export const LIVE_WATCH_IMPORT_THUMBNAIL_CAP = 64;
 
 export const processTargetedFiles = async (
     paths: string[],
@@ -1212,8 +1231,15 @@ export const processTargetedFiles = async (
         mediaType: candidateMediaType({ path: p, modified: 0, size: 0 }) ?? undefined,
     }));
 
+    // Live Watch makes thumbnails in the same row insert, so a new image shows its thumbnail at once.
+    // A large burst leaves them to the background healer to keep the import fast.
+    const thumbnailDir = resolvedPaths.length <= LIVE_WATCH_IMPORT_THUMBNAIL_CAP ? await getThumbnailDir() : undefined;
+    const importOptions: ImportOptions = thumbnailDir
+        ? { ...options, skipThumbnail: false, thumbnailDir }
+        : { ...options, skipThumbnail: true };
+
     console.log(`[Import] Processing ${resolvedPaths.length} targeted paths...`);
-    const imported = await processMediaFileEntries(entries, result.stats, options, defaultTool);
+    const imported = await processMediaFileEntries(entries, result.stats, importOptions, defaultTool);
     result.images = imported.images;
     result.handledPaths = imported.handledPaths;
     result.failedPaths = imported.failedPaths;
