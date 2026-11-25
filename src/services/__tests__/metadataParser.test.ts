@@ -78,6 +78,7 @@ const scanResult = (overrides: Record<string, unknown> = {}) => ({
     chunks: { parameters: 'prompt' },
     metadata: null,
     error: null,
+    thumbnailError: null,
     ...overrides,
 });
 
@@ -292,6 +293,28 @@ describe('metadataParser', () => {
         expect(result.metadata).toEqual({ tool: GeneratorTool.UNKNOWN, model: 'Unknown' });
         expect(result.errorReason).toBe('worker exploded');
         expect(result.thumbnail).toBe('C:/thumbs/a.webp');
+    });
+
+    it('keeps a thumbnail failure apart from the scan error, so the image still imports', async () => {
+        mocks.commands.scanImagesBulk.mockResolvedValue({
+            status: 'ok',
+            data: [
+                scanResult({
+                    thumbnail: '',
+                    thumbnailSource: null,
+                    thumbnailVersion: 0,
+                    thumbnailError: 'Failed to save thumbnail: disk full',
+                    metadata: { tool: GeneratorTool.COMFYUI, model: 'Live Model' },
+                }),
+            ],
+        });
+
+        const { scanImagesBulk } = await import('../metadataParser');
+        const [result] = await scanImagesBulk(['C:/images/a.png'], 'C:/thumbs', false, true);
+
+        expect(result.errorReason).toBeUndefined();
+        expect(result.thumbnailError).toBe('Failed to save thumbnail: disk full');
+        expect(result.metadata.model).toBe('Live Model');
     });
 
     it('bulk scans every returned result against the matching original path', async () => {

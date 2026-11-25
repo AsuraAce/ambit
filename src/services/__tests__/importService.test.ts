@@ -1711,7 +1711,7 @@ describe('processTargetedFiles', () => {
             fileSize: 4_000_000,
             thumbnail: `${APP_THUMBNAIL_DIR}/live.webp`,
             thumbnailSource: 'ambit',
-            thumbnailVersion: 3,
+            thumbnailVersion: 2,
             microThumbnail: 'mini-live',
             originalChunks: {},
         });
@@ -1735,8 +1735,37 @@ describe('processTargetedFiles', () => {
             const [persisted] = mocks.insertImagesBatch.mock.calls[0][0] as AIImage[];
             expect(persisted.thumbnailUrl).toBe(`asset://${APP_THUMBNAIL_DIR}/live.webp`);
             expect(persisted.thumbnailSource).toBe('ambit');
-            expect(persisted.thumbnailVersion).toBe(3);
+            expect(persisted.thumbnailVersion).toBe(2);
             expect(persisted.microThumbnail).toBe('mini-live');
+        });
+
+        it('still imports a Live Watch image whose thumbnail failed, leaving the thumbnail to the healer', async () => {
+            mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+            mocks.scanImagesBulk.mockResolvedValueOnce([
+                {
+                    ...scannedWithThumbnail('C:/library/live.png'),
+                    thumbnail: '',
+                    thumbnailSource: undefined,
+                    thumbnailVersion: 0,
+                    microThumbnail: undefined,
+                    thumbnailError: 'Failed to save thumbnail: disk full',
+                },
+            ]);
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+            const result = await processTargetedFiles(['C:/library/live.png'], { forceRescan: true });
+
+            expect(result.failedPaths).toEqual([]);
+            expect(result.handledPaths).toEqual(['C:/library/live.png']);
+            expect(mocks.insertImagesBatch).toHaveBeenCalledTimes(1);
+            const [persisted] = mocks.insertImagesBatch.mock.calls[0][0] as AIImage[];
+            expect(persisted.thumbnailUrl).toBe('');
+            expect(persisted.metadata.model).toBe('Live Model');
+            // The log names the reason, not the file.
+            const thumbnailWarning = warn.mock.calls.find(([message]) => String(message).includes('Thumbnail not made'));
+            expect(thumbnailWarning).toBeDefined();
+            expect(thumbnailWarning?.join(' ')).not.toContain('live.png');
+            warn.mockRestore();
         });
 
         it('leaves a Live Watch burst over the cap to the healer, so a large drop imports as fast as before', async () => {

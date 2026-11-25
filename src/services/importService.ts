@@ -382,6 +382,10 @@ async function processImageFileEntries(
                     failureKind ??= classifyImportFailure(info.errorReason, 'scan_error');
                     continue; // Skip valid object creation if hard error
                 }
+                if (info.thumbnailError) {
+                    // The row still imports without a thumbnail; the healer makes it later.
+                    console.warn('[Import] Thumbnail not made during import; leaving it to the healer:', info.thumbnailError);
+                }
 
                 const mappedMetadata = mapMetadata(info.metadata);
 

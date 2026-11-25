@@ -43,12 +43,16 @@ const hasGeneratedEvidence = (metadata: Partial<ImageMetadata>): boolean =>
 const scanOrigin = (
     info: ScanResult,
     metadata?: Partial<ImageMetadata>
-): Pick<ParseResult, 'detectedSourceKind' | 'photoMetadata' | 'photoMetadataError' | 'captureWallTimeMs' | 'thumbnailVersion'> => ({
+): Pick<
+    ParseResult,
+    'detectedSourceKind' | 'photoMetadata' | 'photoMetadataError' | 'captureWallTimeMs' | 'thumbnailVersion' | 'thumbnailError'
+> => ({
     detectedSourceKind: metadata && hasGeneratedEvidence(metadata) ? 'generated' : info.detectedSourceKind,
     photoMetadata: info.photoMetadata ?? undefined,
     photoMetadataError: info.photoMetadataError ?? undefined,
     captureWallTimeMs: info.captureWallTimeMs ?? undefined,
     thumbnailVersion: info.thumbnailVersion,
+    thumbnailError: info.thumbnailError ?? undefined,
 });
 
 // Helper to wrap worker messaging in a Promise

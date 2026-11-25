@@ -153,6 +153,8 @@ export interface ParseResult {
     originalChunks?: Record<string, string>; // Raw chunks for re-parsing
     error?: boolean;
     errorReason?: string;
+    /** Why a requested thumbnail was not made; the scan itself succeeded. */
+    thumbnailError?: string;
 }
 
 export interface MissingFileAuditResult {

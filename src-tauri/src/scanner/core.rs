@@ -158,6 +158,7 @@ pub fn scan_image_internal(
                         chunks: HashMap::new(),
                         metadata: None,
                         error: Some(format!("Failed to read image dimensions: {}", e)),
+                        thumbnail_error: None,
                     });
                 }
                 // No thumbnail and no dimensions - this is a real failure
@@ -308,7 +309,8 @@ pub fn scan_image_internal(
         capture_wall_time_ms,
         chunks: chunks_to_return,
         metadata: metadata_obj,
-        error: thumbnail_error,
+        error: None,
+        thumbnail_error,
     })
 }
 
@@ -758,6 +760,38 @@ mod tests {
         );
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(thumbnail_dir);
+    }
+
+    #[test]
+    fn thumbnail_failure_keeps_the_scan_successful_so_the_image_still_imports() {
+        let path = unique_test_path("thumbnail_failure.png");
+        let image = image::RgbImage::from_pixel(3, 2, image::Rgb([8, 16, 24]));
+        image
+            .save_with_format(&path, image::ImageFormat::Png)
+            .expect("write source png");
+        // A file where the thumbnail folder should be: the thumbnail cannot be saved.
+        let blocked_dir = unique_test_path("thumbnail_failure_blocked_dir");
+        std::fs::write(&blocked_dir, b"not a folder").expect("write blocking file");
+
+        let result = scan_image_internal(
+            path.to_string_lossy().to_string(),
+            Some(blocked_dir.to_string_lossy().to_string()),
+            false,
+            true,
+            None,
+        )
+        .expect("scan image whose thumbnail cannot be saved");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&blocked_dir);
+
+        assert_eq!(
+            result.error, None,
+            "a thumbnail failure must not fail the scan, or Live Watch drops the image"
+        );
+        assert!(result.thumbnail_error.is_some());
+        assert!(result.thumbnail.is_empty());
+        assert_eq!(result.thumbnail_source, None);
+        assert_eq!((result.width, result.height), (3, 2));
     }
 
     #[test]

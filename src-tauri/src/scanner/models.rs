@@ -59,6 +59,10 @@ pub struct ScanResult {
     pub metadata: Option<metadata::ImageMetadata>,
     /// Error message if scan failed or resulted in a partial result
     pub error: Option<String>,
+    /// Why a requested thumbnail was not made. The scan itself succeeded, so the
+    /// image still imports and the healer retries the thumbnail later.
+    #[serde(rename = "thumbnailError")]
+    pub thumbnail_error: Option<String>,
     #[serde(rename = "thumbnailVersion")]
     pub thumbnail_version: u32,
     #[serde(rename = "detectedSourceKind")]
