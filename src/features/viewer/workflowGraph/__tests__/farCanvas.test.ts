@@ -1,0 +1,102 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { drawFarScene, farSceneFor, prepareFarDrawing, type FarPalette } from '../farCanvas';
+import { groupBox, nodeHeight, sceneFor, wirePaths } from '../geometry';
+import { buildGraphModel, savedPositions } from '../graphModel';
+import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
+
+const model = buildGraphModel(
+    level(
+        [
+            canvasNode('1', { title: 'Load', nodeType: 'CheckpointLoader', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+            canvasNode('2', { title: 'KSampler', pos: { x: 400, y: 80 }, inputs: [port(0, 'LATENT')], mode: 'bypassed' }),
+            canvasNode('3', { title: 'Old', pos: { x: 400, y: 400 }, mode: 'muted' }),
+            canvasNode('4', { kind: 'reroute', pos: { x: 700, y: 120 } }),
+        ],
+        [canvasLink('1', 0, '2', 0)],
+        [canvasGroup('Loaders', 0, 0, 300, 300)]
+    )
+);
+const positions = savedPositions(model);
+const groupKey = model.groups[0].key;
+
+const farScene = (foldedNodes: ReadonlySet<string>, foldedGroups: ReadonlySet<string>) => {
+    const scene = sceneFor(model, 'saved', foldedGroups);
+    const wires = wirePaths(model, positions, foldedNodes, scene, 'bundled');
+    return { far: farSceneFor(model, positions, foldedNodes, foldedGroups, scene, wires), wires };
+};
+
+describe('farSceneFor', () => {
+    // Far mode is presentation only: a box sits exactly where the HTML node does, at the height the view uses.
+    it('draws every shown node at its position and height, with the same wires', () => {
+        const folded = new Set(['3']);
+        const { far, wires } = farScene(folded, new Set());
+        expect(far.nodes.map((node) => node.id)).toEqual(['1', '2', '3', '4']);
+        for (const box of far.nodes) {
+            const node = model.nodes.find((candidate) => candidate.id === box.id)!;
+            expect({ x: box.x, y: box.y, w: box.w, h: box.h }).toEqual({
+                ...positions.get(box.id),
+                w: node.width,
+                h: nodeHeight(node, folded.has(node.id)),
+            });
+        }
+        expect(far.wires).toBe(wires);
+        expect(far.nodes.map((node) => node.variant)).toEqual(['plain', 'bypass', 'mute', 'reroute']);
+        // The type is a second line only when the title does not already say it.
+        expect(far.nodes[0].nodeType).toBe('CheckpointLoader');
+        expect(far.nodes[1].nodeType).toBeNull();
+    });
+
+    it('leaves out the members of a folded group and draws the group shut', () => {
+        const { far } = farScene(new Set(), new Set([groupKey]));
+        expect(far.nodes.map((node) => node.id)).toEqual(['2', '3', '4']);
+        expect(far.groups).toEqual([{ key: groupKey, title: 'Loaders', shut: true, ...groupBox(model.groups[0], true) }]);
+    });
+});
+
+describe('drawFarScene', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('paints each group, wire and node, and the title of each node that is not a reroute', () => {
+        const boxes: number[] = [];
+        vi.stubGlobal(
+            'Path2D',
+            class {
+                constructor(readonly d = '') {}
+                roundRect() {
+                    boxes.push(1);
+                }
+            }
+        );
+        const calls: string[] = [];
+        const texts: string[] = [];
+        const ctx = new Proxy(
+            { canvas: { width: 800, height: 600 }, measureText: (text: string) => ({ width: text.length }) },
+            {
+                get: (target, key) =>
+                    key in target
+                        ? target[key as keyof typeof target]
+                        : (...args: unknown[]) => {
+                              calls.push(String(key));
+                              if (key === 'fillText') texts.push(String(args[0]));
+                          },
+                set: () => true,
+            }
+        ) as unknown as CanvasRenderingContext2D;
+        const look = { fill: 'a', stroke: 'b', alpha: 1, dashed: false };
+        const palette: FarPalette = {
+            font: 'f',
+            text: 't',
+            muted: 'm',
+            node: { plain: look, bypass: look, mute: look, reroute: look },
+            wire: {},
+            group: new Map([[groupKey, { fill: 'g', stroke: 'g', title: 'g' }]]),
+        };
+        const { far } = farScene(new Set(), new Set());
+        // Paths and labels are built once; a frame replays them, one batch per look.
+        const drawing = prepareFarDrawing(ctx, far, palette);
+        expect(boxes).toHaveLength(far.groups.length + far.nodes.length);
+        drawFarScene(ctx, drawing, { x: 0, y: 0, s: 0.2 }, 2);
+        expect(calls.filter((call) => call === 'fill')).toHaveLength(far.groups.length + 4);
+        expect(texts).toEqual(['Load', 'KSampler', 'Old', 'CheckpointLoader', 'KSampler', 'Loaders']);
+    });
+});

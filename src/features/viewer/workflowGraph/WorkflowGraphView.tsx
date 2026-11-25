@@ -8,15 +8,18 @@ import {
     FAR_SCALE,
     fitView,
     groupBox,
+    nodeHeight,
     sceneFor,
     startView,
     wirePaths,
     zoomAt,
     type LayoutMode,
+    type Rect,
     type View,
     type WireShape,
 } from './geometry';
 import { groupColour, type Palette } from './groupColour';
+import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
 import { GraphNode } from './GraphNode';
 import { createLayoutWorker, useTidyPositions } from './useTidyPositions';
 import './workflowGraph.css';
@@ -33,12 +36,6 @@ const MOVE_MS = 620;
 const PAN_THRESHOLD = 3;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/** In far mode wires and node labels stop growing at these scales; group titles keep growing. */
-const WIRE_SCALE_CAP = 2.4;
-const LABEL_SCALE_CAP = 2.1;
-/** Rounds a scale to an eighth of an octave, so continuous zoom changes it in a few steps. */
-const stepped = (scale: number) => Number((2 ** (Math.round(Math.log2(scale) * 8) / 8)).toFixed(4));
 
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -74,13 +71,18 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const worldRef = React.useRef<HTMLDivElement>(null);
     const dotsRef = React.useRef<HTMLDivElement>(null);
     const zoomRef = React.useRef<HTMLSpanElement>(null);
-    const wiresRef = React.useRef<SVGSVGElement>(null);
-    const groupsRef = React.useRef<HTMLDivElement>(null);
+    const farRef = React.useRef<HTMLCanvasElement>(null);
     const viewRef = React.useRef<View>({ x: 0, y: 0, s: 1 });
     const flightRef = React.useRef<number | null>(null);
     const frameRef = React.useRef<number | null>(null);
     const rectRef = React.useRef<DOMRect | null>(null);
-    const writtenRef = React.useRef({ far: false, wire: '1', label: '1', group: '1' });
+    const isFarRef = React.useRef(false);
+    // The far drawing is built from the rendered graph on first use and dropped whenever the graph changes.
+    const farDrawingRef = React.useRef<FarDrawing | null>(null);
+    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires });
+    React.useLayoutEffect(() => {
+        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires };
+    });
 
     // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
     const setGraphOpen = useWorkflowGraphStore((state) => state.setOpen);
@@ -90,39 +92,70 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         return () => setGraphOpen(false);
     }, [setGraphOpen]);
 
-    // Pan and zoom never re-render React: one transform on the world, the dot grid and the readout.
-    // Far mode keeps wires, labels and group titles readable by scaling them against the zoom. Each scale is
-    // written in eighth-octave steps, only when its step changes, and only on the element that holds what it
-    // scales: a custom property restyles everything below where it is set.
+    // The canvas fills the window, so its rect changes only on resize; reading it per event forces layout.
+    const canvasRect = React.useCallback(() => {
+        if (!rectRef.current && canvasRef.current) rectRef.current = canvasRef.current.getBoundingClientRect();
+        return rectRef.current;
+    }, []);
+
+    // Far mode hides the HTML world and paints plain boxes, wires and titles on one canvas the size of the view,
+    // so a pan or zoom step repaints a few hundred shapes instead of every node's elements.
+    const drawFar = React.useCallback(() => {
+        const canvas = farRef.current;
+        const layer = rootRef.current;
+        const rect = canvasRect();
+        if (!canvas || !layer || !rect || rect.width === 0 || rect.height === 0) return;
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.round(rect.width * dpr);
+        const height = Math.round(rect.height * dpr);
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        let drawing = farDrawingRef.current;
+        if (!drawing) {
+            const inputs = farInputs.current;
+            if (!inputs.positions) return;
+            const farScene = farSceneFor(
+                inputs.model,
+                inputs.positions,
+                inputs.foldedNodes,
+                inputs.foldedGroups,
+                inputs.scene,
+                inputs.wires
+            );
+            drawing = prepareFarDrawing(ctx, farScene, readFarPalette(layer));
+            farDrawingRef.current = drawing;
+        }
+        drawFarScene(ctx, drawing, viewRef.current, dpr);
+    }, [canvasRect]);
+
+    // Pan and zoom never re-render React: one transform on the world, the far canvas, the dot grid and the readout.
     const apply = React.useCallback(() => {
         const { x, y, s } = viewRef.current;
         const world = worldRef.current;
+        const far = s < FAR_SCALE;
         if (world) {
             world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
-            const far = s < FAR_SCALE;
-            const inv = far ? 1 / s : 1;
-            const written = writtenRef.current;
-            if (far !== written.far) {
-                written.far = far;
+            if (far !== isFarRef.current) {
+                isFarRef.current = far;
                 world.classList.toggle('far', far);
             }
-            const write = (key: 'wire' | 'label' | 'group', element: HTMLElement | SVGElement | null, scale: number) => {
-                const value = String(stepped(scale));
-                if (value === written[key] || !element) return;
-                written[key] = value;
-                element.style.setProperty(`--wg-${key}-k`, value);
-            };
-            write('wire', wiresRef.current, Math.min(inv, WIRE_SCALE_CAP));
-            write('label', world, Math.min(inv, LABEL_SCALE_CAP));
-            write('group', groupsRef.current, inv);
         }
+        if (far) drawFar();
         const dots = dotsRef.current;
         if (dots) {
             dots.style.backgroundSize = `${22 * s}px ${22 * s}px`;
             dots.style.backgroundPosition = `${x}px ${y}px`;
         }
         if (zoomRef.current) zoomRef.current.textContent = `${Math.round(s * 100)}%`;
-    }, []);
+    }, [drawFar]);
+
+    // A changed graph (layout, folds) is redrawn at once when far mode is showing it.
+    React.useLayoutEffect(() => {
+        farDrawingRef.current = null;
+        if (isFarRef.current) drawFar();
+    }, [model, positions, foldedNodes, foldedGroups, scene, wires, drawFar]);
 
     // Wheel and pointer input can arrive several times a frame: the view is drawn once per frame.
     const scheduleApply = React.useCallback(() => {
@@ -144,18 +177,14 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         flightRef.current = null;
     };
 
-    // The canvas fills the window, so its rect changes only on resize; reading it per event forces layout.
-    const canvasRect = React.useCallback(() => {
-        if (!rectRef.current && canvasRef.current) rectRef.current = canvasRef.current.getBoundingClientRect();
-        return rectRef.current;
-    }, []);
     React.useEffect(() => {
         const forget = () => {
             rectRef.current = null;
+            if (isFarRef.current) scheduleApply();
         };
         window.addEventListener('resize', forget);
         return () => window.removeEventListener('resize', forget);
-    }, []);
+    }, [scheduleApply]);
 
     const flyTo = React.useCallback(
         (target: View) => {
@@ -210,6 +239,25 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         },
         [apply, viewportSize]
     );
+
+    // Far mode shows no controls. Tabbing onto a node's or group's fold button there zooms in to it, so the
+    // focused control and its title are on screen; screen readers already hear the title in its label.
+    const handleWorldFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+        if (!isFarRef.current || !(event.target instanceof Element)) return;
+        const current = latest.current;
+        const nodeId = event.target.closest('[data-node-id]')?.getAttribute('data-node-id');
+        const groupKey = event.target.closest('[data-group-key]')?.getAttribute('data-group-key');
+        let box: Rect | null = null;
+        const node = nodeId ? model.nodes.find((candidate) => candidate.id === nodeId) : undefined;
+        const at = node ? current.positions?.get(node.id) : undefined;
+        if (node && at) box = { x: at.x, y: at.y, w: node.width, h: nodeHeight(node, current.foldedNodes.has(node.id)) };
+        const group = groupKey ? model.groups.find((candidate) => candidate.key === groupKey) : undefined;
+        if (group) box = groupBox(group, current.foldedGroups.has(group.key));
+        if (!box) return;
+        const { w, h } = viewportSize();
+        const top = box.h > h - 48 ? 24 - box.y : h / 2 - (box.y + box.h / 2);
+        flyTo({ s: 1, x: w / 2 - (box.x + box.w / 2), y: top });
+    };
 
     // First view once there is something to show; later layout switches glide and refit.
     const shownRef = React.useRef<Positions | null>(null);
@@ -406,10 +454,10 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 onPointerCancel={endDrag}
             >
                 <div ref={dotsRef} className="wg-dots" />
-                <div ref={worldRef} className="wg-world" data-testid="workflow-graph-world">
+                <div ref={worldRef} className="wg-world" data-testid="workflow-graph-world" onFocus={handleWorldFocus}>
                     {positions ? (
                         <>
-                            <svg ref={wiresRef} className="wg-wires" aria-hidden="true">
+                            <svg className="wg-wires" aria-hidden="true">
                                 {wires.map((wire) => (
                                     <path
                                         key={wire.key}
@@ -418,44 +466,47 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                     />
                                 ))}
                             </svg>
-                            <div ref={groupsRef} className="wg-groups">
-                                {model.groups.map((group) => {
-                                    if (scene.hiddenGroups.has(group.key)) return null;
-                                    const shut = foldedGroups.has(group.key);
-                                    const box = groupBox(group, shut);
-                                    const style = {
-                                        transform: `translate(${box.x}px, ${box.y}px)`,
-                                        width: box.w,
-                                        height: box.h,
-                                        // In Familiar this is the file's own colour, checked to be plain hex: user content,
-                                        // as docs/design-system.md "Exceptions" allows.
-                                        '--gc': groupColour(group.color, palette),
-                                    } as React.CSSProperties;
-                                    return (
-                                        <div key={group.key} className={shut ? 'wg-group shut' : 'wg-group'} style={style}>
-                                            <div className="wg-gh">
-                                                <span className="wg-gt">{group.title}</span>
-                                                <span className="wg-gn">{group.members.length} nodes</span>
-                                                <button
-                                                    type="button"
-                                                    className="wg-cb"
-                                                    aria-label={shut ? `Unfold group ${group.title}` : `Fold group ${group.title}`}
-                                                    aria-expanded={!shut}
-                                                    onClick={() => toggleGroup(group.key)}
-                                                >
-                                                    <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
-                                                </button>
-                                            </div>
-                                            {shut ? (
-                                                <>
-                                                    <span className="wg-gport" style={{ left: -5 }} />
-                                                    <span className="wg-gport" style={{ right: -5 }} />
-                                                </>
-                                            ) : null}
+                            {model.groups.map((group) => {
+                                if (scene.hiddenGroups.has(group.key)) return null;
+                                const shut = foldedGroups.has(group.key);
+                                const box = groupBox(group, shut);
+                                const style = {
+                                    transform: `translate(${box.x}px, ${box.y}px)`,
+                                    width: box.w,
+                                    height: box.h,
+                                    // In Familiar this is the file's own colour, checked to be plain hex: user content,
+                                    // as docs/design-system.md "Exceptions" allows.
+                                    '--gc': groupColour(group.color, palette),
+                                } as React.CSSProperties;
+                                return (
+                                    <div
+                                        key={group.key}
+                                        className={shut ? 'wg-group shut' : 'wg-group'}
+                                        style={style}
+                                        data-group-key={group.key}
+                                    >
+                                        <div className="wg-gh">
+                                            <span className="wg-gt">{group.title}</span>
+                                            <span className="wg-gn">{group.members.length} nodes</span>
+                                            <button
+                                                type="button"
+                                                className="wg-cb"
+                                                aria-label={shut ? `Unfold group ${group.title}` : `Fold group ${group.title}`}
+                                                aria-expanded={!shut}
+                                                onClick={() => toggleGroup(group.key)}
+                                            >
+                                                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+                                            </button>
                                         </div>
-                                    );
-                                })}
-                            </div>
+                                        {shut ? (
+                                            <>
+                                                <span className="wg-gport" style={{ left: -5 }} />
+                                                <span className="wg-gport" style={{ right: -5 }} />
+                                            </>
+                                        ) : null}
+                                    </div>
+                                );
+                            })}
                             {model.nodes.map((node) => {
                                 const at = positions.get(node.id);
                                 if (!at || scene.hiddenBy.has(node.id)) return null;
@@ -472,6 +523,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                         </>
                     ) : null}
                 </div>
+                <canvas ref={farRef} className="wg-farcanvas" aria-hidden="true" />
                 {hint ? (
                     <div className="wg-hint wg-frost" role="status">
                         {hint}

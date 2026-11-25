@@ -101,10 +101,6 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({ node, at, folded, onToggleFol
                     ))}
                 </div>
             )}
-            <div className="wg-far" aria-hidden="true">
-                {node.title}
-                {node.title !== node.nodeType ? <small>{node.nodeType}</small> : null}
-            </div>
         </div>
     );
 };

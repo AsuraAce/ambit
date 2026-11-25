@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
+import { FAR_SCALE } from '../geometry';
 import { handleLayoutRequest, type LayoutRequest, type LayoutResponse } from '../tidyLayout';
 import { LAYOUT_TIME_CAP_MS } from '../useTidyPositions';
 import WorkflowGraphView from '../WorkflowGraphView';
@@ -36,7 +37,6 @@ const graph = report(
     )
 );
 
-/** A node title is drawn twice: in its header and as the far-zoom label. */
 const shown = (text: string) => screen.queryAllByText(text).length > 0;
 
 const renderGraph = (onClose = vi.fn()) => {
@@ -176,16 +176,13 @@ describe('WorkflowGraphView', () => {
         }
     });
 
-    // Wheel events come faster than frames: the view is drawn once per frame, and the far-mode scales are
-    // written below the world, so a zoom step never restyles every node.
-    it('draws wheel zoom once per frame and keeps far-mode scales off the world', () => {
+    // Wheel events come faster than frames: the view is drawn once per frame.
+    it('draws wheel zoom once per frame', () => {
         const frames: FrameRequestCallback[] = [];
         const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
         try {
             const { container } = renderGraph();
             const world = screen.getByTestId('workflow-graph-world');
-            for (let i = 0; i < 12; i++) fireEvent.keyDown(document.body, { key: '-' });
-            expect(world.classList.contains('far')).toBe(true);
             const before = world.style.transform;
             const canvas = container.ownerDocument.querySelector('.wg-canvas') as HTMLElement;
             for (let i = 0; i < 10; i++) fireEvent.wheel(canvas, { deltaY: -20, clientX: 100, clientY: 100 });
@@ -194,12 +191,54 @@ describe('WorkflowGraphView', () => {
             expect(pending).toHaveLength(1);
             act(() => pending[0](performance.now()));
             expect(world.style.transform).not.toBe(before);
-            expect(world.style.getPropertyValue('--wg-group-k')).toBe('');
-            expect(world.style.getPropertyValue('--wg-wire-k')).toBe('');
-            const groups = container.ownerDocument.querySelector('.wg-groups') as HTMLElement;
-            expect(Number(groups.style.getPropertyValue('--wg-group-k'))).toBeGreaterThan(2);
         } finally {
             raf.mockRestore();
+        }
+    });
+
+    // The far canvas replaces how the graph is drawn, never when: far mode starts below FAR_SCALE exactly.
+    it('switches to far mode below FAR_SCALE, with the far canvas hidden from assistive technology', () => {
+        const { container } = renderGraph();
+        const world = screen.getByTestId('workflow-graph-world');
+        const scale = () => Number(/scale\(([\d.e-]+)\)/.exec(world.style.transform)?.[1]);
+        for (let i = 0; i < 14; i++) {
+            fireEvent.keyDown(document.body, { key: '-' });
+            expect(world.classList.contains('far')).toBe(scale() < FAR_SCALE);
+        }
+        expect(world.classList.contains('far')).toBe(true);
+        expect(container.ownerDocument.querySelector('.wg-farcanvas')?.getAttribute('aria-hidden')).toBe('true');
+        for (let i = 0; i < 14; i++) {
+            fireEvent.keyDown(document.body, { key: '+' });
+            expect(world.classList.contains('far')).toBe(scale() < FAR_SCALE);
+        }
+        expect(world.classList.contains('far')).toBe(false);
+    });
+
+    // Far mode shows no controls, so keyboard focus on a fold button there zooms in to what it folds.
+    it('zooms in to a node or group when its fold button gets focus in far mode', () => {
+        const original = window.matchMedia;
+        window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+        try {
+            renderGraph();
+            const world = screen.getByTestId('workflow-graph-world');
+            const zoomOut = () => {
+                for (let i = 0; i < 14; i++) fireEvent.keyDown(document.body, { key: '-' });
+                expect(world.classList.contains('far')).toBe(true);
+            };
+            zoomOut();
+            act(() => screen.getByRole('button', { name: 'Fold Decode' }).focus());
+            expect(world.classList.contains('far')).toBe(false);
+            expect(world.style.transform).toMatch(/scale\(1\)$/);
+            // Focus moving within near mode leaves the view alone.
+            const near = world.style.transform;
+            act(() => screen.getByRole('button', { name: 'Fold group Sampling' }).focus());
+            expect(world.style.transform).toBe(near);
+            zoomOut();
+            act(() => screen.getByRole('button', { name: 'Fold Decode' }).focus());
+            act(() => screen.getByRole('button', { name: 'Fold group Sampling' }).focus());
+            expect(world.classList.contains('far')).toBe(false);
+        } finally {
+            window.matchMedia = original;
         }
     });
 });
