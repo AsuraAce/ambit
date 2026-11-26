@@ -192,6 +192,12 @@
     }
 }
 
+/* The dots belong to the near view: in far mode the world is unpainted, and they stop. */
+.wg-world.far .wg-flow {
+    display: none;
+    animation: none;
+}
+
 .t-model {
     --pc: var(--wire-model);
 }

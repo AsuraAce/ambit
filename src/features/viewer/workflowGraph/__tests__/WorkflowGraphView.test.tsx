@@ -1215,5 +1215,166 @@ describe('WorkflowGraphView', () => {
                 box.mockRestore();
             }
         });
+
+        // jsdom has no 2D canvas: each canvas gets a context whose every call is a recorded no-op, and the far view's
+        // paths get a Path2D.
+        const fakeCanvases = () => {
+            vi.stubGlobal(
+                'Path2D',
+                class {
+                    roundRect() {}
+                    rect() {}
+                    moveTo() {}
+                    lineTo() {}
+                    bezierCurveTo() {}
+                    quadraticCurveTo() {}
+                    arcTo() {}
+                    addPath() {}
+                    closePath() {}
+                }
+            );
+            const contexts = new Map<HTMLCanvasElement, Record<string | symbol, unknown>>();
+            const makeContext = () =>
+                new Proxy({} as Record<string | symbol, unknown>, {
+                    get(target, key) {
+                        if (!(key in target)) target[key] = key === 'measureText' ? vi.fn(() => ({ width: 10 })) : vi.fn();
+                        return target[key];
+                    },
+                    set(target, key, value) {
+                        target[key] = value;
+                        return true;
+                    },
+                });
+            const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+                let context = contexts.get(this);
+                if (!context) {
+                    context = makeContext();
+                    contexts.set(this, context);
+                }
+                return context as unknown as CanvasRenderingContext2D;
+            } as unknown as HTMLCanvasElement['getContext']);
+            const restore = () => {
+                spy.mockRestore();
+                vi.unstubAllGlobals();
+            };
+            return { contexts, restore };
+        };
+
+        // The map and the menus sit over the canvas: a press on their frame, caption or rows is theirs, and must not
+        // close the side panel, pan the graph or pick a node hidden under them.
+        it('keeps a press on the map’s caption or frame from reaching the canvas, in near view', () => {
+            renderWires();
+            pickNode('2');
+            const caption = document.querySelector('.wg-map .wg-cap')!;
+            fireEvent.pointerDown(caption, { button: 0, pointerId: 3, clientX: 900, clientY: 700 });
+            fireEvent.pointerUp(caption, { pointerId: 3, clientX: 900, clientY: 700 });
+            expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+            const frame = document.querySelector('.wg-map')!;
+            fireEvent.pointerDown(frame, { button: 0, pointerId: 4, clientX: 900, clientY: 700 });
+            fireEvent.pointerMove(frame, { pointerId: 4, clientX: 700, clientY: 500 });
+            expect(document.querySelector('.wg-canvas')?.classList.contains('panning')).toBe(false);
+            fireEvent.pointerUp(frame, { pointerId: 4, clientX: 700, clientY: 500 });
+            expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+        });
+
+        it('keeps a press on the map or a menu row from picking or clearing a node, in far view', () => {
+            const canvases = fakeCanvases();
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            try {
+                renderWires();
+                pickNode('2');
+                const world = screen.getByTestId('workflow-graph-world');
+                for (let i = 0; i < 20 && !world.classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                expect(world.classList.contains('far')).toBe(true);
+                const press = (target: Element, pointerId: number) => {
+                    fireEvent.pointerDown(target, { button: 0, pointerId, clientX: 900, clientY: 700 });
+                    fireEvent.pointerUp(target, { pointerId, clientX: 900, clientY: 700 });
+                };
+                press(document.querySelector('.wg-map .wg-cap')!, 5);
+                expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+                openMenu('Types');
+                press(document.querySelector('.wg-mrow')!, 6);
+                expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+            } finally {
+                box.mockRestore();
+                canvases.restore();
+            }
+        });
+
+        // Far mode leaves the world unpainted; dots still animating there would cost frames for nothing.
+        it('stops the moving dots in far view', () => {
+            const graphCss = readFileSync('src/features/viewer/workflowGraph/workflowGraph.css', 'utf8');
+            const farFlow = /\.wg-world\.far \.wg-flow\s*\{([^}]*)\}/.exec(graphCss)?.[1] ?? '';
+            expect(farFlow).toMatch(/display:\s*none;/);
+            expect(farFlow).toMatch(/animation:\s*none;/);
+        });
+
+        it('leaves M to the search box while it is being typed in', () => {
+            renderWires();
+            fireEvent.keyDown(document.body, { key: '/' });
+            const search = screen.getByRole('combobox', { name: 'Find a node or value' });
+            fireEvent.keyDown(search, { key: 'm' });
+            expect(screen.getByTestId('graph-map')).toBeTruthy();
+            expect(prefs()?.showMap).toBe(true);
+        });
+
+        // The viewer and the library have their own keys: the graph's M must not also reach them.
+        it('keeps M from listeners added after it', () => {
+            renderWires();
+            const later = vi.fn();
+            window.addEventListener('keydown', later);
+            try {
+                fireEvent.keyDown(document.body, { key: 'm' });
+                expect(prefs()?.showMap).toBe(false);
+                expect(later).not.toHaveBeenCalled();
+            } finally {
+                window.removeEventListener('keydown', later);
+            }
+        });
+
+        it('under reduced motion, swaps wire shapes without a fade and runs no moving dots', () => {
+            const { unmount } = renderWires();
+            openMenu('Wires');
+            choose(/^Straight/);
+            expect(document.querySelector('.wg-wires')?.classList.contains('swap')).toBe(true);
+            unmount();
+            const original = window.matchMedia;
+            window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+            try {
+                renderWires();
+                openMenu('Wires');
+                choose(/^Curved/);
+                expect(document.querySelector('.wg-wires')?.classList.contains('swap')).toBe(false);
+                pickNode('2');
+                expect(drawnWires()).toHaveLength(2);
+                expect(document.querySelectorAll('.wg-flow')).toHaveLength(0);
+            } finally {
+                window.matchMedia = original;
+            }
+        });
+
+        // The map's nodes are drawn once on their own canvas: a pan or zoom redraws only the view rectangle.
+        it('redraws only the map’s view rectangle on a zoom or pan, not its nodes', async () => {
+            const { contexts, restore } = fakeCanvases();
+            try {
+                renderWires();
+                const [base, rect] = Array.from(document.querySelectorAll<HTMLCanvasElement>('.wg-map-c canvas'));
+                const fills = (canvas: HTMLCanvasElement) => (contexts.get(canvas)?.fillRect as ReturnType<typeof vi.fn>).mock.calls.length;
+                const baseFills = fills(base);
+                const rectFills = fills(rect);
+                expect(baseFills).toBeGreaterThan(0);
+                fireEvent.keyDown(document.body, { key: '=' });
+                const zoomed = fills(rect);
+                expect(zoomed).toBeGreaterThan(rectFills);
+                const canvas = document.querySelector('.wg-canvas')!;
+                fireEvent.pointerDown(canvas, { button: 0, pointerId: 9, clientX: 300, clientY: 300 });
+                fireEvent.pointerMove(canvas, { pointerId: 9, clientX: 200, clientY: 250 });
+                fireEvent.pointerUp(canvas, { pointerId: 9, clientX: 200, clientY: 250 });
+                await waitFor(() => expect(fills(rect)).toBeGreaterThan(zoomed));
+                expect(fills(base)).toBe(baseFills);
+            } finally {
+                restore();
+            }
+        });
     });
 });

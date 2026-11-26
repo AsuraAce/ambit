@@ -781,8 +781,12 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         if (isFarRef.current) drawFar();
     };
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        // The title in a pill is a button too, but a drag that starts on it still pans.
-        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button:not(.wg-gt), input, [role="listbox"]')))
+        // The title in a pill is a button too, but a drag that starts on it still pans. A press on the toolbars, their
+        // menus or the map is theirs: it never pans, picks or clears a node, in near or far view.
+        if (
+            event.button !== 0 ||
+            (event.target instanceof Element && event.target.closest('button:not(.wg-gt), input, [role="listbox"], .wg-tb, .wg-map'))
+        )
             return;
         pannedRef.current = false;
         stopFlight();
@@ -1044,9 +1048,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         svg.classList.add('swap');
     }, [shape]);
     const drawnKeys = React.useMemo(() => new Set(drawnWires.map((wire) => wire.key)), [drawnWires]);
-    // Moving dots run on the picked node's wires, in near view; the reduced-motion rules hide them.
+    // Moving dots run on the picked node's wires, in near view (the far rules hide them); never under reduced motion.
     const flowing =
-        prefs.movingDots && selected !== null ? drawnWires.filter((wire) => wire.from === selected || wire.to === selected) : [];
+        prefs.movingDots && selected !== null && !reducedMotion()
+            ? drawnWires.filter((wire) => wire.from === selected || wire.to === selected)
+            : [];
 
     const hint =
         model.nodes.length === 0
