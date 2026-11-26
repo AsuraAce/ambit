@@ -19,11 +19,17 @@ describe('placeGroupTitle', () => {
 describe('fitOverviewTitle', () => {
     const measure = (text: string, px: number) => text.length * px * 0.6;
 
+    // The owner's look at Fit on Lily: overview titles stay small, 11 to 14 px on screen.
+    it('keeps overview titles between 11 and 14 px', () => {
+        expect(OVERVIEW_TITLE_MIN_PX).toBe(11);
+        expect(GROUP_TITLE_CAP_PX).toBe(14);
+    });
+
     it('caps the size, and shrinks a title to fit no further than the floor', () => {
         expect(fitOverviewTitle(measure, 'Upscale', 30, 1000)).toEqual({ text: 'Upscale', px: GROUP_TITLE_CAP_PX });
-        const shrunk = fitOverviewTitle(measure, 'Upscale', 18, 7 * 15 * 0.6);
+        const shrunk = fitOverviewTitle(measure, 'Upscale', 18, 7 * 12.5 * 0.6);
         expect(shrunk?.text).toBe('Upscale');
-        expect(shrunk?.px).toBeCloseTo(15);
+        expect(shrunk?.px).toBeCloseTo(12.5);
     });
 
     it('shortens a title that does not fit at the floor, and leaves out one cut too short to tell anything', () => {
