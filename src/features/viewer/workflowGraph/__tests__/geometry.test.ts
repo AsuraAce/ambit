@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { buildGraphModel, FOLDED_GROUP_H, FOLDED_GROUP_W, HEADER_H, savedPositions, type Positions } from '../graphModel';
-import { boundsOf, endpoint, fitView, MAX_SCALE, MIN_SCALE, sceneFor, startView, wirePaths, zoomAt } from '../geometry';
+import {
+    boundsOf,
+    endpoint,
+    fitView,
+    LOWEST_SCALE,
+    MAX_SCALE,
+    MIN_SCALE,
+    sceneFor,
+    startView,
+    wirePaths,
+    zoomAt,
+    zoomFloor,
+} from '../geometry';
 import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
 
 const none = new Set<string>();
@@ -145,14 +157,21 @@ describe('fit and zoom', () => {
         expect(view.y + (100 + 50) * view.s).toBeCloseTo(viewport.h / 2);
     });
 
-    it('clamps a huge graph to the smallest zoom', () => {
-        expect(fitView({ x: 0, y: 0, w: 10_000_000, h: 100 }, viewport).s).toBe(MIN_SCALE);
+    // Fit must show the whole graph: a graph that needs less than MIN_SCALE gets it, down to LOWEST_SCALE.
+    it('fits a big graph below the usual zoom limit, so all of it is on screen', () => {
+        const bounds = { x: -200, y: 50, w: 20_000, h: 3_000 };
+        const view = fitView(bounds, viewport);
+        expect(view.s).toBeLessThan(MIN_SCALE);
+        expect(view.x + bounds.x * view.s).toBeGreaterThanOrEqual(0);
+        expect(view.x + (bounds.x + bounds.w) * view.s).toBeLessThanOrEqual(viewport.w);
+        expect(fitView({ x: 0, y: 0, w: 10_000_000, h: 100 }, viewport).s).toBe(LOWEST_SCALE);
     });
 
-    it('starts a wide graph readable at the top left instead of tiny', () => {
-        const view = startView({ x: -200, y: 50, w: 20_000, h: 3_000 }, viewport);
-        expect(view.s).toBe(0.4);
-        expect(view.x + -200 * view.s).toBeGreaterThan(0);
+    // The graph opens showing all of it, but a small graph is not blown up past its real size.
+    it('opens fitted, never above 100 %', () => {
+        const big = { x: -200, y: 50, w: 20_000, h: 3_000 };
+        expect(startView(big, viewport)).toEqual(fitView(big, viewport));
+        expect(startView({ x: 0, y: 0, w: 200, h: 100 }, viewport).s).toBe(1);
     });
 
     it('fits only what is drawn: hidden members leave the bounds, the folded group box stays', () => {
@@ -182,5 +201,16 @@ describe('fit and zoom', () => {
         expect((100 - view.x) / view.s).toBe(100);
         expect(zoomAt(view, 10, 0, 0).s).toBe(MAX_SCALE);
         expect(zoomAt(view, 0.001, 0, 0).s).toBe(MIN_SCALE);
+    });
+
+    // Zooming out stops where Fit does for a graph too big for MIN_SCALE, and at MIN_SCALE for the rest.
+    it('lets a graph too big for the usual limit zoom out as far as fitting it takes', () => {
+        const big = { x: 0, y: 0, w: 20_000, h: 3_000 };
+        const floor = zoomFloor(big, viewport);
+        expect(floor).toBe(fitView(big, viewport).s);
+        expect(zoomAt({ x: 0, y: 0, s: 0.2 }, 0.001, 0, 0, floor).s).toBe(floor);
+        expect(zoomFloor({ x: 0, y: 0, w: 200, h: 100 }, viewport)).toBe(MIN_SCALE);
+        expect(zoomFloor({ x: 0, y: 0, w: 10_000_000, h: 100 }, viewport)).toBe(LOWEST_SCALE);
+        expect(zoomFloor(null, viewport)).toBe(MIN_SCALE);
     });
 });

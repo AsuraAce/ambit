@@ -101,6 +101,9 @@ describe('drawFarScene', () => {
         );
         const calls: string[] = [];
         const texts: string[] = [];
+        // Each paint, tagged with the colour it used: groups paint in 'g', nodes in 'a'/'b', wires in 'w'.
+        const paints: string[] = [];
+        const style = { fill: '', stroke: '' };
         const ctx = new Proxy(
             { canvas: { width: 800, height: 600 }, measureText: (text: string) => ({ width: text.length }) },
             {
@@ -110,8 +113,14 @@ describe('drawFarScene', () => {
                         : (...args: unknown[]) => {
                               calls.push(String(key));
                               if (key === 'fillText') texts.push(String(args[0]));
+                              if (key === 'fill' || key === 'fillText') paints.push(`${String(key)}:${style.fill}`);
+                              if (key === 'stroke') paints.push(`stroke:${style.stroke}`);
                           },
-                set: () => true,
+                set: (_target, key, value) => {
+                    if (key === 'fillStyle') style.fill = String(value);
+                    if (key === 'strokeStyle') style.stroke = String(value);
+                    return true;
+                },
             }
         ) as unknown as CanvasRenderingContext2D;
         const look = { fill: 'a', stroke: 'b', alpha: 1, dashed: false };
@@ -120,7 +129,7 @@ describe('drawFarScene', () => {
             text: 't',
             muted: 'm',
             node: { plain: look, bypass: look, mute: look, reroute: look },
-            wire: {},
+            wire: { latent: 'w' },
             group: new Map([[groupKey, { fill: 'g', stroke: 'g', title: 'g' }]]),
         };
         const { far } = farScene(new Set(), new Set());
@@ -129,6 +138,16 @@ describe('drawFarScene', () => {
         expect(boxes).toHaveLength(far.groups.length + far.nodes.length);
         drawFarScene(ctx, drawing, { x: 0, y: 0, s: 0.2 }, 2);
         expect(calls.filter((call) => call === 'fill')).toHaveLength(far.groups.length + 4);
-        expect(texts).toEqual(['Load', 'KSampler', 'Old', 'CheckpointLoader', 'KSampler', 'Loaders']);
+        expect(texts).toEqual(['Loaders', 'Load', 'KSampler', 'Old', 'CheckpointLoader', 'KSampler']);
+
+        // Far mode stacks like the HTML view: wires under groups, and a group's box and title under every node,
+        // so a group that overlaps nodes in the saved layout never paints its title across them.
+        const lastWire = paints.lastIndexOf('stroke:w');
+        const groupPaints = paints.flatMap((paint, index) => (paint.endsWith(':g') ? [index] : []));
+        const firstNode = paints.indexOf('fill:a');
+        expect(lastWire).toBeGreaterThanOrEqual(0);
+        expect(groupPaints.length).toBe(3);
+        expect(Math.min(...groupPaints)).toBeGreaterThan(lastWire);
+        expect(Math.max(...groupPaints)).toBeLessThan(firstNode);
     });
 });

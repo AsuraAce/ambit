@@ -341,6 +341,13 @@ the Colours menu, the Types list, subgraph levels with breadcrumb, keyboard focu
 (Tab into the canvas, arrows between connected nodes, Enter opens the panel),
 saved view preferences in `AppSettings`.
 
+Carried over from the P2 smoke:
+
+- A MarkdownNote shows its text as raw markdown. Render it as markdown, still
+  as plain text with no HTML, or show it as a note without the markdown marks.
+- A setting the file left unnamed shows as "Value N". Take the name from the
+  node's input list where the file has one.
+
 Acceptance: vitest for search matching, wire-shape geometry for all five shapes,
 Hidden still showing the selected node's wires, panel content from the contract,
 copy text, subgraph navigation and Escape order, focus order and aria labels,

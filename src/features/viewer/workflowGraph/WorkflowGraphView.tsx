@@ -8,11 +8,13 @@ import {
     FAR_SCALE,
     fitView,
     groupBox,
+    MIN_SCALE,
     nodeHeight,
     sceneFor,
     startView,
     wirePaths,
     zoomAt,
+    zoomFloor,
     type LayoutMode,
     type Rect,
     type View,
@@ -150,7 +152,10 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (far) drawFar();
         const dots = dotsRef.current;
         if (dots) {
-            dots.style.backgroundSize = `${22 * s}px ${22 * s}px`;
+            // Below MIN_SCALE the dots would blur into a wash, so the grid steps up instead of shrinking further.
+            let tile = 22 * s;
+            while (tile < 22 * MIN_SCALE) tile *= 2;
+            dots.style.backgroundSize = `${tile}px ${tile}px`;
             dots.style.backgroundPosition = `${x}px ${y}px`;
         }
         if (zoomRef.current) zoomRef.current.textContent = `${Math.round(s * 100)}%`;
@@ -223,26 +228,31 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     }, [canvasRect]);
 
     // Handlers read the latest drawing through a ref, so key and wheel listeners bind once.
-    const latest = React.useRef({ positions, foldedNodes, foldedGroups, scene });
+    const bounds = React.useMemo(
+        () => (positions ? boundsOf(model, positions, foldedNodes, foldedGroups, scene) : null),
+        [model, positions, foldedNodes, foldedGroups, scene]
+    );
+    const latest = React.useRef({ positions, foldedNodes, foldedGroups, scene, bounds });
     React.useLayoutEffect(() => {
-        latest.current = { positions, foldedNodes, foldedGroups, scene };
+        latest.current = { positions, foldedNodes, foldedGroups, scene, bounds };
     });
 
     const fit = React.useCallback(() => {
-        const current = latest.current;
-        if (!current.positions) return;
-        const bounds = boundsOf(model, current.positions, current.foldedNodes, current.foldedGroups, current.scene);
-        if (bounds) flyTo(fitView(bounds, viewportSize()));
-    }, [flyTo, model, viewportSize]);
+        const { bounds: current } = latest.current;
+        if (current) flyTo(fitView(current, viewportSize()));
+    }, [flyTo, viewportSize]);
+
+    // Zooming out stops where Fit would, for a graph too big for MIN_SCALE.
+    const zoomFloorNow = React.useCallback(() => zoomFloor(latest.current.bounds, viewportSize()), [viewportSize]);
 
     const zoomBy = React.useCallback(
         (factor: number) => {
             stopFlight();
             const { w, h } = viewportSize();
-            viewRef.current = zoomAt(viewRef.current, factor, w / 2, h / 2);
+            viewRef.current = zoomAt(viewRef.current, factor, w / 2, h / 2, zoomFloorNow());
             apply();
         },
-        [apply, viewportSize]
+        [apply, viewportSize, zoomFloorNow]
     );
 
     // Far mode shows no controls. Tabbing onto a node's or group's fold button there zooms in to it, so the
@@ -270,7 +280,6 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (!positions || positions === shownRef.current) return;
         const previous = shownRef.current;
         shownRef.current = positions;
-        const bounds = boundsOf(model, positions, foldedNodes, foldedGroups, scene);
         if (!previous) {
             if (bounds) viewRef.current = startView(bounds, viewportSize());
             apply();
@@ -334,13 +343,19 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             stopFlight();
             const rect = canvasRect();
             const factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.012 : 0.0016));
-            viewRef.current = zoomAt(viewRef.current, factor, event.clientX - (rect?.left ?? 0), event.clientY - (rect?.top ?? 0));
+            viewRef.current = zoomAt(
+                viewRef.current,
+                factor,
+                event.clientX - (rect?.left ?? 0),
+                event.clientY - (rect?.top ?? 0),
+                zoomFloorNow()
+            );
             scheduleApply();
             setInteracted(true);
         };
         canvas.addEventListener('wheel', handleWheel, { passive: false });
         return () => canvas.removeEventListener('wheel', handleWheel);
-    }, [canvasRect, scheduleApply]);
+    }, [canvasRect, scheduleApply, zoomFloorNow]);
 
     const dragRef = React.useRef<{ id: number; x: number; y: number; view: View; panning: boolean } | null>(null);
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -492,7 +507,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                     >
                                         <div className="wg-gh">
                                             <span className="wg-gt">{group.title}</span>
-                                            <span className="wg-gn">{group.members.length} nodes</span>
+                                            <span className="wg-gn">
+                                                {group.members.length === 1 ? '1 node' : `${group.members.length} nodes`}
+                                            </span>
                                             <button
                                                 type="button"
                                                 className="wg-cb"

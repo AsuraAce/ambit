@@ -27,12 +27,15 @@ export interface View {
     s: number;
 }
 
+/** The usual zoom-out limit. A graph too big to fit at it may zoom out further, down to LOWEST_SCALE. */
 export const MIN_SCALE = 0.12;
+/** The lowest zoom for any graph: Fit and zooming out never go below it. */
+export const LOWEST_SCALE = 0.02;
 export const MAX_SCALE = 2;
 /** Below this scale nodes show only their titles. */
 export const FAR_SCALE = 0.5;
 
-export const clampScale = (s: number): number => Math.min(Math.max(s, MIN_SCALE), MAX_SCALE);
+export const clampScale = (s: number, floor = MIN_SCALE): number => Math.min(Math.max(s, floor), MAX_SCALE);
 
 /** Which folded group hides each node, and which groups sit inside a folded group. Groups apply only as saved. */
 export interface Scene {
@@ -223,10 +226,11 @@ export const boundsOf = (
 const PAD_X = 48;
 const PAD_Y = 56;
 
-/** The view that shows the whole rect, centred, never larger than maxScale. */
+/** The view that shows the whole rect, centred, never larger than maxScale nor smaller than LOWEST_SCALE. */
 export const fitView = (bounds: Rect, viewport: { w: number; h: number }, maxScale = 1.05): View => {
     const s = clampScale(
-        Math.min(maxScale, (viewport.w - PAD_X * 2) / Math.max(bounds.w, 1), (viewport.h - PAD_Y * 2) / Math.max(bounds.h, 1))
+        Math.min(maxScale, (viewport.w - PAD_X * 2) / Math.max(bounds.w, 1), (viewport.h - PAD_Y * 2) / Math.max(bounds.h, 1)),
+        LOWEST_SCALE
     );
     return {
         s,
@@ -235,17 +239,16 @@ export const fitView = (bounds: Rect, viewport: { w: number; h: number }, maxSca
     };
 };
 
-/** The first view: fit, unless that is too small to read; then start readable at the top left. */
-export const startView = (bounds: Rect, viewport: { w: number; h: number }): View => {
-    const fit = fitView(bounds, viewport);
-    if (fit.s >= 0.4) return fit;
-    const s = 0.4;
-    return { s, x: PAD_X - bounds.x * s, y: PAD_Y - bounds.y * s };
-};
+/** How far this graph may zoom out: MIN_SCALE, or lower when that is what fitting it takes. */
+export const zoomFloor = (bounds: Rect | null, viewport: { w: number; h: number }): number =>
+    bounds ? Math.min(MIN_SCALE, fitView(bounds, viewport).s) : MIN_SCALE;
 
-/** Zoom by factor f around the screen point (cx, cy), keeping that point still. */
-export const zoomAt = (view: View, factor: number, cx: number, cy: number): View => {
-    const s = clampScale(view.s * factor);
+/** The first view: the whole graph, never above 100 %. */
+export const startView = (bounds: Rect, viewport: { w: number; h: number }): View => fitView(bounds, viewport, 1);
+
+/** Zoom by factor f around the screen point (cx, cy), keeping that point still; `floor` is the zoom-out limit. */
+export const zoomAt = (view: View, factor: number, cx: number, cy: number, floor = MIN_SCALE): View => {
+    const s = clampScale(view.s * factor, floor);
     const k = s / view.s;
     return { s, x: cx - (cx - view.x) * k, y: cy - (cy - view.y) * k };
 };

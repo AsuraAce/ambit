@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
-import { FAR_SCALE } from '../geometry';
+import { FAR_SCALE, LOWEST_SCALE, MIN_SCALE } from '../geometry';
 import { handleLayoutRequest, type LayoutRequest, type LayoutResponse } from '../tidyLayout';
 import { LAYOUT_TIME_CAP_MS } from '../useTidyPositions';
 import WorkflowGraphView from '../WorkflowGraphView';
@@ -60,6 +60,12 @@ describe('WorkflowGraphView', () => {
         expect(document.activeElement).toBe(screen.getByRole('button', { name: /back to image/i }));
         unmount();
         expect(useWorkflowGraphStore.getState().open).toBe(false);
+    });
+
+    it('counts one group member as "1 node"', () => {
+        renderGraph();
+        expect(shown('1 node')).toBe(true);
+        expect(shown('1 nodes')).toBe(false);
     });
 
     it('closes on Escape', () => {
@@ -212,6 +218,20 @@ describe('WorkflowGraphView', () => {
             expect(world.classList.contains('far')).toBe(scale() < FAR_SCALE);
         }
         expect(world.classList.contains('far')).toBe(false);
+    });
+
+    // A graph too wide for the usual 12 % limit opens showing all of it, and zooming out reaches that view again.
+    it('opens a very wide graph fitted below 12 % and lets zoom-out reach it', () => {
+        const wide = report(level([canvasNode('a', { pos: { x: 0, y: 30 } }), canvasNode('b', { pos: { x: 40_000, y: 30 } })]));
+        render(<WorkflowGraphView report={wide} fileName="wide.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+        const world = screen.getByTestId('workflow-graph-world');
+        const scale = () => Number(/scale\(([\d.e-]+)\)/.exec(world.style.transform)?.[1]);
+        const opened = scale();
+        expect(opened).toBeLessThan(MIN_SCALE);
+        expect(opened).toBeGreaterThanOrEqual(LOWEST_SCALE);
+        fireEvent.keyDown(document.body, { key: '+' });
+        for (let i = 0; i < 30; i++) fireEvent.keyDown(document.body, { key: '-' });
+        expect(scale()).toBeCloseTo(opened, 6);
     });
 
     // Far mode shows no controls, so keyboard focus on a fold button there zooms in to what it folds.

@@ -229,14 +229,7 @@ export const drawFarScene = (ctx: CanvasRenderingContext2D, drawing: FarDrawing,
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);
 
-    ctx.lineWidth = inv;
-    for (const group of drawing.groups) {
-        ctx.fillStyle = group.fill;
-        ctx.fill(group.path);
-        ctx.strokeStyle = group.stroke;
-        ctx.stroke(group.path);
-    }
-
+    // The HTML view's stacking order: wires, then groups with their titles, then nodes on top.
     const wireWidth = WIRE_WIDTH * Math.min(inv, WIRE_SCALE_CAP);
     ctx.lineCap = 'round';
     ctx.lineWidth = wireWidth;
@@ -245,8 +238,24 @@ export const drawFarScene = (ctx: CanvasRenderingContext2D, drawing: FarDrawing,
         ctx.setLineDash(wire.bypassed ? [(6 / 2.2) * wireWidth, (5 / 2.2) * wireWidth] : []);
         ctx.stroke(wire.path);
     }
+    ctx.setLineDash([]);
 
     ctx.lineWidth = inv;
+    for (const group of drawing.groups) {
+        ctx.fillStyle = group.fill;
+        ctx.fill(group.path);
+        ctx.strokeStyle = group.stroke;
+        ctx.stroke(group.path);
+    }
+    // Group titles grow without a cap, so they are fitted per frame; there are only a few.
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `700 ${GROUP_TITLE_PX * inv}px ${drawing.font}`;
+    for (const group of drawing.groups) {
+        ctx.fillStyle = group.title;
+        ctx.fillText(group.text, group.x + 12 * inv, group.y + 10 * inv, Math.max(0, group.w - 24 * inv));
+    }
+
     for (const look of drawing.nodes) {
         ctx.globalAlpha = look.alpha;
         ctx.fillStyle = look.fill;
@@ -266,13 +275,4 @@ export const drawFarScene = (ctx: CanvasRenderingContext2D, drawing: FarDrawing,
     ctx.fillStyle = drawing.muted;
     ctx.font = `500 ${TYPE_PX}px ${drawing.font}`;
     for (const label of drawing.types) ctx.fillText(label.text, label.x, label.y);
-
-    // Group titles grow without a cap, so they are fitted per frame; there are only a few.
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.font = `700 ${GROUP_TITLE_PX * inv}px ${drawing.font}`;
-    for (const group of drawing.groups) {
-        ctx.fillStyle = group.title;
-        ctx.fillText(group.text, group.x + 12 * inv, group.y + 10 * inv, Math.max(0, group.w - 24 * inv));
-    }
 };

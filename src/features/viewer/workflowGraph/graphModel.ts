@@ -183,11 +183,17 @@ const buildNode = (node: WorkflowCanvasNode): GraphNode => {
     };
 };
 
-/** ComfyUI counts a node in a group when the node lies fully inside the group's bounds. */
+/**
+ * ComfyUI's rule (LGraphGroup.recomputeInsideNodes): a node belongs to a group when the centre of its saved box,
+ * title bar included, lies inside the group's bounds; right and bottom edges excluded.
+ */
 const insideGroup = (node: GraphNode, group: GraphGroup): boolean => {
     if (!node.saved) return false;
-    const { x, y } = node.saved;
-    return x >= group.x - 1 && y >= group.y - 1 && x + node.width <= group.x + group.w + 1 && y + node.height <= group.y + group.h + 1;
+    const height = node.kind === 'reroute' ? 0 : node.collapsed ? HEADER_H : node.minHeight || node.height;
+    const width = node.kind === 'reroute' ? 0 : node.width;
+    const cx = node.saved.x + width / 2;
+    const cy = node.saved.y + height / 2;
+    return cx >= group.x && cx < group.x + group.w && cy >= group.y && cy < group.y + group.h;
 };
 
 export const buildGraphModel = (level: WorkflowCanvasLevel): GraphModel => {

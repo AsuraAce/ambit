@@ -100,17 +100,24 @@ describe('graph model from the canvas report', () => {
         expect(text.value.length).toBe(WIDGET_TEXT_LIMIT + 1);
     });
 
-    it('counts a node in a group only when the node lies fully inside it', () => {
+    // The count in a group's header must match what ComfyUI shows for the same file: ComfyUI counts a node
+    // whose centre is inside the group, even when the node's box hangs over the group's edge.
+    it("counts a node in a group by ComfyUI's rule: the centre of its box lies inside", () => {
         const model = buildGraphModel(
             level(
                 [
                     canvasNode('in', { pos: { x: 20, y: 60 }, size: { width: 100, height: 50 } }),
-                    canvasNode('straddle', { pos: { x: 350, y: 60 }, size: { width: 100, height: 50 } }),
+                    // Hangs 50 px past the right edge, centre inside.
+                    canvasNode('overhang', { pos: { x: 250, y: 60 }, size: { width: 200, height: 50 } }),
+                    // Taller than the room left below it, centre still inside.
+                    canvasNode('tall', { pos: { x: 20, y: 200 }, size: { width: 100, height: 160 } }),
+                    // Centre past the right edge.
+                    canvasNode('out', { pos: { x: 350, y: 60 }, size: { width: 200, height: 50 } }),
                 ],
                 [],
                 [canvasGroup('Group', 0, 0, 400, 300)]
             )
         );
-        expect(model.groups[0].members).toEqual(['in']);
+        expect(model.groups[0].members).toEqual(['in', 'overhang', 'tall']);
     });
 });
