@@ -6,19 +6,22 @@ interface GraphNodeProps {
     node: GraphNodeData;
     at: Point;
     folded: boolean;
+    /** Fading out into a group being folded (and then inert), or in out of one being unfolded. */
+    motion?: 'leaving' | 'arriving' | null;
     onToggleFold: (id: string) => void;
 }
 
 const KIND_ICONS = { note: StickyNote, subgraph: Layers } as const;
 
 // Every string drawn here comes from the file and is rendered as React text only.
-const GraphNodeView: React.FC<GraphNodeProps> = ({ node, at, folded, onToggleFold }) => {
+const GraphNodeView: React.FC<GraphNodeProps> = ({ node, at, folded, motion = null, onToggleFold }) => {
     const style: React.CSSProperties = { transform: `translate(${at.x}px, ${at.y}px)`, width: node.width };
+    const leaving = motion === 'leaving';
 
     if (node.kind === 'reroute') {
         const type = node.outputs[0]?.type ?? node.inputs[0]?.type ?? 'any';
         return (
-            <div className="wg-node reroute" style={style} data-node-id={node.id}>
+            <div className={motion ? `wg-node reroute ${motion}` : 'wg-node reroute'} style={style} data-node-id={node.id} inert={leaving}>
                 <span className={`wg-port on t-${type}`} style={{ left: -1 }} />
                 <span className={`wg-port on t-${type}`} style={{ right: -1 }} />
             </div>
@@ -31,6 +34,7 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({ node, at, folded, onToggleFol
     if (node.mode === 'bypassed') classes.push('bypass');
     if (node.mode === 'muted') classes.push('mute');
     if (folded) classes.push('shut');
+    if (motion) classes.push(motion);
     const rows = Math.max(node.inputs.length, node.outputs.length);
     const toggle = () => onToggleFold(node.id);
 
@@ -39,6 +43,7 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({ node, at, folded, onToggleFol
             className={classes.join(' ')}
             style={folded ? style : { ...style, minHeight: node.minHeight || undefined }}
             data-node-id={node.id}
+            inert={leaving}
         >
             <div className="wg-nh" onDoubleClick={toggle}>
                 <span className="wg-cat" aria-hidden="true">

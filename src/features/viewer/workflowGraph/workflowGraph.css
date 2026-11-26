@@ -97,6 +97,7 @@
     left: 0;
     top: 0;
     transform-origin: 0 0;
+    transition: opacity 160ms var(--wg-out);
 }
 
 .wg-wires {
@@ -112,6 +113,12 @@
 
 .wg-world.moving .wg-wires {
     opacity: 0;
+}
+
+/* A fold reroutes wires at once: they hide, then fade back in once the fold has settled. */
+.wg-world.folding .wg-wires {
+    opacity: 0;
+    transition: none;
 }
 
 .wg-wire {
@@ -185,6 +192,35 @@
     border-radius: 10px;
     border: 1px solid color-mix(in srgb, var(--gc) 42%, transparent);
     background: color-mix(in srgb, var(--gc) 9%, transparent);
+    transition:
+        width 220ms var(--wg-out),
+        height 220ms var(--wg-out);
+}
+
+/* An open group's title: a pill in its top band, over the nodes. */
+.wg-gtitle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 4px 0 8px;
+    white-space: nowrap;
+    background: color-mix(in srgb, var(--gc) 12%, var(--graph-frost));
+    border: 1px solid color-mix(in srgb, var(--gc) 42%, transparent);
+    border-radius: 7px;
+    box-shadow: 0 4px 12px var(--graph-shadow);
+}
+
+.wg-gtitle .wg-gt {
+    font-size: 13px;
+}
+
+.wg-gtitle .wg-cb {
+    width: 20px;
+    height: 20px;
 }
 
 .wg-group .wg-gh {
@@ -200,7 +236,7 @@
     pointer-events: auto;
 }
 
-.wg-group .wg-gt {
+.wg-gt {
     font-size: 15px;
     font-weight: 700;
     color: color-mix(in srgb, var(--gc), var(--graph-text) 55%);
@@ -210,7 +246,7 @@
     min-width: 0;
 }
 
-.wg-group .wg-gn {
+.wg-gn {
     font-size: 11px;
     color: var(--graph-muted);
     white-space: nowrap;
@@ -277,10 +313,42 @@
     border: 1px solid var(--graph-line-hi);
     border-top-color: var(--graph-line-top);
     box-shadow: 0 6px 18px var(--graph-shadow);
+    /* Folding eases the height between the title bar and the full node. The clip margin keeps the ports. */
+    interpolate-size: allow-keywords;
+    overflow: clip;
+    overflow-clip-margin: 8px;
+    transition: height 220ms var(--wg-out);
+}
+
+.wg-node.shut {
+    height: 32px;
 }
 
 .wg-world.moving .wg-node {
-    transition: transform 620ms var(--wg-spring);
+    transition:
+        transform 620ms var(--wg-spring),
+        height 220ms var(--wg-out);
+}
+
+/* Members of a group being folded fade and shrink toward it; those of one being unfolded come back the same way. */
+.wg-node.leaving {
+    opacity: 0;
+    scale: 0.92;
+    pointer-events: none;
+    transition:
+        opacity 220ms var(--wg-out),
+        scale 220ms var(--wg-out);
+}
+
+.wg-node.arriving {
+    animation: wg-arrive 220ms var(--wg-out);
+}
+
+@keyframes wg-arrive {
+    from {
+        opacity: 0;
+        scale: 0.92;
+    }
 }
 
 .wg-node.bypass {
@@ -487,9 +555,14 @@
     top: 50%;
 }
 
-/* Far mode: the canvas paints the graph. The world stays laid out but unpainted, so a pan never re-rasters it. */
+/* Far mode: the canvas paints the graph. The two views cross-fade; then the world stays laid out but unpainted,
+   so a pan never re-rasters it. */
 .wg-world.far {
+    opacity: 0;
     visibility: hidden;
+    transition:
+        opacity 160ms var(--wg-out),
+        visibility 0s linear 160ms;
 }
 
 /* The fold buttons stay in the Tab order, unseen and unclickable; focusing one zooms in to its node or group. */
@@ -504,12 +577,18 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    display: none;
+    opacity: 0;
+    visibility: hidden;
     pointer-events: none;
+    transition:
+        opacity 160ms var(--wg-out),
+        visibility 0s linear 160ms;
 }
 
 .wg-world.far ~ .wg-farcanvas {
-    display: block;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 160ms var(--wg-out);
 }
 
 /* Floating controls */
@@ -649,9 +728,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .wg-world,
+    .wg-world.far,
+    .wg-farcanvas,
+    .wg-world.far ~ .wg-farcanvas,
+    .wg-group,
+    .wg-node,
     .wg-world.moving .wg-node,
+    .wg-node.leaving,
     .wg-wires,
     .wg-cb svg {
         transition: none;
+    }
+
+    .wg-node.arriving {
+        animation: none;
     }
 }
