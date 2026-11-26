@@ -119,6 +119,8 @@ export interface FarPalette {
     font: string;
     text: string;
     muted: string;
+    /** The selection colour, for the rings round picked, focused and found nodes. */
+    accent: string;
     node: Record<FarNode['variant'], { fill: string; stroke: string; alpha: number; dashed: boolean }>;
     wire: Partial<Record<WireType, string>>;
     group: Map<string, GroupLook>;
@@ -166,6 +168,7 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
         font: layerStyle.fontFamily,
         text: layerStyle.color,
         muted,
+        accent: layerStyle.getPropertyValue('--graph-sage').trim() || layerStyle.color,
         node: {
             plain,
             bypass: nodeStyle('.wg-node.bypass:not(.note)', plain),
@@ -243,7 +246,17 @@ export interface FarDrawing {
     font: string;
     text: string;
     muted: string;
+    accent: string;
 }
+
+/** The nodes the view marks on the far canvas: the one in the side panel, the arrow keys' one, a search's hits. */
+export interface FarMarks {
+    selected: string | null;
+    cursor: string | null;
+    hits: ReadonlySet<string> | null;
+}
+
+export const NO_FAR_MARKS: FarMarks = { selected: null, cursor: null, hits: null };
 
 const canvasMeasure =
     (ctx: CanvasRenderingContext2D, font: string, weight: number): Measure =>
@@ -303,6 +316,7 @@ export const prepareFarDrawing = (scene: FarScene, palette: FarPalette): FarDraw
         font: palette.font,
         text: palette.text,
         muted: palette.muted,
+        accent: palette.accent,
     };
 };
 
@@ -415,6 +429,44 @@ export const layoutGroupLabels = (
 export const groupPillAt = (pills: readonly GroupLabel[], x: number, y: number): string | null =>
     pills.find(({ rect }) => x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h)?.key ?? null;
 
+/** The node under a world point: the last one drawn wins, as it is on top. */
+export const farNodeAt = (nodes: readonly FarNode[], x: number, y: number): string | null => {
+    for (let index = nodes.length - 1; index >= 0; index--) {
+        const node = nodes[index];
+        if (x >= node.x && x <= node.x + node.w && y >= node.y && y <= node.y + node.h) return node.id;
+    }
+    return null;
+};
+
+/** Rings drawn over the nodes: a search's hits, then the picked node, then the arrow keys' node outside it. */
+const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: FarMarks, inv: number) => {
+    if (!marks.hits && marks.selected === null && marks.cursor === null) return;
+    const ring = (node: FarNode, gap: number, width: number) => {
+        const path = new Path2D();
+        path.roundRect(node.x - gap * inv, node.y - gap * inv, node.w + 2 * gap * inv, node.h + 2 * gap * inv, 8 + gap * inv);
+        ctx.lineWidth = width * inv;
+        ctx.stroke(path);
+    };
+    ctx.strokeStyle = drawing.accent;
+    for (const node of drawing.sceneNodes) {
+        if (marks.hits?.has(node.id)) {
+            ctx.globalAlpha = 0.7;
+            ring(node, 2, 2);
+        }
+        if (node.id === marks.selected) {
+            ctx.globalAlpha = 1;
+            ring(node, 1, 2);
+        }
+        if (node.id === marks.cursor) {
+            ctx.globalAlpha = 1;
+            ctx.setLineDash([4 * inv, 3 * inv]);
+            ring(node, 5, 2);
+            ctx.setLineDash([]);
+        }
+    }
+    ctx.globalAlpha = 1;
+};
+
 /**
  * Paints the far drawing over the whole canvas, in the view's pan and zoom; `dpr` is the canvas's pixel ratio. The
  * pill of the `hover` group gets the near pill's hover border. Returns the title pills it drew, for hit-testing.
@@ -425,7 +477,8 @@ export const drawFarScene = (
     view: View,
     dpr: number,
     level: Exclude<ViewLevel, 'near'> = 'far',
-    hover: string | null = null
+    hover: string | null = null,
+    marks: FarMarks = NO_FAR_MARKS
 ): GroupLabel[] => {
     const { x, y, s } = view;
     const inv = 1 / s;
@@ -516,6 +569,8 @@ export const drawFarScene = (
         ctx.font = `${NODE_TITLE_WEIGHT} ${titlePx}px ${drawing.font}`;
         for (const label of nodeLabelsAt(ctx, drawing, titlePx)) ctx.fillText(label.text, label.x, label.y);
     }
+
+    paintMarks(ctx, drawing, marks, inv);
 
     const pills = groupLabels.filter((label) => label.kind === 'pill');
     for (const label of pills) paintGroupLabel(label);

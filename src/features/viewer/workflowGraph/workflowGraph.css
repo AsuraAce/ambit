@@ -622,13 +622,6 @@
         visibility 0s linear 160ms;
 }
 
-/* The fold buttons stay in the Tab order, unseen and unclickable; focusing one zooms in to its node or group. */
-.wg-world.far .wg-cb {
-    visibility: visible;
-    opacity: 0;
-    pointer-events: none;
-}
-
 .wg-farcanvas {
     position: absolute;
     inset: 0;
@@ -785,6 +778,504 @@
     pointer-events: none;
 }
 
+/* The canvas and the side panel share the space under the app bar; the panel lies over the canvas's right edge. */
+.wg-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+
+/* The canvas is the arrow keys' Tab stop: the node it is on shows the ring, not the canvas. */
+.wg-canvas:focus {
+    outline: none;
+}
+
+.wg-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* Reading the graph: the picked node, the arrow keys' node and a search's hits (from the piece). */
+.wg-node.sel {
+    border-color: var(--graph-sage);
+    box-shadow:
+        0 0 0 1px var(--graph-sage),
+        0 0 0 5px color-mix(in srgb, var(--graph-sage-deep) 22%, transparent),
+        0 10px 28px var(--graph-shadow);
+}
+
+.wg-node.kf {
+    outline: 2px dashed var(--graph-sage);
+    outline-offset: 5px;
+}
+
+.wg-node.hit {
+    box-shadow:
+        0 0 0 2px var(--graph-sage),
+        0 0 22px color-mix(in srgb, var(--graph-sage) 45%, transparent);
+}
+
+.wg-node.miss {
+    opacity: 0.22;
+}
+
+.wg-world[data-searching] .wg-wire {
+    opacity: 0.15;
+}
+
+.wg-world[data-searching] .wg-group,
+.wg-world[data-searching] .wg-gtitle {
+    opacity: 0.5;
+}
+
+.wg-open {
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 7px;
+    border-radius: 6px;
+    border: 1px solid var(--graph-line-hi);
+    background: var(--graph-wash);
+    color: var(--graph-body);
+    font-size: 11px;
+    font-weight: 600;
+    flex: none;
+}
+
+.wg-open:hover {
+    border-color: var(--graph-sage-deep);
+    color: var(--graph-text);
+}
+
+/* A value the file does not name stands alone; its tooltip says why. */
+.wg-wg.bare .v {
+    margin-left: 0;
+    text-align: left;
+}
+
+/* A MarkdownNote's text, read as markdown. */
+.wg-md {
+    white-space: normal;
+}
+
+.wg-md > * {
+    margin: 0 0 6px;
+}
+
+.wg-md > :last-child {
+    margin-bottom: 0;
+}
+
+.wg-md .wg-md-h {
+    font-weight: 700;
+    color: var(--graph-text);
+}
+
+.wg-md ul,
+.wg-md ol {
+    padding-left: 18px;
+}
+
+.wg-md ul {
+    list-style: disc;
+}
+
+.wg-md ol {
+    list-style: decimal;
+}
+
+.wg-md code {
+    padding: 0 3px;
+    border-radius: 4px;
+    background: var(--graph-shade);
+    font-size: 0.92em;
+}
+
+.wg-md pre {
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--graph-shade);
+    white-space: pre-wrap;
+}
+
+.wg-md pre code {
+    padding: 0;
+    background: none;
+}
+
+.wg-md blockquote {
+    padding-left: 8px;
+    border-left: 2px solid var(--graph-line-hi);
+    color: var(--graph-muted);
+}
+
+.wg-md hr {
+    border: 0;
+    border-top: 1px solid var(--graph-line-hi);
+}
+
+/* Breadcrumb of subgraph levels */
+.wg-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--graph-hint);
+}
+
+.wg-crumb {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+button.wg-crumb {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--graph-muted);
+}
+
+button.wg-crumb:hover {
+    background: var(--graph-hover);
+    color: var(--graph-text);
+}
+
+.wg-crumb.here {
+    color: var(--graph-text);
+    font-weight: 600;
+}
+
+.wg-tb.top-left {
+    left: 14px;
+    top: 12px;
+}
+
+/* Search */
+.wg-search {
+    position: relative;
+}
+
+.wg-search .ic {
+    position: absolute;
+    left: 9px;
+    top: 7px;
+    color: var(--graph-hint);
+    pointer-events: none;
+}
+
+.wg-search input {
+    width: 210px;
+    height: 28px;
+    padding: 0 28px;
+    border-radius: 7px;
+    border: 1px solid var(--graph-line-hi);
+    background: var(--graph-shade);
+    color: var(--graph-text);
+    font: inherit;
+    font-size: 12.5px;
+    outline: none;
+}
+
+.wg-search input::placeholder {
+    color: var(--graph-hint);
+}
+
+.wg-search input:focus {
+    border-color: var(--graph-sage-deep);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--graph-sage-deep) 30%, transparent);
+}
+
+.wg-search .wg-kbd {
+    position: absolute;
+    right: 7px;
+    top: 6px;
+}
+
+.wg-results {
+    position: absolute;
+    left: -5px;
+    top: calc(100% + 10px);
+    width: 320px;
+    max-height: 60vh;
+    overflow: auto;
+    padding: 5px;
+    border-radius: 10px;
+    scrollbar-width: thin;
+}
+
+.wg-res {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+.wg-res.on,
+.wg-res:hover {
+    background: var(--graph-hover);
+}
+
+.wg-res .t {
+    color: var(--graph-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wg-res .d {
+    color: var(--graph-muted);
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wg-more {
+    padding: 6px 9px 4px;
+    color: var(--graph-hint);
+    font-size: 11.5px;
+}
+
+.wg-empty {
+    margin: 0;
+    padding: 6px 0;
+    color: var(--graph-hint);
+    font-size: 12px;
+}
+
+.wg-results .wg-empty {
+    padding: 6px 9px;
+}
+
+/* Side panel: the selected node's settings, wires and saved JSON. */
+.wg-panel {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 340px;
+    display: flex;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--graph-surface) 97%, transparent);
+    border-left: 1px solid var(--graph-line);
+    box-shadow: -12px 0 30px var(--graph-shadow);
+    animation: wg-panel-in 260ms var(--wg-out);
+    user-select: text;
+}
+
+@keyframes wg-panel-in {
+    from {
+        opacity: 0;
+        translate: 24px 0;
+    }
+}
+
+.wg-ph {
+    padding: 14px 14px 12px;
+    border-bottom: 1px solid var(--graph-line);
+}
+
+.wg-ph .row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.wg-ph .cls {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--graph-hint);
+    font-size: 11px;
+}
+
+.wg-ph .wg-px {
+    margin-left: auto;
+}
+
+.wg-ph h3 {
+    margin: 6px 0 8px;
+    font-size: 15px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.wg-ph .wg-pa {
+    height: 26px;
+    border-color: var(--graph-line-hi);
+}
+
+.wg-pb {
+    flex: 1;
+    overflow: auto;
+    padding: 4px 14px 24px;
+    scrollbar-width: thin;
+}
+
+.wg-ps {
+    padding: 12px 0 4px;
+}
+
+.wg-ps + .wg-ps {
+    border-top: 1px solid var(--graph-line);
+}
+
+.wg-cap {
+    margin: 0 0 7px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--graph-hint);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.wg-kv {
+    display: grid;
+    grid-template-columns: minmax(90px, auto) 1fr;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--graph-wash);
+}
+
+.wg-kv:last-child {
+    border-bottom: 0;
+}
+
+.wg-kv .k {
+    color: var(--graph-muted);
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+}
+
+.wg-kv .v {
+    color: var(--graph-text);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.wg-kv.bare,
+.wg-kv.txt {
+    grid-template-columns: 1fr;
+}
+
+.wg-kv.txt .v,
+.wg-kv.txt .wg-md {
+    padding: 7px 9px;
+    border-radius: 6px;
+    background: var(--graph-wash);
+    border: 1px solid var(--graph-line);
+    line-height: 1.5;
+    color: var(--graph-body);
+}
+
+.wg-lk {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    margin: 0 0 4px;
+    border-radius: 7px;
+    border: 1px solid var(--graph-line);
+    background: var(--graph-wash);
+    text-align: left;
+    font-size: 12px;
+    color: var(--graph-body);
+}
+
+.wg-lk:hover {
+    border-color: var(--graph-sage-deep);
+    color: var(--graph-text);
+}
+
+.wg-lk .f {
+    color: var(--graph-muted);
+    white-space: nowrap;
+}
+
+.wg-lk .to {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--graph-text);
+}
+
+.wg-sw {
+    width: 10px;
+    height: 10px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--pc, var(--graph-muted));
+}
+
+.wg-cp {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: var(--graph-hint);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.wg-cp:hover {
+    color: var(--graph-sage);
+}
+
+.wg-json {
+    margin: 0;
+    padding: 9px 10px;
+    max-height: 260px;
+    overflow: auto;
+    border-radius: 7px;
+    background: var(--graph-shade);
+    border: 1px solid var(--graph-line);
+    color: var(--graph-muted);
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.wg-open:focus-visible,
+.wg-crumb:focus-visible,
+.wg-lk:focus-visible,
+.wg-cp:focus-visible {
+    outline: 2px solid var(--graph-sage);
+    outline-offset: 1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .wg-world,
     .wg-world.far,
@@ -803,7 +1294,8 @@
     }
 
     .wg-node.arriving,
-    .wg-wire.arriving {
+    .wg-wire.arriving,
+    .wg-panel {
         animation: none;
     }
 }

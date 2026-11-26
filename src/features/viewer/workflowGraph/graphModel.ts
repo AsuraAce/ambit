@@ -56,7 +56,8 @@ export interface GraphPort {
 }
 
 export interface GraphWidget {
-    name: string;
+    /** Null when the file does not say which setting the value belongs to; nothing stands in for the name. */
+    name: string | null;
     value: string;
     isLongText: boolean;
 }
@@ -66,6 +67,10 @@ export interface GraphNode {
     kind: WorkflowCanvasNodeKind;
     title: string;
     nodeType: string;
+    /** For a subgraph instance, the definition its level comes from. */
+    subgraphId: string | null;
+    /** The node as saved, for the side panel; null past the report's byte caps. */
+    rawJson: string | null;
     mode: WorkflowCanvasNodeMode;
     collapsed: boolean;
     width: number;
@@ -130,8 +135,8 @@ const FIRST_PIN = 1 + HEADER_H + BODY_PAD_TOP + SLOT_H / 2;
 const buildNode = (node: WorkflowCanvasNode): GraphNode => {
     const inputs = node.inputs.map(toPort);
     const outputs = node.outputs.map(toPort);
-    const widgets = node.widgets.map((widget, index) => ({
-        name: widget.name ?? `Value ${index + 1}`,
+    const widgets = node.widgets.map((widget) => ({
+        name: widget.name,
         value: clip(widget.value),
         isLongText: widget.isLongText,
     }));
@@ -169,6 +174,8 @@ const buildNode = (node: WorkflowCanvasNode): GraphNode => {
         kind: node.kind,
         title: node.title || node.nodeType,
         nodeType: node.nodeType,
+        subgraphId: node.subgraphId,
+        rawJson: node.rawJson,
         mode: node.mode,
         collapsed: node.collapsed,
         width,

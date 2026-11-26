@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
+import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useGlobalShortcuts } from '../../../../hooks/useGlobalShortcuts';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
+import { useViewerKeyboard } from '../../hooks/useViewerKeyboard';
 import { farSceneFor, layoutGroupLabels } from '../farCanvas';
 import {
     DETAIL_FADE_SCALE,
@@ -577,33 +580,21 @@ describe('WorkflowGraphView', () => {
         expect(world.classList.contains('far')).toBe(true);
     });
 
-    // Far mode shows no controls, so keyboard focus on a fold button there zooms in to what it folds.
-    it('zooms in to a node or group when its fold button gets focus in far mode', () => {
-        const original = window.matchMedia;
-        window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
-        try {
-            renderGraph();
-            const world = screen.getByTestId('workflow-graph-world');
-            const zoomOut = () => {
-                for (let i = 0; i < 14; i++) fireEvent.keyDown(document.body, { key: '-' });
-                expect(world.classList.contains('far')).toBe(true);
-            };
-            zoomOut();
-            act(() => screen.getByRole('button', { name: 'Fold Decode' }).focus());
-            expect(world.classList.contains('far')).toBe(false);
-            expect(world.style.transform).toMatch(/scale\(1\)$/);
-            // Focus moving within near mode leaves the view alone.
-            const near = world.style.transform;
-            act(() => screen.getByRole('button', { name: 'Fold group Sampling' }).focus());
-            expect(world.style.transform).toBe(near);
-            zoomOut();
-            act(() => screen.getByRole('button', { name: 'Fold Decode' }).focus());
-            act(() => screen.getByRole('button', { name: 'Fold group Sampling' }).focus());
-            expect(world.classList.contains('far')).toBe(false);
-        } finally {
-            window.matchMedia = original;
-        }
+    // Outside near view the HTML is unseen, so nothing in it may take Tab focus (it used to land on hidden fold
+    // buttons). Focus already in it moves to the canvas, where the arrow keys carry on.
+    it('takes the hidden HTML out of the Tab order outside near view, moving focus in it to the canvas', () => {
+        renderGraph();
+        const world = screen.getByTestId('workflow-graph-world');
+        const fold = screen.getByRole('button', { name: 'Fold group Sampling' });
+        act(() => fold.focus());
+        for (let i = 0; i < 14; i++) fireEvent.keyDown(document.body, { key: '-' });
+        expect(world.classList.contains('far')).toBe(true);
+        expect(world.hasAttribute('inert')).toBe(true);
+        expect(document.activeElement).toBe(screen.getByRole('application', { name: 'Workflow canvas' }));
+        for (let i = 0; i < 14; i++) fireEvent.keyDown(document.body, { key: '+' });
+        expect(world.hasAttribute('inert')).toBe(false);
     });
+
     // The owner's ask at Fit on Lily: a group's title pill takes the view to that group. One click (or Enter on the
     // title) fits the group, a drag that starts on the pill still pans, and the fold button in it still folds.
     describe('a click on a group’s title pill', () => {
@@ -745,5 +736,345 @@ describe('WorkflowGraphView', () => {
                 vi.unstubAllGlobals();
             }
         });
+    });
+    // P3a: reading the graph. The side panel, the search, subgraph levels and the arrow keys.
+    describe('reading the graph', () => {
+        const root = level(
+            [
+                canvasNode('1', { title: 'Load', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')], rawJson: '{"id":1}' }),
+                canvasNode('2', {
+                    title: 'Decode',
+                    nodeType: 'VAEDecode',
+                    pos: { x: 400, y: 80 },
+                    inputs: [port(0, 'LATENT')],
+                    widgets: [{ name: null, value: 'tiled', isLongText: false }],
+                }),
+                canvasNode('3', { title: 'Stage', kind: 'subgraph', subgraphId: 'def', pos: { x: 400, y: 400 } }),
+                canvasNode('4', {
+                    title: 'Read me',
+                    kind: 'note',
+                    nodeType: 'MarkdownNote',
+                    pos: { x: 800, y: 80 },
+                    widgets: [{ name: null, value: '**Bold** [link](https://example.com)', isLongText: true }],
+                }),
+                canvasNode('5', {
+                    title: 'Plain',
+                    kind: 'note',
+                    nodeType: 'Note',
+                    pos: { x: 800, y: 400 },
+                    widgets: [{ name: null, value: '**not bold**', isLongText: true }],
+                }),
+            ],
+            [canvasLink('1', 0, '2', 0)],
+            [canvasGroup('Sampling', 0, 0, 300, 300)]
+        );
+        const withSubgraph = report(root, {
+            subgraphs: [{ id: 'def', name: 'Upscale stage', level: level([canvasNode('u1', { title: 'Inner', pos: { x: 0, y: 30 } })]) }],
+            selectedOutputPaths: [['2']],
+        });
+        const renderReading = (onClose = vi.fn()) => {
+            const view = render(
+                <WorkflowGraphView report={withSubgraph} fileName="read.png" onClose={onClose} makeLayoutWorker={fakeWorker} />
+            );
+            return { ...view, onClose };
+        };
+        const nodeElement = (id: string) => document.querySelector<HTMLElement>(`.wg-world [data-node-id="${id}"]`)!;
+        const click = (element: Element) => {
+            fireEvent.pointerDown(element, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+            fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
+        };
+        const panel = () => document.querySelector('.wg-panel');
+        const canvas = () => screen.getByRole('application', { name: 'Workflow canvas' });
+        const announced = () => screen.getByTestId('graph-announcer').textContent;
+        const escape = (target: Element = document.body) => fireEvent.keyDown(target, { key: 'Escape' });
+
+        it('opens the side panel from a click on a node, and closes it from empty space', () => {
+            renderReading();
+            click(nodeElement('1'));
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Load');
+            expect(nodeElement('1').classList.contains('sel')).toBe(true);
+            click(canvas());
+            expect(panel()).toBeNull();
+        });
+
+        it('goes to the other node from a wire row in the panel, and selects it', () => {
+            renderReading();
+            click(nodeElement('1'));
+            fireEvent.click(screen.getByRole('button', { name: /^latent to Decode/ }));
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Decode');
+            expect(nodeElement('2').classList.contains('sel')).toBe(true);
+        });
+
+        // Escape steps back one thing at a time, so it never throws away more than the user meant.
+        it('steps back with Escape: the search, the panel, the subgraph level, then the graph', () => {
+            const { onClose } = renderReading();
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+            expect(screen.getByRole('navigation', { name: 'Workflow levels' }).textContent).toContain('Upscale stage');
+            expect(shown('Inner')).toBe(true);
+            click(nodeElement('u1'));
+            fireEvent.keyDown(document.body, { key: '/' });
+            const box = screen.getByRole('combobox', { name: 'Find a node or value' });
+            fireEvent.change(box, { target: { value: 'inner' } });
+            escape(box);
+            expect((box as HTMLInputElement).value).toBe('');
+            expect(panel()).not.toBeNull();
+            escape();
+            expect(panel()).toBeNull();
+            expect(shown('Inner')).toBe(true);
+            escape();
+            expect(shown('Inner')).toBe(false);
+            expect(screen.queryByRole('navigation', { name: 'Workflow levels' })).toBeNull();
+            expect(onClose).not.toHaveBeenCalled();
+            escape();
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps a level’s folds while a subgraph is open, and goes back from the breadcrumb', () => {
+            renderReading();
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+            expect(shown('Load')).toBe(false);
+            fireEvent.click(screen.getByRole('button', { name: 'Workflow' }));
+            expect(screen.getByRole('button', { name: 'Unfold group Sampling' })).toBeTruthy();
+        });
+
+        // A level's Tidy layout is kept like its folds: going back up shows it at once, as the user left it, with no
+        // new layout run (up to 10 s on a large root) and no glide or refit that would throw away their view.
+        it('keeps a level’s Tidy layout and view while a subgraph is open, with no new layout run', async () => {
+            const made: FakeLayoutWorker[] = [];
+            const countingWorker = () => {
+                const worker = new FakeLayoutWorker();
+                made.push(worker);
+                return worker as unknown as Worker;
+            };
+            render(<WorkflowGraphView report={withSubgraph} fileName="read.png" onClose={vi.fn()} makeLayoutWorker={countingWorker} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Tidy' }));
+            await waitFor(() => expect(shown('Sampling')).toBe(false));
+            const world = screen.getByTestId('workflow-graph-world');
+            fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+            const left = world.style.transform;
+            expect(made).toHaveLength(1);
+
+            fireEvent.click(screen.getByRole('button', { name: /^Open subgraph/ }));
+            fireEvent.click(screen.getByRole('button', { name: 'Workflow' }));
+            await act(async () => {
+                await Promise.resolve();
+            });
+
+            expect(made).toHaveLength(1);
+            expect(screen.getByRole('button', { name: 'Tidy' }).getAttribute('aria-pressed')).toBe('true');
+            expect(shown('Sampling')).toBe(false);
+            const back = screen.getByTestId('workflow-graph-world');
+            expect(back.classList.contains('moving')).toBe(false);
+            expect(back.style.transform).toBe(left);
+        });
+
+        it('finds nodes with "/", dims the rest, and opens the one picked', () => {
+            renderReading();
+            fireEvent.keyDown(document.body, { key: '/' });
+            const box = screen.getByRole('combobox', { name: 'Find a node or value' });
+            expect(document.activeElement).toBe(box);
+            fireEvent.change(box, { target: { value: 'TILED' } });
+            expect(nodeElement('2').classList.contains('hit')).toBe(true);
+            expect(nodeElement('1').classList.contains('miss')).toBe(true);
+            expect(screen.getByTestId('workflow-graph-world').hasAttribute('data-searching')).toBe(true);
+            expect(screen.getByRole('option').textContent).toContain('Decode');
+            fireEvent.keyDown(box, { key: 'Enter' });
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Decode');
+            expect((box as HTMLInputElement).value).toBe('');
+            expect(nodeElement('1').classList.contains('miss')).toBe(false);
+        });
+
+        it('unfolds the group a picked node is folded into', () => {
+            renderReading();
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            fireEvent.keyDown(document.body, { key: '/' });
+            const box = screen.getByRole('combobox', { name: 'Find a node or value' });
+            fireEvent.change(box, { target: { value: 'load' } });
+            fireEvent.keyDown(box, { key: 'Enter' });
+            expect(screen.getByRole('button', { name: 'Fold group Sampling' })).toBeTruthy();
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Load');
+        });
+
+        // The canvas is one Tab stop; the arrows move between nodes along the wires and Enter opens one.
+        it('moves between nodes with the arrow keys from the canvas, saying where it is', () => {
+            renderReading();
+            act(() => canvas().focus());
+            // It starts on the image's output node.
+            expect(nodeElement('2').classList.contains('kf')).toBe(true);
+            expect(announced()).toBe('Decode, VAEDecode');
+            fireEvent.keyDown(canvas(), { key: 'ArrowLeft' });
+            expect(nodeElement('1').classList.contains('kf')).toBe(true);
+            expect(nodeElement('2').classList.contains('kf')).toBe(false);
+            expect(announced()).toBe('Load, KSampler');
+            fireEvent.keyDown(canvas(), { key: 'ArrowUp' });
+            expect(announced()).toBe('No node above');
+            expect(nodeElement('1').classList.contains('kf')).toBe(true);
+            fireEvent.keyDown(canvas(), { key: 'Enter' });
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Load');
+            act(() => screen.getByRole('button', { name: 'Back to image' }).focus());
+            expect(nodeElement('1').classList.contains('kf')).toBe(false);
+        });
+
+        it('opens a subgraph with a second Enter, and comes back to it with Escape', () => {
+            renderReading();
+            act(() => canvas().focus());
+            fireEvent.keyDown(canvas(), { key: 'ArrowDown' });
+            expect(announced()).toBe('Stage, KSampler');
+            fireEvent.keyDown(canvas(), { key: 'Enter' });
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Stage');
+            expect(screen.getByRole('button', { name: 'Open subgraph' })).toBeTruthy();
+            fireEvent.keyDown(canvas(), { key: 'Enter' });
+            expect(shown('Inner')).toBe(true);
+            expect(document.activeElement).toBe(canvas());
+            escape();
+            expect(shown('Inner')).toBe(false);
+            expect(document.activeElement).toBe(canvas());
+            expect(nodeElement('3').classList.contains('kf')).toBe(true);
+        });
+
+        it('keeps the nodes’ own buttons out of the Tab order, and names the canvas for screen readers', () => {
+            renderReading();
+            expect(screen.getByRole('button', { name: 'Fold Load' }).tabIndex).toBe(-1);
+            expect(screen.getByRole('button', { name: 'Open subgraph Stage' }).tabIndex).toBe(-1);
+            expect(canvas().tabIndex).toBe(0);
+            expect(document.getElementById(canvas().getAttribute('aria-describedby')!)?.textContent).toMatch(/Arrow keys/);
+        });
+
+        it('reads a MarkdownNote as markdown, with no link, and a plain Note as written', () => {
+            renderReading();
+            expect(nodeElement('4').querySelector('strong')?.textContent).toBe('Bold');
+            expect(nodeElement('4').querySelector('a')).toBeNull();
+            expect(nodeElement('5').textContent).toContain('**not bold**');
+        });
+
+        it('shows a value the file does not name on its own, with no made-up name', () => {
+            renderReading();
+            const row = nodeElement('2').querySelector('.wg-wg.bare');
+            expect(row?.textContent).toBe('tiled');
+            expect(row?.getAttribute('title')).toBe('The file does not name this setting.');
+            expect(shown('Value 1')).toBe(false);
+        });
+    });
+
+    // The planner's condition: "/" opens the graph's search and nothing else, and typing in it reaches neither the
+    // viewer's keys nor the app's shortcuts.
+    describe('keyboard ownership with the search box', () => {
+        const Harness: React.FC<{ onViewerKey: (event: KeyboardEvent) => void; appSearch: React.RefObject<HTMLInputElement | null> }> = ({
+            onViewerKey,
+            appSearch,
+        }) => {
+            useViewerKeyboard({ onKeyDown: onViewerKey });
+            useGlobalShortcuts({ ...appShortcuts, isViewerOpen: true, searchInputRef: appSearch });
+            return (
+                <>
+                    <input ref={appSearch} aria-label="Library search" />
+                    <WorkflowGraphView report={graph} fileName="render.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />
+                </>
+            );
+        };
+        const appShortcuts = {
+            setSelectedImageIndex: vi.fn(),
+            setSelectedIds: vi.fn(),
+            setLastSelectedId: vi.fn(),
+            clearSelection: vi.fn(),
+            handleBulkDelete: vi.fn(),
+            togglePrivacyMode: vi.fn(),
+            toggleMasking: vi.fn(),
+            toggleFavorite: vi.fn(),
+            togglePin: vi.fn(),
+            openCollection: vi.fn(),
+            openSettings: vi.fn(),
+            openImport: vi.fn(),
+            closeAllModals: vi.fn(),
+            toggleShortcuts: vi.fn(),
+            toggleCommandPalette: vi.fn(),
+            viewMode: 'grid' as const,
+            selectedIds: new Set<string>(),
+            filteredImages: [],
+            lastSelectedId: null,
+            gridRef: { current: null },
+            isModalOpen: false,
+        };
+
+        it('focuses the graph’s search on "/", never the app’s, and keeps typed keys from the viewer and app', () => {
+            const onViewerKey = vi.fn();
+            const appSearch = React.createRef<HTMLInputElement>();
+            render(<Harness onViewerKey={onViewerKey} appSearch={appSearch} />);
+            fireEvent.keyDown(document.body, { key: '/' });
+            const box = screen.getByRole('combobox', { name: 'Find a node or value' });
+            expect(document.activeElement).toBe(box);
+            expect(document.activeElement).not.toBe(appSearch.current);
+            for (const key of ['Delete', 'Backspace', 'f', ' ', 'ArrowRight', 'ArrowLeft', 'p', 'i', 'z', '?', 'h'])
+                fireEvent.keyDown(box, { key });
+            fireEvent.keyDown(box, { key: 'f', ctrlKey: true });
+            fireEvent.keyDown(box, { key: 'k', ctrlKey: true });
+            expect(onViewerKey).not.toHaveBeenCalled();
+            for (const [name, action] of Object.entries(appShortcuts))
+                if (typeof action === 'function') expect(action, name).not.toHaveBeenCalled();
+            expect(document.activeElement).not.toBe(appSearch.current);
+        });
+    });
+
+    // On the far canvas a node is a painted box, so the view hit-tests the boxes it drew.
+    it('opens a node from a click on the far canvas, and rings it there', () => {
+        const strokes: string[] = [];
+        const ctx = new Proxy(
+            {},
+            {
+                get: (target: Record<string, unknown>, key) =>
+                    key === 'measureText'
+                        ? (text: string) => ({ width: text.length * 6 })
+                        : key === 'stroke'
+                          ? () => strokes.push(String(target.strokeStyle))
+                          : key in target
+                            ? target[key as string]
+                            : () => undefined,
+                set: (target: Record<string, unknown>, key, value) => {
+                    target[key as string] = value;
+                    return true;
+                },
+            }
+        );
+        vi.stubGlobal(
+            'Path2D',
+            class {
+                roundRect() {}
+                rect() {}
+                moveTo() {}
+                lineTo() {}
+                bezierCurveTo() {}
+                addPath() {}
+                closePath() {}
+            }
+        );
+        const context = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+        const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+        try {
+            renderGraph();
+            const world = screen.getByTestId('workflow-graph-world');
+            const canvasElement = document.querySelector<HTMLElement>('.wg-canvas')!;
+            for (let i = 0; i < 14 && !world.classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+            expect(world.classList.contains('far')).toBe(true);
+            const [x, y, s] = /translate\(([\d.e-]+)px, ([\d.e-]+)px\) scale\(([\d.e-]+)\)/
+                .exec(world.style.transform)!
+                .slice(1)
+                .map(Number);
+            const decode = savedPositions(buildGraphModel(graph.root)).get('2')!;
+            const onDecode = { pointerId: 1, clientX: x + (decode.x + 100) * s, clientY: y + (decode.y + 60) * s };
+            strokes.length = 0;
+            fireEvent.pointerDown(canvasElement, { button: 0, ...onDecode });
+            fireEvent.pointerUp(canvasElement, onDecode);
+            expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+            // The far palette's accent is read from the layer; jsdom has no custom properties, so it falls back.
+            expect(strokes.length).toBeGreaterThan(0);
+            fireEvent.pointerDown(canvasElement, { button: 0, pointerId: 2, clientX: 2, clientY: 2 });
+            fireEvent.pointerUp(canvasElement, { pointerId: 2, clientX: 2, clientY: 2 });
+            expect(document.querySelector('.wg-panel')).toBeNull();
+        } finally {
+            context.mockRestore();
+            box.mockRestore();
+            vi.unstubAllGlobals();
+        }
     });
 });
