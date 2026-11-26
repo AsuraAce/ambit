@@ -3,7 +3,17 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 import { farSceneFor, layoutGroupLabels } from '../farCanvas';
-import { DETAIL_FADE_SCALE, FAR_EXIT_SCALE, FAR_SCALE, FOLD_MS, LOWEST_SCALE, MIN_SCALE, sceneFor, wirePaths } from '../geometry';
+import {
+    DETAIL_FADE_SCALE,
+    DETAIL_STEPS,
+    FAR_EXIT_SCALE,
+    FAR_SCALE,
+    FOLD_MS,
+    LOWEST_SCALE,
+    MIN_SCALE,
+    sceneFor,
+    wirePaths,
+} from '../geometry';
 import { buildGraphModel, savedPositions } from '../graphModel';
 import { handleLayoutRequest, type LayoutRequest, type LayoutResponse } from '../tidyLayout';
 import { LAYOUT_TIME_CAP_MS } from '../useTidyPositions';
@@ -514,22 +524,24 @@ describe('WorkflowGraphView', () => {
         expect(scale()).toBeCloseTo(opened, 6);
     });
 
-    // Zooming out toward far mode fades the body text through --wg-detail, before the switch.
+    // Zooming out toward far mode fades the body text through the world's data-detail step, before the switch.
     it('fades node body text in steps as the view zooms toward far mode', () => {
         renderGraph();
         const world = screen.getByTestId('workflow-graph-world');
         const scale = () => Number(/scale\(([\d.e-]+)\)/.exec(world.style.transform)?.[1]);
+        const graphCss = readFileSync('src/features/viewer/workflowGraph/workflowGraph.css', 'utf8');
         const seen: string[] = [];
         for (let i = 0; i < 14 && !world.classList.contains('far'); i++) {
             fireEvent.keyDown(document.body, { key: '-' });
-            const detail = world.style.getPropertyValue('--wg-detail');
+            const detail = world.dataset.detail ?? '';
             if (scale() < DETAIL_FADE_SCALE && !world.classList.contains('far')) seen.push(detail);
         }
         expect(seen.length).toBeGreaterThan(0);
-        // Fading, not yet gone: the near view still shows a trace of the text there.
+        // Fading, not yet gone: the near view still shows a trace of the text there, and the stylesheet dims it.
         for (const detail of seen) {
-            expect(Number(detail)).toBeLessThan(1);
+            expect(Number(detail)).toBeLessThan(DETAIL_STEPS);
             expect(Number(detail)).toBeGreaterThan(0);
+            expect(graphCss).toMatch(new RegExp(`\\.wg-world\\[data-detail='${detail}'\\] \\.wg-nb \\{\\s*opacity: 0\\.\\d+;`));
         }
         expect(world.classList.contains('far')).toBe(true);
     });

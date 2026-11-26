@@ -5,6 +5,7 @@ import { useWorkflowGraphStore } from '../../../stores/workflowGraphStore';
 import { buildGraphModel, hasSavedPositions, savedPositions, type Positions } from './graphModel';
 import {
     boundsOf,
+    DETAIL_STEPS,
     detailOpacity,
     fitView,
     FOLD_MS,
@@ -241,7 +242,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             const detail = detailOpacity(s);
             if (detail !== detailRef.current) {
                 detailRef.current = detail;
-                world.style.setProperty('--wg-detail', String(detail));
+                // A data attribute, not a custom property: an inherited property restyles all ~11k elements of a
+                // 500-node graph (about 34 ms a step), the attribute only the body rows its rules match (about 9 ms).
+                world.dataset.detail = String(Math.round(detail * DETAIL_STEPS));
             }
             // The two views cross-fade in CSS; the HTML stops painting once the far canvas has faded in.
             if (far !== isFarRef.current) {

@@ -54,7 +54,8 @@ export const viewLevel = (s: number, wasFar: boolean): ViewLevel => {
 
 /** Above this scale a node's body text shows in full; it fades out between here and FAR_SCALE. */
 export const DETAIL_FADE_SCALE = 0.65;
-const DETAIL_STEPS = 3;
+/** How many steps the fade takes; workflowGraph.css holds one opacity rule per step. */
+export const DETAIL_STEPS = 3;
 
 /**
  * How visible the near view's detail text is at scale s: gone at FAR_SCALE, full from DETAIL_FADE_SCALE, in a few

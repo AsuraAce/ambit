@@ -374,7 +374,7 @@
 }
 
 .wg-node.bypass .wg-nb {
-    opacity: calc(0.55 * var(--wg-detail, 1));
+    opacity: 0.55;
 }
 
 .wg-node.mute {
@@ -438,12 +438,31 @@
     margin-left: 2px;
 }
 
-/* A node's body fades out as the view zooms toward far mode (--wg-detail, set in steps by the view), so only the
-   titles are left when the canvas takes over. */
+/* A node's body fades out as the view zooms toward far mode (data-detail, the step the view sets out of
+   DETAIL_STEPS), so only the titles are left when the canvas takes over. A bypassed body keeps its dimming. */
 .wg-nb {
     padding: 5px 0 8px;
-    opacity: var(--wg-detail, 1);
     transition: opacity 120ms var(--wg-out);
+}
+
+.wg-world[data-detail='2'] .wg-nb {
+    opacity: 0.667;
+}
+
+.wg-world[data-detail='2'] .wg-node.bypass .wg-nb {
+    opacity: 0.367;
+}
+
+.wg-world[data-detail='1'] .wg-nb {
+    opacity: 0.333;
+}
+
+.wg-world[data-detail='1'] .wg-node.bypass .wg-nb {
+    opacity: 0.183;
+}
+
+.wg-world[data-detail='0'] .wg-nb {
+    opacity: 0;
 }
 
 .wg-slots {
