@@ -52,6 +52,21 @@ export const viewLevel = (s: number, wasFar: boolean): ViewLevel => {
     return s < OVERVIEW_SCALE ? 'overview' : 'far';
 };
 
+/** Above this scale a node's body text shows in full; it fades out between here and FAR_SCALE. */
+export const DETAIL_FADE_SCALE = 0.65;
+const DETAIL_STEPS = 3;
+
+/**
+ * How visible the near view's detail text is at scale s: gone at FAR_SCALE, full from DETAIL_FADE_SCALE, in a few
+ * steps between, so a zoom sweep restyles the nodes a few times instead of on every frame. The owner's wheel takes
+ * big steps, so the text has to be on its way out before the canvas takes over rather than vanish in the swap.
+ */
+export const detailOpacity = (s: number): number => {
+    if (s >= DETAIL_FADE_SCALE) return 1;
+    if (s <= FAR_SCALE) return 0;
+    return Math.ceil(((s - FAR_SCALE) / (DETAIL_FADE_SCALE - FAR_SCALE)) * DETAIL_STEPS) / DETAIL_STEPS;
+};
+
 export const clampScale = (s: number, floor = MIN_SCALE): number => Math.min(Math.max(s, floor), MAX_SCALE);
 
 /** Which folded group hides each node, and which groups sit inside a folded group. Groups apply only as saved. */

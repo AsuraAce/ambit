@@ -359,7 +359,7 @@
 }
 
 .wg-node.bypass .wg-nb {
-    opacity: 0.55;
+    opacity: calc(0.55 * var(--wg-detail, 1));
 }
 
 .wg-node.mute {
@@ -423,8 +423,12 @@
     margin-left: 2px;
 }
 
+/* A node's body fades out as the view zooms toward far mode (--wg-detail, set in steps by the view), so only the
+   titles are left when the canvas takes over. */
 .wg-nb {
     padding: 5px 0 8px;
+    opacity: var(--wg-detail, 1);
+    transition: opacity 120ms var(--wg-out);
 }
 
 .wg-slots {
@@ -737,6 +741,7 @@
     .wg-node,
     .wg-world.moving .wg-node,
     .wg-node.leaving,
+    .wg-nb,
     .wg-wires,
     .wg-cb svg {
         transition: none;

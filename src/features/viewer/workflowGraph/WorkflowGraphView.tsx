@@ -5,6 +5,7 @@ import { useWorkflowGraphStore } from '../../../stores/workflowGraphStore';
 import { buildGraphModel, hasSavedPositions, savedPositions, type Positions } from './graphModel';
 import {
     boundsOf,
+    detailOpacity,
     fitView,
     FOLD_MS,
     GROUP_TITLE_H,
@@ -134,6 +135,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const rectRef = React.useRef<DOMRect | null>(null);
     const isFarRef = React.useRef(false);
     const levelRef = React.useRef<ViewLevel>('near');
+    const detailRef = React.useRef(1);
     // After leaving far mode the canvas fades out, and keeps following the view until it has.
     const farFadeEndRef = React.useRef(0);
     const foldTimersRef = React.useRef(new Map<string, number>());
@@ -204,6 +206,12 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         levelRef.current = level;
         if (world) {
             world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+            // Body text fades in steps toward far mode; a step changes only a few times in a sweep.
+            const detail = detailOpacity(s);
+            if (detail !== detailRef.current) {
+                detailRef.current = detail;
+                world.style.setProperty('--wg-detail', String(detail));
+            }
             // The two views cross-fade in CSS; the HTML stops painting once the far canvas has faded in.
             if (far !== isFarRef.current) {
                 isFarRef.current = far;

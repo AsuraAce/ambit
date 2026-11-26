@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FAR_EXIT_SCALE, FAR_SCALE, OVERVIEW_SCALE, viewLevel } from '../geometry';
+import { DETAIL_FADE_SCALE, detailOpacity, FAR_EXIT_SCALE, FAR_SCALE, OVERVIEW_SCALE, viewLevel } from '../geometry';
 import { dropOverlaps, fitOverviewTitle, GROUP_TITLE_CAP_PX, keepsEnough, OVERVIEW_TITLE_MIN_PX, placeGroupTitle } from '../groupTitles';
 
 const group = { x: 100, y: 400, w: 300, h: 200 };
@@ -73,5 +73,22 @@ describe('viewLevel', () => {
         expect(viewLevel(OVERVIEW_SCALE, true)).toBe('far');
         expect(viewLevel(OVERVIEW_SCALE - 0.001, true)).toBe('overview');
         expect(viewLevel(OVERVIEW_SCALE - 0.001, false)).toBe('overview');
+    });
+});
+
+describe('detailOpacity', () => {
+    // The owner's look pass: body text should fade sooner, so it is gone or going before the canvas takes over
+    // instead of switching in the swap. It steps, so a sweep restyles 500 nodes a few times, not every frame.
+    it('fades body text out between DETAIL_FADE_SCALE and the switch, in a few steps', () => {
+        expect(detailOpacity(1)).toBe(1);
+        expect(detailOpacity(DETAIL_FADE_SCALE)).toBe(1);
+        expect(detailOpacity(FAR_SCALE)).toBe(0);
+        expect(DETAIL_FADE_SCALE).toBeGreaterThan(FAR_EXIT_SCALE);
+        const steps = new Set<number>();
+        for (let s = DETAIL_FADE_SCALE; s > FAR_SCALE; s -= 0.001) steps.add(detailOpacity(s));
+        expect(steps.size).toBeLessThanOrEqual(4);
+        expect([...steps].every((step) => step > 0 && step <= 1)).toBe(true);
+        // Already partly faded where the view comes back from far mode.
+        expect(detailOpacity(FAR_EXIT_SCALE)).toBeLessThan(1);
     });
 });
