@@ -65,7 +65,8 @@ export const DETAIL_STEPS = 3;
 export const detailOpacity = (s: number): number => {
     if (s >= DETAIL_FADE_SCALE) return 1;
     if (s <= FAR_SCALE) return 0;
-    return Math.ceil(((s - FAR_SCALE) / (DETAIL_FADE_SCALE - FAR_SCALE)) * DETAIL_STEPS) / DETAIL_STEPS;
+    // Less a hair, so a scale on a step's edge (0.55 is 1.0000000000000004 steps in) lands on that step.
+    return Math.ceil(((s - FAR_SCALE) / (DETAIL_FADE_SCALE - FAR_SCALE)) * DETAIL_STEPS - 1e-9) / DETAIL_STEPS;
 };
 
 export const clampScale = (s: number, floor = MIN_SCALE): number => Math.min(Math.max(s, floor), MAX_SCALE);

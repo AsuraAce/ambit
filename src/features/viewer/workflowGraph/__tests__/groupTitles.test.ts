@@ -91,4 +91,12 @@ describe('detailOpacity', () => {
         // Already partly faded where the view comes back from far mode.
         expect(detailOpacity(FAR_EXIT_SCALE)).toBeLessThan(1);
     });
+
+    // The steps split the band evenly, so the view coming back from far mode at 55 % shows the text at a third.
+    it('steps at even thirds of the band, float rounding aside', () => {
+        expect(detailOpacity(0.55)).toBeCloseTo(1 / 3, 9);
+        expect(detailOpacity(0.6)).toBeCloseTo(2 / 3, 9);
+        expect(detailOpacity(0.5001)).toBeCloseTo(1 / 3, 9);
+        expect(detailOpacity(0.6499)).toBe(1);
+    });
 });
