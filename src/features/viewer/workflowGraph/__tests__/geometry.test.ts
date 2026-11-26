@@ -10,9 +10,11 @@ import {
     MIN_SCALE,
     sceneFor,
     startView,
+    visibleWires,
     wirePaths,
     zoomAt,
     zoomFloor,
+    type WireShape,
 } from '../geometry';
 import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
 
@@ -225,5 +227,61 @@ describe('fit and zoom', () => {
         expect(zoomFloor({ x: 0, y: 0, w: 200, h: 100 }, viewport)).toBe(MIN_SCALE);
         expect(zoomFloor({ x: 0, y: 0, w: 10_000_000, h: 100 }, viewport)).toBe(LOWEST_SCALE);
         expect(zoomFloor(null, viewport)).toBe(MIN_SCALE);
+    });
+});
+
+// The Wires menu's five shapes. Each must still join the same output port to the same input port: a shape changes
+// how a wire runs, never what it connects.
+describe('wire shapes', () => {
+    const model = buildGraphModel(
+        level(
+            [
+                canvasNode('a', { pos: { x: 0, y: 30 }, outputs: [port(0, 'LATENT')] }),
+                canvasNode('b', { pos: { x: 600, y: 330 }, inputs: [port(0, 'LATENT')], outputs: [port(0, 'IMAGE')] }),
+                canvasNode('c', { pos: { x: 1200, y: 30 }, inputs: [port(0, 'IMAGE')] }),
+            ],
+            [canvasLink('a', 0, 'b', 0, 'LATENT'), canvasLink('b', 0, 'c', 0, 'IMAGE')]
+        )
+    );
+    const positions = savedPositions(model);
+    const scene = sceneFor(model, 'saved', none);
+    const wire = (shape: WireShape) => wirePaths(model, positions, none, scene, shape)[0];
+    const a = endpoint(model.byId.get('a')!, positions.get('a')!, 'out', 0, false, undefined);
+    const b = endpoint(model.byId.get('b')!, positions.get('b')!, 'in', 0, false, undefined);
+    const ends = (d: string) => {
+        const numbers = d.match(/-?[\d.]+/g)!.map(Number);
+        return { start: numbers.slice(0, 2), end: numbers.slice(-2) };
+    };
+    const shapes: WireShape[] = ['curved', 'straight', 'angled', 'bundled', 'hidden'];
+
+    it.each(shapes)('draws %s wires from the output port to the input port', (shape) => {
+        const drawn = wire(shape);
+        expect(ends(drawn.d)).toEqual({ start: [a.x, a.y], end: [b.x, b.y] });
+        expect({ from: drawn.from, to: drawn.to }).toEqual({ from: 'a', to: 'b' });
+    });
+
+    it('draws each shape its own way', () => {
+        expect(wire('curved').d).toMatch(/^M[^C]+C[^LQ]+$/);
+        // Straight: a 16 px stub out of each port, one straight line between.
+        expect(wire('straight').d).toBe(
+            `M${a.x.toFixed(1)} ${a.y.toFixed(1)} L${(a.x + 16).toFixed(1)} ${a.y.toFixed(1)} L${(b.x - 16).toFixed(1)} ${b.y.toFixed(1)} L${b.x.toFixed(1)} ${b.y.toFixed(1)}`
+        );
+        // Angled: flat and upright runs only, turning halfway across, with rounded corners.
+        const mid = Math.round((a.x + b.x) / 2);
+        expect(wire('angled').d).toContain(`Q${mid.toFixed(1)} ${a.y.toFixed(1)}`);
+        expect(wire('angled').d).toContain(`Q${mid.toFixed(1)} ${b.y.toFixed(1)}`);
+        // Bundled: the turn sits just before the output's nearest target, not halfway.
+        expect(wire('bundled').d).toContain(`Q${(b.x - 28).toFixed(1)} ${a.y.toFixed(1)}`);
+        // Hidden draws the wires it still shows as curves.
+        expect(wire('hidden').d).toBe(wire('curved').d);
+    });
+
+    it('with Hidden, shows only the wires of the picked node', () => {
+        const wires = wirePaths(model, positions, none, scene, 'hidden');
+        expect(visibleWires(wires, 'hidden', null)).toEqual([]);
+        expect(visibleWires(wires, 'hidden', 'a').map((shown) => shown.key)).toEqual([wires[0].key]);
+        expect(visibleWires(wires, 'hidden', 'b')).toEqual(wires);
+        // Every other shape shows them all, picked node or not.
+        for (const shape of shapes.filter((candidate) => candidate !== 'hidden')) expect(visibleWires(wires, shape, 'a')).toEqual(wires);
     });
 });

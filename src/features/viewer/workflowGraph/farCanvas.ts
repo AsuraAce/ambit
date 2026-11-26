@@ -123,6 +123,8 @@ export interface FarPalette {
     accent: string;
     node: Record<FarNode['variant'], { fill: string; stroke: string; alpha: number; dashed: boolean }>;
     wire: Partial<Record<WireType, string>>;
+    /** The near view's wire width at 100%, from the Wires menu. */
+    wireWidth: number;
     group: Map<string, GroupLook>;
 }
 
@@ -176,6 +178,7 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
             reroute: nodeStyle('.wg-node.reroute', plain),
         },
         wire,
+        wireWidth: parseFloat(layerStyle.getPropertyValue('--wg-ww')) || WIRE_WIDTH,
         group,
     };
 };
@@ -247,6 +250,7 @@ export interface FarDrawing {
     text: string;
     muted: string;
     accent: string;
+    wireWidth: number;
 }
 
 /** The nodes the view marks on the far canvas: the one in the side panel, the arrow keys' one, a search's hits. */
@@ -317,6 +321,7 @@ export const prepareFarDrawing = (scene: FarScene, palette: FarPalette): FarDraw
         text: palette.text,
         muted: palette.muted,
         accent: palette.accent,
+        wireWidth: palette.wireWidth,
     };
 };
 
@@ -488,13 +493,13 @@ export const drawFarScene = (
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);
 
     // The HTML view's stacking order: wires, groups, nodes, then title pills over the nodes.
-    const wireWidth = WIRE_WIDTH * Math.min(inv, WIRE_SCALE_CAP);
+    const wireWidth = drawing.wireWidth * Math.min(inv, WIRE_SCALE_CAP);
     ctx.lineCap = 'round';
     ctx.lineWidth = wireWidth;
     ctx.globalAlpha = overview ? OVERVIEW_WIRE_ALPHA : 1;
     for (const wire of drawing.wires) {
         ctx.strokeStyle = wire.colour;
-        ctx.setLineDash(wire.bypassed ? [(6 / 2.2) * wireWidth, (5 / 2.2) * wireWidth] : []);
+        ctx.setLineDash(wire.bypassed ? [(6 / WIRE_WIDTH) * wireWidth, (5 / WIRE_WIDTH) * wireWidth] : []);
         ctx.stroke(wire.path);
     }
     ctx.setLineDash([]);

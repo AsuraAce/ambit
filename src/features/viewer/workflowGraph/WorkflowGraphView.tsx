@@ -1,7 +1,10 @@
 import * as React from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, Maximize, Minus, Plus } from 'lucide-react';
 import type { WorkflowCanvasLevel, WorkflowCanvasReport } from '../../../bindings';
+import { useSettingsStore } from '../../../stores/settingsStore';
 import { useWorkflowGraphStore } from '../../../stores/workflowGraphStore';
+import type { WorkflowGraphPrefs } from '../../../types';
+import { normalizeWorkflowGraphPrefs } from '../../../utils/settingsUtils';
 import { buildGraphModel, hasSavedPositions, savedPositions, type Positions } from './graphModel';
 import {
     boundsOf,
@@ -17,6 +20,7 @@ import {
     sceneFor,
     startView,
     viewLevel,
+    visibleWires,
     wirePaths,
     zoomAt,
     zoomFloor,
@@ -25,11 +29,10 @@ import {
     type View,
     type ViewLevel,
     type WirePath,
-    type WireShape,
 } from './geometry';
 import { FOLDED_GROUP_W } from './graphModel';
 import { countFits, placeGroupTitle, TITLE_CHROME, TITLE_INSET } from './groupTitles';
-import { groupColour, type Palette } from './groupColour';
+import { groupColour } from './groupColour';
 import {
     drawFarScene,
     farNodeAt,
@@ -42,6 +45,8 @@ import {
     type FarMarks,
     type GroupLabel,
 } from './farCanvas';
+import { GraphMap, type MapGroup } from './GraphMap';
+import { GraphMenus, type MenuName } from './GraphMenus';
 import { GraphNode } from './GraphNode';
 import { GraphSearch } from './GraphSearch';
 import { nextNode, searchGraph, type NavDirection } from './graphReading';
@@ -106,6 +111,8 @@ const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tab
 
 /** The side panel's width; flying to a node centres it in the room the panel leaves. */
 const PANEL_W = 340;
+/** The room the side panel leaves, while it is open. */
+const roomWidth = (w: number, panel: boolean) => (panel ? Math.max(w - PANEL_W, w / 2) : w);
 /** How far inside the view's edges the arrow keys keep their node. */
 const REVEAL_MARGIN = 40;
 
@@ -172,7 +179,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     onClose,
     makeLayoutWorker,
 }) => {
-    const model = React.useMemo(() => buildGraphModel(canvasLevel), [canvasLevel]);
+    const subgraphNames = React.useMemo(
+        () => new Map(report.subgraphs.filter((subgraph) => subgraph.name).map((subgraph) => [subgraph.id, subgraph.name])),
+        [report]
+    );
+    const model = React.useMemo(() => buildGraphModel(canvasLevel, subgraphNames), [canvasLevel, subgraphNames]);
     const depth = crumbs.length - 1;
     const canShowSaved = report.hasSavedLayout && hasSavedPositions(model);
     const saved = React.useMemo(() => (canShowSaved ? savedPositions(model) : null), [canShowSaved, model]);
@@ -194,9 +205,21 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     const [query, setQuery] = React.useState('');
     const hits = React.useMemo(() => searchGraph(model, query), [model, query]);
     const searchRef = React.useRef<HTMLInputElement>(null);
-    // Chosen from menus in a later package; the defaults are the piece's.
-    const [palette] = React.useState<Palette>('quiet');
-    const [shape] = React.useState<WireShape>('bundled');
+    // How the wires and colours look: view preferences, saved in the settings. No graph content is saved.
+    const storedPrefs = useSettingsStore((state) => state.settings.workflowGraph);
+    const prefs = React.useMemo(() => normalizeWorkflowGraphPrefs(storedPrefs), [storedPrefs]);
+    const setSettings = useSettingsStore((state) => state.setSettings);
+    const setPrefs = React.useCallback(
+        (change: Partial<WorkflowGraphPrefs> | ((current: WorkflowGraphPrefs) => Partial<WorkflowGraphPrefs>)) =>
+            setSettings((previous) => {
+                const current = normalizeWorkflowGraphPrefs(previous.workflowGraph);
+                return { workflowGraph: { ...current, ...(typeof change === 'function' ? change(current) : change) } };
+            }),
+        [setSettings]
+    );
+    const toggleMap = React.useCallback(() => setPrefs((current) => ({ showMap: !current.showMap })), [setPrefs]);
+    const { palette, wireShape: shape } = prefs;
+    const [openMenu, setOpenMenu] = React.useState<MenuName | null>(null);
     const [interacted, setInteracted] = React.useState(false);
     // Members of a group being folded stay drawn while they fade out; those of one being unfolded fade in. Each group
     // keeps its own motion and timer, so folding a second group mid-fade leaves the first one's fade alone.
@@ -276,9 +299,12 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     const farPillsRef = React.useRef<GroupLabel[]>([]);
     const hoverPillRef = React.useRef<string | null>(null);
     const farMarksRef = React.useRef<FarMarks>(NO_FAR_MARKS);
-    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires });
+    const mapRedrawRef = React.useRef<(() => void) | null>(null);
+    // With Hidden, the far canvas draws only the picked node's wires, as the near view does.
+    const drawnWires = React.useMemo(() => visibleWires(wires, shape, selected), [wires, shape, selected]);
+    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires: drawnWires });
     React.useLayoutEffect(() => {
-        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires };
+        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires: drawnWires };
     });
 
     React.useEffect(() => {
@@ -392,6 +418,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             dots.style.backgroundPosition = `${x}px ${y}px`;
         }
         if (zoomRef.current) zoomRef.current.textContent = `${Math.round(s * 100)}%`;
+        mapRedrawRef.current?.();
     }, [drawFar]);
 
     // The far canvas rings the picked node, the arrow keys' node and a search's hits.
@@ -400,11 +427,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         if (isFarRef.current) drawFar();
     }, [selected, cursor, canvasFocused, hits, drawFar]);
 
-    // A changed graph (layout, folds) is redrawn at once when far mode is showing it.
+    // A changed graph (layout, folds, wires, colours) is redrawn at once when far mode is showing it.
     React.useLayoutEffect(() => {
         farDrawingRef.current = null;
         if (isFarRef.current) drawFar();
-    }, [model, positions, foldedNodes, foldedGroups, scene, wires, drawFar]);
+    }, [model, positions, foldedNodes, foldedGroups, scene, drawnWires, palette, prefs.wireWidth, drawFar]);
 
     // Wheel and pointer input can arrive several times a frame: the view is drawn once per frame.
     const scheduleApply = React.useCallback(() => {
@@ -539,7 +566,8 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
 
     // Escape steps back one thing at a time: the search, the side panel, the subgraph level, then the graph.
     const escape = () => {
-        if (query !== '') setQuery('');
+        if (openMenu !== null) setOpenMenu(null);
+        else if (query !== '') setQuery('');
         else if (selected !== null) setSelected(null);
         else if (depth > 0) onGoToDepth(depth - 1, 'keyboard');
         else onClose();
@@ -569,10 +597,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             else if (event.key === 'f' || event.key === 'F') own(fit);
             else if (event.key === '+' || event.key === '=') own(() => zoomBy(1.2));
             else if (event.key === '-') own(() => zoomBy(1 / 1.2));
+            else if (event.key === 'm' || event.key === 'M') own(toggleMap);
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [fit, zoomBy]);
+    }, [fit, zoomBy, toggleMap]);
 
     // The wheel zooms around the pointer; it needs a non-passive listener to keep the page still.
     React.useEffect(() => {
@@ -621,8 +650,6 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             if (!first || entry[1].y < first[1].y || (entry[1].y === first[1].y && entry[1].x < first[1].x)) first = entry;
         return first?.[0] ?? null;
     };
-    // The room the side panel leaves, while it is open.
-    const roomWidth = (w: number, panel: boolean) => (panel ? Math.max(w - PANEL_W, w / 2) : w);
     const flyToNode = (id: string) => {
         const rect = drawnRect(id);
         if (!rect) return;
@@ -754,8 +781,12 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         if (isFarRef.current) drawFar();
     };
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        // The title in a pill is a button too, but a drag that starts on it still pans.
-        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button:not(.wg-gt), input, [role="listbox"]')))
+        // The title in a pill is a button too, but a drag that starts on it still pans. A press on the toolbars, their
+        // menus or the map is theirs: it never pans, picks or clears a node, in near or far view.
+        if (
+            event.button !== 0 ||
+            (event.target instanceof Element && event.target.closest('button:not(.wg-gt), input, [role="listbox"], .wg-tb, .wg-map'))
+        )
             return;
         pannedRef.current = false;
         stopFlight();
@@ -967,6 +998,62 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     };
     const selectedNode = selected === null ? undefined : model.byId.get(selected);
 
+    // The map: the level's boxes and group tints, and the part of it the view shows.
+    const mapScene = React.useMemo(
+        () => (positions ? farSceneFor(model, positions, foldedNodes, foldedGroups, scene, []) : null),
+        [model, positions, foldedNodes, foldedGroups, scene]
+    );
+    const mapGroups = React.useMemo((): MapGroup[] => {
+        const colours = new Map(model.groups.map((group) => [group.key, groupColour(group.color, palette)]));
+        return (mapScene?.groups ?? []).map((group) => ({
+            key: group.key,
+            x: group.x,
+            y: group.y,
+            w: group.w,
+            h: group.h,
+            colour: colours.get(group.key) ?? '',
+        }));
+    }, [mapScene, model, palette]);
+    const panelOpenRef = React.useRef(false);
+    React.useLayoutEffect(() => {
+        panelOpenRef.current = selected !== null;
+        mapRedrawRef.current?.();
+    }, [selected]);
+    const getView = React.useCallback(() => viewRef.current, []);
+    const getRoom = React.useCallback(() => {
+        const { w, h } = viewportSize();
+        return { w: roomWidth(w, panelOpenRef.current), h };
+    }, [viewportSize]);
+    const panFromMap = React.useCallback(
+        (view: View) => {
+            stopFlight();
+            viewRef.current = view;
+            scheduleApply();
+            setInteracted(true);
+        },
+        [scheduleApply]
+    );
+
+    // A new wire shape fades the wires in over the old ones.
+    const wiresRef = React.useRef<SVGSVGElement>(null);
+    const shapeShownRef = React.useRef(shape);
+    React.useLayoutEffect(() => {
+        const svg = wiresRef.current;
+        if (shapeShownRef.current === shape) return;
+        shapeShownRef.current = shape;
+        if (!svg || reducedMotion()) return;
+        svg.classList.remove('swap');
+        // A reflow restarts the animation when the shape changes again mid-fade.
+        void svg.getBoundingClientRect();
+        svg.classList.add('swap');
+    }, [shape]);
+    const drawnKeys = React.useMemo(() => new Set(drawnWires.map((wire) => wire.key)), [drawnWires]);
+    // Moving dots run on the picked node's wires, in near view (the far rules hide them); never under reduced motion.
+    const flowing =
+        prefs.movingDots && selected !== null && !reducedMotion()
+            ? drawnWires.filter((wire) => wire.from === selected || wire.to === selected)
+            : [];
+
     const hint =
         model.nodes.length === 0
             ? 'This level of the workflow has no nodes.'
@@ -984,6 +1071,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         <div
             ref={rootRef}
             className={palette === 'familiar' ? 'wg-layer wire-familiar' : 'wg-layer'}
+            data-wire-width={prefs.wireWidth}
             role="dialog"
             aria-modal="true"
             aria-label="Workflow graph"
@@ -1031,7 +1119,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                     {model.nodes.length} nodes · {model.links.length} wires
                 </span>
             </header>
-            <div className="wg-stage">
+            <div className="wg-stage" data-panel={selectedNode ? '' : undefined}>
                 <div
                     ref={canvasRef}
                     className="wg-canvas"
@@ -1064,16 +1152,19 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                     >
                         {positions ? (
                             <>
-                                <svg className="wg-wires" aria-hidden="true">
+                                <svg ref={wiresRef} className="wg-wires" aria-hidden="true">
                                     {shownWires.map(({ wire, motion }) => (
                                         <path
                                             key={wire.key}
-                                            className={`wg-wire t-${wire.type}${wire.bypassed ? ' bypassed' : ''}${motion ? ` ${motion}` : ''}`}
+                                            className={`wg-wire t-${wire.type}${wire.bypassed ? ' bypassed' : ''}${motion ? ` ${motion}` : ''}${drawnKeys.has(wire.key) ? '' : ' gone'}`}
                                             d={wire.d}
                                             // CSS eases the d property, not the attribute: a morphing wire carries its route
                                             // in its style too, so the change from the old route is a transition.
                                             style={motion === 'morph' ? { d: `path("${wire.d}")` } : undefined}
                                         />
+                                    ))}
+                                    {flowing.map((wire) => (
+                                        <path key={`flow-${wire.key}`} className="wg-flow" d={wire.d} />
                                     ))}
                                 </svg>
                                 {model.groups.map((group) => {
@@ -1190,6 +1281,19 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                             </button>
                         </div>
                     </div>
+                    <GraphMenus model={model} prefs={prefs} onPrefs={setPrefs} open={openMenu} onOpen={setOpenMenu} />
+                    <GraphMap
+                        nodes={mapScene?.nodes ?? []}
+                        groups={mapGroups}
+                        bounds={bounds}
+                        selected={selected}
+                        open={prefs.showMap}
+                        onToggle={toggleMap}
+                        getView={getView}
+                        getRoom={getRoom}
+                        onPan={panFromMap}
+                        redrawRef={mapRedrawRef}
+                    />
                 </div>
                 {selectedNode ? (
                     <NodePanel

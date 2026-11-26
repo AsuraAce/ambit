@@ -3,6 +3,8 @@ import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useGlobalShortcuts } from '../../../../hooks/useGlobalShortcuts';
+import { createDefaultAppSettings } from '../../../../constants/defaultSettings';
+import { useSettingsStore } from '../../../../stores/settingsStore';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 import { useViewerKeyboard } from '../../hooks/useViewerKeyboard';
 import { farSceneFor, layoutGroupLabels } from '../farCanvas';
@@ -209,7 +211,8 @@ describe('WorkflowGraphView', () => {
         expect(document.activeElement).toBe(screen.getByRole('button', { name: /back to image/i }));
         fireEvent.pointerDown(screen.getByTestId('workflow-graph-world'), { button: 0 });
         fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
-        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Tidy' }));
+        // The map's fold button is the last control in the layer.
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Hide the map' }));
     });
 
     // Focus on an off-screen fold button scrolls an `overflow: hidden` box, which shifts the toolbar and the
@@ -808,7 +811,7 @@ describe('WorkflowGraphView', () => {
         // Escape steps back one thing at a time, so it never throws away more than the user meant.
         it('steps back with Escape: the search, the panel, the subgraph level, then the graph', () => {
             const { onClose } = renderReading();
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
             expect(screen.getByRole('navigation', { name: 'Workflow levels' }).textContent).toContain('Upscale stage');
             expect(shown('Inner')).toBe(true);
             click(nodeElement('u1'));
@@ -832,7 +835,7 @@ describe('WorkflowGraphView', () => {
         it('keeps a level’s folds while a subgraph is open, and goes back from the breadcrumb', () => {
             renderReading();
             fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
             expect(shown('Load')).toBe(false);
             fireEvent.click(screen.getByRole('button', { name: 'Workflow' }));
             expect(screen.getByRole('button', { name: 'Unfold group Sampling' })).toBeTruthy();
@@ -920,9 +923,10 @@ describe('WorkflowGraphView', () => {
             renderReading();
             act(() => canvas().focus());
             fireEvent.keyDown(canvas(), { key: 'ArrowDown' });
-            expect(announced()).toBe('Stage, KSampler');
+            // The instance is named by its definition, as the breadcrumb names it.
+            expect(announced()).toBe('Upscale stage, KSampler');
             fireEvent.keyDown(canvas(), { key: 'Enter' });
-            expect(panel()?.getAttribute('aria-label')).toBe('Node Stage');
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Upscale stage');
             expect(screen.getByRole('button', { name: 'Open subgraph' })).toBeTruthy();
             fireEvent.keyDown(canvas(), { key: 'Enter' });
             expect(shown('Inner')).toBe(true);
@@ -936,7 +940,7 @@ describe('WorkflowGraphView', () => {
         it('keeps the nodes’ own buttons out of the Tab order, and names the canvas for screen readers', () => {
             renderReading();
             expect(screen.getByRole('button', { name: 'Fold Load' }).tabIndex).toBe(-1);
-            expect(screen.getByRole('button', { name: 'Open subgraph Stage' }).tabIndex).toBe(-1);
+            expect(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }).tabIndex).toBe(-1);
             expect(canvas().tabIndex).toBe(0);
             expect(document.getElementById(canvas().getAttribute('aria-describedby')!)?.textContent).toMatch(/Arrow keys/);
         });
@@ -1076,5 +1080,301 @@ describe('WorkflowGraphView', () => {
             box.mockRestore();
             vi.unstubAllGlobals();
         }
+    });
+
+    // P3b: the Wires and Types menus, the map, and the view preferences they save.
+    describe('wires, colours and the map', () => {
+        const twoWires = report(
+            level(
+                [
+                    canvasNode('1', { title: 'Sampler', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                    canvasNode('2', { title: 'Decode', pos: { x: 400, y: 80 }, inputs: [port(0, 'LATENT')], outputs: [port(0, 'IMAGE')] }),
+                    canvasNode('3', { title: 'Save', pos: { x: 800, y: 80 }, inputs: [port(0, 'IMAGE')] }),
+                ],
+                [canvasLink('1', 0, '2', 0, 'LATENT'), canvasLink('2', 0, '3', 0, 'IMAGE')]
+            )
+        );
+        const prefs = () => useSettingsStore.getState().settings.workflowGraph;
+        afterEach(() => useSettingsStore.setState({ settings: createDefaultAppSettings() }));
+        const renderWires = (onClose = vi.fn()) => {
+            const view = render(
+                <WorkflowGraphView report={twoWires} fileName="wires.png" onClose={onClose} makeLayoutWorker={fakeWorker} />
+            );
+            return { ...view, onClose };
+        };
+        const wires = () => Array.from(document.querySelectorAll<SVGPathElement>('.wg-world .wg-wire'));
+        const drawnWires = () => wires().filter((wire) => !wire.classList.contains('gone'));
+        const pickNode = (id: string) => {
+            const element = document.querySelector<HTMLElement>(`.wg-world [data-node-id="${id}"]`)!;
+            fireEvent.pointerDown(element, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+            fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
+        };
+        const openMenu = (name: 'Wires' | 'Types') => fireEvent.click(screen.getByRole('button', { name }));
+        const choose = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
+
+        it('opens with the saved defaults: bundled wires of normal width, quiet colours, the map shown', () => {
+            renderWires();
+            const layer = screen.getByRole('dialog', { name: 'Workflow graph' });
+            expect(layer.getAttribute('data-wire-width')).toBe('normal');
+            expect(layer.classList.contains('wire-familiar')).toBe(false);
+            expect(drawnWires()).toHaveLength(2);
+            expect(wires()[0].getAttribute('d')).toContain('Q');
+            expect(screen.getByTestId('graph-map')).toBeTruthy();
+        });
+
+        it('draws and saves the wire shape and width chosen in the Wires menu', () => {
+            renderWires();
+            openMenu('Wires');
+            choose(/^Straight/);
+            expect(prefs()?.wireShape).toBe('straight');
+            expect(wires()[0].getAttribute('d')).not.toMatch(/[CQ]/);
+            expect(screen.getByRole('button', { name: /^Straight/ }).getAttribute('aria-pressed')).toBe('true');
+            fireEvent.click(screen.getByRole('button', { name: 'Thick' }));
+            expect(prefs()?.wireWidth).toBe('thick');
+            expect(screen.getByRole('dialog', { name: 'Workflow graph' }).getAttribute('data-wire-width')).toBe('thick');
+        });
+
+        // Hidden clears the canvas of wires but keeps the picked node's, so its connections can still be read.
+        it('with Hidden wires, shows only the picked node’s wires, with moving dots on them', () => {
+            renderWires();
+            openMenu('Wires');
+            choose(/^Hidden/);
+            expect(drawnWires()).toHaveLength(0);
+            pickNode('1');
+            expect(drawnWires().map((wire) => wire.classList.contains('t-latent'))).toEqual([true]);
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(1);
+            pickNode('2');
+            expect(drawnWires()).toHaveLength(2);
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(2);
+        });
+
+        it('runs moving dots only on the picked node’s wires, and stops them when switched off', () => {
+            renderWires();
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(0);
+            pickNode('3');
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(1);
+            openMenu('Wires');
+            choose(/^Moving dots/);
+            expect(prefs()?.movingDots).toBe(false);
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(0);
+        });
+
+        it('lists the wire types here with their counts, and switches the colours', () => {
+            renderWires();
+            openMenu('Types');
+            const rows = Array.from(document.querySelectorAll('.wg-mrow')).map((row) => row.textContent);
+            expect(rows).toEqual(['IMAGE1', 'LATENT1']);
+            // A click focuses the button in a browser; jsdom's click does not.
+            const familiar = screen.getByRole('button', { name: /^Familiar/ });
+            familiar.focus();
+            fireEvent.click(familiar);
+            expect(prefs()?.palette).toBe('familiar');
+            expect(screen.getByRole('dialog', { name: 'Workflow graph' }).classList.contains('wire-familiar')).toBe(true);
+            // The pick closes the menu and hands focus back to its button.
+            expect(document.getElementById('wg-menu-types')).toBeNull();
+            expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Types' }));
+        });
+
+        it('closes an open menu on the first Escape, before anything else', () => {
+            const { onClose } = renderWires();
+            openMenu('Wires');
+            fireEvent.click(screen.getByRole('button', { name: 'Thin' }));
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+            expect(document.getElementById('wg-menu-wires')).toBeNull();
+            expect(onClose).not.toHaveBeenCalled();
+            fireEvent.keyDown(document.body, { key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('hides and shows the map with M or its fold button, and saves that', () => {
+            renderWires();
+            fireEvent.keyDown(document.body, { key: 'm' });
+            expect(screen.queryByTestId('graph-map')).toBeNull();
+            expect(prefs()?.showMap).toBe(false);
+            fireEvent.click(screen.getByRole('button', { name: 'Show the map' }));
+            expect(screen.getByTestId('graph-map')).toBeTruthy();
+            expect(prefs()?.showMap).toBe(true);
+        });
+
+        // A drag on the map moves the view; it must not also start a pan of the canvas under it.
+        it('moves the view to the point pressed on the map', async () => {
+            renderWires();
+            const world = screen.getByTestId('workflow-graph-world');
+            const before = world.style.transform;
+            const map = screen.getByTestId('graph-map');
+            const box = vi.spyOn(map, 'getBoundingClientRect').mockReturnValue(new DOMRect(800, 600, 212, 132));
+            try {
+                fireEvent.pointerDown(map, { button: 0, pointerId: 7, clientX: 990, clientY: 720 });
+                await waitFor(() => expect(world.style.transform).not.toBe(before));
+                const moved = world.style.transform;
+                fireEvent.pointerMove(map, { pointerId: 7, clientX: 810, clientY: 610 });
+                await waitFor(() => expect(world.style.transform).not.toBe(moved));
+                fireEvent.pointerUp(map, { pointerId: 7, clientX: 810, clientY: 610 });
+                expect(document.querySelector('.wg-canvas')?.classList.contains('panning')).toBe(false);
+            } finally {
+                box.mockRestore();
+            }
+        });
+
+        // jsdom has no 2D canvas: each canvas gets a context whose every call is a recorded no-op, and the far view's
+        // paths get a Path2D.
+        const fakeCanvases = () => {
+            vi.stubGlobal(
+                'Path2D',
+                class {
+                    roundRect() {}
+                    rect() {}
+                    moveTo() {}
+                    lineTo() {}
+                    bezierCurveTo() {}
+                    quadraticCurveTo() {}
+                    arcTo() {}
+                    addPath() {}
+                    closePath() {}
+                }
+            );
+            const contexts = new Map<HTMLCanvasElement, Record<string | symbol, unknown>>();
+            const makeContext = () =>
+                new Proxy({} as Record<string | symbol, unknown>, {
+                    get(target, key) {
+                        if (!(key in target)) target[key] = key === 'measureText' ? vi.fn(() => ({ width: 10 })) : vi.fn();
+                        return target[key];
+                    },
+                    set(target, key, value) {
+                        target[key] = value;
+                        return true;
+                    },
+                });
+            const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+                let context = contexts.get(this);
+                if (!context) {
+                    context = makeContext();
+                    contexts.set(this, context);
+                }
+                return context as unknown as CanvasRenderingContext2D;
+            } as unknown as HTMLCanvasElement['getContext']);
+            const restore = () => {
+                spy.mockRestore();
+                vi.unstubAllGlobals();
+            };
+            return { contexts, restore };
+        };
+
+        // The map and the menus sit over the canvas: a press on their frame, caption or rows is theirs, and must not
+        // close the side panel, pan the graph or pick a node hidden under them.
+        it('keeps a press on the map’s caption or frame from reaching the canvas, in near view', () => {
+            renderWires();
+            pickNode('2');
+            const caption = document.querySelector('.wg-map .wg-cap')!;
+            fireEvent.pointerDown(caption, { button: 0, pointerId: 3, clientX: 900, clientY: 700 });
+            fireEvent.pointerUp(caption, { pointerId: 3, clientX: 900, clientY: 700 });
+            expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+            const frame = document.querySelector('.wg-map')!;
+            fireEvent.pointerDown(frame, { button: 0, pointerId: 4, clientX: 900, clientY: 700 });
+            fireEvent.pointerMove(frame, { pointerId: 4, clientX: 700, clientY: 500 });
+            expect(document.querySelector('.wg-canvas')?.classList.contains('panning')).toBe(false);
+            fireEvent.pointerUp(frame, { pointerId: 4, clientX: 700, clientY: 500 });
+            expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+        });
+
+        it('keeps a press on the map or a menu row from picking or clearing a node, in far view', () => {
+            const canvases = fakeCanvases();
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            try {
+                renderWires();
+                pickNode('2');
+                const world = screen.getByTestId('workflow-graph-world');
+                for (let i = 0; i < 20 && !world.classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                expect(world.classList.contains('far')).toBe(true);
+                const press = (target: Element, pointerId: number) => {
+                    fireEvent.pointerDown(target, { button: 0, pointerId, clientX: 900, clientY: 700 });
+                    fireEvent.pointerUp(target, { pointerId, clientX: 900, clientY: 700 });
+                };
+                press(document.querySelector('.wg-map .wg-cap')!, 5);
+                expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+                openMenu('Types');
+                press(document.querySelector('.wg-mrow')!, 6);
+                expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+            } finally {
+                box.mockRestore();
+                canvases.restore();
+            }
+        });
+
+        // Far mode leaves the world unpainted; dots still animating there would cost frames for nothing.
+        it('stops the moving dots in far view', () => {
+            const graphCss = readFileSync('src/features/viewer/workflowGraph/workflowGraph.css', 'utf8');
+            const farFlow = /\.wg-world\.far \.wg-flow\s*\{([^}]*)\}/.exec(graphCss)?.[1] ?? '';
+            expect(farFlow).toMatch(/display:\s*none;/);
+            expect(farFlow).toMatch(/animation:\s*none;/);
+        });
+
+        it('leaves M to the search box while it is being typed in', () => {
+            renderWires();
+            fireEvent.keyDown(document.body, { key: '/' });
+            const search = screen.getByRole('combobox', { name: 'Find a node or value' });
+            fireEvent.keyDown(search, { key: 'm' });
+            expect(screen.getByTestId('graph-map')).toBeTruthy();
+            expect(prefs()?.showMap).toBe(true);
+        });
+
+        // The viewer and the library have their own keys: the graph's M must not also reach them.
+        it('keeps M from listeners added after it', () => {
+            renderWires();
+            const later = vi.fn();
+            window.addEventListener('keydown', later);
+            try {
+                fireEvent.keyDown(document.body, { key: 'm' });
+                expect(prefs()?.showMap).toBe(false);
+                expect(later).not.toHaveBeenCalled();
+            } finally {
+                window.removeEventListener('keydown', later);
+            }
+        });
+
+        it('under reduced motion, swaps wire shapes without a fade and runs no moving dots', () => {
+            const { unmount } = renderWires();
+            openMenu('Wires');
+            choose(/^Straight/);
+            expect(document.querySelector('.wg-wires')?.classList.contains('swap')).toBe(true);
+            unmount();
+            const original = window.matchMedia;
+            window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+            try {
+                renderWires();
+                openMenu('Wires');
+                choose(/^Curved/);
+                expect(document.querySelector('.wg-wires')?.classList.contains('swap')).toBe(false);
+                pickNode('2');
+                expect(drawnWires()).toHaveLength(2);
+                expect(document.querySelectorAll('.wg-flow')).toHaveLength(0);
+            } finally {
+                window.matchMedia = original;
+            }
+        });
+
+        // The map's nodes are drawn once on their own canvas: a pan or zoom redraws only the view rectangle.
+        it('redraws only the map’s view rectangle on a zoom or pan, not its nodes', async () => {
+            const { contexts, restore } = fakeCanvases();
+            try {
+                renderWires();
+                const [base, rect] = Array.from(document.querySelectorAll<HTMLCanvasElement>('.wg-map-c canvas'));
+                const fills = (canvas: HTMLCanvasElement) => (contexts.get(canvas)?.fillRect as ReturnType<typeof vi.fn>).mock.calls.length;
+                const baseFills = fills(base);
+                const rectFills = fills(rect);
+                expect(baseFills).toBeGreaterThan(0);
+                fireEvent.keyDown(document.body, { key: '=' });
+                const zoomed = fills(rect);
+                expect(zoomed).toBeGreaterThan(rectFills);
+                const canvas = document.querySelector('.wg-canvas')!;
+                fireEvent.pointerDown(canvas, { button: 0, pointerId: 9, clientX: 300, clientY: 300 });
+                fireEvent.pointerMove(canvas, { pointerId: 9, clientX: 200, clientY: 250 });
+                fireEvent.pointerUp(canvas, { pointerId: 9, clientX: 200, clientY: 250 });
+                await waitFor(() => expect(fills(rect)).toBeGreaterThan(zoomed));
+                expect(fills(base)).toBe(baseFills);
+            } finally {
+                restore();
+            }
+        });
     });
 });

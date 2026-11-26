@@ -1,3 +1,4 @@
+import type { WorkflowGraphPrefs } from '../../../types';
 import {
     FOLDED_GROUP_H,
     FOLDED_GROUP_W,
@@ -12,7 +13,7 @@ import {
 } from './graphModel';
 
 export type LayoutMode = 'saved' | 'tidy';
-export type WireShape = 'bundled' | 'curved';
+export type WireShape = WorkflowGraphPrefs['wireShape'];
 
 export interface Rect {
     x: number;
@@ -128,6 +129,12 @@ export const curvePath = (a: Point, b: Point): string => {
     return `M${f(a.x)} ${f(a.y)} C${f(a.x + dx)} ${f(a.y)} ${f(b.x - dx)} ${f(b.y)} ${f(b.x)} ${f(b.y)}`;
 };
 
+/** Straight: a short stub out of each port, then a straight line between them. */
+export const straightPath = (a: Point, b: Point): string => {
+    const s = 16;
+    return `M${f(a.x)} ${f(a.y)} L${f(a.x + s)} ${f(a.y)} L${f(b.x - s)} ${f(b.y)} L${f(b.x)} ${f(b.y)}`;
+};
+
 /**
  * A polyline with its inner corners rounded to radius r. Every corner is a line and a curve, even one too tight to
  * round, so routes through the same number of points share one command list and a fold can ease one into another.
@@ -172,6 +179,9 @@ export const bundledPath = (a: Point, b: Point, trunkX: number): string => {
 
 export interface WirePath {
     key: string;
+    /** The node the wire leaves and the one it enters. */
+    from: string;
+    to: string;
     d: string;
     type: WireType;
     bypassed: boolean;
@@ -184,7 +194,7 @@ export const wirePaths = (
     scene: Scene,
     shape: WireShape
 ): WirePath[] => {
-    const ends: { key: string; from: string; a: Point; b: Point; type: WireType; bypassed: boolean; outKey: string }[] = [];
+    const ends: { key: string; from: string; to: string; a: Point; b: Point; type: WireType; bypassed: boolean; outKey: string }[] = [];
     for (const link of model.links) {
         const source = model.byId.get(link.from);
         const target = model.byId.get(link.to);
@@ -198,6 +208,7 @@ export const wirePaths = (
         ends.push({
             key: link.key,
             from: link.from,
+            to: link.to,
             a: endpoint(source, sourceAt, 'out', link.fromSlot, foldedNodes.has(link.from), sourceGroup),
             b: endpoint(target, targetAt, 'in', link.toSlot, foldedNodes.has(link.to), targetGroup),
             type: link.type,
@@ -221,12 +232,21 @@ export const wirePaths = (
         if (shape === 'bundled') {
             const nearest = nearestTarget.get(end.outKey) ?? Infinity;
             d = bundledPath(end.a, end.b, Math.max(end.a.x + 20, nearest - 28));
+        } else if (shape === 'straight') {
+            d = straightPath(end.a, end.b);
+        } else if (shape === 'angled') {
+            d = angledPath(end.a, end.b);
         } else {
+            // Hidden draws the wires it still shows, those of the picked node, as curves.
             d = curvePath(end.a, end.b);
         }
-        return { key: end.key, d, type: end.type, bypassed: end.bypassed };
+        return { key: end.key, from: end.from, to: end.to, d, type: end.type, bypassed: end.bypassed };
     });
 };
+
+/** The wires drawn: all of them, or with Hidden only those of the picked node. */
+export const visibleWires = (wires: WirePath[], shape: WireShape, selected: string | null): WirePath[] =>
+    shape !== 'hidden' ? wires : selected === null ? [] : wires.filter((wire) => wire.from === selected || wire.to === selected);
 
 /** The drawn extent: visible nodes and visible group boxes. */
 export const boundsOf = (

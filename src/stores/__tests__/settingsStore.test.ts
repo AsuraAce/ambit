@@ -218,6 +218,31 @@ describe('SettingsStore', () => {
         expect(settings.thumbnailOptimizationProfile).toBe('balanced');
     });
 
+    // Settings saved before the workflow graph had preferences must still load, with the graph's defaults.
+    it('loads an older settings file without workflow graph preferences with their defaults', async () => {
+        vi.mocked(appRepository.load).mockResolvedValue(appState({ theme: 'light', monitoredFolders: [] } as unknown as AppSettings));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().settings.theme).toBe('light');
+        expect(useSettingsStore.getState().settings.workflowGraph).toEqual({
+            palette: 'quiet',
+            wireShape: 'bundled',
+            wireWidth: 'normal',
+            movingDots: true,
+            showMap: true,
+        });
+    });
+
+    it('restores saved workflow graph preferences, and the default for an unknown one', async () => {
+        const workflowGraph = { palette: 'familiar', wireShape: 'spiral', wireWidth: 'thin', movingDots: false, showMap: false };
+        vi.mocked(appRepository.load).mockResolvedValue(appState({ workflowGraph } as unknown as AppSettings));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().settings.workflowGraph).toEqual({ ...workflowGraph, wireShape: 'bundled' });
+    });
+
     it('should preserve persisted gallery layout mode on initialize', async () => {
         vi.mocked(appRepository.load).mockResolvedValue(appState({ libraryLayoutMode: 'justified' } as AppSettings));
 

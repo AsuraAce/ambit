@@ -151,6 +151,53 @@
     stroke-dasharray: 6 5;
 }
 
+/* Wire width, from the Wires menu. */
+.wg-layer[data-wire-width='thin'] {
+    --wg-ww: 1.4px;
+}
+
+.wg-layer[data-wire-width='thick'] {
+    --wg-ww: 3.4px;
+}
+
+/* Hidden: every wire but the picked node's is drawn clear; it stays in the DOM, so its colour can still be read. */
+.wg-wire.gone {
+    opacity: 0;
+}
+
+/* A new wire shape fades in over the old. */
+.wg-wires.swap {
+    animation: wg-wire-swap 260ms var(--wg-out);
+}
+
+@keyframes wg-wire-swap {
+    from {
+        opacity: 0.15;
+    }
+}
+
+/* Moving dots along the picked node's wires, from output to input. */
+.wg-flow {
+    fill: none;
+    stroke: var(--graph-flow);
+    stroke-width: 1.4;
+    stroke-dasharray: 2 16;
+    stroke-linecap: round;
+    animation: wg-flow 1.6s linear infinite;
+}
+
+@keyframes wg-flow {
+    to {
+        stroke-dashoffset: -36;
+    }
+}
+
+/* The dots belong to the near view: in far mode the world is unpainted, and they stop. */
+.wg-world.far .wg-flow {
+    display: none;
+    animation: none;
+}
+
 .t-model {
     --pc: var(--wire-model);
 }
@@ -1276,6 +1323,199 @@ button.wg-crumb:hover {
     outline-offset: 1px;
 }
 
+/* Wires and Types, top right; they and the map move aside for the side panel. */
+.wg-tb.top-right {
+    right: 14px;
+    top: 12px;
+    transition: right 320ms var(--wg-spring);
+}
+
+.wg-stage[data-panel] .wg-tb.top-right,
+.wg-stage[data-panel] .wg-map {
+    right: 354px;
+}
+
+.wg-dd {
+    position: relative;
+}
+
+.wg-menu {
+    position: absolute;
+    z-index: 40;
+    right: -5px;
+    top: calc(100% + 10px);
+    min-width: 260px;
+    padding: 5px;
+    border-radius: 10px;
+    /* Inside the toolbar's own backdrop blur, the menu's blur cannot reach the canvas: it takes the solid surface. */
+    background: var(--graph-surface);
+}
+
+.wg-mh {
+    margin: 0;
+    padding: 6px 9px 4px;
+}
+
+.wg-mi {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    text-align: left;
+    border: 0;
+    background: none;
+    border-radius: 7px;
+    padding: 7px 9px;
+    color: var(--graph-body);
+}
+
+.wg-mi:hover {
+    background: var(--graph-hover);
+    color: var(--graph-text);
+}
+
+.wg-mi.on {
+    color: var(--graph-sage);
+}
+
+.wg-mi .ml {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.wg-mi .ms {
+    display: block;
+    font-size: 11.5px;
+    color: var(--graph-muted);
+}
+
+.wg-mi .chk {
+    width: 14px;
+    flex: none;
+    margin-top: 2px;
+    color: var(--graph-sage);
+}
+
+.wg-mi .shp {
+    width: 34px;
+    height: 18px;
+    flex: none;
+    margin-top: 1px;
+    fill: none;
+    stroke: var(--graph-muted);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.wg-mi.on .shp {
+    stroke: var(--graph-sage);
+}
+
+.wg-mi:focus-visible,
+.wg-map-fold:focus-visible {
+    outline: 2px solid var(--graph-sage);
+    outline-offset: -2px;
+}
+
+.wg-mseg {
+    margin: 2px 9px 6px;
+}
+
+.wg-mdiv {
+    height: 1px;
+    background: var(--graph-line);
+    margin: 5px 4px;
+}
+
+.wg-mlist {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.wg-mrow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--graph-body);
+}
+
+.wg-mrow .wg-bar {
+    width: 22px;
+    height: 4px;
+    flex: none;
+    border-radius: 2px;
+    background: var(--pc);
+}
+
+.wg-mrow .n {
+    margin-left: auto;
+    color: var(--graph-hint);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The map, bottom right. */
+.wg-map {
+    position: absolute;
+    z-index: 20;
+    right: 14px;
+    bottom: 14px;
+    width: 212px;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: right 320ms var(--wg-spring);
+}
+
+.wg-map-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px 4px 10px;
+    border-bottom: 1px solid var(--graph-line);
+}
+
+.wg-map-h .wg-cap {
+    margin: 0;
+}
+
+.wg-map.shut .wg-map-h {
+    border-bottom: 0;
+}
+
+.wg-map-fold {
+    height: 22px;
+    min-width: 22px;
+    padding: 0;
+}
+
+.wg-map.shut .wg-map-fold svg {
+    rotate: 180deg;
+}
+
+.wg-map-c {
+    position: relative;
+    width: 212px;
+    height: 132px;
+}
+
+.wg-map-c canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 212px;
+    height: 132px;
+}
+
+.wg-map-c canvas:last-child {
+    cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .wg-world,
     .wg-world.far,
@@ -1289,12 +1529,20 @@ button.wg-crumb:hover {
     .wg-wires,
     .wg-wire.morph,
     .wg-wire.leaving,
-    .wg-cb svg {
+    .wg-cb svg,
+    .wg-tb.top-right,
+    .wg-map {
         transition: none;
+    }
+
+    .wg-flow {
+        animation: none;
+        display: none;
     }
 
     .wg-node.arriving,
     .wg-wire.arriving,
+    .wg-wires.swap,
     .wg-panel {
         animation: none;
     }
