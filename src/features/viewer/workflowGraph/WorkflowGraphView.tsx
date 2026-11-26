@@ -459,11 +459,23 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         },
         []
     );
+    const refocusGroupRef = React.useRef<string | null>(null);
+    React.useLayoutEffect(() => {
+        const key = refocusGroupRef.current;
+        refocusGroupRef.current = null;
+        if (key === null) return;
+        const holder = Array.from(worldRef.current?.querySelectorAll<HTMLElement>('[data-group-key]') ?? []).find(
+            (element) => element.dataset.groupKey === key && element.querySelector('.wg-cb')
+        );
+        holder?.querySelector<HTMLButtonElement>('.wg-cb')?.focus({ preventScroll: true });
+    }, [foldedGroups]);
     // The box eases to its new size in CSS. Members fade toward it, staying mounted until they have, and the
     // rerouted wires fade back in once the fold has settled.
     const toggleGroup = (key: string) => {
         const group = model.groups.find((candidate) => candidate.key === key);
         const folding = !foldedGroups.has(key);
+        // The fold button moves between the title tab and the folded box: focus follows it.
+        if (document.activeElement?.closest('[data-group-key]')?.getAttribute('data-group-key') === key) refocusGroupRef.current = key;
         setFoldedGroups((current) => {
             const next = new Set(current);
             if (!next.delete(key)) next.add(key);

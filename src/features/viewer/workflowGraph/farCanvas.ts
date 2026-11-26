@@ -132,8 +132,8 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
     layer.querySelectorAll<HTMLElement>('.wg-group[data-group-key]').forEach((element) => {
         const key = element.dataset.groupKey ?? '';
         const style = getComputedStyle(element);
-        // An open group's title is on its tab; a folded group's is inside its box.
-        const tab = Array.from(layer.querySelectorAll<HTMLElement>('.wg-gtab[data-group-key]')).find(
+        // An open group's title is on its tab or chip; a folded group's is inside its box.
+        const tab = Array.from(layer.querySelectorAll<HTMLElement>('.wg-gtitle[data-group-key]')).find(
             (candidate) => candidate.dataset.groupKey === key
         );
         const tabStyle = css(tab ?? null);

@@ -92,6 +92,18 @@ describe('WorkflowGraphView', () => {
         }
     });
 
+    // The fold button lives on the title tab while open and inside the box while folded, so a keyboard user
+    // would lose their place if focus did not move with it.
+    it('keeps keyboard focus on the group’s fold button across fold and unfold', () => {
+        renderGraph();
+        const fold = screen.getByRole('button', { name: 'Fold group Sampling' });
+        act(() => fold.focus());
+        fireEvent.click(fold);
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Fold group Sampling' }));
+    });
+
     it('lays the graph out tidily in the worker, and drops the saved groups', async () => {
         renderGraph();
         fireEvent.click(screen.getByRole('button', { name: 'Tidy' }));
