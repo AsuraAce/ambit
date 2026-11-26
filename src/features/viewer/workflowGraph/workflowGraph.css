@@ -197,8 +197,7 @@
         height 220ms var(--wg-out);
 }
 
-/* An open group's title: a tab on its top edge, or a chip in its top band when a node would cover the tab.
-   Tabs sit under the nodes, chips over them. */
+/* An open group's title: a pill in its top band, over the nodes. */
 .wg-gtitle {
     position: absolute;
     left: 0;
@@ -211,14 +210,6 @@
     white-space: nowrap;
     background: color-mix(in srgb, var(--gc) 12%, var(--graph-frost));
     border: 1px solid color-mix(in srgb, var(--gc) 42%, transparent);
-}
-
-.wg-gtab {
-    border-bottom: none;
-    border-radius: 7px 7px 0 0;
-}
-
-.wg-gchip {
     border-radius: 7px;
     box-shadow: 0 4px 12px var(--graph-shadow);
 }

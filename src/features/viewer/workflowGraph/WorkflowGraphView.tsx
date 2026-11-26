@@ -7,7 +7,7 @@ import {
     boundsOf,
     fitView,
     FOLD_MS,
-    GROUP_TAB_H,
+    GROUP_TITLE_H,
     groupBox,
     MIN_SCALE,
     nodeHeight,
@@ -24,7 +24,7 @@ import {
     type WireShape,
 } from './geometry';
 import { HEADER_H } from './graphModel';
-import { placeGroupTitle, type TitleSlot } from './groupTitles';
+import { placeGroupTitle } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
 import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
 import { GraphNode } from './GraphNode';
@@ -46,9 +46,9 @@ const PAN_THRESHOLD = 3;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** A title tab's width: its text, plus padding, gaps, the fold button and borders (see .wg-gtitle). */
-const TAB_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
-/** A chip's distance from its group's edges. */
+/** A title pill's width beyond its text: padding, gaps, the fold button and borders (see .wg-gtitle). */
+const TITLE_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
+/** A title pill's distance from its group's edges. */
 const TITLE_INSET = 6;
 let measureContext: CanvasRenderingContext2D | null | undefined;
 const textWidth = (text: string, px: number, weight: number, family: string): number => {
@@ -100,9 +100,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         [model, positions, foldedNodes, scene, shape]
     );
 
-    // Each open group's title goes on a tab above it, or in a chip in its top band when a node covers the tab.
+    // Each open group's title is a pill in its top band, where it covers the fewest nodes.
     const titleSlots = React.useMemo(() => {
-        const slots = new Map<string, TitleSlot>();
+        const slots = new Map<string, Rect>();
         if (!positions) return slots;
         const boxes: Rect[] = [];
         const headers: Rect[] = [];
@@ -116,8 +116,8 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         for (const group of model.groups) {
             if (scene.hiddenGroups.has(group.key) || foldedGroups.has(group.key)) continue;
             const width =
-                textWidth(group.title, 13, 700, family) + textWidth(nodeCount(group.members.length), 11, 500, family) + TAB_CHROME;
-            slots.set(group.key, placeGroupTitle(groupBox(group, false), width, GROUP_TAB_H, boxes, headers, TITLE_INSET));
+                textWidth(group.title, 13, 700, family) + textWidth(nodeCount(group.members.length), 11, 500, family) + TITLE_CHROME;
+            slots.set(group.key, placeGroupTitle(groupBox(group, false), width, GROUP_TITLE_H, boxes, headers, TITLE_INSET));
         }
         return slots;
     }, [model, positions, scene, foldedNodes, foldedGroups]);
@@ -476,7 +476,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const toggleGroup = (key: string) => {
         const group = model.groups.find((candidate) => candidate.key === key);
         const folding = !foldedGroups.has(key);
-        // The fold button moves between the title tab and the folded box: focus follows it.
+        // The fold button moves between the title pill and the folded box: focus follows it.
         if (document.activeElement?.closest('[data-group-key]')?.getAttribute('data-group-key') === key) refocusGroupRef.current = key;
         setFoldedGroups((current) => {
             const next = new Set(current);
@@ -510,20 +510,21 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             </button>
         </>
     );
-    const groupTitles = (kind: TitleSlot['kind']) =>
+    // The pills draw over the nodes, so a title stays readable where nodes fill the band.
+    const groupTitles = () =>
         model.groups.map((group) => {
             const slot = titleSlots.get(group.key);
-            if (!slot || slot.kind !== kind) return null;
-            // The title sizes to its text; only the group's width caps it. The measured slot.w places it, and can
-            // fall a few pixels short (a web font still loading), which must not cut the title.
+            if (!slot) return null;
+            // The title sizes to its text; only the group's right inset caps it. The measured slot.w places it, and
+            // can fall a few pixels short (a web font still loading), which must not cut the title.
             const box = groupBox(group, false);
             const style = {
                 transform: `translate(${slot.x}px, ${slot.y}px)`,
-                maxWidth: kind === 'tab' ? box.w : box.x + box.w - TITLE_INSET - slot.x,
+                maxWidth: box.x + box.w - TITLE_INSET - slot.x,
                 '--gc': groupColour(group.color, palette),
             } as React.CSSProperties;
             return (
-                <div key={`title-${group.key}`} className={`wg-gtitle wg-g${kind}`} style={style} data-group-key={group.key}>
+                <div key={`title-${group.key}`} className="wg-gtitle" style={style} data-group-key={group.key}>
                     {titleContent(group.key, group.title, group.members.length, false)}
                 </div>
             );
@@ -647,7 +648,6 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                     </div>
                                 );
                             })}
-                            {groupTitles('tab')}
                             {model.nodes.map((node) => {
                                 const at = positions.get(node.id);
                                 const leaving = foldMotion.leaving.has(node.id);
@@ -663,7 +663,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                     />
                                 );
                             })}
-                            {groupTitles('chip')}
+                            {groupTitles()}
                         </>
                     ) : null}
                 </div>

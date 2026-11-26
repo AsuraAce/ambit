@@ -13,46 +13,38 @@ import {
 const group = { x: 100, y: 400, w: 300, h: 200 };
 
 describe('placeGroupTitle', () => {
-    // The owner's pick: a tab above the group by default, so the group's own nodes never cover its title.
-    it('puts the title on a tab above the group when no node covers that spot', () => {
-        const ownNode = { x: 110, y: 430, w: 120, h: 80 };
-        expect(placeGroupTitle(group, 150, 24, [ownNode], [], 6)).toEqual({ kind: 'tab', x: 100, y: 376, w: 150, h: 24 });
-    });
-
-    // Stacked groups: a node of the group above sits where the tab would go, so the title moves into the band.
-    it('moves the title into a chip in the top band when a node would cover the tab', () => {
+    // The owner's pick (2026-11-26): every group title is a pill inside the group's top band, never a tab above it,
+    // so nothing outside the group's own box carries its title.
+    it('puts the title in a pill inside the top band, at the left when the band is clear', () => {
+        expect(placeGroupTitle(group, 150, 24, [], [], 6)).toEqual({ x: 106, y: 406, w: 150, h: 24 });
+        // A node of the group above, reaching down to the edge, does not move it out of the band.
         const above = { x: 90, y: 300, w: 200, h: 90 };
-        const slot = placeGroupTitle(group, 150, 24, [above], [], 6);
-        expect(slot.kind).toBe('chip');
-        expect(slot.y).toBe(406);
-        // The band at y 406 is clear of that node, so the chip starts at the left.
-        expect(slot.x).toBe(106);
+        expect(placeGroupTitle(group, 150, 24, [above], [], 6)).toEqual({ x: 106, y: 406, w: 150, h: 24 });
     });
 
-    it('slides the chip along the band to the first spot no node covers', () => {
-        const above = { x: 90, y: 300, w: 200, h: 120 };
-        const slot = placeGroupTitle(group, 80, 24, [above], [], 6);
-        expect(slot).toMatchObject({ kind: 'chip', y: 406 });
-        expect(slot.x).toBeGreaterThanOrEqual(above.x + above.w);
+    it('slides the pill along the band to the first spot no node covers', () => {
+        const own = { x: 100, y: 400, w: 190, h: 120 };
+        const slot = placeGroupTitle(group, 80, 24, [own], [], 6);
+        expect(slot.y).toBe(406);
+        expect(slot.x).toBeGreaterThanOrEqual(own.x + own.w);
         expect(slot.x + slot.w).toBeLessThanOrEqual(group.x + group.w);
     });
 
-    // Where nodes fill the band, the chip still avoids their titles.
+    // Where nodes fill the band, the pill still avoids their titles.
     it('falls back to a spot clear of node text when nodes fill the band', () => {
         const filling = { x: 90, y: 300, w: 400, h: 200 };
         const title = { x: 90, y: 400, w: 150, h: 30 };
         const slot = placeGroupTitle(group, 80, 24, [filling], [title], 6);
-        expect(slot.kind).toBe('chip');
         expect(slot.x).toBeGreaterThanOrEqual(title.x + title.w);
     });
 
-    it('keeps the chip at the left when nothing in the band is clear', () => {
+    it('keeps the pill at the left when nothing in the band is clear', () => {
         const filling = { x: 0, y: 0, w: 1000, h: 1000 };
-        expect(placeGroupTitle(group, 80, 24, [filling], [filling], 6)).toMatchObject({ kind: 'chip', x: 106 });
+        expect(placeGroupTitle(group, 80, 24, [filling], [filling], 6)).toMatchObject({ x: 106 });
     });
 
-    it('never makes a title wider than its group', () => {
-        expect(placeGroupTitle(group, 900, 24, [], [], 6).w).toBe(group.w);
+    it('never makes a title wider than its group, inside its insets', () => {
+        expect(placeGroupTitle(group, 900, 24, [], [], 6).w).toBe(group.w - 12);
     });
 });
 

@@ -1,14 +1,9 @@
 import type { Rect } from './geometry';
 
 /**
- * Where a group's title goes. By default it is a tab on the group's top edge, outside the box, so the group's own
- * nodes never cover it. When a node would cover the tab (groups stacked one under another), the title becomes a chip
- * inside the group's top band, drawn over the nodes, at the first spot along the band with no node under it, or
- * failing that no node text under it.
+ * Where a group's title goes: a pill inside the group's top band (the owner's pick), drawn over the nodes, at the
+ * first spot along the band with no node under it, or failing that no node text under it, or else at the left.
  */
-export interface TitleSlot extends Rect {
-    kind: 'tab' | 'chip';
-}
 
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
@@ -29,24 +24,15 @@ const firstGap = (left: number, right: number, y: number, w: number, h: number, 
  * @param w the title's full width, h its height (both in world units)
  * @param nodes the boxes of every shown node
  * @param texts where node text is drawn, the fallback for a band that nodes fill
- * @param inset the chip's distance from the group's edges
+ * @param inset the pill's distance from the group's edges
  */
-export const placeGroupTitle = (
-    group: Rect,
-    w: number,
-    h: number,
-    nodes: readonly Rect[],
-    texts: readonly Rect[],
-    inset: number
-): TitleSlot => {
-    const tab = { x: group.x, y: group.y - h, w: Math.min(w, group.w), h };
-    if (!nodes.some((node) => overlaps(tab, node))) return { kind: 'tab', ...tab };
-    const chipW = Math.min(w, Math.max(0, group.w - inset * 2));
+export const placeGroupTitle = (group: Rect, w: number, h: number, nodes: readonly Rect[], texts: readonly Rect[], inset: number): Rect => {
+    const pillW = Math.min(w, Math.max(0, group.w - inset * 2));
     const y = group.y + inset;
     const left = group.x + inset;
-    const right = group.x + group.w - inset - chipW;
-    const x = firstGap(left, right, y, chipW, h, nodes, inset / 2) ?? firstGap(left, right, y, chipW, h, texts, inset / 2) ?? left;
-    return { kind: 'chip', x, y, w: chipW, h };
+    const right = group.x + group.w - inset - pillW;
+    const x = firstGap(left, right, y, pillW, h, nodes, inset / 2) ?? firstGap(left, right, y, pillW, h, texts, inset / 2) ?? left;
+    return { x, y, w: pillW, h };
 };
 
 /** ComfyUI's name for a new group: it says nothing, so the overview leaves it out. */

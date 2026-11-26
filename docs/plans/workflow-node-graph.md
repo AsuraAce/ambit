@@ -356,14 +356,13 @@ and none of it under reduced motion.
    and back in, the way Tidy's move already fades them. Folding a single node
    gets the same height ease.
 3. **Group titles that nodes cover.** The far view now stacks like the near
-   view, so a title under a node is hidden in both. The owner picked, from
-   mocks on 2026-11-26, a tab with a chip fallback. By default the title is a
-   tab on the group's top edge, outside the box, in the group's colour, with a
-   frosted backing and its node count. It draws above wires and groups and
-   under nodes, so the group's own nodes never cover it. Where a node would
-   cover the tab (groups stacked one under another), the title becomes a chip
-   in the group's top band, drawn over the nodes, at the first spot along the
-   band with no node under it, or failing that no node title under it.
+   view, so a title under a node is hidden in both. From mocks on 2026-11-26
+   the owner first picked a tab on the group's top edge with an in-band
+   fallback; after seeing both in the app the same day, they chose the in-band
+   pill for every group. The title is a pill inside the group's top band, in
+   the group's colour, with a frosted backing, its node count and the fold
+   control. It draws over the nodes, at the first spot along the band with no
+   node under it, or failing that no node title under it, or else at the left.
 4. **The far-out level** (Fit on big graphs, such as Lily with 308 nodes).
    Today every zoom below 50 % draws the same thing, and at 10–20 % the node
    titles are noise and the group titles grow without limit. Proposal: two far

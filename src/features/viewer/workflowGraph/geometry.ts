@@ -38,8 +38,8 @@ export const FAR_SCALE = 0.5;
 export const FAR_EXIT_SCALE = 0.55;
 /** Below this scale the far canvas shows the overview: node shapes and group titles, no node text. */
 export const OVERVIEW_SCALE = 0.22;
-/** A group's title tab, in world units: its height above the group's top edge. */
-export const GROUP_TAB_H = 24;
+/** A group title pill's height, in world units, inside the group's top band. */
+export const GROUP_TITLE_H = 24;
 
 /** How long a group fold takes; workflowGraph.css uses the same time. */
 export const FOLD_MS = 220;
@@ -208,7 +208,7 @@ export const wirePaths = (
     });
 };
 
-/** The drawn extent: visible nodes and visible group boxes, with the title tab above an open group. */
+/** The drawn extent: visible nodes and visible group boxes. */
 export const boundsOf = (
     model: GraphModel,
     positions: Positions,
@@ -235,8 +235,7 @@ export const boundsOf = (
         if (scene.hiddenGroups.has(group.key)) continue;
         const folded = foldedGroups.has(group.key);
         const box = groupBox(group, folded);
-        const tab = folded ? 0 : GROUP_TAB_H;
-        add(box.x, box.y - tab, box.w, box.h + tab);
+        add(box.x, box.y, box.w, box.h);
     }
     if (!Number.isFinite(minX)) return null;
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };

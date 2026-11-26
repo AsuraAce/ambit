@@ -1,5 +1,15 @@
 import type { GraphModel, Positions, WireType } from './graphModel';
-import { FAR_SCALE, GROUP_TAB_H, groupBox, nodeHeight, type Rect, type Scene, type View, type ViewLevel, type WirePath } from './geometry';
+import {
+    FAR_SCALE,
+    GROUP_TITLE_H,
+    groupBox,
+    nodeHeight,
+    type Rect,
+    type Scene,
+    type View,
+    type ViewLevel,
+    type WirePath,
+} from './geometry';
 import { dropOverlaps, fitOverviewTitle, fitText, GROUP_TITLE_CAP_PX, keepsEnough, placeGroupTitle, type Measure } from './groupTitles';
 
 /**
@@ -93,8 +103,8 @@ interface GroupLook {
     fill: string;
     stroke: string;
     titleColour: string;
-    tabFill: string;
-    tabStroke: string;
+    pillFill: string;
+    pillStroke: string;
 }
 
 /** Colours and font, read from the rendered HTML so the token file stays their only source. */
@@ -132,17 +142,17 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
     layer.querySelectorAll<HTMLElement>('.wg-group[data-group-key]').forEach((element) => {
         const key = element.dataset.groupKey ?? '';
         const style = getComputedStyle(element);
-        // An open group's title is on its tab or chip; a folded group's is inside its box.
-        const tab = Array.from(layer.querySelectorAll<HTMLElement>('.wg-gtitle[data-group-key]')).find(
+        // An open group's title is on its pill; a folded group's is inside its box.
+        const pill = Array.from(layer.querySelectorAll<HTMLElement>('.wg-gtitle[data-group-key]')).find(
             (candidate) => candidate.dataset.groupKey === key
         );
-        const tabStyle = css(tab ?? null);
+        const pillStyle = css(pill ?? null);
         group.set(key, {
             fill: style.backgroundColor,
             stroke: style.borderLeftColor,
-            titleColour: css((tab ?? element).querySelector('.wg-gt'))?.color ?? layerStyle.color,
-            tabFill: tabStyle?.backgroundColor ?? style.backgroundColor,
-            tabStroke: tabStyle?.borderLeftColor ?? style.borderLeftColor,
+            titleColour: css((pill ?? element).querySelector('.wg-gt'))?.color ?? layerStyle.color,
+            pillFill: pillStyle?.backgroundColor ?? style.backgroundColor,
+            pillStroke: pillStyle?.borderLeftColor ?? style.borderLeftColor,
         });
     });
     return {
@@ -170,13 +180,13 @@ const LABEL_PAD = 10;
 const MIN_NODE_TITLE_PX = 10;
 /** Below this scale a node shows its title only, without its type. */
 export const TYPE_LINE_SCALE = 0.35;
-/** The HTML tab's title size in world units, which far mode starts from so titles do not jump at the switch. */
+/** The HTML pill's title size in world units, which far mode starts from so titles do not jump at the switch. */
 export const NEAR_GROUP_TITLE_PX = 13;
 const OVERVIEW_WIRE_ALPHA = 0.4;
 const OVERVIEW_TINT_ALPHA = 0.35;
 
 /**
- * A group title's size on screen at scale s: the tab's size at the switch, growing as the view zooms out, to the cap.
+ * A group title's size on screen at scale s: the pill's size at the switch, growing as the view zooms out, to the cap.
  */
 export const farGroupTitlePx = (s: number): number => Math.min(GROUP_TITLE_CAP_PX, (NEAR_GROUP_TITLE_PX * FAR_SCALE * FAR_SCALE) / s);
 
@@ -193,14 +203,14 @@ interface Label {
 interface NodeLabels {
     titles: Label[];
     types: Label[];
-    /** Where the titles sit, which a group title chip avoids when nodes fill its band. */
+    /** Where the titles sit, which a group title pill avoids when nodes fill its band. */
     texts: Rect[];
 }
 
 /** A group's title as drawn this frame: world rect, text and size on screen. */
 export interface GroupLabel {
     key: string;
-    kind: 'tab' | 'chip' | 'inside';
+    kind: 'pill' | 'inside';
     rect: Rect;
     area: number;
     text: string;
@@ -315,8 +325,8 @@ const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: nu
 };
 
 /**
- * Every group title for this frame. Sizes are on screen and rects in the world. A tab or chip is as high as its
- * text needs; the overview drops default and overlapping titles and shows no node counts.
+ * Every group title for this frame. Sizes are on screen and rects in the world. A pill is as high as its text
+ * needs; the overview drops default and overlapping titles and shows no node counts.
  */
 export const layoutGroupLabels = (
     drawing: { groups: readonly FarGroup[]; boxes: readonly Rect[] },
@@ -327,7 +337,7 @@ export const layoutGroupLabels = (
 ): GroupLabel[] => {
     const px = farGroupTitlePx(s);
     const countPx = px * (11 / NEAR_GROUP_TITLE_PX);
-    const hScreen = px * (GROUP_TAB_H / NEAR_GROUP_TITLE_PX);
+    const hScreen = px * (GROUP_TITLE_H / NEAR_GROUP_TITLE_PX);
     const padScreen = px * 0.6;
     const inset = 6 / s;
     const labels: GroupLabel[] = [];
@@ -356,7 +366,7 @@ export const layoutGroupLabels = (
             continue;
         }
         const slot = placeGroupTitle(group, width / s, hScreen / s, drawing.boxes, texts, inset);
-        labels.push({ key: group.key, kind: slot.kind, rect: slot, area, text, count, px: size });
+        labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count, px: size });
     }
     return level === 'overview' ? dropOverlaps(labels) : labels;
 };
@@ -376,7 +386,7 @@ export const drawFarScene = (
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);
 
-    // The HTML view's stacking order: wires, groups, title tabs, nodes, then title chips over the nodes.
+    // The HTML view's stacking order: wires, groups, nodes, then title pills over the nodes.
     const wireWidth = WIRE_WIDTH * Math.min(inv, WIRE_SCALE_CAP);
     ctx.lineCap = 'round';
     ctx.lineWidth = wireWidth;
@@ -407,11 +417,10 @@ export const drawFarScene = (
         const { rect } = label;
         if (label.kind !== 'inside') {
             const backing = new Path2D();
-            const r = 7 * inv;
-            backing.roundRect(rect.x, rect.y, rect.w, rect.h, label.kind === 'tab' ? [r, r, 0, 0] : r);
-            ctx.fillStyle = look.tabFill;
+            backing.roundRect(rect.x, rect.y, rect.w, rect.h, 7 * inv);
+            ctx.fillStyle = look.pillFill;
             ctx.fill(backing);
-            ctx.strokeStyle = look.tabStroke;
+            ctx.strokeStyle = look.pillStroke;
             ctx.stroke(backing);
         }
         const pad = label.px * 0.6 * inv;
@@ -428,7 +437,7 @@ export const drawFarScene = (
             ctx.fillText(label.count, after, mid);
         }
     };
-    for (const label of groupLabels) if (label.kind !== 'chip') paintGroupLabel(label);
+    for (const label of groupLabels) if (label.kind === 'inside') paintGroupLabel(label);
 
     // The overview draws nodes as soft shapes tinted toward their group's colour, without borders.
     for (const look of drawing.nodes) {
@@ -465,5 +474,5 @@ export const drawFarScene = (
         for (const label of shownLabels.types) if (keep(label)) ctx.fillText(label.text, label.x, label.y);
     }
 
-    for (const label of groupLabels) if (label.kind === 'chip') paintGroupLabel(label);
+    for (const label of groupLabels) if (label.kind === 'pill') paintGroupLabel(label);
 };

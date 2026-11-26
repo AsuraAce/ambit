@@ -92,7 +92,7 @@ describe('WorkflowGraphView', () => {
         }
     });
 
-    // The fold button lives on the title tab while open and inside the box while folded, so a keyboard user
+    // The fold button lives on the title pill while open and inside the box while folded, so a keyboard user
     // would lose their place if focus did not move with it.
     it('keeps keyboard focus on the group’s fold button across fold and unfold', () => {
         renderGraph();
@@ -307,8 +307,8 @@ describe('WorkflowGraphView', () => {
         for (const selector of moving) if (!hoverOnly.has(selector)) expect(switchedOff, selector).toContain(selector);
     });
 
-    // The owner's pick: tabs under the nodes, and a chip over them only where a node would cover the tab.
-    it('draws a group title as a tab under the nodes, or as a chip over them when a node covers the tab', () => {
+    // The owner's pick: every group title is a pill inside its group's top band, drawn over the nodes.
+    it('draws every group title as a pill in its top band, over the nodes', () => {
         const stacked = report(
             level(
                 [canvasNode('top', { title: 'Above', pos: { x: 20, y: 60 }, size: { width: 200, height: 200 } })],
@@ -321,18 +321,18 @@ describe('WorkflowGraphView', () => {
         );
         const world = screen.getByTestId('workflow-graph-world');
         const order = Array.from(world.children);
-        const tab = container.querySelector('.wg-gtab');
-        const chip = container.querySelector('.wg-gchip');
+        const [upper, lower] = Array.from(container.querySelectorAll<HTMLElement>('.wg-gtitle'));
         const node = container.querySelector('[data-node-id="top"]');
-        expect(tab?.textContent).toContain('Upper');
-        expect(chip?.textContent).toContain('Lower');
-        expect(order.indexOf(tab!)).toBeLessThan(order.indexOf(node!));
-        expect(order.indexOf(chip!)).toBeGreaterThan(order.indexOf(node!));
-        // Only the group's width caps a title, never the measured text width: a short measurement (seen on Lily
-        // while the web font loaded) cut "Group" to "Gro…". A chip stops at the group's right inset.
-        expect((tab as HTMLElement).style.maxWidth).toBe('400px');
-        const chipX = Number(/translate\(([\d.]+)px/.exec((chip as HTMLElement).style.transform)?.[1]);
-        expect(chipX + parseFloat((chip as HTMLElement).style.maxWidth)).toBe(394);
+        expect(upper.textContent).toContain('Upper');
+        expect(lower.textContent).toContain('Lower');
+        const at = (pill: HTMLElement) => /translate\(([\d.]+)px, ([\d.]+)px\)/.exec(pill.style.transform)!.slice(1).map(Number);
+        // Each pill is inside its own group's top band, never above the group's edge.
+        expect(at(upper)[1]).toBe(6);
+        expect(at(lower)[1]).toBe(256);
+        for (const pill of [upper, lower]) expect(order.indexOf(pill)).toBeGreaterThan(order.indexOf(node!));
+        // Only the group's right inset caps a title, never the measured text width: a short measurement (seen on
+        // Lily while the web font loaded) cut "Group" to "Gro…".
+        for (const pill of [upper, lower]) expect(at(pill)[0] + parseFloat(pill.style.maxWidth)).toBe(394);
     });
 
     // A graph too wide for the usual 12 % limit opens showing all of it, and zooming out reaches that view again.

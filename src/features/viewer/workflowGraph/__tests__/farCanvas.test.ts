@@ -144,7 +144,7 @@ const palette: FarPalette = {
     muted: 'm',
     node: { plain: look, bypass: look, mute: look, reroute: look },
     wire: { latent: 'w' },
-    group: new Map([[groupKey, { fill: 'g', stroke: 'g', titleColour: 'g', tabFill: 'g', tabStroke: 'g' }]]),
+    group: new Map([[groupKey, { fill: 'g', stroke: 'g', titleColour: 'g', pillFill: 'g', pillStroke: 'g' }]]),
 };
 
 describe('drawFarScene', () => {
@@ -163,26 +163,29 @@ describe('drawFarScene', () => {
     });
     afterEach(() => vi.unstubAllGlobals());
 
-    it('paints each group, wire and node, the group title on its tab, and the title of each node that is not a reroute', () => {
+    it('paints each group, wire and node, the group title in its pill, and the title of each node that is not a reroute', () => {
         const { ctx, calls, texts, paints } = recordingCanvas();
         const { far } = farScene(new Set(), new Set());
         // Paths are built once; a frame replays them, one batch per look. Node 1 also has its group's tint.
         const drawing = prepareFarDrawing(far, palette);
         expect(boxes).toHaveLength(far.groups.length + far.nodes.length + 1);
         drawFarScene(ctx, drawing, { x: 0, y: 0, s: 0.4 }, 2);
-        // The group, the four node looks and the title tab's backing.
+        // The group, the four node looks and the title pill's backing.
         expect(calls.filter((call) => call === 'fill')).toHaveLength(far.groups.length + 4 + 1);
-        expect(texts).toEqual(['Loaders', '1 node', 'Load', 'KSampler', 'Old', 'CheckpointLoader', 'KSampler']);
+        expect(texts).toEqual(['Load', 'KSampler', 'Old', 'CheckpointLoader', 'KSampler', 'Loaders', '1 node']);
 
-        // Far mode stacks like the HTML view: wires under groups, and a group's box, tab and title under every node,
-        // so a tab that lands under a node of the group above stays under it.
+        // Far mode stacks like the HTML view: wires under groups, the group's box under every node, and its title
+        // pill over the nodes, so a node in the band never hides the title.
         const lastWire = paints.lastIndexOf('stroke:w@1');
         const groupPaints = paints.flatMap((paint, index) => (paint.includes(':g@') ? [index] : []));
         const firstNode = paints.indexOf('fill:a@1');
+        const lastNodeText = paints.lastIndexOf('fillText:t@1');
         expect(lastWire).toBeGreaterThanOrEqual(0);
         expect(groupPaints.length).toBe(5);
-        expect(Math.min(...groupPaints)).toBeGreaterThan(lastWire);
-        expect(Math.max(...groupPaints)).toBeLessThan(firstNode);
+        const [boxFill, boxStroke, ...pill] = groupPaints;
+        expect(boxFill).toBeGreaterThan(lastWire);
+        expect(boxStroke).toBeLessThan(firstNode);
+        expect(Math.min(...pill)).toBeGreaterThan(lastNodeText);
     });
 
     // Below 35 % the node type line is noise: titles only.
@@ -201,7 +204,7 @@ describe('drawFarScene', () => {
         const wires = wirePaths(model, positions, new Set(), scene, 'bundled');
         const far = farSceneFor(model, positions, new Set(), new Set(), scene, wires, new Map(), new Set(['2']));
         drawFarScene(ctx, prepareFarDrawing(far, palette), { x: 0, y: 0, s: 0.15 }, 1, 'overview');
-        expect(texts).toEqual(['Loaders', 'KSampler']);
+        expect(texts).toEqual(['KSampler', 'Loaders']);
         expect(paints).toContain('stroke:w@0.4');
         expect(paints).not.toContain('stroke:w@1');
         expect(paints.filter((paint) => paint.startsWith('stroke:b'))).toEqual([]);
@@ -238,15 +241,15 @@ describe('layoutGroupLabels', () => {
         expect(labels.map((label) => label.key)).toEqual(['big']);
     });
 
-    it('shows each far title with its node count, on a tab above the group', () => {
+    it('shows each far title with its node count, in a pill inside the group’s top band', () => {
         const [label] = layoutGroupLabels({ groups: [group('a', 'Upscale', 0, 100, 2000, 1000)], boxes: [] }, 0.3, 'far', measure, []);
-        expect(label).toMatchObject({ kind: 'tab', text: 'Upscale', count: '2 nodes' });
-        expect(label.rect.y + label.rect.h).toBeCloseTo(100);
+        expect(label).toMatchObject({ kind: 'pill', text: 'Upscale', count: '2 nodes' });
+        expect(label.rect.y).toBeGreaterThan(100);
     });
 });
 
 describe('farGroupTitlePx', () => {
-    // At the switch a far title is exactly as big on screen as the near tab's, so nothing jumps; it then grows to the cap.
+    // At the switch a far title is exactly as big on screen as the near pill's, so nothing jumps; it then grows to the cap.
     it('starts at the near title size and grows to the cap', () => {
         expect(farGroupTitlePx(FAR_SCALE)).toBeCloseTo(NEAR_GROUP_TITLE_PX * FAR_SCALE);
         expect(farGroupTitlePx(0.3)).toBeGreaterThan(farGroupTitlePx(0.4));
