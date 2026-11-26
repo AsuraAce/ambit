@@ -1,12 +1,13 @@
 import * as React from 'react';
-import { ArrowLeft, ChevronDown, Maximize, Minus, Plus } from 'lucide-react';
-import type { WorkflowCanvasReport } from '../../../bindings';
+import { ArrowLeft, ChevronDown, ChevronRight, Maximize, Minus, Plus } from 'lucide-react';
+import type { WorkflowCanvasLevel, WorkflowCanvasReport } from '../../../bindings';
 import { useWorkflowGraphStore } from '../../../stores/workflowGraphStore';
 import { buildGraphModel, hasSavedPositions, savedPositions, type Positions } from './graphModel';
 import {
     boundsOf,
     DETAIL_STEPS,
     detailOpacity,
+    FAR_EXIT_SCALE,
     fitView,
     FOLD_MS,
     GROUP_TITLE_H,
@@ -29,8 +30,22 @@ import {
 import { FOLDED_GROUP_W } from './graphModel';
 import { countFits, placeGroupTitle, TITLE_CHROME, TITLE_INSET } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
-import { drawFarScene, farSceneFor, groupPillAt, prepareFarDrawing, readFarPalette, type FarDrawing, type GroupLabel } from './farCanvas';
+import {
+    drawFarScene,
+    farNodeAt,
+    farSceneFor,
+    groupPillAt,
+    NO_FAR_MARKS,
+    prepareFarDrawing,
+    readFarPalette,
+    type FarDrawing,
+    type FarMarks,
+    type GroupLabel,
+} from './farCanvas';
 import { GraphNode } from './GraphNode';
+import { GraphSearch } from './GraphSearch';
+import { nextNode, searchGraph, type NavDirection } from './graphReading';
+import { NodePanel } from './NodePanel';
 import { createLayoutWorker, useTidyPositions } from './useTidyPositions';
 import './workflowGraph.css';
 
@@ -89,21 +104,94 @@ const wireMotion = (wire: WirePath, before: WirePath | undefined, folding: boole
 
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-/** The full-screen, read-only workflow graph. Rendered by WorkflowInspector, so the viewer's privacy gate unmounts it. */
-const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName, onClose, makeLayoutWorker = createLayoutWorker }) => {
-    const model = React.useMemo(() => buildGraphModel(report.root), [report]);
+/** The side panel's width; flying to a node centres it in the room the panel leaves. */
+const PANEL_W = 340;
+/** How far inside the view's edges the arrow keys keep their node. */
+const REVEAL_MARGIN = 40;
+
+const ARROWS: Record<string, NavDirection> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+const NOTHING_THAT_WAY: Record<NavDirection, string> = {
+    left: 'No node to the left',
+    right: 'No node to the right',
+    up: 'No node above',
+    down: 'No node below',
+};
+
+/** One level's state, kept while the graph is open so going back up a level returns to it as it was. */
+interface LevelSnapshot {
+    layout: LayoutMode;
+    foldedNodes: ReadonlySet<string>;
+    foldedGroups: ReadonlySet<string>;
+    view: View;
+}
+
+/** How a level was reached, which decides where focus starts: the Back button, the canvas, or the layer. */
+type LevelEntry = 'first' | 'keyboard' | 'pointer';
+
+interface Crumb {
+    key: string;
+    name: string;
+    level: WorkflowCanvasLevel;
+}
+
+interface GraphLevelProps {
+    report: WorkflowCanvasReport;
+    level: WorkflowCanvasLevel;
+    crumbs: Crumb[];
+    /** The node ids of the image's output nodes on this level. */
+    outputIds: readonly string[];
+    fileName: string;
+    entry: LevelEntry;
+    /** The node the arrow keys start on: the subgraph instance just left, on the way back up. */
+    startAt: string | undefined;
+    snapshot: LevelSnapshot | undefined;
+    onSnapshot: (snapshot: LevelSnapshot) => void;
+    canOpen: (node: { kind: string; subgraphId: string | null }) => boolean;
+    onOpenSubgraph: (id: string, entry: LevelEntry) => void;
+    onGoToDepth: (depth: number, entry: LevelEntry) => void;
+    onClose: () => void;
+    makeLayoutWorker: () => Worker;
+}
+
+/** One level of the graph: the root workflow, or a subgraph's definition. */
+const GraphLevel: React.FC<GraphLevelProps> = ({
+    report,
+    level: canvasLevel,
+    crumbs,
+    outputIds,
+    fileName,
+    entry,
+    startAt,
+    snapshot,
+    onSnapshot,
+    canOpen,
+    onOpenSubgraph,
+    onGoToDepth,
+    onClose,
+    makeLayoutWorker,
+}) => {
+    const model = React.useMemo(() => buildGraphModel(canvasLevel), [canvasLevel]);
+    const depth = crumbs.length - 1;
     const canShowSaved = report.hasSavedLayout && hasSavedPositions(model);
     const saved = React.useMemo(() => (canShowSaved ? savedPositions(model) : null), [canShowSaved, model]);
-    const [layout, setLayout] = React.useState<LayoutMode>(canShowSaved ? 'saved' : 'tidy');
+    const [layout, setLayout] = React.useState<LayoutMode>(() => snapshot?.layout ?? (canShowSaved ? 'saved' : 'tidy'));
     const tidy = useTidyPositions(model, layout === 'tidy', makeLayoutWorker);
     // While Tidy is being worked out, the saved layout stays on screen.
     const positions: Positions | null = layout === 'tidy' ? (tidy.positions ?? saved) : saved;
     const shownLayout: LayoutMode = layout === 'tidy' && tidy.positions ? 'tidy' : saved ? 'saved' : 'tidy';
 
     const [foldedNodes, setFoldedNodes] = React.useState<ReadonlySet<string>>(
-        () => new Set(model.nodes.filter((node) => node.collapsed).map((node) => node.id))
+        () => snapshot?.foldedNodes ?? new Set(model.nodes.filter((node) => node.collapsed).map((node) => node.id))
     );
-    const [foldedGroups, setFoldedGroups] = React.useState<ReadonlySet<string>>(() => new Set());
+    const [foldedGroups, setFoldedGroups] = React.useState<ReadonlySet<string>>(() => snapshot?.foldedGroups ?? new Set());
+    // The node in the side panel; the arrow keys' node, shown while the canvas has keyboard focus; the search.
+    const [selected, setSelected] = React.useState<string | null>(null);
+    const [cursor, setCursor] = React.useState<string | null>(startAt ?? null);
+    const [canvasFocused, setCanvasFocused] = React.useState(false);
+    const [announcement, setAnnouncement] = React.useState('');
+    const [query, setQuery] = React.useState('');
+    const hits = React.useMemo(() => searchGraph(model, query), [model, query]);
+    const searchRef = React.useRef<HTMLInputElement>(null);
     // Chosen from menus in a later package; the defaults are the piece's.
     const [palette] = React.useState<Palette>('quiet');
     const [shape] = React.useState<WireShape>('bundled');
@@ -185,18 +273,30 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     // The title pills the far canvas drew last, for clicks and hover, and the group whose pill the pointer is over.
     const farPillsRef = React.useRef<GroupLabel[]>([]);
     const hoverPillRef = React.useRef<string | null>(null);
+    const farMarksRef = React.useRef<FarMarks>(NO_FAR_MARKS);
     const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires });
     React.useLayoutEffect(() => {
         farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires };
     });
 
-    // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
-    const setGraphOpen = useWorkflowGraphStore((state) => state.setOpen);
     React.useEffect(() => {
-        setGraphOpen(true);
-        backRef.current?.focus();
-        return () => setGraphOpen(false);
-    }, [setGraphOpen]);
+        if (entry === 'first') backRef.current?.focus();
+        else if (entry === 'keyboard') canvasRef.current?.focus({ preventScroll: true });
+        else rootRef.current?.focus({ preventScroll: true });
+        // Where focus starts is decided once, when the level opens.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    const snapshotRef = React.useRef({ layout, foldedNodes, foldedGroups, onSnapshot });
+    React.useLayoutEffect(() => {
+        snapshotRef.current = { layout, foldedNodes, foldedGroups, onSnapshot };
+    });
+    React.useEffect(
+        () => () => {
+            const { onSnapshot: keep, ...state } = snapshotRef.current;
+            keep({ ...state, view: viewRef.current });
+        },
+        []
+    );
 
     // The canvas fills the window, so its rect changes only on resize; reading it per event forces layout.
     const canvasRect = React.useCallback(() => {
@@ -244,7 +344,8 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             viewRef.current,
             dpr,
             levelRef.current === 'overview' ? 'overview' : 'far',
-            hoverPillRef.current
+            hoverPillRef.current,
+            farMarksRef.current
         );
     }, [canvasRect]);
 
@@ -269,6 +370,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             if (far !== isFarRef.current) {
                 isFarRef.current = far;
                 world.classList.toggle('far', far);
+                // The HTML is unseen outside near view, so it leaves the Tab order; focus in it moves to the canvas.
+                world.toggleAttribute('inert', far);
+                if (far && world.contains(document.activeElement)) canvasRef.current?.focus({ preventScroll: true });
                 // Near mode has HTML pills with their own hover, so a canvas pill's hover ends with far mode.
                 hoverPillRef.current = null;
                 canvasRef.current?.classList.remove('on-pill');
@@ -287,6 +391,12 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         }
         if (zoomRef.current) zoomRef.current.textContent = `${Math.round(s * 100)}%`;
     }, [drawFar]);
+
+    // The far canvas rings the picked node, the arrow keys' node and a search's hits.
+    React.useLayoutEffect(() => {
+        farMarksRef.current = { selected, cursor: canvasFocused ? cursor : null, hits: hits?.ids ?? null };
+        if (isFarRef.current) drawFar();
+    }, [selected, cursor, canvasFocused, hits, drawFar]);
 
     // A changed graph (layout, folds) is redrawn at once when far mode is showing it.
     React.useLayoutEffect(() => {
@@ -393,25 +503,6 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         [apply, viewportSize, zoomFloorNow]
     );
 
-    // Far mode shows no controls. Tabbing onto a node's or group's fold button there zooms in to it, so the
-    // focused control and its title are on screen; screen readers already hear the title in its label.
-    const handleWorldFocus = (event: React.FocusEvent<HTMLDivElement>) => {
-        if (!isFarRef.current || !(event.target instanceof Element)) return;
-        const current = latest.current;
-        const nodeId = event.target.closest('[data-node-id]')?.getAttribute('data-node-id');
-        const groupKey = event.target.closest('[data-group-key]')?.getAttribute('data-group-key');
-        let box: Rect | null = null;
-        const node = nodeId ? model.nodes.find((candidate) => candidate.id === nodeId) : undefined;
-        const at = node ? current.positions?.get(node.id) : undefined;
-        if (node && at) box = { x: at.x, y: at.y, w: node.width, h: nodeHeight(node, current.foldedNodes.has(node.id)) };
-        const group = groupKey ? model.groups.find((candidate) => candidate.key === groupKey) : undefined;
-        if (group) box = groupBox(group, current.foldedGroups.has(group.key));
-        if (!box) return;
-        const { w, h } = viewportSize();
-        const top = box.h > h - 48 ? 24 - box.y : h / 2 - (box.y + box.h / 2);
-        flyTo({ s: 1, x: w / 2 - (box.x + box.w / 2), y: top });
-    };
-
     // First view once there is something to show; later layout switches glide and refit.
     const shownRef = React.useRef<Positions | null>(null);
     React.useLayoutEffect(() => {
@@ -419,7 +510,8 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         const previous = shownRef.current;
         shownRef.current = positions;
         if (!previous) {
-            if (bounds) viewRef.current = startView(bounds, viewportSize());
+            if (snapshot) viewRef.current = snapshot.view;
+            else if (bounds) viewRef.current = startView(bounds, viewportSize());
             apply();
             return;
         }
@@ -443,10 +535,17 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
 
     React.useEffect(() => stopFlight, []);
 
-    const onCloseRef = React.useRef(onClose);
+    // Escape steps back one thing at a time: the search, the side panel, the subgraph level, then the graph.
+    const escape = () => {
+        if (query !== '') setQuery('');
+        else if (selected !== null) setSelected(null);
+        else if (depth > 0) onGoToDepth(depth - 1, 'keyboard');
+        else onClose();
+    };
+    const escapeRef = React.useRef(escape);
     React.useLayoutEffect(() => {
-        onCloseRef.current = onClose;
-    }, [onClose]);
+        escapeRef.current = escape;
+    });
 
     // Keys the graph owns. Every other viewer key does nothing while it is open. It listens in the capture
     // phase and stops a key it handles, so no listener registered later (the viewer's) sees it too.
@@ -460,11 +559,12 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 action();
             };
             if (event.key === 'Escape') {
-                own(() => onCloseRef.current());
+                own(() => escapeRef.current());
                 return;
             }
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (event.key === 'f' || event.key === 'F') own(fit);
+            if (event.key === '/') own(() => searchRef.current?.focus());
+            else if (event.key === 'f' || event.key === 'F') own(fit);
             else if (event.key === '+' || event.key === '=') own(() => zoomBy(1.2));
             else if (event.key === '-') own(() => zoomBy(1 / 1.2));
         };
@@ -495,6 +595,146 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         return () => canvas.removeEventListener('wheel', handleWheel);
     }, [canvasRect, scheduleApply, zoomFloorNow]);
 
+    // Reading the graph: the side panel, the search and the arrow keys.
+    const drawnRect = (id: string): Rect | null => {
+        const current = latest.current;
+        const node = model.byId.get(id);
+        const at = current.positions?.get(id);
+        if (!node || !at || current.scene.hiddenBy.has(id)) return null;
+        return { x: at.x, y: at.y, w: node.width, h: nodeHeight(node, current.foldedNodes.has(id)) };
+    };
+    const drawnRects = (): Map<string, Rect> => {
+        const rects = new Map<string, Rect>();
+        for (const node of model.nodes) {
+            const rect = drawnRect(node.id);
+            if (rect) rects.set(node.id, rect);
+        }
+        return rects;
+    };
+    // Where the arrow keys start: the picked node, the last one, the image's output, else the top-left node.
+    const startNode = (rects: ReadonlyMap<string, Rect>): string | null => {
+        for (const id of [cursor, selected, ...outputIds]) if (id !== null && rects.has(id)) return id;
+        let first: [string, Rect] | null = null;
+        for (const entry of rects)
+            if (!first || entry[1].y < first[1].y || (entry[1].y === first[1].y && entry[1].x < first[1].x)) first = entry;
+        return first?.[0] ?? null;
+    };
+    // The room the side panel leaves, while it is open.
+    const roomWidth = (w: number, panel: boolean) => (panel ? Math.max(w - PANEL_W, w / 2) : w);
+    const flyToNode = (id: string) => {
+        const rect = drawnRect(id);
+        if (!rect) return;
+        const { w, h } = viewportSize();
+        const s = viewRef.current.s < FAR_EXIT_SCALE ? 1 : viewRef.current.s;
+        flyTo({ s, x: roomWidth(w, true) / 2 - (rect.x + rect.w / 2) * s, y: h / 2 - (rect.y + rect.h / 2) * s });
+        setInteracted(true);
+    };
+    // Pans, at the same zoom, just enough to bring a node inside the view's margins.
+    const reveal = (id: string) => {
+        const rect = drawnRect(id);
+        if (!rect) return;
+        const { x, y, s } = viewRef.current;
+        const { w, h } = viewportSize();
+        const shift = (start: number, size: number, offset: number, room: number) => {
+            const near = start * s + offset;
+            const far = (start + size) * s + offset;
+            if (far - near > room - 2 * REVEAL_MARGIN) return REVEAL_MARGIN - start * s;
+            if (near < REVEAL_MARGIN) return offset + REVEAL_MARGIN - near;
+            if (far > room - REVEAL_MARGIN) return offset - (far - (room - REVEAL_MARGIN));
+            return offset;
+        };
+        const next = { s, x: shift(rect.x, rect.w, x, roomWidth(w, selected !== null)), y: shift(rect.y, rect.h, y, h) };
+        if (next.x !== x || next.y !== y) flyTo(next);
+    };
+    const select = (id: string) => {
+        setSelected(id);
+        setCursor(id);
+    };
+    // A node folded away inside a group is unfolded first, then the view flies to it once it is drawn.
+    const pendingFlyRef = React.useRef<string | null>(null);
+    const goTo = (id: string) => {
+        select(id);
+        if (latest.current.scene.hiddenBy.has(id)) {
+            pendingFlyRef.current = id;
+            setFoldedGroups((current) => {
+                const next = new Set(current);
+                for (const group of model.groups) if (group.members.includes(id)) next.delete(group.key);
+                return next;
+            });
+            return;
+        }
+        flyToNode(id);
+    };
+    React.useLayoutEffect(() => {
+        const id = pendingFlyRef.current;
+        if (id === null || !drawnRect(id)) return;
+        pendingFlyRef.current = null;
+        flyToNode(id);
+    });
+    const announceNode = (id: string) => {
+        const node = model.byId.get(id);
+        if (node) setAnnouncement(`${node.title}, ${node.nodeType}`);
+    };
+    const openFromPointer = React.useCallback((id: string) => onOpenSubgraph(id, 'pointer'), [onOpenSubgraph]);
+    const handleCanvasFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+        if (event.target !== event.currentTarget) return;
+        setCanvasFocused(true);
+        const id = startNode(drawnRects());
+        if (id === null) {
+            setAnnouncement('This level has no nodes.');
+            return;
+        }
+        setCursor(id);
+        announceNode(id);
+        reveal(id);
+    };
+    const handleCanvasBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+        if (event.target === event.currentTarget) setCanvasFocused(false);
+    };
+    // Arrow keys and Enter on the canvas, or on the layer after a click: the first press from the layer only moves
+    // focus to the canvas, which shows where the arrows are.
+    const handleNavKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas || (event.target !== rootRef.current && event.target !== canvas)) return;
+        const direction = ARROWS[event.key];
+        if ((!direction && event.key !== 'Enter') || event.ctrlKey || event.metaKey || event.altKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.target !== canvas) {
+            canvas.focus({ preventScroll: true });
+            return;
+        }
+        const rects = drawnRects();
+        const from = startNode(rects);
+        if (from === null) return;
+        if (direction) {
+            const next = nextNode(model, rects, from, direction);
+            if (next === null) {
+                setCursor(from);
+                setAnnouncement(NOTHING_THAT_WAY[direction]);
+                return;
+            }
+            setCursor(next);
+            announceNode(next);
+            reveal(next);
+            return;
+        }
+        const node = model.byId.get(from);
+        if (!node) return;
+        // On a subgraph, the first Enter shows its details (with Open), the second opens its level.
+        if (canOpen(node) && selected === from) {
+            onOpenSubgraph(from, 'keyboard');
+            return;
+        }
+        select(from);
+        setAnnouncement(canOpen(node) ? `${node.title} details. Enter again opens the subgraph.` : `${node.title} details`);
+    };
+    // Closing the panel or a search unmounts what had focus: the layer takes it back, so the keys still work.
+    React.useLayoutEffect(() => {
+        const root = rootRef.current;
+        if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
+    }, [selected]);
+
     const dragRef = React.useRef<{ id: number; x: number; y: number; view: View; panning: boolean } | null>(null);
     // Whether the last press ended a pan: the click that follows it is not a click on a pill.
     const pannedRef = React.useRef(false);
@@ -513,7 +753,8 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     };
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         // The title in a pill is a button too, but a drag that starts on it still pans.
-        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button:not(.wg-gt)'))) return;
+        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button:not(.wg-gt), input, [role="listbox"]')))
+            return;
         pannedRef.current = false;
         stopFlight();
         dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, view: viewRef.current, panning: false };
@@ -543,11 +784,29 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (drag?.id !== event.pointerId) return;
         dragRef.current = null;
         event.currentTarget.classList.remove('panning');
-        // A press and release on a far pill, without a pan, zooms to its group.
-        if (event.type === 'pointerup' && !drag.panning) {
+        if (event.type !== 'pointerup' || drag.panning) return;
+        // A press and release on a far pill, without a pan, zooms to its group; on a far node, it opens the node.
+        if (isFarRef.current) {
             const key = farPillUnder(event);
-            if (key) zoomToGroup(key);
+            if (key) {
+                zoomToGroup(key);
+                return;
+            }
+            const rect = canvasRect();
+            const { x, y, s } = viewRef.current;
+            const id = farNodeAt(
+                farDrawingRef.current?.sceneNodes ?? [],
+                (event.clientX - (rect?.left ?? 0) - x) / s,
+                (event.clientY - (rect?.top ?? 0) - y) / s
+            );
+            if (id) select(id);
+            else setSelected(null);
+            return;
         }
+        if (!(event.target instanceof Element) || event.target.closest('.wg-gtitle, .wg-group.shut, .wg-tb, .wg-hint')) return;
+        const id = event.target.closest<HTMLElement>('[data-node-id]')?.dataset.nodeId;
+        if (id) select(id);
+        else setSelected(null);
     };
     // In near mode the pill is HTML: a click on it, away from its fold button, zooms to its group. The title is a
     // button, so Enter on it does the same (a click with no pointer press, detail 0, which no pan can precede).
@@ -692,10 +951,19 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         }
     };
     // A click on the canvas would leave focus on the page behind; the layer keeps it, so the trap still holds.
+    // The canvas is a Tab stop for the arrow keys, but a click on it keeps focus on the layer, so no keyboard ring
+    // shows for a pointer.
     const keepFocus = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (event.target instanceof Element && event.target.closest(FOCUSABLE)) return;
+        const owner = event.target instanceof Element ? event.target.closest(FOCUSABLE) : null;
+        if (owner && owner !== canvasRef.current) return;
         rootRef.current?.focus({ preventScroll: true });
     };
+    const keepCanvasUnfocused = (event: React.MouseEvent<HTMLDivElement>) => {
+        if (!(event.target instanceof Element && event.target.closest('input, button, select, textarea, [role="listbox"]'))) {
+            event.preventDefault();
+        }
+    };
+    const selectedNode = selected === null ? undefined : model.byId.get(selected);
 
     const hint =
         model.nodes.length === 0
@@ -718,7 +986,10 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             aria-modal="true"
             aria-label="Workflow graph"
             tabIndex={-1}
-            onKeyDown={trapTab}
+            onKeyDown={(event) => {
+                trapTab(event);
+                handleNavKey(event);
+            }}
             onPointerDown={keepFocus}
         >
             <header className="wg-appbar">
@@ -729,6 +1000,24 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 <span className="wg-name" title={fileName}>
                     {fileName}
                 </span>
+                {depth > 0 ? (
+                    <nav className="wg-crumbs" aria-label="Workflow levels">
+                        {crumbs.map((crumb, index) =>
+                            index < depth ? (
+                                <React.Fragment key={crumb.key}>
+                                    <button type="button" className="wg-crumb" onClick={() => onGoToDepth(index, 'pointer')}>
+                                        {crumb.name}
+                                    </button>
+                                    <ChevronRight aria-hidden="true" className="h-3 w-3 flex-none" />
+                                </React.Fragment>
+                            ) : (
+                                <span key={crumb.key} className="wg-crumb here" aria-current="location">
+                                    {crumb.name}
+                                </span>
+                            )
+                        )}
+                    </nav>
+                ) : null}
                 <span className="wg-badge">ComfyUI</span>
                 {report.source === 'api_prompt' ? <span className="wg-badge">API prompt</span> : null}
                 {report.truncated ? (
@@ -740,126 +1029,255 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                     {model.nodes.length} nodes · {model.links.length} wires
                 </span>
             </header>
-            <div
-                ref={canvasRef}
-                className="wg-canvas"
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                onPointerLeave={(event) => setHoverPill(event.currentTarget, null)}
-            >
-                <div ref={dotsRef} className="wg-dots" />
-                <div ref={worldRef} className="wg-world" data-testid="workflow-graph-world" onFocus={handleWorldFocus}>
-                    {positions ? (
-                        <>
-                            <svg className="wg-wires" aria-hidden="true">
-                                {shownWires.map(({ wire, motion }) => (
-                                    <path
-                                        key={wire.key}
-                                        className={`wg-wire t-${wire.type}${wire.bypassed ? ' bypassed' : ''}${motion ? ` ${motion}` : ''}`}
-                                        d={wire.d}
-                                        // CSS eases the d property, not the attribute: a morphing wire carries its route
-                                        // in its style too, so the change from the old route is a transition.
-                                        style={motion === 'morph' ? { d: `path("${wire.d}")` } : undefined}
-                                    />
-                                ))}
-                            </svg>
-                            {model.groups.map((group) => {
-                                if (scene.hiddenGroups.has(group.key)) return null;
-                                const shut = foldedGroups.has(group.key);
-                                const box = groupBox(group, shut);
-                                const style = {
-                                    transform: `translate(${box.x}px, ${box.y}px)`,
-                                    width: box.w,
-                                    height: box.h,
-                                    // In Familiar this is the file's own colour, checked to be plain hex: user content,
-                                    // as docs/design-system.md "Exceptions" allows.
-                                    '--gc': groupColour(group.color, palette),
-                                } as React.CSSProperties;
-                                return (
-                                    <div
-                                        key={group.key}
-                                        className={shut ? 'wg-group shut' : 'wg-group'}
-                                        style={style}
-                                        data-group-key={group.key}
-                                    >
-                                        {shut ? (
-                                            <>
-                                                <div className="wg-gh">
-                                                    {titleContent(
-                                                        group.key,
-                                                        group.title,
-                                                        foldedCount(group.title, group.members.length),
-                                                        true
-                                                    )}
-                                                </div>
-                                                <span className="wg-gport" style={{ left: -5 }} />
-                                                <span className="wg-gport" style={{ right: -5 }} />
-                                            </>
-                                        ) : null}
-                                    </div>
-                                );
-                            })}
-                            {model.nodes.map((node) => {
-                                const at = positions.get(node.id);
-                                const leaving = foldMotion.leaving.has(node.id);
-                                if (!at || (scene.hiddenBy.has(node.id) && !leaving)) return null;
-                                return (
-                                    <GraphNode
-                                        key={node.id}
-                                        node={node}
-                                        at={at}
-                                        folded={foldedNodes.has(node.id)}
-                                        motion={leaving ? 'leaving' : foldMotion.arriving.has(node.id) ? 'arriving' : null}
-                                        onToggleFold={toggleNode}
-                                    />
-                                );
-                            })}
-                            {groupTitles()}
-                        </>
-                    ) : null}
-                </div>
-                <canvas ref={farRef} className="wg-farcanvas" aria-hidden="true" />
-                {hint ? (
-                    <div className="wg-hint wg-frost" role="status">
-                        {hint}
-                    </div>
-                ) : null}
-                <div className="wg-tb wg-frost bottom-left" role="toolbar" aria-label="View">
-                    <button type="button" className="wg-tbtn" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
-                        <Minus aria-hidden="true" className="h-4 w-4" />
-                    </button>
-                    <span ref={zoomRef} className="wg-zoomv">
-                        100%
+            <div className="wg-stage">
+                <div
+                    ref={canvasRef}
+                    className="wg-canvas"
+                    tabIndex={0}
+                    role="application"
+                    aria-label="Workflow canvas"
+                    aria-describedby="wg-canvas-help"
+                    onFocus={handleCanvasFocus}
+                    onBlur={handleCanvasBlur}
+                    onMouseDown={keepCanvasUnfocused}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    onPointerLeave={(event) => setHoverPill(event.currentTarget, null)}
+                >
+                    <div ref={dotsRef} className="wg-dots" />
+                    <span id="wg-canvas-help" className="wg-sr">
+                        Arrow keys move between nodes: right and left follow the wires. Enter shows the node’s details.
                     </span>
-                    <button type="button" className="wg-tbtn" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>
-                        <Plus aria-hidden="true" className="h-4 w-4" />
-                    </button>
-                    <span className="wg-sep" />
-                    <button type="button" className="wg-tbtn" onClick={fit}>
-                        <Maximize aria-hidden="true" className="h-3.5 w-3.5" />
-                        Fit <kbd className="wg-kbd">F</kbd>
-                    </button>
-                    <span className="wg-sep" />
-                    <div className="wg-seg" role="group" aria-label="Layout">
-                        <span title={canShowSaved ? undefined : 'This file has no saved positions.'}>
-                            <button
-                                type="button"
-                                aria-pressed={layout === 'saved'}
-                                disabled={!canShowSaved}
-                                onClick={() => setLayout('saved')}
-                            >
-                                As saved
-                            </button>
-                        </span>
-                        <button type="button" aria-pressed={layout === 'tidy'} onClick={() => setLayout('tidy')}>
-                            Tidy
+                    <span className="wg-sr" aria-live="polite" data-testid="graph-announcer">
+                        {announcement}
+                    </span>
+                    <div
+                        ref={worldRef}
+                        className="wg-world"
+                        data-testid="workflow-graph-world"
+                        // An attribute, not a class: apply() toggles classes on this element that a re-render must keep.
+                        data-searching={hits ? '' : undefined}
+                    >
+                        {positions ? (
+                            <>
+                                <svg className="wg-wires" aria-hidden="true">
+                                    {shownWires.map(({ wire, motion }) => (
+                                        <path
+                                            key={wire.key}
+                                            className={`wg-wire t-${wire.type}${wire.bypassed ? ' bypassed' : ''}${motion ? ` ${motion}` : ''}`}
+                                            d={wire.d}
+                                            // CSS eases the d property, not the attribute: a morphing wire carries its route
+                                            // in its style too, so the change from the old route is a transition.
+                                            style={motion === 'morph' ? { d: `path("${wire.d}")` } : undefined}
+                                        />
+                                    ))}
+                                </svg>
+                                {model.groups.map((group) => {
+                                    if (scene.hiddenGroups.has(group.key)) return null;
+                                    const shut = foldedGroups.has(group.key);
+                                    const box = groupBox(group, shut);
+                                    const style = {
+                                        transform: `translate(${box.x}px, ${box.y}px)`,
+                                        width: box.w,
+                                        height: box.h,
+                                        // In Familiar this is the file's own colour, checked to be plain hex: user content,
+                                        // as docs/design-system.md "Exceptions" allows.
+                                        '--gc': groupColour(group.color, palette),
+                                    } as React.CSSProperties;
+                                    return (
+                                        <div
+                                            key={group.key}
+                                            className={shut ? 'wg-group shut' : 'wg-group'}
+                                            style={style}
+                                            data-group-key={group.key}
+                                        >
+                                            {shut ? (
+                                                <>
+                                                    <div className="wg-gh">
+                                                        {titleContent(
+                                                            group.key,
+                                                            group.title,
+                                                            foldedCount(group.title, group.members.length),
+                                                            true
+                                                        )}
+                                                    </div>
+                                                    <span className="wg-gport" style={{ left: -5 }} />
+                                                    <span className="wg-gport" style={{ right: -5 }} />
+                                                </>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                                {model.nodes.map((node) => {
+                                    const at = positions.get(node.id);
+                                    const leaving = foldMotion.leaving.has(node.id);
+                                    if (!at || (scene.hiddenBy.has(node.id) && !leaving)) return null;
+                                    return (
+                                        <GraphNode
+                                            key={node.id}
+                                            node={node}
+                                            at={at}
+                                            folded={foldedNodes.has(node.id)}
+                                            motion={leaving ? 'leaving' : foldMotion.arriving.has(node.id) ? 'arriving' : null}
+                                            selected={selected === node.id}
+                                            cursor={canvasFocused && cursor === node.id}
+                                            found={hits ? (hits.ids.has(node.id) ? 'hit' : 'miss') : null}
+                                            onToggleFold={toggleNode}
+                                            onOpen={canOpen(node) ? openFromPointer : undefined}
+                                        />
+                                    );
+                                })}
+                                {groupTitles()}
+                            </>
+                        ) : null}
+                    </div>
+                    <canvas ref={farRef} className="wg-farcanvas" aria-hidden="true" />
+                    {hint ? (
+                        <div className="wg-hint wg-frost" role="status">
+                            {hint}
+                        </div>
+                    ) : null}
+                    <div className="wg-tb wg-frost top-left">
+                        <GraphSearch
+                            inputRef={searchRef}
+                            query={query}
+                            hits={hits}
+                            onQuery={setQuery}
+                            onPick={(id) => {
+                                setQuery('');
+                                goTo(id);
+                                rootRef.current?.focus({ preventScroll: true });
+                            }}
+                            onDone={() => {
+                                setQuery('');
+                                rootRef.current?.focus({ preventScroll: true });
+                            }}
+                        />
+                    </div>
+                    <div className="wg-tb wg-frost bottom-left" role="toolbar" aria-label="View">
+                        <button type="button" className="wg-tbtn" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
+                            <Minus aria-hidden="true" className="h-4 w-4" />
                         </button>
+                        <span ref={zoomRef} className="wg-zoomv">
+                            100%
+                        </span>
+                        <button type="button" className="wg-tbtn" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>
+                            <Plus aria-hidden="true" className="h-4 w-4" />
+                        </button>
+                        <span className="wg-sep" />
+                        <button type="button" className="wg-tbtn" onClick={fit}>
+                            <Maximize aria-hidden="true" className="h-3.5 w-3.5" />
+                            Fit <kbd className="wg-kbd">F</kbd>
+                        </button>
+                        <span className="wg-sep" />
+                        <div className="wg-seg" role="group" aria-label="Layout">
+                            <span title={canShowSaved ? undefined : 'This file has no saved positions.'}>
+                                <button
+                                    type="button"
+                                    aria-pressed={layout === 'saved'}
+                                    disabled={!canShowSaved}
+                                    onClick={() => setLayout('saved')}
+                                >
+                                    As saved
+                                </button>
+                            </span>
+                            <button type="button" aria-pressed={layout === 'tidy'} onClick={() => setLayout('tidy')}>
+                                Tidy
+                            </button>
+                        </div>
                     </div>
                 </div>
+                {selectedNode ? (
+                    <NodePanel
+                        model={model}
+                        node={selectedNode}
+                        folded={foldedNodes.has(selectedNode.id)}
+                        onClose={() => setSelected(null)}
+                        onGo={goTo}
+                        onToggleFold={toggleNode}
+                        onOpen={canOpen(selectedNode) ? openFromPointer : undefined}
+                    />
+                ) : null}
             </div>
         </div>
+    );
+};
+
+/** The full-screen, read-only workflow graph. Rendered by WorkflowInspector, so the viewer's privacy gate unmounts it. */
+const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName, onClose, makeLayoutWorker = createLayoutWorker }) => {
+    // The subgraph instances opened, outermost first; none at the workflow's own level. `from` is the instance just
+    // left on the way back up, where the arrow keys start.
+    const [path, setPath] = React.useState<{ ids: string[]; entry: LevelEntry; from?: string }>({ ids: [], entry: 'first' });
+    // Written as a level closes and read as one opens; never a reason to re-render.
+    const [snapshots] = React.useState(() => new Map<string, LevelSnapshot>());
+    const definitions = React.useMemo(() => new Map(report.subgraphs.map((subgraph) => [subgraph.id, subgraph])), [report]);
+    const canOpen = React.useCallback(
+        (node: { kind: string; subgraphId: string | null }) =>
+            node.kind === 'subgraph' && node.subgraphId !== null && definitions.has(node.subgraphId),
+        [definitions]
+    );
+    const crumbs = React.useMemo(() => {
+        const list: Crumb[] = [{ key: '', name: 'Workflow', level: report.root }];
+        for (const id of path.ids) {
+            const parent = list[list.length - 1];
+            const instance = parent.level.nodes.find((node) => node.id === id);
+            const definition = instance?.subgraphId ? definitions.get(instance.subgraphId) : undefined;
+            if (!instance || !definition) break;
+            list.push({
+                key: `${parent.key}/${id}`,
+                name: definition.name || instance.title || instance.nodeType,
+                level: definition.level,
+            });
+        }
+        return list;
+    }, [report, definitions, path]);
+    const current = crumbs[crumbs.length - 1];
+    const depth = crumbs.length - 1;
+    // Output paths are full paths: the instances, then the node.
+    const outputIds = React.useMemo(() => {
+        const ids = path.ids.slice(0, depth);
+        return report.selectedOutputPaths
+            .filter((outputPath) => outputPath.length === depth + 1 && ids.every((id, index) => outputPath[index] === id))
+            .map((outputPath) => outputPath[depth]);
+    }, [report, path, depth]);
+
+    // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
+    const setGraphOpen = useWorkflowGraphStore((state) => state.setOpen);
+    React.useEffect(() => {
+        setGraphOpen(true);
+        return () => setGraphOpen(false);
+    }, [setGraphOpen]);
+
+    const onSnapshot = React.useCallback((snapshot: LevelSnapshot) => snapshots.set(current.key, snapshot), [current.key, snapshots]);
+    const onOpenSubgraph = React.useCallback(
+        (id: string, entry: LevelEntry) => setPath((shown) => ({ ids: [...shown.ids.slice(0, depth), id], entry })),
+        [depth]
+    );
+    const onGoToDepth = React.useCallback(
+        (target: number, entry: LevelEntry) => setPath((shown) => ({ ids: shown.ids.slice(0, target), entry, from: shown.ids[target] })),
+        []
+    );
+
+    return (
+        <GraphLevel
+            key={current.key}
+            report={report}
+            level={current.level}
+            crumbs={crumbs}
+            outputIds={outputIds}
+            fileName={fileName}
+            entry={path.entry}
+            startAt={path.from}
+            snapshot={snapshots.get(current.key)}
+            onSnapshot={onSnapshot}
+            canOpen={canOpen}
+            onOpenSubgraph={onOpenSubgraph}
+            onGoToDepth={onGoToDepth}
+            onClose={onClose}
+            makeLayoutWorker={makeLayoutWorker}
+        />
     );
 };
 

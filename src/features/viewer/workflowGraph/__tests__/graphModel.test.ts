@@ -82,7 +82,8 @@ describe('graph model from the canvas report', () => {
         expect(wireTypeOf('*')).toBe('any');
     });
 
-    it('names an unnamed setting "Value N" and cuts very long values for display', () => {
+    // A made-up name such as "Value 2" reads as if the file said it; an unnamed value stays unnamed.
+    it('leaves a setting the file does not name unnamed, and cuts very long values for display', () => {
         const long = 'x'.repeat(WIDGET_TEXT_LIMIT + 50);
         const model = buildGraphModel(
             level([
@@ -96,7 +97,7 @@ describe('graph model from the canvas report', () => {
         );
         const [seed, text] = model.byId.get('1')!.widgets;
         expect(seed.name).toBe('seed');
-        expect(text.name).toBe('Value 2');
+        expect(text.name).toBeNull();
         expect(text.value.length).toBe(WIDGET_TEXT_LIMIT + 1);
     });
 

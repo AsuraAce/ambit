@@ -139,6 +139,7 @@ const palette: FarPalette = {
     font: 'f',
     text: 't',
     muted: 'm',
+    accent: 'sage',
     node: { plain: look, bypass: look, mute: look, reroute: look },
     wire: { latent: 'w' },
     group: new Map([[groupKey, { fill: 'g', stroke: 'g', titleColour: 'g', pillFill: 'g', pillStroke: 'g' }]]),
