@@ -838,6 +838,37 @@ describe('WorkflowGraphView', () => {
             expect(screen.getByRole('button', { name: 'Unfold group Sampling' })).toBeTruthy();
         });
 
+        // A level's Tidy layout is kept like its folds: going back up shows it at once, as the user left it, with no
+        // new layout run (up to 10 s on a large root) and no glide or refit that would throw away their view.
+        it('keeps a level’s Tidy layout and view while a subgraph is open, with no new layout run', async () => {
+            const made: FakeLayoutWorker[] = [];
+            const countingWorker = () => {
+                const worker = new FakeLayoutWorker();
+                made.push(worker);
+                return worker as unknown as Worker;
+            };
+            render(<WorkflowGraphView report={withSubgraph} fileName="read.png" onClose={vi.fn()} makeLayoutWorker={countingWorker} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Tidy' }));
+            await waitFor(() => expect(shown('Sampling')).toBe(false));
+            const world = screen.getByTestId('workflow-graph-world');
+            fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+            const left = world.style.transform;
+            expect(made).toHaveLength(1);
+
+            fireEvent.click(screen.getByRole('button', { name: /^Open subgraph/ }));
+            fireEvent.click(screen.getByRole('button', { name: 'Workflow' }));
+            await act(async () => {
+                await Promise.resolve();
+            });
+
+            expect(made).toHaveLength(1);
+            expect(screen.getByRole('button', { name: 'Tidy' }).getAttribute('aria-pressed')).toBe('true');
+            expect(shown('Sampling')).toBe(false);
+            const back = screen.getByTestId('workflow-graph-world');
+            expect(back.classList.contains('moving')).toBe(false);
+            expect(back.style.transform).toBe(left);
+        });
+
         it('finds nodes with "/", dims the rest, and opens the one picked', () => {
             renderReading();
             fireEvent.keyDown(document.body, { key: '/' });

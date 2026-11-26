@@ -123,6 +123,8 @@ interface LevelSnapshot {
     foldedNodes: ReadonlySet<string>;
     foldedGroups: ReadonlySet<string>;
     view: View;
+    /** The Tidy layout, once worked out: coming back uses it as it is, with no new run and no glide. */
+    tidyPositions: Positions | null;
 }
 
 /** How a level was reached, which decides where focus starts: the Back button, the canvas, or the layer. */
@@ -175,7 +177,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     const canShowSaved = report.hasSavedLayout && hasSavedPositions(model);
     const saved = React.useMemo(() => (canShowSaved ? savedPositions(model) : null), [canShowSaved, model]);
     const [layout, setLayout] = React.useState<LayoutMode>(() => snapshot?.layout ?? (canShowSaved ? 'saved' : 'tidy'));
-    const tidy = useTidyPositions(model, layout === 'tidy', makeLayoutWorker);
+    const tidy = useTidyPositions(model, layout === 'tidy', makeLayoutWorker, snapshot?.tidyPositions ?? null);
     // While Tidy is being worked out, the saved layout stays on screen.
     const positions: Positions | null = layout === 'tidy' ? (tidy.positions ?? saved) : saved;
     const shownLayout: LayoutMode = layout === 'tidy' && tidy.positions ? 'tidy' : saved ? 'saved' : 'tidy';
@@ -286,9 +288,9 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         // Where focus starts is decided once, when the level opens.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    const snapshotRef = React.useRef({ layout, foldedNodes, foldedGroups, onSnapshot });
+    const snapshotRef = React.useRef({ layout, foldedNodes, foldedGroups, tidyPositions: tidy.positions, onSnapshot });
     React.useLayoutEffect(() => {
-        snapshotRef.current = { layout, foldedNodes, foldedGroups, onSnapshot };
+        snapshotRef.current = { layout, foldedNodes, foldedGroups, tidyPositions: tidy.positions, onSnapshot };
     });
     React.useEffect(
         () => () => {

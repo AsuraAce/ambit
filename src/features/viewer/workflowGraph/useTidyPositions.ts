@@ -35,14 +35,21 @@ export const LAYOUT_TIME_CAP_MS = 10_000;
 
 export type TidyStatus = 'idle' | 'pending' | 'ready' | 'failed';
 
-/** Lays the graph out in a worker once it is first wanted, and keeps the result while the view is open. */
+/**
+ * Lays the graph out in a worker once it is first wanted, and keeps the result while the view is open. A layout
+ * worked out before (`earlier`, kept while another level was open) is used as it is, with no new run.
+ */
 export const useTidyPositions = (
     model: GraphModel,
     wanted: boolean,
-    makeWorker: () => Worker = createLayoutWorker
+    makeWorker: () => Worker = createLayoutWorker,
+    earlier: Positions | null = null
 ): { status: TidyStatus; positions: Positions | null } => {
-    const [result, setResult] = React.useState<{ positions: Positions | null; failed: boolean }>({ positions: null, failed: false });
-    const startedRef = React.useRef(false);
+    const [result, setResult] = React.useState<{ positions: Positions | null; failed: boolean }>(() => ({
+        positions: earlier,
+        failed: false,
+    }));
+    const startedRef = React.useRef(earlier !== null);
 
     React.useEffect(() => {
         if (!wanted || startedRef.current) return;
