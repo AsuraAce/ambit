@@ -10,8 +10,8 @@ import {
     TYPE_LINE_SCALE,
     type FarPalette,
 } from '../farCanvas';
-import { FAR_SCALE, groupBox, nodeHeight, sceneFor, wirePaths } from '../geometry';
-import { GROUP_TITLE_CAP_PX } from '../groupTitles';
+import { FAR_SCALE, groupBox, LOWEST_SCALE, OVERVIEW_SCALE, nodeHeight, sceneFor, wirePaths } from '../geometry';
+import { GROUP_TITLE_CAP_PX, TITLE_CHROME, TITLE_INSET } from '../groupTitles';
 import { buildGraphModel, savedPositions } from '../graphModel';
 import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
 
@@ -211,6 +211,27 @@ describe('drawFarScene', () => {
         // Node 1 is tinted toward its group's colour.
         expect(paints.filter((paint) => paint === 'fill:g@0.35')).toHaveLength(1);
     });
+
+    // Fitting every node's title is the costly step of a far frame. A zoom sweep must reuse a few fitted sizes rather
+    // than fit all nodes again on nearly every wheel step, and the overview, which shows only its anchors, fits only
+    // those (the review found hundreds of full sets cached after one sweep of a 500-node graph).
+    it('fits node titles at a few sizes over a zoom sweep, and only the anchors in the overview', () => {
+        const { ctx } = recordingCanvas();
+        const scene = sceneFor(model, 'saved', new Set());
+        const wires = wirePaths(model, positions, new Set(), scene, 'bundled');
+        const drawing = prepareFarDrawing(
+            farSceneFor(model, positions, new Set(), new Set(), scene, wires, new Map(), new Set(['2'])),
+            palette
+        );
+        for (let s = FAR_SCALE; s > LOWEST_SCALE; s *= 0.98)
+            drawFarScene(ctx, drawing, { x: 0, y: 0, s }, 1, s < OVERVIEW_SCALE ? 'overview' : 'far');
+        expect(drawing.labels.size).toBeLessThanOrEqual(30);
+        const overviewSets = [...drawing.labels].filter(([key]) => key.endsWith('anchors')).map(([, labels]) => labels);
+        // Far out, a title outgrows its node and none fit; where any does, it is the anchor's.
+        const fitted = overviewSets.map((labels) => labels.titles.map((label) => label.text));
+        expect(fitted).toContainEqual(['KSampler']);
+        expect(fitted.flat().every((text) => text === 'KSampler')).toBe(true);
+    });
 });
 
 describe('layoutGroupLabels', () => {
@@ -229,20 +250,20 @@ describe('layoutGroupLabels', () => {
     // ComfyUI names a new group "Group": in the overview that says nothing, so it is left out; far mode keeps it.
     it('leaves default "Group" titles out of the overview only', () => {
         const drawing = { groups: [group('a', 'Group', 0, 0, 2000, 1000), group('b', 'Upscale', 0, 2000, 2000, 1000)], boxes: [] };
-        expect(layoutGroupLabels(drawing, 0.1, 'overview', measure, []).map((label) => label.text)).toEqual(['Upscale']);
-        expect(layoutGroupLabels(drawing, 0.3, 'far', measure, []).map((label) => label.text)).toEqual(['Group', 'Upscale']);
+        expect(layoutGroupLabels(drawing, 0.1, 'overview', measure).map((label) => label.text)).toEqual(['Upscale']);
+        expect(layoutGroupLabels(drawing, 0.3, 'far', measure).map((label) => label.text)).toEqual(['Group', 'Upscale']);
     });
 
     // Titles that would overlap: the bigger group's wins.
     it('keeps the bigger group’s title where two overlap in the overview', () => {
         const big = group('big', 'Sampling', 0, 0, 3000, 2000);
         const small = group('small', 'Loaders', 40, 0, 1000, 500);
-        const labels = layoutGroupLabels({ groups: [small, big], boxes: [] }, 0.1, 'overview', measure, []);
+        const labels = layoutGroupLabels({ groups: [small, big], boxes: [] }, 0.1, 'overview', measure);
         expect(labels.map((label) => label.key)).toEqual(['big']);
     });
 
     it('shows each far title with its node count, in a pill inside the group’s top band', () => {
-        const [label] = layoutGroupLabels({ groups: [group('a', 'Upscale', 0, 100, 2000, 1000)], boxes: [] }, 0.3, 'far', measure, []);
+        const [label] = layoutGroupLabels({ groups: [group('a', 'Upscale', 0, 100, 2000, 1000)], boxes: [] }, 0.3, 'far', measure);
         expect(label).toMatchObject({ kind: 'pill', text: 'Upscale', count: '2 nodes' });
         expect(label.rect.y).toBeGreaterThan(100);
     });
@@ -251,15 +272,15 @@ describe('layoutGroupLabels', () => {
     // pill read "Step1 - L… 2 nodes", which kept the count and lost the group's name.
     it('drops the node count before cutting the title in a narrow group', () => {
         const s = 0.3;
-        const px = farGroupTitlePx(s);
-        const pad = px * 0.6;
+        // The far pill is the near pill scaled by k, so the room is reckoned in near-pill units.
+        const k = farGroupTitlePx(s) / (NEAR_GROUP_TITLE_PX * s);
         const title = 'Step1 - Load models';
         // Room for the whole title, but not for the title and its count.
-        const w = (2 * pad + measure(title, px) + pad / 2) / s;
-        const [narrow] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w, 1000)], boxes: [] }, s, 'far', measure, []);
+        const w = k * (2 * TITLE_INSET + TITLE_CHROME + measure(title, NEAR_GROUP_TITLE_PX) + measure('2 nodes', 11) / 2);
+        const [narrow] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w, 1000)], boxes: [] }, s, 'far', measure);
         expect(narrow).toMatchObject({ text: title, count: null });
         // Narrower still, the title is cut, and the count still stays out.
-        const [cut] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w * 0.6, 1000)], boxes: [] }, s, 'far', measure, []);
+        const [cut] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w * 0.6, 1000)], boxes: [] }, s, 'far', measure);
         expect(cut.text.endsWith('…')).toBe(true);
         expect(cut.count).toBeNull();
     });

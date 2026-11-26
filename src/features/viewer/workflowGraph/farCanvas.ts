@@ -1,4 +1,4 @@
-import type { GraphModel, Positions, WireType } from './graphModel';
+import { HEADER_H, type GraphModel, type Positions, type WireType } from './graphModel';
 import {
     FAR_SCALE,
     GROUP_TITLE_H,
@@ -17,6 +17,8 @@ import {
     fitText,
     GROUP_TITLE_CAP_PX,
     keepsEnough,
+    TITLE_CHROME,
+    TITLE_INSET,
     placeGroupTitle,
     type Measure,
 } from './groupTitles';
@@ -199,8 +201,15 @@ const OVERVIEW_TINT_ALPHA = 0.35;
  */
 export const farGroupTitlePx = (s: number): number => Math.min(GROUP_TITLE_CAP_PX, (NEAR_GROUP_TITLE_PX * FAR_SCALE * FAR_SCALE) / s);
 
-/** A node title's size in world units at scale s: at least MIN_NODE_TITLE_PX on screen, in whole steps. */
-export const nodeTitleWorldPx = (s: number): number => Math.max(LABEL_PX, Math.ceil(MIN_NODE_TITLE_PX / s));
+/**
+ * A node title's size in world units at scale s: at least MIN_NODE_TITLE_PX on screen, in quarter-octave steps, so a
+ * zoom sweep fits the titles at a few sizes instead of one per step.
+ */
+export const nodeTitleWorldPx = (s: number): number => {
+    const needed = MIN_NODE_TITLE_PX / s;
+    if (needed <= LABEL_PX) return LABEL_PX;
+    return LABEL_PX * 2 ** (Math.ceil(Math.log2(needed / LABEL_PX) * 4) / 4);
+};
 
 interface Label {
     text: string;
@@ -212,8 +221,6 @@ interface Label {
 interface NodeLabels {
     titles: Label[];
     types: Label[];
-    /** Where the titles sit, which a group title pill avoids when nodes fill its band. */
-    texts: Rect[];
 }
 
 /** A group's title as drawn this frame: world rect, text and size on screen. */
@@ -235,7 +242,8 @@ export interface FarDrawing {
     tints: { path: Path2D; colour: string }[];
     boxes: Rect[];
     sceneNodes: FarNode[];
-    labels: Map<number, NodeLabels>;
+    /** Fitted titles by size, and whether only the overview's anchors were fitted. */
+    labels: Map<string, NodeLabels>;
     font: string;
     text: string;
     muted: string;
@@ -303,16 +311,17 @@ export const prepareFarDrawing = (scene: FarScene, palette: FarPalette): FarDraw
     };
 };
 
-/** Node titles fitted at one size, built the first time the view reaches it. */
-const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: number): NodeLabels => {
-    const cached = drawing.labels.get(px);
+/** Node titles fitted at one size, built the first time the view reaches it; the overview fits only its anchors. */
+const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: number, anchorsOnly: boolean): NodeLabels => {
+    const key = `${px}${anchorsOnly ? ' anchors' : ''}`;
+    const cached = drawing.labels.get(key);
     if (cached) return cached;
     const typePx = px * TYPE_RATIO;
     const bold = canvasMeasure(ctx, drawing.font, 700);
     const plain = canvasMeasure(ctx, drawing.font, 500);
-    const labels: NodeLabels = { titles: [], types: [], texts: [] };
+    const labels: NodeLabels = { titles: [], types: [] };
     for (const node of drawing.sceneNodes) {
-        if (node.variant === 'reroute' || node.h < px) continue;
+        if (node.variant === 'reroute' || node.h < px || (anchorsOnly && !node.anchor)) continue;
         // Centred: the title, and the node type below it when it differs and fits.
         const width = node.w - LABEL_PAD * 2;
         const cx = node.x + node.w / 2;
@@ -321,7 +330,6 @@ const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: nu
         const title = fitText(bold, node.title, px, width);
         if (title && keepsEnough(title, node.title)) {
             labels.titles.push({ text: title, x: cx, y: cy, anchor: node.anchor });
-            labels.texts.push({ x: node.x, y: cy - px * 0.6, w: node.w, h: px * 1.2 });
         }
         if (withType && node.nodeType) {
             const type = fitText(plain, node.nodeType, typePx, width);
@@ -329,54 +337,65 @@ const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: nu
                 labels.types.push({ text: type, x: cx, y: cy + px * 0.6 + typePx * 0.8, anchor: node.anchor });
         }
     }
-    drawing.labels.set(px, labels);
+    drawing.labels.set(key, labels);
     return labels;
 };
 
 /**
- * Every group title for this frame. Sizes are on screen and rects in the world. A pill is as high as its text
- * needs; the overview drops default and overlapping titles and shows no node counts.
+ * Every group title for this frame. Sizes are on screen and rects in the world. An open group's far pill is the near
+ * pill scaled up as the view zooms out: the same width, inset and obstacles, so at the switch it sits exactly where
+ * the near pill does. The overview drops default and overlapping titles and shows no node counts.
  */
 export const layoutGroupLabels = (
     drawing: { groups: readonly FarGroup[]; boxes: readonly Rect[] },
     s: number,
     level: Exclude<ViewLevel, 'near'>,
     measure: Measure,
-    texts: readonly Rect[]
+    plain: Measure = measure
 ): GroupLabel[] => {
     const px = farGroupTitlePx(s);
-    const countPx = px * (11 / NEAR_GROUP_TITLE_PX);
     const hScreen = px * (GROUP_TITLE_H / NEAR_GROUP_TITLE_PX);
     const padScreen = px * 0.6;
     const inset = 6 / s;
+    // World units per near-pill unit: 1 at the switch, growing as the view zooms out.
+    const k = px / (NEAR_GROUP_TITLE_PX * s);
+    const headers = drawing.boxes.map((box) => ({ ...box, h: HEADER_H }));
     const labels: GroupLabel[] = [];
     for (const group of drawing.groups) {
+        const area = group.w * group.h;
+        if (level === 'far' && !group.shut) {
+            const titleW = measure(group.title, NEAR_GROUP_TITLE_PX);
+            const countText = group.count === 1 ? '1 node' : `${group.count} nodes`;
+            const countW = plain(countText, 11);
+            const textRoom = group.w / k - 2 * TITLE_INSET - TITLE_CHROME;
+            const withCount = countFits(titleW, countW, textRoom);
+            const text = fitText(measure, group.title, NEAR_GROUP_TITLE_PX, textRoom - (withCount ? countW : 0));
+            if (!text) continue;
+            const width = k * (titleW + TITLE_CHROME + (withCount ? countW : 0));
+            const rect = placeGroupTitle(group, width, k * GROUP_TITLE_H, drawing.boxes, headers, k * TITLE_INSET);
+            labels.push({ key: group.key, kind: 'pill', rect, area, text, count: withCount ? countText : null, px });
+            continue;
+        }
         const room = group.w * s - padScreen * 2;
         let text: string;
         let size = px;
-        let count: string | null = null;
         if (level === 'overview') {
             const fitted = fitOverviewTitle(measure, group.title, px, room - inset * s * 2);
             if (!fitted) continue;
             text = fitted.text;
             size = fitted.px;
         } else {
-            const countText = group.count === 1 ? '1 node' : `${group.count} nodes`;
-            const countW = measure(countText, countPx) + padScreen;
-            const withCount = !group.shut && countFits(measure(group.title, px), countW, room);
-            text = fitText(measure, group.title, px, room - (withCount ? countW : 0));
+            text = fitText(measure, group.title, px, room);
             if (!text) continue;
-            if (withCount) count = countText;
         }
-        const width = padScreen * 2 + measure(text, size) + (count ? padScreen + measure(count, countPx) : 0);
-        const area = group.w * group.h;
+        const width = padScreen * 2 + measure(text, size);
         if (group.shut) {
             const rect = { x: group.x + 12 / s - padScreen / s, y: group.y + (group.h - hScreen / s) / 2, w: width / s, h: hScreen / s };
             labels.push({ key: group.key, kind: 'inside', rect, area, text, count: null, px: size });
             continue;
         }
-        const slot = placeGroupTitle(group, width / s, hScreen / s, drawing.boxes, texts, inset);
-        labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count, px: size });
+        const slot = placeGroupTitle(group, width / s, hScreen / s, drawing.boxes, headers, inset);
+        labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count: null, px: size });
     }
     return level === 'overview' ? dropOverlaps(labels) : labels;
 };
@@ -417,9 +436,10 @@ export const drawFarScene = (
         ctx.stroke(group.path);
     }
 
-    const nodeLabels = overview ? null : nodeLabelsAt(ctx, drawing, nodeTitleWorldPx(s));
+    const titlePx = nodeTitleWorldPx(s);
+    const nodeLabels = nodeLabelsAt(ctx, drawing, titlePx, overview);
     const bold = canvasMeasure(ctx, drawing.font, 700);
-    const groupLabels = layoutGroupLabels(drawing, s, level, bold, nodeLabels?.texts ?? []);
+    const groupLabels = layoutGroupLabels(drawing, s, level, bold, canvasMeasure(ctx, drawing.font, 500));
     const looks = new Map(drawing.groups.map((group) => [group.key, group]));
     const paintGroupLabel = (label: GroupLabel) => {
         const look = looks.get(label.key);
@@ -470,18 +490,15 @@ export const drawFarScene = (
     ctx.globalAlpha = 1;
 
     // Node titles in far mode; in the overview, only the selected outputs keep theirs.
-    const titlePx = nodeTitleWorldPx(s);
-    const shownLabels = nodeLabels ?? nodeLabelsAt(ctx, drawing, titlePx);
-    const keep = (label: Label) => !overview || label.anchor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = drawing.text;
     ctx.font = `700 ${titlePx}px ${drawing.font}`;
-    for (const label of shownLabels.titles) if (keep(label)) ctx.fillText(label.text, label.x, label.y);
+    for (const label of nodeLabels.titles) ctx.fillText(label.text, label.x, label.y);
     if (s >= TYPE_LINE_SCALE) {
         ctx.fillStyle = drawing.muted;
         ctx.font = `500 ${titlePx * TYPE_RATIO}px ${drawing.font}`;
-        for (const label of shownLabels.types) if (keep(label)) ctx.fillText(label.text, label.x, label.y);
+        for (const label of nodeLabels.types) ctx.fillText(label.text, label.x, label.y);
     }
 
     for (const label of groupLabels) if (label.kind === 'pill') paintGroupLabel(label);

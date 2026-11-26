@@ -1,8 +1,13 @@
 import type { Rect } from './geometry';
 
+/** A title pill's width beyond its text: padding, gaps, the fold button and borders (see .wg-gtitle). */
+export const TITLE_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
+/** A title pill's distance from its group's edges. */
+export const TITLE_INSET = 6;
+
 /**
  * Where a group's title goes: a pill inside the group's top band (the owner's pick), drawn over the nodes, at the
- * first spot along the band with no node under it, or failing that no node text under it, or else at the left.
+ * first spot along the band with no node under it, or failing that no node header under it, or else at the left.
  */
 
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

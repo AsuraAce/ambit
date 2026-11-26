@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
-import { FAR_EXIT_SCALE, FAR_SCALE, FOLD_MS, LOWEST_SCALE, MIN_SCALE } from '../geometry';
+import { farSceneFor, layoutGroupLabels } from '../farCanvas';
+import { FAR_EXIT_SCALE, FAR_SCALE, FOLD_MS, LOWEST_SCALE, MIN_SCALE, sceneFor, wirePaths } from '../geometry';
+import { buildGraphModel, savedPositions } from '../graphModel';
 import { handleLayoutRequest, type LayoutRequest, type LayoutResponse } from '../tidyLayout';
 import { LAYOUT_TIME_CAP_MS } from '../useTidyPositions';
 import WorkflowGraphView from '../WorkflowGraphView';
@@ -87,6 +89,46 @@ describe('WorkflowGraphView', () => {
             expect(shown('Decode')).toBe(true);
             fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
             expect(shown(UNSAFE_TITLE)).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // Folding a second group while the first is still fading must not cut the first fade short: each group's
+    // members stay drawn for the whole fold time (the review found one shared timer unmounting them mid-fade).
+    it('lets two folds in a row each finish their own fade', () => {
+        vi.useFakeTimers();
+        try {
+            const two = report(
+                level(
+                    [
+                        canvasNode('a', { title: 'First member', pos: { x: 20, y: 60 } }),
+                        canvasNode('b', { title: 'Second member', pos: { x: 520, y: 60 } }),
+                    ],
+                    [],
+                    [canvasGroup('First', 0, 0, 400, 300), canvasGroup('Second', 500, 0, 400, 300)]
+                )
+            );
+            render(<WorkflowGraphView report={two} fileName="two.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+            const leaving = (title: string) => screen.queryByText(title)?.closest('.wg-node')?.classList.contains('leaving') ?? false;
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group First' }));
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Second' }));
+            // The first group's member is still fading out alongside the second's.
+            expect(leaving('First member')).toBe(true);
+            expect(leaving('Second member')).toBe(true);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            // The first fade is over; the second still has half its time to go.
+            expect(shown('First member')).toBe(false);
+            expect(leaving('Second member')).toBe(true);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            expect(shown('Second member')).toBe(false);
         } finally {
             vi.useRealTimers();
         }
@@ -333,6 +375,33 @@ describe('WorkflowGraphView', () => {
         // Only the group's right inset caps a title, never the measured text width: a short measurement (seen on
         // Lily while the web font loaded) cut "Group" to "Gro…".
         for (const pill of [upper, lower]) expect(at(pill)[0] + parseFloat(pill.style.maxWidth)).toBe(394);
+    });
+
+    // At the switch the far pill must sit exactly where the near pill does, or it slides during the cross-fade. The
+    // review found a group with a node about 100 units into its band placing the two pills in different spots.
+    it('places the far pill where the near pill is at the switch', () => {
+        const root = level(
+            [canvasNode('n', { title: 'Loader', pos: { x: 136, y: 20 }, size: { width: 200, height: 120 } })],
+            [],
+            [canvasGroup('Sampling', 0, 0, 600, 300)]
+        );
+        const { container } = render(
+            <WorkflowGraphView report={report(root)} fileName="band.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />
+        );
+        const pill = container.querySelector<HTMLElement>('.wg-gtitle')!;
+        const [nearX, nearY] = /translate\(([\d.]+)px, ([\d.]+)px\)/.exec(pill.style.transform)!.slice(1).map(Number);
+        // The gap left of the node is too short for the whole pill (fold button included), so it moved past the node.
+        expect(nearX).toBeGreaterThan(336);
+
+        const model = buildGraphModel(root);
+        const positions = savedPositions(model);
+        const scene = sceneFor(model, 'saved', new Set());
+        const far = farSceneFor(model, positions, new Set(), new Set(), scene, wirePaths(model, positions, new Set(), scene, 'bundled'));
+        // The near view's fallback measure in tests: an average glyph is 0.6 of the font size.
+        const measure = (text: string, px: number) => text.length * px * 0.6;
+        const [label] = layoutGroupLabels({ groups: far.groups, boxes: far.nodes }, FAR_SCALE, 'far', measure);
+        expect(label.rect.x).toBeCloseTo(nearX);
+        expect(label.rect.y).toBeCloseTo(nearY);
     });
 
     // A narrow pill or a folded box gives its room to the title first: the count goes before the title is cut

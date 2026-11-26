@@ -24,7 +24,7 @@ import {
     type WireShape,
 } from './geometry';
 import { FOLDED_GROUP_W, HEADER_H } from './graphModel';
-import { countFits, placeGroupTitle } from './groupTitles';
+import { countFits, placeGroupTitle, TITLE_CHROME, TITLE_INSET } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
 import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
 import { GraphNode } from './GraphNode';
@@ -46,12 +46,8 @@ const PAN_THRESHOLD = 3;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** A title pill's width beyond its text: padding, gaps, the fold button and borders (see .wg-gtitle). */
-const TITLE_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
 /** A folded box's room for its title and count: its width less borders, padding, gaps and the fold button (see .wg-gh). */
 const FOLDED_TITLE_ROOM = FOLDED_GROUP_W - (2 + 12 + 12 + 8 + 8 + 22);
-/** A title pill's distance from its group's edges. */
-const TITLE_INSET = 6;
 let measureContext: CanvasRenderingContext2D | null | undefined;
 const textWidth = (text: string, px: number, weight: number, family: string): number => {
     if (measureContext === undefined) measureContext = document.createElement('canvas').getContext('2d');
@@ -63,6 +59,11 @@ const textWidth = (text: string, px: number, weight: number, family: string): nu
     return text.length * px * 0.6;
 };
 const nodeCount = (count: number) => (count === 1 ? '1 node' : `${count} nodes`);
+
+interface FoldMotion {
+    leaving: ReadonlySet<string>;
+    arriving: ReadonlySet<string>;
+}
 
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -85,11 +86,18 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const [palette] = React.useState<Palette>('quiet');
     const [shape] = React.useState<WireShape>('bundled');
     const [interacted, setInteracted] = React.useState(false);
-    // Members of a group being folded stay drawn while they fade out; those of one being unfolded fade in.
-    const [foldMotion, setFoldMotion] = React.useState<{ leaving: ReadonlySet<string>; arriving: ReadonlySet<string> }>(() => ({
-        leaving: new Set(),
-        arriving: new Set(),
-    }));
+    // Members of a group being folded stay drawn while they fade out; those of one being unfolded fade in. Each group
+    // keeps its own motion and timer, so folding a second group mid-fade leaves the first one's fade alone.
+    const [foldMotions, setFoldMotions] = React.useState<ReadonlyMap<string, FoldMotion>>(() => new Map());
+    const foldMotion = React.useMemo(() => {
+        const leaving = new Set<string>();
+        const arriving = new Set<string>();
+        for (const motion of foldMotions.values()) {
+            for (const id of motion.leaving) leaving.add(id);
+            for (const id of motion.arriving) arriving.add(id);
+        }
+        return { leaving, arriving };
+    }, [foldMotions]);
     // The selected outputs keep their titles in the overview. A path's first id is the node at this level.
     const anchors = React.useMemo(
         () => new Set(report.selectedOutputPaths.flatMap((path) => (path.length > 0 ? [path[0]] : []))),
@@ -143,7 +151,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const levelRef = React.useRef<ViewLevel>('near');
     // After leaving far mode the canvas fades out, and keeps following the view until it has.
     const farFadeEndRef = React.useRef(0);
-    const foldTimerRef = React.useRef<number | null>(null);
+    const foldTimersRef = React.useRef(new Map<string, number>());
     // The far drawing is built from the rendered graph on first use and dropped whenever the graph changes.
     const farDrawingRef = React.useRef<FarDrawing | null>(null);
     const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires, anchors });
@@ -216,7 +224,8 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             if (far !== isFarRef.current) {
                 isFarRef.current = far;
                 world.classList.toggle('far', far);
-                if (!far) farFadeEndRef.current = performance.now() + CROSS_FADE_MS;
+                // Under reduced motion there is no fade, so the hidden canvas has nothing to follow.
+                if (!far && !reducedMotion()) farFadeEndRef.current = performance.now() + CROSS_FADE_MS;
             }
         }
         if (far || performance.now() < farFadeEndRef.current) drawFar();
@@ -463,7 +472,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     }, []);
     React.useEffect(
         () => () => {
-            if (foldTimerRef.current !== null) window.clearTimeout(foldTimerRef.current);
+            for (const timer of foldTimersRef.current.values()) window.clearTimeout(timer);
         },
         []
     );
@@ -492,14 +501,26 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         const world = worldRef.current;
         if (!group || !world || reducedMotion()) return;
         const members = new Set(group.members.filter((id) => !scene.hiddenBy.has(id)));
-        setFoldMotion(folding ? { leaving: members, arriving: new Set() } : { leaving: new Set(), arriving: new Set(group.members) });
+        const motion: FoldMotion = folding
+            ? { leaving: members, arriving: new Set() }
+            : { leaving: new Set(), arriving: new Set(group.members) };
+        setFoldMotions((current) => new Map(current).set(key, motion));
         world.classList.add('folding');
-        if (foldTimerRef.current !== null) window.clearTimeout(foldTimerRef.current);
-        foldTimerRef.current = window.setTimeout(() => {
-            foldTimerRef.current = null;
-            world.classList.remove('folding');
-            setFoldMotion({ leaving: new Set(), arriving: new Set() });
-        }, FOLD_MS);
+        const timers = foldTimersRef.current;
+        const running = timers.get(key);
+        if (running !== undefined) window.clearTimeout(running);
+        timers.set(
+            key,
+            window.setTimeout(() => {
+                timers.delete(key);
+                if (timers.size === 0) world.classList.remove('folding');
+                setFoldMotions((current) => {
+                    const next = new Map(current);
+                    next.delete(key);
+                    return next;
+                });
+            }, FOLD_MS)
+        );
     };
     const titleContent = (key: string, title: string, count: number | null, shut: boolean) => (
         <>
