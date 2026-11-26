@@ -5,21 +5,26 @@ import { useWorkflowGraphStore } from '../../../stores/workflowGraphStore';
 import { buildGraphModel, hasSavedPositions, savedPositions, type Positions } from './graphModel';
 import {
     boundsOf,
-    FAR_SCALE,
     fitView,
+    FOLD_MS,
+    GROUP_TAB_H,
     groupBox,
     MIN_SCALE,
     nodeHeight,
     sceneFor,
     startView,
+    viewLevel,
     wirePaths,
     zoomAt,
     zoomFloor,
     type LayoutMode,
     type Rect,
     type View,
+    type ViewLevel,
     type WireShape,
 } from './geometry';
+import { HEADER_H } from './graphModel';
+import { placeGroupTitle, type TitleSlot } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
 import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
 import { GraphNode } from './GraphNode';
@@ -35,9 +40,25 @@ export interface WorkflowGraphViewProps {
 
 const FLY_MS = 560;
 const MOVE_MS = 620;
+/** How long the near and far views cross-fade at the switch; workflowGraph.css uses the same time. */
+const CROSS_FADE_MS = 160;
 const PAN_THRESHOLD = 3;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** A title tab's width: its text, plus padding, gaps, the fold button and borders (see .wg-gtitle). */
+const TAB_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
+let measureContext: CanvasRenderingContext2D | null | undefined;
+const textWidth = (text: string, px: number, weight: number, family: string): number => {
+    if (measureContext === undefined) measureContext = document.createElement('canvas').getContext('2d');
+    if (measureContext && typeof measureContext.measureText === 'function') {
+        measureContext.font = `${weight} ${px}px ${family}`;
+        return measureContext.measureText(text).width;
+    }
+    // No canvas (tests): an average glyph is about 0.6 of the font size.
+    return text.length * px * 0.6;
+};
+const nodeCount = (count: number) => (count === 1 ? '1 node' : `${count} nodes`);
 
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -60,12 +81,44 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const [palette] = React.useState<Palette>('quiet');
     const [shape] = React.useState<WireShape>('bundled');
     const [interacted, setInteracted] = React.useState(false);
+    // Members of a group being folded stay drawn while they fade out; those of one being unfolded fade in.
+    const [foldMotion, setFoldMotion] = React.useState<{ leaving: ReadonlySet<string>; arriving: ReadonlySet<string> }>(() => ({
+        leaving: new Set(),
+        arriving: new Set(),
+    }));
+    // The selected outputs keep their titles in the overview. A path's first id is the node at this level.
+    const anchors = React.useMemo(
+        () => new Set(report.selectedOutputPaths.flatMap((path) => (path.length > 0 ? [path[0]] : []))),
+        [report]
+    );
 
     const scene = React.useMemo(() => sceneFor(model, shownLayout, foldedGroups), [model, shownLayout, foldedGroups]);
     const wires = React.useMemo(
         () => (positions ? wirePaths(model, positions, foldedNodes, scene, shape) : []),
         [model, positions, foldedNodes, scene, shape]
     );
+
+    // Each open group's title goes on a tab above it, or in a chip in its top band when a node covers the tab.
+    const titleSlots = React.useMemo(() => {
+        const slots = new Map<string, TitleSlot>();
+        if (!positions) return slots;
+        const boxes: Rect[] = [];
+        const headers: Rect[] = [];
+        for (const node of model.nodes) {
+            const at = positions.get(node.id);
+            if (!at || scene.hiddenBy.has(node.id)) continue;
+            boxes.push({ x: at.x, y: at.y, w: node.width, h: nodeHeight(node, foldedNodes.has(node.id)) });
+            headers.push({ x: at.x, y: at.y, w: node.width, h: HEADER_H });
+        }
+        const family = getComputedStyle(document.documentElement).fontFamily || 'sans-serif';
+        for (const group of model.groups) {
+            if (scene.hiddenGroups.has(group.key) || foldedGroups.has(group.key)) continue;
+            const width =
+                textWidth(group.title, 13, 700, family) + textWidth(nodeCount(group.members.length), 11, 500, family) + TAB_CHROME;
+            slots.set(group.key, placeGroupTitle(groupBox(group, false), width, GROUP_TAB_H, boxes, headers, 6));
+        }
+        return slots;
+    }, [model, positions, scene, foldedNodes, foldedGroups]);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
     const backRef = React.useRef<HTMLButtonElement>(null);
@@ -79,11 +132,15 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const frameRef = React.useRef<number | null>(null);
     const rectRef = React.useRef<DOMRect | null>(null);
     const isFarRef = React.useRef(false);
+    const levelRef = React.useRef<ViewLevel>('near');
+    // After leaving far mode the canvas fades out, and keeps following the view until it has.
+    const farFadeEndRef = React.useRef(0);
+    const foldTimerRef = React.useRef<number | null>(null);
     // The far drawing is built from the rendered graph on first use and dropped whenever the graph changes.
     const farDrawingRef = React.useRef<FarDrawing | null>(null);
-    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires });
+    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires, anchors });
     React.useLayoutEffect(() => {
-        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires };
+        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires, anchors };
     });
 
     // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
@@ -129,27 +186,32 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 inputs.foldedGroups,
                 inputs.scene,
                 inputs.wires,
-                laidOut
+                laidOut,
+                inputs.anchors
             );
-            drawing = prepareFarDrawing(ctx, farScene, readFarPalette(layer));
+            drawing = prepareFarDrawing(farScene, readFarPalette(layer));
             farDrawingRef.current = drawing;
         }
-        drawFarScene(ctx, drawing, viewRef.current, dpr);
+        drawFarScene(ctx, drawing, viewRef.current, dpr, levelRef.current === 'overview' ? 'overview' : 'far');
     }, [canvasRect]);
 
     // Pan and zoom never re-render React: one transform on the world, the far canvas, the dot grid and the readout.
     const apply = React.useCallback(() => {
         const { x, y, s } = viewRef.current;
         const world = worldRef.current;
-        const far = s < FAR_SCALE;
+        const level = viewLevel(s, isFarRef.current);
+        const far = level !== 'near';
+        levelRef.current = level;
         if (world) {
             world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+            // The two views cross-fade in CSS; the HTML stops painting once the far canvas has faded in.
             if (far !== isFarRef.current) {
                 isFarRef.current = far;
                 world.classList.toggle('far', far);
+                if (!far) farFadeEndRef.current = performance.now() + CROSS_FADE_MS;
             }
         }
-        if (far) drawFar();
+        if (far || performance.now() < farFadeEndRef.current) drawFar();
         const dots = dotsRef.current;
         if (dots) {
             // Below MIN_SCALE the dots would blur into a wash, so the grid steps up instead of shrinking further.
@@ -391,13 +453,64 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             return next;
         });
     }, []);
+    React.useEffect(
+        () => () => {
+            if (foldTimerRef.current !== null) window.clearTimeout(foldTimerRef.current);
+        },
+        []
+    );
+    // The box eases to its new size in CSS. Members fade toward it, staying mounted until they have, and the
+    // rerouted wires fade back in once the fold has settled.
     const toggleGroup = (key: string) => {
+        const group = model.groups.find((candidate) => candidate.key === key);
+        const folding = !foldedGroups.has(key);
         setFoldedGroups((current) => {
             const next = new Set(current);
             if (!next.delete(key)) next.add(key);
             return next;
         });
+        const world = worldRef.current;
+        if (!group || !world || reducedMotion()) return;
+        const members = new Set(group.members.filter((id) => !scene.hiddenBy.has(id)));
+        setFoldMotion(folding ? { leaving: members, arriving: new Set() } : { leaving: new Set(), arriving: new Set(group.members) });
+        world.classList.add('folding');
+        if (foldTimerRef.current !== null) window.clearTimeout(foldTimerRef.current);
+        foldTimerRef.current = window.setTimeout(() => {
+            foldTimerRef.current = null;
+            world.classList.remove('folding');
+            setFoldMotion({ leaving: new Set(), arriving: new Set() });
+        }, FOLD_MS);
     };
+    const titleContent = (key: string, title: string, count: number, shut: boolean) => (
+        <>
+            <span className="wg-gt">{title}</span>
+            <span className="wg-gn">{nodeCount(count)}</span>
+            <button
+                type="button"
+                className="wg-cb"
+                aria-label={shut ? `Unfold group ${title}` : `Fold group ${title}`}
+                aria-expanded={!shut}
+                onClick={() => toggleGroup(key)}
+            >
+                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+        </>
+    );
+    const groupTitles = (kind: TitleSlot['kind']) =>
+        model.groups.map((group) => {
+            const slot = titleSlots.get(group.key);
+            if (!slot || slot.kind !== kind) return null;
+            const style = {
+                transform: `translate(${slot.x}px, ${slot.y}px)`,
+                maxWidth: slot.w,
+                '--gc': groupColour(group.color, palette),
+            } as React.CSSProperties;
+            return (
+                <div key={`title-${group.key}`} className={`wg-gtitle wg-g${kind}`} style={style} data-group-key={group.key}>
+                    {titleContent(group.key, group.title, group.members.length, false)}
+                </div>
+            );
+        });
 
     // A modal layer: Tab stays inside it.
     const trapTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -505,23 +618,11 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                         style={style}
                                         data-group-key={group.key}
                                     >
-                                        <div className="wg-gh">
-                                            <span className="wg-gt">{group.title}</span>
-                                            <span className="wg-gn">
-                                                {group.members.length === 1 ? '1 node' : `${group.members.length} nodes`}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                className="wg-cb"
-                                                aria-label={shut ? `Unfold group ${group.title}` : `Fold group ${group.title}`}
-                                                aria-expanded={!shut}
-                                                onClick={() => toggleGroup(group.key)}
-                                            >
-                                                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
                                         {shut ? (
                                             <>
+                                                <div className="wg-gh">
+                                                    {titleContent(group.key, group.title, group.members.length, true)}
+                                                </div>
                                                 <span className="wg-gport" style={{ left: -5 }} />
                                                 <span className="wg-gport" style={{ right: -5 }} />
                                             </>
@@ -529,19 +630,23 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                     </div>
                                 );
                             })}
+                            {groupTitles('tab')}
                             {model.nodes.map((node) => {
                                 const at = positions.get(node.id);
-                                if (!at || scene.hiddenBy.has(node.id)) return null;
+                                const leaving = foldMotion.leaving.has(node.id);
+                                if (!at || (scene.hiddenBy.has(node.id) && !leaving)) return null;
                                 return (
                                     <GraphNode
                                         key={node.id}
                                         node={node}
                                         at={at}
                                         folded={foldedNodes.has(node.id)}
+                                        motion={leaving ? 'leaving' : foldMotion.arriving.has(node.id) ? 'arriving' : null}
                                         onToggleFold={toggleNode}
                                     />
                                 );
                             })}
+                            {groupTitles('chip')}
                         </>
                     ) : null}
                 </div>

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
-import { FAR_SCALE, LOWEST_SCALE, MIN_SCALE } from '../geometry';
+import { FAR_EXIT_SCALE, FAR_SCALE, FOLD_MS, LOWEST_SCALE, MIN_SCALE } from '../geometry';
 import { handleLayoutRequest, type LayoutRequest, type LayoutResponse } from '../tidyLayout';
 import { LAYOUT_TIME_CAP_MS } from '../useTidyPositions';
 import WorkflowGraphView from '../WorkflowGraphView';
@@ -75,13 +75,21 @@ describe('WorkflowGraphView', () => {
     });
 
     it('hides the members of a folded group and shows them again on unfold', () => {
-        renderGraph();
-        expect(shown('Decode')).toBe(true);
-        fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-        expect(shown(UNSAFE_TITLE)).toBe(false);
-        expect(shown('Decode')).toBe(true);
-        fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
-        expect(shown(UNSAFE_TITLE)).toBe(true);
+        vi.useFakeTimers();
+        try {
+            renderGraph();
+            expect(shown('Decode')).toBe(true);
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS);
+            });
+            expect(shown(UNSAFE_TITLE)).toBe(false);
+            expect(shown('Decode')).toBe(true);
+            fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+            expect(shown(UNSAFE_TITLE)).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('lays the graph out tidily in the worker, and drops the saved groups', async () => {
@@ -202,8 +210,9 @@ describe('WorkflowGraphView', () => {
         }
     });
 
-    // The far canvas replaces how the graph is drawn, never when: far mode starts below FAR_SCALE exactly.
-    it('switches to far mode below FAR_SCALE, with the far canvas hidden from assistive technology', () => {
+    // The far canvas replaces how the graph is drawn, never when: far mode starts below FAR_SCALE exactly, and
+    // holds until FAR_EXIT_SCALE on the way back, so a zoom resting near the line does not flicker.
+    it('switches to far mode below FAR_SCALE and back at FAR_EXIT_SCALE, with the far canvas hidden from assistive technology', () => {
         const { container } = renderGraph();
         const world = screen.getByTestId('workflow-graph-world');
         const scale = () => Number(/scale\(([\d.e-]+)\)/.exec(world.style.transform)?.[1]);
@@ -213,11 +222,100 @@ describe('WorkflowGraphView', () => {
         }
         expect(world.classList.contains('far')).toBe(true);
         expect(container.ownerDocument.querySelector('.wg-farcanvas')?.getAttribute('aria-hidden')).toBe('true');
+        let sawBand = false;
         for (let i = 0; i < 14; i++) {
             fireEvent.keyDown(document.body, { key: '+' });
-            expect(world.classList.contains('far')).toBe(scale() < FAR_SCALE);
+            sawBand ||= scale() >= FAR_SCALE && scale() < FAR_EXIT_SCALE;
+            expect(world.classList.contains('far')).toBe(scale() < FAR_EXIT_SCALE);
         }
+        // The steps from 12 % pass through the band (51.6 %), so the hold is exercised.
+        expect(sawBand).toBe(true);
         expect(world.classList.contains('far')).toBe(false);
+    });
+
+    // A fold eases: the members fade toward the box and stay mounted, unfocusable, until the fade has ended.
+    it('keeps a folded group’s members mounted and inert until the fold has finished', () => {
+        vi.useFakeTimers();
+        try {
+            renderGraph();
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            const member = screen.getByText(UNSAFE_TITLE).closest('.wg-node');
+            expect(member?.classList.contains('leaving')).toBe(true);
+            expect(member?.hasAttribute('inert')).toBe(true);
+            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(true);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS - 1);
+            });
+            expect(shown(UNSAFE_TITLE)).toBe(true);
+            act(() => {
+                vi.advanceTimersByTime(1);
+            });
+            expect(shown(UNSAFE_TITLE)).toBe(false);
+            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(false);
+            // Unfolding brings them back at once, fading in.
+            fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+            expect(screen.getByText(UNSAFE_TITLE).closest('.wg-node')?.classList.contains('arriving')).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('folds at once, with no motion, under reduced motion', () => {
+        const original = window.matchMedia;
+        window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+        try {
+            renderGraph();
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            expect(shown(UNSAFE_TITLE)).toBe(false);
+            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(false);
+        } finally {
+            window.matchMedia = original;
+        }
+    });
+
+    // Reduced motion turns every transition and animation in the graph off: each rule that moves something must be
+    // switched off in the reduced-motion block. Checked on the stylesheet, as jsdom applies no media queries.
+    it('switches off every transition and animation under reduced motion', () => {
+        const graphCss = readFileSync('src/features/viewer/workflowGraph/workflowGraph.css', 'utf8');
+        const reducedAt = graphCss.indexOf('@media (prefers-reduced-motion: reduce)');
+        expect(reducedAt).toBeGreaterThan(0);
+        const reduced = graphCss.slice(reducedAt);
+        const switchedOff = new Set(
+            [...reduced.matchAll(/([^{}]+)\{\s*(?:transition|animation):\s*none;/g)].flatMap((match) =>
+                match[1].split(',').map((selector) => selector.trim())
+            )
+        );
+        const moving = [...graphCss.slice(0, reducedAt).matchAll(/([^{}]+)\{([^}]*)\}/g)]
+            .filter((match) => /(?:^|;|\s)(?:transition|animation):/.test(match[2]) && !/(?:transition|animation):\s*none/.test(match[2]))
+            .flatMap((match) => match[1].split(',').map((selector) => selector.trim()))
+            .filter((selector) => selector.startsWith('.'));
+        expect(moving.length).toBeGreaterThan(5);
+        // Toolbar hover colours are not motion: they change colour in place.
+        const hoverOnly = new Set(['.wg-tbtn', '.wg-seg button']);
+        for (const selector of moving) if (!hoverOnly.has(selector)) expect(switchedOff, selector).toContain(selector);
+    });
+
+    // The owner's pick: tabs under the nodes, and a chip over them only where a node would cover the tab.
+    it('draws a group title as a tab under the nodes, or as a chip over them when a node covers the tab', () => {
+        const stacked = report(
+            level(
+                [canvasNode('top', { title: 'Above', pos: { x: 20, y: 60 }, size: { width: 200, height: 200 } })],
+                [],
+                [canvasGroup('Upper', 0, 0, 400, 150), canvasGroup('Lower', 0, 250, 400, 150)]
+            )
+        );
+        const { container } = render(
+            <WorkflowGraphView report={stacked} fileName="stacked.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />
+        );
+        const world = screen.getByTestId('workflow-graph-world');
+        const order = Array.from(world.children);
+        const tab = container.querySelector('.wg-gtab');
+        const chip = container.querySelector('.wg-gchip');
+        const node = container.querySelector('[data-node-id="top"]');
+        expect(tab?.textContent).toContain('Upper');
+        expect(chip?.textContent).toContain('Lower');
+        expect(order.indexOf(tab!)).toBeLessThan(order.indexOf(node!));
+        expect(order.indexOf(chip!)).toBeGreaterThan(order.indexOf(node!));
     });
 
     // A graph too wide for the usual 12 % limit opens showing all of it, and zooming out reaches that view again.

@@ -32,8 +32,25 @@ export const MIN_SCALE = 0.12;
 /** The lowest zoom for any graph: Fit and zooming out never go below it. */
 export const LOWEST_SCALE = 0.02;
 export const MAX_SCALE = 2;
-/** Below this scale nodes show only their titles. */
+/** Below this scale the far canvas draws the graph, nodes showing only their titles. */
 export const FAR_SCALE = 0.5;
+/** Far mode, once on, holds until this scale, so a zoom resting near FAR_SCALE does not flicker between the two. */
+export const FAR_EXIT_SCALE = 0.55;
+/** Below this scale the far canvas shows the overview: node shapes and group titles, no node text. */
+export const OVERVIEW_SCALE = 0.22;
+/** A group's title tab, in world units: its height above the group's top edge. */
+export const GROUP_TAB_H = 24;
+
+/** How long a group fold takes; workflowGraph.css uses the same time. */
+export const FOLD_MS = 220;
+
+export type ViewLevel = 'near' | 'far' | 'overview';
+
+/** What the view draws at scale s, given whether far mode was on. */
+export const viewLevel = (s: number, wasFar: boolean): ViewLevel => {
+    if (s >= (wasFar ? FAR_EXIT_SCALE : FAR_SCALE)) return 'near';
+    return s < OVERVIEW_SCALE ? 'overview' : 'far';
+};
 
 export const clampScale = (s: number, floor = MIN_SCALE): number => Math.min(Math.max(s, floor), MAX_SCALE);
 
@@ -191,7 +208,7 @@ export const wirePaths = (
     });
 };
 
-/** The drawn extent: visible nodes and visible group boxes. */
+/** The drawn extent: visible nodes and visible group boxes, with the title tab above an open group. */
 export const boundsOf = (
     model: GraphModel,
     positions: Positions,
@@ -216,8 +233,10 @@ export const boundsOf = (
     }
     for (const group of model.groups) {
         if (scene.hiddenGroups.has(group.key)) continue;
-        const box = groupBox(group, foldedGroups.has(group.key));
-        add(box.x, box.y, box.w, box.h);
+        const folded = foldedGroups.has(group.key);
+        const box = groupBox(group, folded);
+        const tab = folded ? 0 : GROUP_TAB_H;
+        add(box.x, box.y - tab, box.w, box.h + tab);
     }
     if (!Number.isFinite(minX)) return null;
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
