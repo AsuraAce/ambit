@@ -1516,6 +1516,138 @@ button.wg-crumb:hover {
     cursor: pointer;
 }
 
+/* The floating image: the saved picture over the graph, moved by its bar and resized from its corner. Its left, top
+   and width are set inline, kept on the canvas by floatBounds.ts. */
+.wg-float {
+    position: absolute;
+    z-index: 25;
+    display: flex;
+    flex-direction: column;
+    border-radius: 10px;
+    overflow: hidden;
+    transform-origin: 0 0;
+}
+
+.wg-fh {
+    height: 32px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 5px 0 10px;
+    color: var(--graph-muted);
+    border-bottom: 1px solid var(--graph-line);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.wg-fh:active {
+    cursor: grabbing;
+}
+
+.wg-fh .wg-cap {
+    margin: 0 auto 0 0;
+}
+
+.wg-fbtn {
+    height: 22px;
+    min-width: 22px;
+    padding: 0;
+}
+
+.wg-float.shut .wg-fh {
+    border-bottom: 0;
+}
+
+.wg-float.shut .wg-fh .wg-fbtn:first-of-type svg {
+    rotate: -90deg;
+}
+
+.wg-float.shut .wg-fpic,
+.wg-float.shut .wg-fcap,
+.wg-float.shut .wg-grip {
+    display: none;
+}
+
+.wg-fpic {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: var(--graph-canvas);
+    cursor: pointer;
+}
+
+.wg-fpic[aria-disabled='true'] {
+    cursor: default;
+}
+
+.wg-fpic .wg-fimg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Pointing at the picture rings it, as its node lights up. */
+.wg-fpic::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 0 2px var(--graph-sage);
+    opacity: 0;
+    transition: opacity 160ms;
+    pointer-events: none;
+}
+
+.wg-fpic:not([aria-disabled='true']):hover::after,
+.wg-fpic:not([aria-disabled='true']):focus-visible::after {
+    opacity: 1;
+}
+
+.wg-fpic:focus-visible {
+    outline: none;
+}
+
+.wg-fcap {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px 7px;
+    font-size: 11px;
+    color: var(--graph-muted);
+    border-top: 1px solid var(--graph-line);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.wg-fn {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--graph-body);
+}
+
+.wg-grip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    touch-action: none;
+}
+
+.wg-grip::before {
+    content: '';
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid var(--graph-hint);
+    border-bottom: 1.5px solid var(--graph-hint);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .wg-world,
     .wg-world.far,
@@ -1531,7 +1663,8 @@ button.wg-crumb:hover {
     .wg-wire.leaving,
     .wg-cb svg,
     .wg-tb.top-right,
-    .wg-map {
+    .wg-map,
+    .wg-fpic::after {
         transition: none;
     }
 

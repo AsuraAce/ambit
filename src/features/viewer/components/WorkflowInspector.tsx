@@ -990,6 +990,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [canvas, setCanvas] = useState<{ chunks: Record<string, string>; report: WorkflowCanvasReport | null } | null>(null);
     const canvasReport = canvas && canvas.chunks === canvasChunks ? canvas.report : undefined;
     const [graphOpen, setGraphOpen] = useState(false);
+    // The graph floats the picture the viewer already shows: the image, or a video's poster. Never a new read of the file.
+    const floatSource = useMemo(() => {
+        const video = isVideoAsset(image);
+        const src = video ? image.thumbnailUrl : image.url;
+        if (!src) return null;
+        return { src, fallbackSrc: video ? undefined : image.thumbnailUrl || undefined, width: image.width, height: image.height };
+    }, [image]);
     const graphButtonRef = React.useRef<HTMLSpanElement>(null);
     const graphWasOpen = React.useRef(false);
 
@@ -1349,7 +1356,12 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             {graphOpen && canvasReport && !graphUnavailableReason
                 ? createPortal(
                       <React.Suspense fallback={null}>
-                          <WorkflowGraphView report={canvasReport} fileName={image.filename} onClose={() => setGraphOpen(false)} />
+                          <WorkflowGraphView
+                              report={canvasReport}
+                              fileName={image.filename}
+                              image={floatSource}
+                              onClose={() => setGraphOpen(false)}
+                          />
                       </React.Suspense>,
                       document.body
                   )

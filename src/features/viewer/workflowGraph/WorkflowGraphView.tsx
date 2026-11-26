@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowLeft, ChevronDown, ChevronRight, Maximize, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Image as ImageIcon, Maximize, Minus, Plus } from 'lucide-react';
 import type { WorkflowCanvasLevel, WorkflowCanvasReport } from '../../../bindings';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useWorkflowGraphStore } from '../../../stores/workflowGraphStore';
@@ -17,6 +17,7 @@ import {
     groupBox,
     MIN_SCALE,
     nodeHeight,
+    reducedMotion,
     sceneFor,
     startView,
     viewLevel,
@@ -45,6 +46,7 @@ import {
     type FarMarks,
     type GroupLabel,
 } from './farCanvas';
+import { FLOAT_INITIAL, FloatingImage, type FloatSource, type FloatState } from './FloatingImage';
 import { GraphMap, type MapGroup } from './GraphMap';
 import { GraphMenus, type MenuName } from './GraphMenus';
 import { GraphNode } from './GraphNode';
@@ -57,6 +59,8 @@ import './workflowGraph.css';
 export interface WorkflowGraphViewProps {
     report: WorkflowCanvasReport;
     fileName: string;
+    /** The picture the viewer shows, floated over the graph; none when the viewer has nothing to show. */
+    image?: FloatSource | null;
     onClose: () => void;
     makeLayoutWorker?: () => Worker;
 }
@@ -67,7 +71,6 @@ const MOVE_MS = 620;
 const CROSS_FADE_MS = 160;
 const PAN_THRESHOLD = 3;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
-const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** A folded box's room for its title and count: its width less borders, padding, gaps and the fold button (see .wg-gh). */
 const FOLDED_TITLE_ROOM = FOLDED_GROUP_W - (2 + 12 + 12 + 8 + 8 + 22);
@@ -149,6 +152,11 @@ interface GraphLevelProps {
     crumbs: Crumb[];
     /** The node ids of the image's output nodes on this level. */
     outputIds: readonly string[];
+    /** The nodes on this level the floating image points at: its output nodes, or the subgraph holding them. */
+    imageTargets: readonly string[];
+    image: FloatSource | null;
+    float: FloatState;
+    onFloat: React.Dispatch<React.SetStateAction<FloatState>>;
     fileName: string;
     entry: LevelEntry;
     /** The node the arrow keys start on: the subgraph instance just left, on the way back up. */
@@ -168,6 +176,10 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     level: canvasLevel,
     crumbs,
     outputIds,
+    imageTargets,
+    image,
+    float,
+    onFloat,
     fileName,
     entry,
     startAt,
@@ -204,6 +216,13 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     const [announcement, setAnnouncement] = React.useState('');
     const [query, setQuery] = React.useState('');
     const hits = React.useMemo(() => searchGraph(model, query), [model, query]);
+    // Pointing at the floating image lights the nodes it points at, as a search lights its hits; a search wins.
+    const [pointed, setPointed] = React.useState(false);
+    const spot = React.useMemo(
+        () => hits?.ids ?? (pointed && imageTargets.length > 0 ? new Set(imageTargets) : null),
+        [hits, pointed, imageTargets]
+    );
+    const toggleImage = React.useCallback(() => onFloat((current) => ({ ...current, open: !current.open })), [onFloat]);
     const searchRef = React.useRef<HTMLInputElement>(null);
     // How the wires and colours look: view preferences, saved in the settings. No graph content is saved.
     const storedPrefs = useSettingsStore((state) => state.settings.workflowGraph);
@@ -421,11 +440,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         mapRedrawRef.current?.();
     }, [drawFar]);
 
-    // The far canvas rings the picked node, the arrow keys' node and a search's hits.
+    // The far canvas rings the picked node, the arrow keys' node and a search's hits (or the image's nodes).
     React.useLayoutEffect(() => {
-        farMarksRef.current = { selected, cursor: canvasFocused ? cursor : null, hits: hits?.ids ?? null };
+        farMarksRef.current = { selected, cursor: canvasFocused ? cursor : null, hits: spot };
         if (isFarRef.current) drawFar();
-    }, [selected, cursor, canvasFocused, hits, drawFar]);
+    }, [selected, cursor, canvasFocused, spot, drawFar]);
 
     // A changed graph (layout, folds, wires, colours) is redrawn at once when far mode is showing it.
     React.useLayoutEffect(() => {
@@ -598,10 +617,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             else if (event.key === '+' || event.key === '=') own(() => zoomBy(1.2));
             else if (event.key === '-') own(() => zoomBy(1 / 1.2));
             else if (event.key === 'm' || event.key === 'M') own(toggleMap);
+            else if ((event.key === 'i' || event.key === 'I') && image) own(toggleImage);
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [fit, zoomBy, toggleMap]);
+    }, [fit, zoomBy, toggleMap, toggleImage, image]);
 
     // The wheel zooms around the pointer; it needs a non-passive listener to keep the page still.
     React.useEffect(() => {
@@ -782,10 +802,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     };
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         // The title in a pill is a button too, but a drag that starts on it still pans. A press on the toolbars, their
-        // menus or the map is theirs: it never pans, picks or clears a node, in near or far view.
+        // menus, the map or the floating image is theirs: it never pans, picks or clears a node, in near or far view.
         if (
             event.button !== 0 ||
-            (event.target instanceof Element && event.target.closest('button:not(.wg-gt), input, [role="listbox"], .wg-tb, .wg-map'))
+            (event.target instanceof Element &&
+                event.target.closest('button:not(.wg-gt), input, [role="listbox"], .wg-tb, .wg-map, .wg-float'))
         )
             return;
         pannedRef.current = false;
@@ -1148,7 +1169,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                         className="wg-world"
                         data-testid="workflow-graph-world"
                         // An attribute, not a class: apply() toggles classes on this element that a re-render must keep.
-                        data-searching={hits ? '' : undefined}
+                        data-searching={spot ? '' : undefined}
                     >
                         {positions ? (
                             <>
@@ -1216,7 +1237,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                                             motion={leaving ? 'leaving' : foldMotion.arriving.has(node.id) ? 'arriving' : null}
                                             selected={selected === node.id}
                                             cursor={canvasFocused && cursor === node.id}
-                                            found={hits ? (hits.ids.has(node.id) ? 'hit' : 'miss') : null}
+                                            found={spot ? (spot.has(node.id) ? 'hit' : 'miss') : null}
                                             onToggleFold={toggleNode}
                                             onOpen={canOpen(node) ? openFromPointer : undefined}
                                         />
@@ -1280,6 +1301,20 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                                 Tidy
                             </button>
                         </div>
+                        <span className="wg-sep" />
+                        <span title={image ? undefined : 'Ambit has no picture to show for this file.'}>
+                            <button
+                                type="button"
+                                className="wg-tbtn"
+                                aria-pressed={image ? float.open : false}
+                                disabled={!image}
+                                title={image ? 'Float the image over the graph (I)' : undefined}
+                                onClick={toggleImage}
+                            >
+                                <ImageIcon aria-hidden="true" className="h-3.5 w-3.5" />
+                                Image <kbd className="wg-kbd">I</kbd>
+                            </button>
+                        </span>
                     </div>
                     <GraphMenus model={model} prefs={prefs} onPrefs={setPrefs} open={openMenu} onOpen={setOpenMenu} />
                     <GraphMap
@@ -1294,6 +1329,19 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                         onPan={panFromMap}
                         redrawRef={mapRedrawRef}
                     />
+                    {image ? (
+                        <FloatingImage
+                            source={image}
+                            fileName={fileName}
+                            state={float}
+                            onState={onFloat}
+                            targets={imageTargets.length}
+                            onPoint={setPointed}
+                            onPick={() => {
+                                if (imageTargets.length > 0) goTo(imageTargets[0]);
+                            }}
+                        />
+                    ) : null}
                 </div>
                 {selectedNode ? (
                     <NodePanel
@@ -1312,7 +1360,13 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
 };
 
 /** The full-screen, read-only workflow graph. Rendered by WorkflowInspector, so the viewer's privacy gate unmounts it. */
-const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName, onClose, makeLayoutWorker = createLayoutWorker }) => {
+const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({
+    report,
+    fileName,
+    image = null,
+    onClose,
+    makeLayoutWorker = createLayoutWorker,
+}) => {
     // The subgraph instances opened, outermost first; none at the workflow's own level. `from` is the instance just
     // left on the way back up, where the arrow keys start.
     const [path, setPath] = React.useState<{ ids: string[]; entry: LevelEntry; from?: string }>({ ids: [], entry: 'first' });
@@ -1348,6 +1402,17 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             .filter((outputPath) => outputPath.length === depth + 1 && ids.every((id, index) => outputPath[index] === id))
             .map((outputPath) => outputPath[depth]);
     }, [report, path, depth]);
+    // The floating image points at its output nodes on this level, or at the subgraph on the way to them.
+    const imageTargets = React.useMemo(() => {
+        const ids = path.ids.slice(0, depth);
+        const targets = new Set<string>();
+        for (const outputPath of report.selectedOutputPaths) {
+            if (outputPath.length > depth && ids.every((id, index) => outputPath[index] === id)) targets.add(outputPath[depth]);
+        }
+        return Array.from(targets);
+    }, [report, path, depth]);
+    // Kept above the levels, so the window stays where it was as subgraphs open and close; never saved.
+    const [float, setFloat] = React.useState<FloatState>(FLOAT_INITIAL);
 
     // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
     const setGraphOpen = useWorkflowGraphStore((state) => state.setOpen);
@@ -1373,6 +1438,10 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             level={current.level}
             crumbs={crumbs}
             outputIds={outputIds}
+            imageTargets={imageTargets}
+            image={image}
+            float={float}
+            onFloat={setFloat}
             fileName={fileName}
             entry={path.entry}
             startAt={path.from}

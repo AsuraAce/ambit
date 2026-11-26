@@ -58,6 +58,49 @@ const graph = report(
 
 const shown = (text: string) => screen.queryAllByText(text).length > 0;
 
+/** Canvas 2D contexts and Path2D, which jsdom lacks: every call is a mock, kept per canvas. */
+const fakeCanvases = () => {
+    vi.stubGlobal(
+        'Path2D',
+        class {
+            roundRect() {}
+            rect() {}
+            moveTo() {}
+            lineTo() {}
+            bezierCurveTo() {}
+            quadraticCurveTo() {}
+            arcTo() {}
+            addPath() {}
+            closePath() {}
+        }
+    );
+    const contexts = new Map<HTMLCanvasElement, Record<string | symbol, unknown>>();
+    const makeContext = () =>
+        new Proxy({} as Record<string | symbol, unknown>, {
+            get(target, key) {
+                if (!(key in target)) target[key] = key === 'measureText' ? vi.fn(() => ({ width: 10 })) : vi.fn();
+                return target[key];
+            },
+            set(target, key, value) {
+                target[key] = value;
+                return true;
+            },
+        });
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+        let context = contexts.get(this);
+        if (!context) {
+            context = makeContext();
+            contexts.set(this, context);
+        }
+        return context as unknown as CanvasRenderingContext2D;
+    } as unknown as HTMLCanvasElement['getContext']);
+    const restore = () => {
+        spy.mockRestore();
+        vi.unstubAllGlobals();
+    };
+    return { contexts, restore };
+};
+
 const renderGraph = (onClose = vi.fn()) => {
     const view = render(<WorkflowGraphView report={graph} fileName="render.png" onClose={onClose} makeLayoutWorker={fakeWorker} />);
     return { ...view, onClose };
@@ -1218,48 +1261,6 @@ describe('WorkflowGraphView', () => {
 
         // jsdom has no 2D canvas: each canvas gets a context whose every call is a recorded no-op, and the far view's
         // paths get a Path2D.
-        const fakeCanvases = () => {
-            vi.stubGlobal(
-                'Path2D',
-                class {
-                    roundRect() {}
-                    rect() {}
-                    moveTo() {}
-                    lineTo() {}
-                    bezierCurveTo() {}
-                    quadraticCurveTo() {}
-                    arcTo() {}
-                    addPath() {}
-                    closePath() {}
-                }
-            );
-            const contexts = new Map<HTMLCanvasElement, Record<string | symbol, unknown>>();
-            const makeContext = () =>
-                new Proxy({} as Record<string | symbol, unknown>, {
-                    get(target, key) {
-                        if (!(key in target)) target[key] = key === 'measureText' ? vi.fn(() => ({ width: 10 })) : vi.fn();
-                        return target[key];
-                    },
-                    set(target, key, value) {
-                        target[key] = value;
-                        return true;
-                    },
-                });
-            const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
-                let context = contexts.get(this);
-                if (!context) {
-                    context = makeContext();
-                    contexts.set(this, context);
-                }
-                return context as unknown as CanvasRenderingContext2D;
-            } as unknown as HTMLCanvasElement['getContext']);
-            const restore = () => {
-                spy.mockRestore();
-                vi.unstubAllGlobals();
-            };
-            return { contexts, restore };
-        };
-
         // The map and the menus sit over the canvas: a press on their frame, caption or rows is theirs, and must not
         // close the side panel, pan the graph or pick a node hidden under them.
         it('keeps a press on the map’s caption or frame from reaching the canvas, in near view', () => {
@@ -1374,6 +1375,296 @@ describe('WorkflowGraphView', () => {
                 expect(fills(base)).toBe(baseFills);
             } finally {
                 restore();
+            }
+        });
+    });
+    // P4: the saved image floats over the graph. It is the viewer's own picture, kept on the canvas, and points at
+    // the node that saved it.
+    describe('the floating image', () => {
+        const root = level(
+            [
+                canvasNode('1', { title: 'Load', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                canvasNode('2', { title: 'Decode', nodeType: 'VAEDecode', pos: { x: 400, y: 80 }, inputs: [port(0, 'LATENT')] }),
+                canvasNode('3', { title: 'Stage', kind: 'subgraph', subgraphId: 'def', pos: { x: 400, y: 400 } }),
+            ],
+            [canvasLink('1', 0, '2', 0)]
+        );
+        const subgraphs = [
+            { id: 'def', name: 'Upscale stage', level: level([canvasNode('u1', { title: 'Inner', pos: { x: 0, y: 30 } })]) },
+        ];
+        const savedAtRoot = report(root, { subgraphs, selectedOutputPaths: [['2']] });
+        const savedInside = report(root, { subgraphs, selectedOutputPaths: [['3', 'u1']] });
+        const picture = { src: 'asset://localhost/render.png', fallbackSrc: 'asset://localhost/thumb.webp', width: 1024, height: 768 };
+        const renderFloat = (shown = savedAtRoot, image: typeof picture | null = picture, onClose = vi.fn()) => {
+            const view = render(
+                <WorkflowGraphView report={shown} fileName="render.png" image={image} onClose={onClose} makeLayoutWorker={fakeWorker} />
+            );
+            return { ...view, onClose };
+        };
+        const win = () => document.querySelector<HTMLElement>('.wg-float');
+        const bar = () => win()!.querySelector('.wg-fh')!;
+        const pic = () => screen.getByRole('button', { name: /saved this image|^This image$/ });
+        const imageButton = () => screen.getByRole('button', { name: /^Image/ });
+        const node = (id: string) => document.querySelector<HTMLElement>(`.wg-world [data-node-id="${id}"]`)!;
+        const lit = () =>
+            Array.from(document.querySelectorAll<HTMLElement>('.wg-world [data-node-id]'))
+                .filter((element) => element.classList.contains('hit'))
+                .map((element) => element.dataset.nodeId);
+        const panel = () => document.querySelector('.wg-panel')?.getAttribute('aria-label');
+        const dragBy = (handle: Element, dx: number, dy: number, pointerId = 7) => {
+            fireEvent.pointerDown(handle, { button: 0, pointerId, clientX: 100, clientY: 100 });
+            fireEvent.pointerMove(handle, { pointerId, clientX: 100 + dx, clientY: 100 + dy });
+            fireEvent.pointerUp(handle, { pointerId, clientX: 100 + dx, clientY: 100 + dy });
+        };
+        const place = () => ({ left: win()!.style.left, top: win()!.style.top, width: win()!.style.width });
+        const withCanvas = (w: number, h: number) =>
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, w, h));
+
+        /** Element.animate, which jsdom lacks: each call is kept, to finish or check by hand. */
+        const fakeAnimate = () => {
+            const calls: { element: Element; keyframes: Keyframe[]; options: KeyframeAnimationOptions; animation: Animation }[] = [];
+            const original = (HTMLElement.prototype as { animate?: unknown }).animate;
+            HTMLElement.prototype.animate = function (this: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) {
+                const animation = { onfinish: null, cancel: vi.fn() } as unknown as Animation;
+                calls.push({ element: this, keyframes, options, animation });
+                return animation;
+            } as unknown as HTMLElement['animate'];
+            const finish = (animation: Animation) =>
+                act(() => animation.onfinish?.call(animation, new Event('finish') as AnimationPlaybackEvent));
+            const restore = () => {
+                if (original === undefined) delete (HTMLElement.prototype as { animate?: unknown }).animate;
+                else HTMLElement.prototype.animate = original as HTMLElement['animate'];
+            };
+            return { calls, finish, restore };
+        };
+
+        it('floats the viewer’s own picture, with the file’s name and size, and the Image button pressed', () => {
+            renderFloat();
+            expect(win()).not.toBeNull();
+            expect(win()!.querySelector('img')?.getAttribute('src')).toContain('render.png');
+            expect(win()!.textContent).toContain('render.png');
+            expect(win()!.textContent).toContain('1024 × 768');
+            expect(imageButton().getAttribute('aria-pressed')).toBe('true');
+        });
+
+        it('offers no window, and a disabled Image button that I leaves alone, when the viewer has no picture', () => {
+            renderFloat(savedAtRoot, null);
+            expect(win()).toBeNull();
+            expect((imageButton() as HTMLButtonElement).disabled).toBe(true);
+            const event = new KeyboardEvent('keydown', { key: 'i', cancelable: true, bubbles: true });
+            document.body.dispatchEvent(event);
+            expect(event.defaultPrevented).toBe(false);
+            expect(win()).toBeNull();
+        });
+
+        it('folds to its bar and unfolds to the width it had', () => {
+            const box = withCanvas(1024, 768);
+            try {
+                renderFloat();
+                const grip = win()!.querySelector('.wg-grip')!;
+                dragBy(grip, 100, 0);
+                const before = place();
+                expect(before.width).toBe('300px');
+                fireEvent.click(screen.getByRole('button', { name: 'Fold the image' }));
+                expect(win()!.classList.contains('shut')).toBe(true);
+                fireEvent.click(screen.getByRole('button', { name: 'Unfold the image' }));
+                expect(win()!.classList.contains('shut')).toBe(false);
+                expect(place()).toEqual(before);
+            } finally {
+                box.mockRestore();
+            }
+        });
+
+        // Reopening must bring the window back as it was left: folded or not, where it was, its size, and fully
+        // visible; a fade-out that held its last frame would leave it invisible.
+        it('comes back from Close as it was left, from the Image button and from I', () => {
+            const box = withCanvas(1024, 768);
+            const motion = fakeAnimate();
+            try {
+                renderFloat();
+                dragBy(bar(), 120, 80);
+                fireEvent.click(screen.getByRole('button', { name: 'Fold the image' }));
+                const before = place();
+                fireEvent.click(screen.getByRole('button', { name: 'Close the image' }));
+                const fade = motion.calls.at(-1)!;
+                expect(fade.keyframes.at(-1)).toMatchObject({ opacity: 0 });
+                motion.finish(fade.animation);
+                expect(win()).toBeNull();
+                expect(imageButton().getAttribute('aria-pressed')).toBe('false');
+
+                fireEvent.click(imageButton());
+                expect(place()).toEqual(before);
+                expect(win()!.classList.contains('shut')).toBe(true);
+                expect(motion.calls.at(-1)!.keyframes.at(-1)).toMatchObject({ opacity: 1 });
+
+                fireEvent.keyDown(document.body, { key: 'i' });
+                motion.finish(motion.calls.at(-1)!.animation);
+                expect(win()).toBeNull();
+                fireEvent.keyDown(document.body, { key: 'I' });
+                expect(place()).toEqual(before);
+            } finally {
+                motion.restore();
+                box.mockRestore();
+            }
+        });
+
+        it('drops a half-run fade when it is reopened before the fade ends, so nothing holds it invisible', () => {
+            const motion = fakeAnimate();
+            try {
+                renderFloat();
+                const element = win();
+                fireEvent.click(screen.getByRole('button', { name: 'Close the image' }));
+                const fade = motion.calls.at(-1)!.animation;
+                fireEvent.click(imageButton());
+                expect(fade.cancel).toHaveBeenCalled();
+                expect(win()).toBe(element);
+            } finally {
+                motion.restore();
+            }
+        });
+
+        it('stays on the canvas while dragged past any edge, and when the window shrinks', () => {
+            const box = withCanvas(1024, 768);
+            try {
+                renderFloat();
+                dragBy(bar(), -900, -900);
+                expect(place()).toMatchObject({ left: '6px', top: '6px' });
+                dragBy(bar(), 5000, 5000, 8);
+                expect(place()).toMatchObject({ left: `${1024 - 200 - 6}px`, top: `${768 - 32 - 6}px` });
+                box.mockReturnValue(new DOMRect(0, 0, 600, 400));
+                act(() => {
+                    window.dispatchEvent(new Event('resize'));
+                });
+                expect(place()).toMatchObject({ left: `${600 - 200 - 6}px`, top: `${400 - 32 - 6}px` });
+            } finally {
+                box.mockRestore();
+            }
+        });
+
+        it('resizes from its corner no wider than its largest width or the canvas allows', () => {
+            const box = withCanvas(1024, 768);
+            try {
+                renderFloat();
+                dragBy(win()!.querySelector('.wg-grip')!, 2000, 0);
+                expect(place().width).toBe('520px');
+                dragBy(win()!.querySelector('.wg-grip')!, -2000, 0, 8);
+                expect(place().width).toBe('160px');
+            } finally {
+                box.mockRestore();
+            }
+        });
+
+        it('lights the node that saved the image while pointed at, and goes to it on a click', () => {
+            renderFloat();
+            fireEvent.pointerEnter(pic());
+            expect(lit()).toEqual(['2']);
+            expect(node('1').classList.contains('miss')).toBe(true);
+            fireEvent.pointerLeave(pic());
+            expect(lit()).toEqual([]);
+            expect(node('1').classList.contains('miss')).toBe(false);
+            fireEvent.click(pic());
+            expect(panel()).toBe('Node Decode');
+        });
+
+        // The output inside a subgraph is reached through its instance: the picture points at the instance, then,
+        // one level down, at the node itself. The window keeps its place across the levels.
+        it('points at the subgraph holding the output, then at the output inside it, keeping its place', () => {
+            const box = withCanvas(1024, 768);
+            try {
+                renderFloat(savedInside);
+                dragBy(bar(), 200, 100);
+                const before = place();
+                fireEvent.pointerEnter(pic());
+                expect(lit()).toEqual(['3']);
+                fireEvent.pointerLeave(pic());
+                fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+                expect(place()).toEqual(before);
+                fireEvent.pointerEnter(pic());
+                expect(lit()).toEqual(['u1']);
+                fireEvent.click(pic());
+                expect(panel()).toBe('Node Inner');
+            } finally {
+                box.mockRestore();
+            }
+        });
+
+        it('lights nothing, and says why, where the output is on no path from this level', () => {
+            renderFloat(report(root, { subgraphs, selectedOutputPaths: [] }));
+            expect(pic().getAttribute('aria-disabled')).toBe('true');
+            expect(pic().getAttribute('title')).toContain('not on this level');
+            fireEvent.pointerEnter(pic());
+            fireEvent.click(pic());
+            expect(lit()).toEqual([]);
+            expect(panel()).toBeUndefined();
+        });
+
+        it('keeps a press or drag on the window from closing the panel or panning, in near view', () => {
+            renderFloat();
+            fireEvent.click(pic());
+            expect(panel()).toBe('Node Decode');
+            const caption = win()!.querySelector('.wg-fcap')!;
+            fireEvent.pointerDown(caption, { button: 0, pointerId: 3, clientX: 50, clientY: 200 });
+            fireEvent.pointerUp(caption, { pointerId: 3, clientX: 50, clientY: 200 });
+            expect(panel()).toBe('Node Decode');
+            fireEvent.pointerDown(bar(), { button: 0, pointerId: 4, clientX: 50, clientY: 70 });
+            fireEvent.pointerMove(bar(), { pointerId: 4, clientX: 150, clientY: 170 });
+            expect(document.querySelector('.wg-canvas')?.classList.contains('panning')).toBe(false);
+            fireEvent.pointerUp(bar(), { pointerId: 4, clientX: 150, clientY: 170 });
+            expect(panel()).toBe('Node Decode');
+        });
+
+        it('keeps a press on the window from picking or clearing a node, in far view', () => {
+            const canvases = fakeCanvases();
+            const box = withCanvas(1024, 768);
+            try {
+                renderFloat();
+                fireEvent.click(pic());
+                const world = screen.getByTestId('workflow-graph-world');
+                for (let i = 0; i < 20 && !world.classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                expect(world.classList.contains('far')).toBe(true);
+                const caption = win()!.querySelector('.wg-fcap')!;
+                fireEvent.pointerDown(caption, { button: 0, pointerId: 5, clientX: 60, clientY: 240 });
+                fireEvent.pointerUp(caption, { pointerId: 5, clientX: 60, clientY: 240 });
+                expect(panel()).toBe('Node Decode');
+            } finally {
+                box.mockRestore();
+                canvases.restore();
+            }
+        });
+
+        it('leaves Escape as it was: up a level, then out, with the window still shown', () => {
+            const { onClose } = renderFloat(savedInside);
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+            fireEvent.keyDown(document.body, { key: 'Escape' });
+            expect(screen.queryByRole('navigation', { name: 'Workflow levels' })).toBeNull();
+            expect(win()).not.toBeNull();
+            expect(onClose).not.toHaveBeenCalled();
+            fireEvent.keyDown(document.body, { key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves I to the search box while it is being typed in', () => {
+            renderFloat();
+            fireEvent.keyDown(document.body, { key: '/' });
+            fireEvent.keyDown(screen.getByRole('combobox', { name: 'Find a node or value' }), { key: 'i' });
+            expect(win()).not.toBeNull();
+        });
+
+        it('under reduced motion, folds and closes with no animation', () => {
+            const motion = fakeAnimate();
+            const original = window.matchMedia;
+            window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+            try {
+                renderFloat();
+                fireEvent.click(screen.getByRole('button', { name: 'Fold the image' }));
+                fireEvent.click(screen.getByRole('button', { name: 'Close the image' }));
+                expect(win()).toBeNull();
+                fireEvent.click(imageButton());
+                expect(win()).not.toBeNull();
+                expect(motion.calls).toHaveLength(0);
+            } finally {
+                window.matchMedia = original;
+                motion.restore();
             }
         });
     });
