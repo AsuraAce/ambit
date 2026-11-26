@@ -75,3 +75,37 @@ describe('createDefaultAppSettings', () => {
         });
     });
 });
+
+// The workflow graph's view preferences: only how it looks is saved, never what a workflow holds.
+describe('workflow graph preferences', () => {
+    const defaults = { palette: 'quiet', wireShape: 'bundled', wireWidth: 'normal', movingDots: true, showMap: true };
+
+    it('starts with quiet colours, bundled wires of normal width, moving dots and the map', () => {
+        expect(createDefaultAppSettings().workflowGraph).toEqual(defaults);
+    });
+
+    it('keeps every saved choice', () => {
+        const saved = { palette: 'familiar', wireShape: 'hidden', wireWidth: 'thick', movingDots: false, showMap: false } as const;
+        expect(createDefaultAppSettings({ workflowGraph: saved }).workflowGraph).toEqual(saved);
+    });
+
+    // A settings file from a later or broken build must not break the graph: each unknown value falls back alone.
+    it('falls back to the default for each unknown or missing value, keeping the rest', () => {
+        const stored = { palette: 'neon', wireShape: 'angled', wireWidth: 7, movingDots: 'yes' } as unknown as AppSettings['workflowGraph'];
+        expect(createDefaultAppSettings({ workflowGraph: stored }).workflowGraph).toEqual({ ...defaults, wireShape: 'angled' });
+        expect(createDefaultAppSettings({ workflowGraph: 'curved' as unknown as AppSettings['workflowGraph'] }).workflowGraph).toEqual(
+            defaults
+        );
+    });
+
+    it('saves only the five view choices, nothing else a stored value carries', () => {
+        const stored = { ...defaults, nodes: [{ id: 1 }], prompt: 'text' } as unknown as AppSettings['workflowGraph'];
+        expect(Object.keys(createDefaultAppSettings({ workflowGraph: stored }).workflowGraph ?? {}).sort()).toEqual([
+            'movingDots',
+            'palette',
+            'showMap',
+            'wireShape',
+            'wireWidth',
+        ]);
+    });
+});

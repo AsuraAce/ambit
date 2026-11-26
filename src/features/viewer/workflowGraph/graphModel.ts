@@ -132,7 +132,7 @@ const toPort = (port: WorkflowCanvasPort): GraphPort => ({
 /** The first port row's centre: border, title bar, body padding, half a row. */
 const FIRST_PIN = 1 + HEADER_H + BODY_PAD_TOP + SLOT_H / 2;
 
-const buildNode = (node: WorkflowCanvasNode): GraphNode => {
+const buildNode = (node: WorkflowCanvasNode, subgraphNames: ReadonlyMap<string, string>): GraphNode => {
     const inputs = node.inputs.map(toPort);
     const outputs = node.outputs.map(toPort);
     const widgets = node.widgets.map((widget) => ({
@@ -172,7 +172,8 @@ const buildNode = (node: WorkflowCanvasNode): GraphNode => {
     return {
         id: node.id,
         kind: node.kind,
-        title: node.title || node.nodeType,
+        // A subgraph instance is named as its breadcrumb is: the definition's name first, as its type is a UUID.
+        title: (node.subgraphId ? subgraphNames.get(node.subgraphId) : undefined) || node.title || node.nodeType,
         nodeType: node.nodeType,
         subgraphId: node.subgraphId,
         rawJson: node.rawJson,
@@ -203,12 +204,13 @@ const insideGroup = (node: GraphNode, group: GraphGroup): boolean => {
     return cx >= group.x && cx < group.x + group.w && cy >= group.y && cy < group.y + group.h;
 };
 
-export const buildGraphModel = (level: WorkflowCanvasLevel): GraphModel => {
+/** `subgraphNames` maps a subgraph definition's id to its name, for the instances' titles. */
+export const buildGraphModel = (level: WorkflowCanvasLevel, subgraphNames: ReadonlyMap<string, string> = new Map()): GraphModel => {
     const nodes: GraphNode[] = [];
     const byId = new Map<string, GraphNode>();
     for (const raw of level.nodes) {
         if (byId.has(raw.id)) continue;
-        const node = buildNode(raw);
+        const node = buildNode(raw, subgraphNames);
         nodes.push(node);
         byId.set(node.id, node);
     }

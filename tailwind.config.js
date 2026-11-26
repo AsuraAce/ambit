@@ -71,6 +71,11 @@ const themeVariables = plugin(({ addBase }) => {
             '--graph-ember-deep': '#40352c',
             '--graph-harbor': '#687f8c',
             '--graph-harbor-deep': '#333d42',
+            // The moving dots on a picked node's wires, and the map's nodes and view rectangle.
+            '--graph-flow': 'rgb(255 255 255 / 0.55)',
+            '--graph-map-node': '#3f3f46',
+            '--graph-map-view': '#cddcb9',
+            '--graph-map-view-fill': 'rgb(174 196 144 / 0.07)',
             // Wire types, Quiet palette (Ambit's tones). Data categories: design-system "Exceptions".
             '--wire-model': '#a3a3d6',
             '--wire-clip': '#c7b18d',

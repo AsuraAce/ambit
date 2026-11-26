@@ -122,3 +122,20 @@ describe('graph model from the canvas report', () => {
         expect(model.groups[0].members).toEqual(['in', 'overhang', 'tall']);
     });
 });
+
+describe('subgraph instance titles', () => {
+    const uuid = '3f1c2a9e-0b7d-4c55-9a61-2d0e8b5f7c10';
+    const instance = (title: string) => canvasNode('9', { kind: 'subgraph', nodeType: uuid, subgraphId: uuid, title });
+
+    // A subgraph's type is a UUID: its node is named as its breadcrumb is, by the definition's name.
+    it('names an instance by its definition, as the breadcrumb does', () => {
+        const names = new Map([[uuid, 'Upscale and sharpen']]);
+        expect(buildGraphModel(level([instance('')]), names).byId.get('9')!.title).toBe('Upscale and sharpen');
+        expect(buildGraphModel(level([instance('My title')]), names).byId.get('9')!.title).toBe('Upscale and sharpen');
+    });
+
+    it('falls back to the instance title, then the type, when the definition has no name', () => {
+        expect(buildGraphModel(level([instance('My title')])).byId.get('9')!.title).toBe('My title');
+        expect(buildGraphModel(level([instance('')])).byId.get('9')!.title).toBe(uuid);
+    });
+});

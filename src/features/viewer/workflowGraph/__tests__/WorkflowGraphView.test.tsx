@@ -3,6 +3,8 @@ import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useGlobalShortcuts } from '../../../../hooks/useGlobalShortcuts';
+import { createDefaultAppSettings } from '../../../../constants/defaultSettings';
+import { useSettingsStore } from '../../../../stores/settingsStore';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 import { useViewerKeyboard } from '../../hooks/useViewerKeyboard';
 import { farSceneFor, layoutGroupLabels } from '../farCanvas';
@@ -209,7 +211,8 @@ describe('WorkflowGraphView', () => {
         expect(document.activeElement).toBe(screen.getByRole('button', { name: /back to image/i }));
         fireEvent.pointerDown(screen.getByTestId('workflow-graph-world'), { button: 0 });
         fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
-        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Tidy' }));
+        // The map's fold button is the last control in the layer.
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Hide the map' }));
     });
 
     // Focus on an off-screen fold button scrolls an `overflow: hidden` box, which shifts the toolbar and the
@@ -808,7 +811,7 @@ describe('WorkflowGraphView', () => {
         // Escape steps back one thing at a time, so it never throws away more than the user meant.
         it('steps back with Escape: the search, the panel, the subgraph level, then the graph', () => {
             const { onClose } = renderReading();
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
             expect(screen.getByRole('navigation', { name: 'Workflow levels' }).textContent).toContain('Upscale stage');
             expect(shown('Inner')).toBe(true);
             click(nodeElement('u1'));
@@ -832,7 +835,7 @@ describe('WorkflowGraphView', () => {
         it('keeps a level’s folds while a subgraph is open, and goes back from the breadcrumb', () => {
             renderReading();
             fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
             expect(shown('Load')).toBe(false);
             fireEvent.click(screen.getByRole('button', { name: 'Workflow' }));
             expect(screen.getByRole('button', { name: 'Unfold group Sampling' })).toBeTruthy();
@@ -920,9 +923,10 @@ describe('WorkflowGraphView', () => {
             renderReading();
             act(() => canvas().focus());
             fireEvent.keyDown(canvas(), { key: 'ArrowDown' });
-            expect(announced()).toBe('Stage, KSampler');
+            // The instance is named by its definition, as the breadcrumb names it.
+            expect(announced()).toBe('Upscale stage, KSampler');
             fireEvent.keyDown(canvas(), { key: 'Enter' });
-            expect(panel()?.getAttribute('aria-label')).toBe('Node Stage');
+            expect(panel()?.getAttribute('aria-label')).toBe('Node Upscale stage');
             expect(screen.getByRole('button', { name: 'Open subgraph' })).toBeTruthy();
             fireEvent.keyDown(canvas(), { key: 'Enter' });
             expect(shown('Inner')).toBe(true);
@@ -936,7 +940,7 @@ describe('WorkflowGraphView', () => {
         it('keeps the nodes’ own buttons out of the Tab order, and names the canvas for screen readers', () => {
             renderReading();
             expect(screen.getByRole('button', { name: 'Fold Load' }).tabIndex).toBe(-1);
-            expect(screen.getByRole('button', { name: 'Open subgraph Stage' }).tabIndex).toBe(-1);
+            expect(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }).tabIndex).toBe(-1);
             expect(canvas().tabIndex).toBe(0);
             expect(document.getElementById(canvas().getAttribute('aria-describedby')!)?.textContent).toMatch(/Arrow keys/);
         });
@@ -1076,5 +1080,140 @@ describe('WorkflowGraphView', () => {
             box.mockRestore();
             vi.unstubAllGlobals();
         }
+    });
+
+    // P3b: the Wires and Types menus, the map, and the view preferences they save.
+    describe('wires, colours and the map', () => {
+        const twoWires = report(
+            level(
+                [
+                    canvasNode('1', { title: 'Sampler', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                    canvasNode('2', { title: 'Decode', pos: { x: 400, y: 80 }, inputs: [port(0, 'LATENT')], outputs: [port(0, 'IMAGE')] }),
+                    canvasNode('3', { title: 'Save', pos: { x: 800, y: 80 }, inputs: [port(0, 'IMAGE')] }),
+                ],
+                [canvasLink('1', 0, '2', 0, 'LATENT'), canvasLink('2', 0, '3', 0, 'IMAGE')]
+            )
+        );
+        const prefs = () => useSettingsStore.getState().settings.workflowGraph;
+        afterEach(() => useSettingsStore.setState({ settings: createDefaultAppSettings() }));
+        const renderWires = (onClose = vi.fn()) => {
+            const view = render(
+                <WorkflowGraphView report={twoWires} fileName="wires.png" onClose={onClose} makeLayoutWorker={fakeWorker} />
+            );
+            return { ...view, onClose };
+        };
+        const wires = () => Array.from(document.querySelectorAll<SVGPathElement>('.wg-world .wg-wire'));
+        const drawnWires = () => wires().filter((wire) => !wire.classList.contains('gone'));
+        const pickNode = (id: string) => {
+            const element = document.querySelector<HTMLElement>(`.wg-world [data-node-id="${id}"]`)!;
+            fireEvent.pointerDown(element, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+            fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
+        };
+        const openMenu = (name: 'Wires' | 'Types') => fireEvent.click(screen.getByRole('button', { name }));
+        const choose = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
+
+        it('opens with the saved defaults: bundled wires of normal width, quiet colours, the map shown', () => {
+            renderWires();
+            const layer = screen.getByRole('dialog', { name: 'Workflow graph' });
+            expect(layer.getAttribute('data-wire-width')).toBe('normal');
+            expect(layer.classList.contains('wire-familiar')).toBe(false);
+            expect(drawnWires()).toHaveLength(2);
+            expect(wires()[0].getAttribute('d')).toContain('Q');
+            expect(screen.getByTestId('graph-map')).toBeTruthy();
+        });
+
+        it('draws and saves the wire shape and width chosen in the Wires menu', () => {
+            renderWires();
+            openMenu('Wires');
+            choose(/^Straight/);
+            expect(prefs()?.wireShape).toBe('straight');
+            expect(wires()[0].getAttribute('d')).not.toMatch(/[CQ]/);
+            expect(screen.getByRole('button', { name: /^Straight/ }).getAttribute('aria-pressed')).toBe('true');
+            fireEvent.click(screen.getByRole('button', { name: 'Thick' }));
+            expect(prefs()?.wireWidth).toBe('thick');
+            expect(screen.getByRole('dialog', { name: 'Workflow graph' }).getAttribute('data-wire-width')).toBe('thick');
+        });
+
+        // Hidden clears the canvas of wires but keeps the picked node's, so its connections can still be read.
+        it('with Hidden wires, shows only the picked node’s wires, with moving dots on them', () => {
+            renderWires();
+            openMenu('Wires');
+            choose(/^Hidden/);
+            expect(drawnWires()).toHaveLength(0);
+            pickNode('1');
+            expect(drawnWires().map((wire) => wire.classList.contains('t-latent'))).toEqual([true]);
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(1);
+            pickNode('2');
+            expect(drawnWires()).toHaveLength(2);
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(2);
+        });
+
+        it('runs moving dots only on the picked node’s wires, and stops them when switched off', () => {
+            renderWires();
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(0);
+            pickNode('3');
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(1);
+            openMenu('Wires');
+            choose(/^Moving dots/);
+            expect(prefs()?.movingDots).toBe(false);
+            expect(document.querySelectorAll('.wg-flow')).toHaveLength(0);
+        });
+
+        it('lists the wire types here with their counts, and switches the colours', () => {
+            renderWires();
+            openMenu('Types');
+            const rows = Array.from(document.querySelectorAll('.wg-mrow')).map((row) => row.textContent);
+            expect(rows).toEqual(['IMAGE1', 'LATENT1']);
+            // A click focuses the button in a browser; jsdom's click does not.
+            const familiar = screen.getByRole('button', { name: /^Familiar/ });
+            familiar.focus();
+            fireEvent.click(familiar);
+            expect(prefs()?.palette).toBe('familiar');
+            expect(screen.getByRole('dialog', { name: 'Workflow graph' }).classList.contains('wire-familiar')).toBe(true);
+            // The pick closes the menu and hands focus back to its button.
+            expect(document.getElementById('wg-menu-types')).toBeNull();
+            expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Types' }));
+        });
+
+        it('closes an open menu on the first Escape, before anything else', () => {
+            const { onClose } = renderWires();
+            openMenu('Wires');
+            fireEvent.click(screen.getByRole('button', { name: 'Thin' }));
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+            expect(document.getElementById('wg-menu-wires')).toBeNull();
+            expect(onClose).not.toHaveBeenCalled();
+            fireEvent.keyDown(document.body, { key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('hides and shows the map with M or its fold button, and saves that', () => {
+            renderWires();
+            fireEvent.keyDown(document.body, { key: 'm' });
+            expect(screen.queryByTestId('graph-map')).toBeNull();
+            expect(prefs()?.showMap).toBe(false);
+            fireEvent.click(screen.getByRole('button', { name: 'Show the map' }));
+            expect(screen.getByTestId('graph-map')).toBeTruthy();
+            expect(prefs()?.showMap).toBe(true);
+        });
+
+        // A drag on the map moves the view; it must not also start a pan of the canvas under it.
+        it('moves the view to the point pressed on the map', async () => {
+            renderWires();
+            const world = screen.getByTestId('workflow-graph-world');
+            const before = world.style.transform;
+            const map = screen.getByTestId('graph-map');
+            const box = vi.spyOn(map, 'getBoundingClientRect').mockReturnValue(new DOMRect(800, 600, 212, 132));
+            try {
+                fireEvent.pointerDown(map, { button: 0, pointerId: 7, clientX: 990, clientY: 720 });
+                await waitFor(() => expect(world.style.transform).not.toBe(before));
+                const moved = world.style.transform;
+                fireEvent.pointerMove(map, { pointerId: 7, clientX: 810, clientY: 610 });
+                await waitFor(() => expect(world.style.transform).not.toBe(moved));
+                fireEvent.pointerUp(map, { pointerId: 7, clientX: 810, clientY: 610 });
+                expect(document.querySelector('.wg-canvas')?.classList.contains('panning')).toBe(false);
+            } finally {
+                box.mockRestore();
+            }
+        });
     });
 });

@@ -1,6 +1,6 @@
 import type { AppSettings } from '../types';
 import { normalizeImageKindFilter, normalizeMediaTypeFilter } from '../utils/filterState';
-import { normalizeViewerPreferredTab } from '../utils/settingsUtils';
+import { DEFAULT_WORKFLOW_GRAPH_PREFS, normalizeViewerPreferredTab, normalizeWorkflowGraphPrefs } from '../utils/settingsUtils';
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
     hasCompletedOnboarding: false,
@@ -32,6 +32,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     enforceHighQualityThumbnails: false,
     thumbnailOptimizationProfile: 'balanced',
     logLevel: 'info',
+    workflowGraph: DEFAULT_WORKFLOW_GRAPH_PREFS,
 };
 
 export const createDefaultAppSettings = (overrides: Partial<AppSettings> = {}): AppSettings => {
@@ -53,6 +54,7 @@ export const createDefaultAppSettings = (overrides: Partial<AppSettings> = {}): 
     settings.libraryMediaType = normalizeMediaTypeFilter(overrides.libraryMediaType, settings.librarySourceKind);
     if (settings.libraryMediaType !== 'image') settings.librarySourceKind = 'all';
     settings.viewerPreferredTab = normalizeViewerPreferredTab(settings.viewerPreferredTab);
+    settings.workflowGraph = normalizeWorkflowGraphPrefs(settings.workflowGraph);
     return settings;
 };
 

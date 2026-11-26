@@ -1,4 +1,6 @@
-export type Palette = 'quiet' | 'familiar';
+import type { WorkflowGraphPrefs } from '../../../types';
+
+export type Palette = WorkflowGraphPrefs['palette'];
 
 /** The only group colour a file may set: plain hex. The backend checks this too; the view checks again. */
 const PLAIN_HEX = /^#[0-9a-fA-F]{3,8}$/;

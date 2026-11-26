@@ -6,6 +6,15 @@ export type ImageKindFilter = 'all' | SourceKind;
 export type MediaTypeFilter = 'all' | 'image' | 'video';
 export type ViewerTab = 'details' | 'metadata' | 'workflow';
 
+/** How the workflow graph draws its wires and colours. View preferences only: no graph content is saved. */
+export interface WorkflowGraphPrefs {
+    palette: 'quiet' | 'familiar';
+    wireShape: 'curved' | 'straight' | 'angled' | 'hidden' | 'bundled';
+    wireWidth: 'thin' | 'normal' | 'thick';
+    movingDots: boolean;
+    showMap: boolean;
+}
+
 export interface SourceKindCounts {
     all: number;
     generated: number;
@@ -446,6 +455,7 @@ export interface AppSettings {
     enforceHighQualityThumbnails?: boolean; // Upgrade existing low-res thumbnails
     thumbnailOptimizationProfile?: 'quiet' | 'balanced' | 'fast'; // Background thumbnail worker profile
     logLevel?: LogLevel; // Console log severity level
+    workflowGraph?: WorkflowGraphPrefs; // Workflow graph view preferences
 }
 
 export type AiThinkingMode = 'default' | 'minimal' | 'low' | 'medium' | 'high' | 'off' | 'dynamic';
