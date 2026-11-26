@@ -10,7 +10,16 @@ import {
     type ViewLevel,
     type WirePath,
 } from './geometry';
-import { dropOverlaps, fitOverviewTitle, fitText, GROUP_TITLE_CAP_PX, keepsEnough, placeGroupTitle, type Measure } from './groupTitles';
+import {
+    countFits,
+    dropOverlaps,
+    fitOverviewTitle,
+    fitText,
+    GROUP_TITLE_CAP_PX,
+    keepsEnough,
+    placeGroupTitle,
+    type Measure,
+} from './groupTitles';
 
 /**
  * Far mode draws the graph on one canvas instead of thousands of HTML elements, so a pan or zoom step
@@ -354,9 +363,10 @@ export const layoutGroupLabels = (
         } else {
             const countText = group.count === 1 ? '1 node' : `${group.count} nodes`;
             const countW = measure(countText, countPx) + padScreen;
-            text = fitText(measure, group.title, px, room - (group.shut ? 0 : countW));
+            const withCount = !group.shut && countFits(measure(group.title, px), countW, room);
+            text = fitText(measure, group.title, px, room - (withCount ? countW : 0));
             if (!text) continue;
-            if (!group.shut) count = countText;
+            if (withCount) count = countText;
         }
         const width = padScreen * 2 + measure(text, size) + (count ? padScreen + measure(count, countPx) : 0);
         const area = group.w * group.h;

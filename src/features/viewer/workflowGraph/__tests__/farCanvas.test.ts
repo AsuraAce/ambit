@@ -246,6 +246,23 @@ describe('layoutGroupLabels', () => {
         expect(label).toMatchObject({ kind: 'pill', text: 'Upscale', count: '2 nodes' });
         expect(label.rect.y).toBeGreaterThan(100);
     });
+
+    // In a narrow group the title gets the room first: the count goes before the title is cut. On 152349 the
+    // pill read "Step1 - L… 2 nodes", which kept the count and lost the group's name.
+    it('drops the node count before cutting the title in a narrow group', () => {
+        const s = 0.3;
+        const px = farGroupTitlePx(s);
+        const pad = px * 0.6;
+        const title = 'Step1 - Load models';
+        // Room for the whole title, but not for the title and its count.
+        const w = (2 * pad + measure(title, px) + pad / 2) / s;
+        const [narrow] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w, 1000)], boxes: [] }, s, 'far', measure, []);
+        expect(narrow).toMatchObject({ text: title, count: null });
+        // Narrower still, the title is cut, and the count still stays out.
+        const [cut] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w * 0.6, 1000)], boxes: [] }, s, 'far', measure, []);
+        expect(cut.text.endsWith('…')).toBe(true);
+        expect(cut.count).toBeNull();
+    });
 });
 
 describe('farGroupTitlePx', () => {

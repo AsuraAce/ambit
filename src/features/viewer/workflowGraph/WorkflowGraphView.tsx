@@ -23,8 +23,8 @@ import {
     type ViewLevel,
     type WireShape,
 } from './geometry';
-import { HEADER_H } from './graphModel';
-import { placeGroupTitle } from './groupTitles';
+import { FOLDED_GROUP_W, HEADER_H } from './graphModel';
+import { countFits, placeGroupTitle } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
 import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
 import { GraphNode } from './GraphNode';
@@ -48,6 +48,8 @@ const reducedMotion = () => typeof window.matchMedia === 'function' && window.ma
 
 /** A title pill's width beyond its text: padding, gaps, the fold button and borders (see .wg-gtitle). */
 const TITLE_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
+/** A folded box's room for its title and count: its width less borders, padding, gaps and the fold button (see .wg-gh). */
+const FOLDED_TITLE_ROOM = FOLDED_GROUP_W - (2 + 12 + 12 + 8 + 8 + 22);
 /** A title pill's distance from its group's edges. */
 const TITLE_INSET = 6;
 let measureContext: CanvasRenderingContext2D | null | undefined;
@@ -102,7 +104,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
 
     // Each open group's title is a pill in its top band, where it covers the fewest nodes.
     const titleSlots = React.useMemo(() => {
-        const slots = new Map<string, Rect>();
+        const slots = new Map<string, { rect: Rect; count: boolean }>();
         if (!positions) return slots;
         const boxes: Rect[] = [];
         const headers: Rect[] = [];
@@ -115,9 +117,13 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         const family = getComputedStyle(document.documentElement).fontFamily || 'sans-serif';
         for (const group of model.groups) {
             if (scene.hiddenGroups.has(group.key) || foldedGroups.has(group.key)) continue;
-            const width =
-                textWidth(group.title, 13, 700, family) + textWidth(nodeCount(group.members.length), 11, 500, family) + TITLE_CHROME;
-            slots.set(group.key, placeGroupTitle(groupBox(group, false), width, GROUP_TITLE_H, boxes, headers, TITLE_INSET));
+            const titleW = textWidth(group.title, 13, 700, family);
+            const countW = textWidth(nodeCount(group.members.length), 11, 500, family);
+            // A narrow group drops the count before it cuts the title.
+            const count = countFits(titleW, countW, group.w - 2 * TITLE_INSET - TITLE_CHROME);
+            const width = titleW + TITLE_CHROME + (count ? countW : 0);
+            const rect = placeGroupTitle(groupBox(group, false), width, GROUP_TITLE_H, boxes, headers, TITLE_INSET);
+            slots.set(group.key, { rect, count });
         }
         return slots;
     }, [model, positions, scene, foldedNodes, foldedGroups]);
@@ -495,10 +501,10 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             setFoldMotion({ leaving: new Set(), arriving: new Set() });
         }, FOLD_MS);
     };
-    const titleContent = (key: string, title: string, count: number, shut: boolean) => (
+    const titleContent = (key: string, title: string, count: number | null, shut: boolean) => (
         <>
             <span className="wg-gt">{title}</span>
-            <span className="wg-gn">{nodeCount(count)}</span>
+            {count === null ? null : <span className="wg-gn">{nodeCount(count)}</span>}
             <button
                 type="button"
                 className="wg-cb"
@@ -510,11 +516,17 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             </button>
         </>
     );
+    // A folded box, like a narrow pill, drops the count before it cuts the title.
+    const foldedCount = (title: string, count: number): number | null => {
+        const family = getComputedStyle(document.documentElement).fontFamily || 'sans-serif';
+        return countFits(textWidth(title, 15, 700, family), textWidth(nodeCount(count), 11, 500, family), FOLDED_TITLE_ROOM) ? count : null;
+    };
     // The pills draw over the nodes, so a title stays readable where nodes fill the band.
     const groupTitles = () =>
         model.groups.map((group) => {
-            const slot = titleSlots.get(group.key);
-            if (!slot) return null;
+            const placed = titleSlots.get(group.key);
+            if (!placed) return null;
+            const slot = placed.rect;
             // The title sizes to its text; only the group's right inset caps it. The measured slot.w places it, and
             // can fall a few pixels short (a web font still loading), which must not cut the title.
             const box = groupBox(group, false);
@@ -525,7 +537,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             } as React.CSSProperties;
             return (
                 <div key={`title-${group.key}`} className="wg-gtitle" style={style} data-group-key={group.key}>
-                    {titleContent(group.key, group.title, group.members.length, false)}
+                    {titleContent(group.key, group.title, placed.count ? group.members.length : null, false)}
                 </div>
             );
         });
@@ -639,7 +651,12 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                                         {shut ? (
                                             <>
                                                 <div className="wg-gh">
-                                                    {titleContent(group.key, group.title, group.members.length, true)}
+                                                    {titleContent(
+                                                        group.key,
+                                                        group.title,
+                                                        foldedCount(group.title, group.members.length),
+                                                        true
+                                                    )}
                                                 </div>
                                                 <span className="wg-gport" style={{ left: -5 }} />
                                                 <span className="wg-gport" style={{ right: -5 }} />

@@ -38,6 +38,9 @@ export const placeGroupTitle = (group: Rect, w: number, h: number, nodes: readon
 /** ComfyUI's name for a new group: it says nothing, so the overview leaves it out. */
 export const isDefaultGroupTitle = (title: string): boolean => title.trim().toLowerCase() === 'group';
 
+/** The title gets a group label's room first: the node count shows only beside a whole title. */
+export const countFits = (titleWidth: number, countWidth: number, room: number): boolean => titleWidth + countWidth <= room;
+
 /** Measures text at a font size in screen pixels. */
 export type Measure = (text: string, px: number) => number;
 

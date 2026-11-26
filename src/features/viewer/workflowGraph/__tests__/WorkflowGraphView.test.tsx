@@ -335,6 +335,39 @@ describe('WorkflowGraphView', () => {
         for (const pill of [upper, lower]) expect(at(pill)[0] + parseFloat(pill.style.maxWidth)).toBe(394);
     });
 
+    // A narrow pill or a folded box gives its room to the title first: the count goes before the title is cut
+    // (the smoke on 152349 showed "Step1 - L… 2 nodes" and a folded "Step1 - Load mo…").
+    it('drops the node count, not the title, where a group label is short of room', () => {
+        const title = 'Step1 - Load models';
+        const members = [
+            canvasNode('a', { title: 'CLIPLoader', pos: { x: 20, y: 60 }, size: { width: 80, height: 40 } }),
+            canvasNode('b', { title: 'VAELoader', pos: { x: 20, y: 140 }, size: { width: 80, height: 40 } }),
+        ];
+        const labels = (width: number) => {
+            const { container, unmount } = render(
+                <WorkflowGraphView
+                    report={report(level(members, [], [canvasGroup(title, 0, 0, width, 220)]))}
+                    fileName="narrow.png"
+                    onClose={vi.fn()}
+                    makeLayoutWorker={fakeWorker}
+                />
+            );
+            const pill = container.querySelector('.wg-gtitle')!;
+            const result = { title: pill.querySelector('.wg-gt')?.textContent, count: pill.querySelector('.wg-gn')?.textContent ?? null };
+            fireEvent.click(screen.getByRole('button', { name: `Fold group ${title}` }));
+            const box = container.querySelector('.wg-group.shut')!;
+            const folded = { title: box.querySelector('.wg-gt')?.textContent, count: box.querySelector('.wg-gn')?.textContent ?? null };
+            unmount();
+            return { pill: result, folded };
+        };
+        // A wide group has room for both.
+        expect(labels(400).pill).toEqual({ title, count: '2 nodes' });
+        // A narrow one keeps the whole title and drops the count, open and folded alike.
+        const narrow = labels(230);
+        expect(narrow.pill).toEqual({ title, count: null });
+        expect(narrow.folded).toEqual({ title, count: null });
+    });
+
     // A graph too wide for the usual 12 % limit opens showing all of it, and zooming out reaches that view again.
     it('opens a very wide graph fitted below 12 % and lets zoom-out reach it', () => {
         const wide = report(level([canvasNode('a', { pos: { x: 0, y: 30 } }), canvasNode('b', { pos: { x: 40_000, y: 30 } })]));
