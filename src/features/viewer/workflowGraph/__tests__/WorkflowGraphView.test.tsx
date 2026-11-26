@@ -361,8 +361,9 @@ describe('WorkflowGraphView', () => {
             const [inside, crossing, elsewhere] = wireEls(container);
             const before = { crossing: crossing.getAttribute('d'), elsewhere: elsewhere.getAttribute('d') };
             fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-            // Same elements: each wire changes in place, so CSS can ease it.
-            expect(wireEls(container)).toEqual([crossing, elsewhere, inside]);
+            // Same elements in the same DOM order: each wire changes in place, and Chromium cancels the transition
+            // of an element that moves, so none may move while it eases.
+            expect(wireEls(container)).toEqual([inside, crossing, elsewhere]);
             expect(motionOf(crossing)).toBe('morph');
             expect(crossing.getAttribute('d')).not.toBe(before.crossing);
             expect(motionOf(elsewhere)).toBeNull();
@@ -374,11 +375,39 @@ describe('WorkflowGraphView', () => {
             });
             expect(wireEls(container)).toEqual([crossing, elsewhere]);
             expect(wireEls(container).map(motionOf)).toEqual([null, null]);
-            // Unfolding brings the inside wire back, fading in, and eases the crossing one back.
+            // Unfolding brings the inside wire back, fading in after the wires already drawn, and eases the crossing
+            // one back.
             fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
             const unfolded = wireEls(container);
-            expect(unfolded.map(motionOf)).toEqual(['arriving', 'morph', null]);
-            expect(unfolded[1].getAttribute('d')).toBe(before.crossing);
+            expect(unfolded.slice(0, 2)).toEqual([crossing, elsewhere]);
+            expect(unfolded.map(motionOf)).toEqual(['morph', null, 'arriving']);
+            expect(crossing.getAttribute('d')).toBe(before.crossing);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // An unfold that lands mid-fold must not move a wire either: the leaving one fades back in where it stands.
+    it('keeps every drawn wire in place when an unfold follows a fold at once', () => {
+        vi.useFakeTimers();
+        try {
+            const container = wired();
+            const drawn = wireEls(container);
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+            expect(wireEls(container)).toEqual(drawn);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            // Past the fold's own end time the unfold is still easing, and still nothing moves.
+            expect(wireEls(container)).toEqual(drawn);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS);
+            });
+            expect(wireEls(container).map(motionOf)).toEqual([null, null, null]);
         } finally {
             vi.useRealTimers();
         }

@@ -68,6 +68,8 @@ interface FoldMotion {
     arriving: ReadonlySet<string>;
     /** The wires as drawn just before the fold, by key. */
     wiresBefore: ReadonlyMap<string, WirePath>;
+    /** The wires' keys in the order their elements stood in the DOM when the fold began. */
+    order: readonly string[];
 }
 
 /** Two paths with the same command list, which CSS can ease one into the other. */
@@ -114,12 +116,15 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         const arriving = new Set<string>();
         // The oldest fold's picture of a wire wins: that is where the wire was last at rest.
         const wiresBefore = new Map<string, WirePath>();
+        // The newest fold's order is the DOM's order now (toggleGroup re-inserts a fold's motion, so it is the last).
+        let order: readonly string[] = [];
         for (const motion of foldMotions.values()) {
             for (const id of motion.leaving) leaving.add(id);
             for (const id of motion.arriving) arriving.add(id);
             for (const [key, wire] of motion.wiresBefore) if (!wiresBefore.has(key)) wiresBefore.set(key, wire);
+            order = motion.order;
         }
-        return { leaving, arriving, wiresBefore };
+        return { leaving, arriving, wiresBefore, order };
     }, [foldMotions]);
     const scene = React.useMemo(() => sceneFor(model, shownLayout, foldedGroups), [model, shownLayout, foldedGroups]);
     const wires = React.useMemo(
@@ -127,14 +132,18 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         [model, positions, foldedNodes, scene, shape]
     );
     // During a fold the wires it moves ease or fade, and the ones it tucks away stay drawn while they fade out. One
-    // list, so a wire keeps its element as it goes from drawn to leaving.
+    // list, so a wire keeps its element as it goes from drawn to leaving. Every element already drawn keeps its place
+    // in the DOM until the fold ends, as Chromium cancels the transition of an element that moves; new wires go last.
     const shownWires = React.useMemo(() => {
         const folding = foldMotions.size > 0;
         const shown = wires.map((wire) => ({ wire, motion: wireMotion(wire, foldMotion.wiresBefore.get(wire.key), folding) }));
         if (!folding) return shown;
-        const current = new Set(wires.map((wire) => wire.key));
-        for (const [key, wire] of foldMotion.wiresBefore) if (!current.has(key)) shown.push({ wire, motion: 'leaving' });
-        return shown;
+        const byKey = new Map(shown.map((entry) => [entry.wire.key, entry]));
+        for (const [key, wire] of foldMotion.wiresBefore) if (!byKey.has(key)) byKey.set(key, { wire, motion: 'leaving' });
+        const ordered = foldMotion.order.flatMap((key) => byKey.get(key) ?? []);
+        const placed = new Set(foldMotion.order);
+        for (const [key, entry] of byKey) if (!placed.has(key)) ordered.push(entry);
+        return ordered;
     }, [wires, foldMotions, foldMotion]);
 
     // Each open group's title is a pill at its top-left.
@@ -528,10 +537,16 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         if (!group || reducedMotion()) return;
         const members = new Set(group.members.filter((id) => !scene.hiddenBy.has(id)));
         const wiresBefore = new Map(wires.map((wire) => [wire.key, wire]));
+        const order = shownWires.map(({ wire }) => wire.key);
         const motion: FoldMotion = folding
-            ? { leaving: members, arriving: new Set(), wiresBefore }
-            : { leaving: new Set(), arriving: new Set(group.members), wiresBefore };
-        setFoldMotions((current) => new Map(current).set(key, motion));
+            ? { leaving: members, arriving: new Set(), wiresBefore, order }
+            : { leaving: new Set(), arriving: new Set(group.members), wiresBefore, order };
+        // Re-inserted, not replaced, so the newest fold comes last.
+        setFoldMotions((current) => {
+            const next = new Map(current);
+            next.delete(key);
+            return next.set(key, motion);
+        });
         const timers = foldTimersRef.current;
         const running = timers.get(key);
         if (running !== undefined) window.clearTimeout(running);
