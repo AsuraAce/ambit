@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useGlobalShortcuts } from '../useGlobalShortcuts';
+import { useWorkflowGraphStore } from '../../stores/workflowGraphStore';
 import type { AIImage, ViewMode } from '../../types';
 import type { VirtualGridHandle } from '../../features/library/components/VirtualGrid';
 
@@ -48,6 +49,26 @@ describe('useGlobalShortcuts', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
 
         Object.values(mockActions).forEach((action) => expect(action).not.toHaveBeenCalled());
+    });
+
+    // The workflow graph owns the keyboard while open; only the privacy toggle still reaches the app.
+    it('leaves every shortcut but Shift+H to the workflow graph while it is open', () => {
+        useWorkflowGraphStore.setState({ open: true });
+        try {
+            renderHook(() => useGlobalShortcuts({ ...defaultProps, isViewerOpen: true }));
+
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }));
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            expect(mockActions.toggleShortcuts).not.toHaveBeenCalled();
+            expect(mockActions.toggleCommandPalette).not.toHaveBeenCalled();
+            expect(mockActions.closeAllModals).not.toHaveBeenCalled();
+
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', shiftKey: true }));
+            expect(mockActions.togglePrivacyMode).toHaveBeenCalledOnce();
+        } finally {
+            useWorkflowGraphStore.setState({ open: false });
+        }
     });
 
     it('should trigger toggleShortcuts on "?" key', () => {

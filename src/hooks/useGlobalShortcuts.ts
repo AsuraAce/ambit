@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useEffect } from 'react';
 import { AIImage, ViewMode } from '../types';
 import type { VirtualGridHandle } from '../features/library/components/VirtualGrid';
+import { isWorkflowGraphOpen } from '../stores/workflowGraphStore';
 
 interface GlobalShortcutsProps {
     disabled?: boolean;
@@ -72,6 +73,9 @@ export const useGlobalShortcuts = ({
 
             const key = e.key.toLowerCase();
             const hasPrimaryModifier = e.ctrlKey || e.metaKey;
+
+            // The workflow graph owns the keyboard while it is open; only the privacy toggle still reaches the app.
+            if (isWorkflowGraphOpen() && !(e.shiftKey && key === 'h')) return;
 
             // 2. Global Toggles (work even if modals are open, sometimes)
             if (e.key === '?') {

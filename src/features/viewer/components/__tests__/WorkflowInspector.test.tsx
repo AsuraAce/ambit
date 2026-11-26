@@ -16,6 +16,8 @@ vi.mock('../../../../bindings', () => ({
     commands: {
         inspectComfyuiMetadataChunks: (...args: unknown[]) => mockInspectComfyuiMetadataChunks(...args),
         inspectComfyuiWorkflowGraph: (...args: unknown[]) => mockInspectComfyuiWorkflowGraph(...args),
+        // The graph view's own tests live in WorkflowInspector.graph.test.tsx.
+        inspectWorkflowCanvas: () => Promise.resolve({ status: 'error', error: 'not under test here' }),
     },
 }));
 

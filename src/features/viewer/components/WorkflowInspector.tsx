@@ -1,7 +1,9 @@
 import * as React from 'react';
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Box,
+    Network,
     Workflow,
     Search,
     ChevronDown,
@@ -17,7 +19,7 @@ import {
 import { AIImage, GeneratorTool, isVideoAsset } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
-import { commands, type ComfyParserDiagnosticsReport, type ComfyWorkflowGraphReport } from '../../../bindings';
+import { commands, type ComfyParserDiagnosticsReport, type ComfyWorkflowGraphReport, type WorkflowCanvasReport } from '../../../bindings';
 import { readModelName } from '../../../utils/formatUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -37,6 +39,9 @@ import {
     type WorkflowNodeConnections,
 } from './workflowGraphUtils';
 import { refuseWriteDuringOwnerSwitch } from '../../../services/invoke/ownerSwitchGuard';
+
+// The graph is its own chunk, loaded the first time someone opens it.
+const WorkflowGraphView = React.lazy(() => import('../workflowGraph/WorkflowGraphView'));
 
 interface WorkflowInspectorProps {
     image: AIImage;
@@ -976,6 +981,57 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         };
     }, [image.metadata.tool, originalChunks]);
 
+    // The graph view reads the file's chunks, or the workflow found later in the file headers.
+    const canvasChunks = useMemo(
+        () => (Object.keys(originalChunks).length > 0 ? originalChunks : localWorkflow ? { workflow: localWorkflow } : null),
+        [localWorkflow, originalChunks]
+    );
+    const isComfyUi = image.metadata.tool === GeneratorTool.COMFYUI;
+    const [canvas, setCanvas] = useState<{ chunks: Record<string, string>; report: WorkflowCanvasReport | null } | null>(null);
+    const canvasReport = canvas && canvas.chunks === canvasChunks ? canvas.report : undefined;
+    const [graphOpen, setGraphOpen] = useState(false);
+    const graphButtonRef = React.useRef<HTMLSpanElement>(null);
+    const graphWasOpen = React.useRef(false);
+
+    // The canvas is read when the graph is opened, not for every item shown: a large workflow takes hundreds of
+    // milliseconds to read and carries each node's saved JSON, which only the open graph uses.
+    const canvasWanted = graphOpen && isComfyUi && canvasChunks !== null && canvasReport === undefined;
+    React.useEffect(() => {
+        if (!canvasWanted || !canvasChunks) return;
+        let cancelled = false;
+        const settle = (report: WorkflowCanvasReport | null) => {
+            if (cancelled) return;
+            setCanvas({ chunks: canvasChunks, report });
+            if (!report || report.source === 'none') setGraphOpen(false);
+        };
+        commands
+            .inspectWorkflowCanvas(canvasChunks)
+            .then((result) => settle(result.status === 'ok' ? result.data : null))
+            .catch(() => settle(null));
+        return () => {
+            cancelled = true;
+        };
+    }, [canvasChunks, canvasWanted]);
+
+    // Closing the graph returns focus to the button that opened it.
+    React.useEffect(() => {
+        if (graphOpen) {
+            graphWasOpen.current = true;
+        } else if (graphWasOpen.current) {
+            graphWasOpen.current = false;
+            graphButtonRef.current?.querySelector('button')?.focus();
+        }
+    }, [graphOpen]);
+
+    const graphUnavailableReason = !isComfyUi
+        ? 'The graph view draws ComfyUI workflows only.'
+        : !canvasChunks
+          ? 'No workflow was found in this file.'
+          : canvasReport === null || canvasReport?.source === 'none'
+            ? 'This file has no ComfyUI graph that Ambit can draw.'
+            : null;
+    const graphButtonHint = graphUnavailableReason ?? (canvasWanted ? 'Reading the workflow…' : 'See the whole workflow as a node graph');
+
     // Lazy Load Workflow if missing
     React.useEffect(() => {
         // Only attempt if:
@@ -1111,6 +1167,24 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                     {graphSourceLabel}
                                 </div>
                             )}
+                            <span ref={graphButtonRef} className="contents">
+                                <TooltipButton
+                                    onClick={() => {
+                                        if (!graphUnavailableReason) setGraphOpen(true);
+                                    }}
+                                    label="Open the workflow graph"
+                                    content={graphButtonHint}
+                                    aria-disabled={graphUnavailableReason ? true : undefined}
+                                    className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 ${
+                                        graphUnavailableReason
+                                            ? 'cursor-not-allowed border-gray-200 text-gray-300 dark:border-white/10 dark:text-gray-600'
+                                            : 'border-sage-200 bg-sage-50 text-sage-600 hover:bg-sage-100 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300 dark:hover:bg-sage-900/40'
+                                    }`}
+                                >
+                                    <Network aria-hidden="true" className="h-4 w-4" />
+                                    Graph
+                                </TooltipButton>
+                            </span>
                             {workflowJsonForActions ? (
                                 <div className="flex shrink-0 items-center gap-1">
                                     <TooltipButton
@@ -1271,6 +1345,15 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     </div>
                 )}
             </div>
+            {/* The graph is portalled out of the sidebar but owned here, so the viewer's privacy gate unmounts it. */}
+            {graphOpen && canvasReport && !graphUnavailableReason
+                ? createPortal(
+                      <React.Suspense fallback={null}>
+                          <WorkflowGraphView report={canvasReport} fileName={image.filename} onClose={() => setGraphOpen(false)} />
+                      </React.Suspense>,
+                      document.body
+                  )
+                : null}
         </div>
     );
 };

@@ -332,6 +332,74 @@ Acceptance:
   in this package.
 - Visual check in the app against the piece: first view, a folded group, Tidy.
 
+### P2b · Look polish (from the owner's look pass)
+
+The owner looked at P2 on 2026-11-26. This slice is its own PR, after #619
+merges and before P3, because P3's minimap and menus are drawn over the same
+canvas. It changes how the graph is drawn, not what it shows. The motion follows
+the UI-UX Vault: the `out` curve, nothing over about 300 ms for a view change,
+and none of it under reduced motion.
+
+1. **Near/far switch.** Today the switch at 50 % swaps the HTML for the far
+   canvas in one frame. Group titles also jump in size, because far mode draws
+   them at a fixed 15 px on screen while near mode draws them 15 px in the
+   world, which is 7.5 px on screen at 50 %. Proposal:
+    - cross-fade for 160 ms. Both layers paint during the fade, and the HTML is
+      hidden again once it ends, so a pan in far mode stays cheap;
+    - add a small band around the switch: enter far mode at 50 %, leave it at
+      55 %, so a wheel resting near the line does not flicker;
+    - make far titles start at the near size at the switch and grow from there,
+      with the cap from item 4, so nothing jumps.
+2. **Folding a group.** Today it is instant. Proposal: a 220 ms change, with
+   the box easing to the folded size and back. Members fade and shrink toward
+   the box; they stay mounted until the fade ends. The rerouted wires fade out
+   and back in, the way Tidy's move already fades them. Folding a single node
+   gets the same height ease.
+3. **Group titles that nodes cover.** The far view now stacks like the near
+   view, so a title under a node is hidden in both. Proposal: the title becomes
+   a tab on the group's top edge, outside the box, in the group's colour, with a
+   frosted backing and its node count. It draws above wires and groups and
+   under nodes. Nodes in a group sit below its top edge, so they never cover
+   its tab, and the tab covers no node text of its own group. A tab can still
+   land on a node of the group above it when groups are stacked; then the tab
+   stays under that node. Second option, to show the owner next to the first:
+   the title stays in its band, drawn above nodes as a small chip, and moves
+   along the band to the first gap no node covers. Both go before the owner on
+   a real graph (Lily, and the 8-group SDXL file) before one is built.
+4. **The far-out level** (Fit on big graphs, such as Lily with 308 nodes).
+   Today every zoom below 50 % draws the same thing, and at 10–20 % the node
+   titles are noise and the group titles grow without limit. Proposal: two far
+   levels, picked by scale.
+    - _Far, 50 % down to about 22 %_: boxes, wires, and node titles where the
+      title is at least 10 px on screen. The node type line goes below 35 %.
+    - _Overview, below about 22 %_: no node text at all. Nodes become soft
+      filled shapes, tinted toward their group's colour, without borders. Wires
+      drop to about 40 % opacity and stay bundled. Group titles are the only
+      text. Each is capped at 13 to 18 px on screen and must fit its group's
+      width on screen, or it is shortened or left out. A title that would
+      overlap a bigger group's title is left out, so bigger groups win. Groups
+      still named ComfyUI's default "Group" show no title here, because the name
+      tells nothing.
+    - In both levels, the selected output nodes keep their titles, so the eye
+      has an anchor. P1's report already marks them (`selectedOutputPaths`); it
+      does not mark the root sampler, so the sampler gets no anchor.
+    - The exact break points are tuned on Lily, the SDXL file and synthetic-500.
+5. **"Looks the cheapest" at Fit** is the same problem as item 4. The overview
+   level is the fix. The owner's next look at Fit on Lily is the acceptance.
+
+Acceptance:
+
+- vitest:
+    - the level picked by scale, including the switch band;
+    - the title cap, the fit-or-drop rule and the overlap rule;
+    - default "Group" titles dropped in overview;
+    - reduced motion turns every transition off;
+    - group fold keeps the members mounted until the fade ends.
+- The perf gate from P2 runs again on synthetic-500, with the cross-fade frames
+  included.
+- A check against the Vault's Quality bar on screenshots at a real window size.
+- The owner looks at Lily and the SDXL file: switch, fold, Fit.
+
 ### P3 · Reading the graph
 
 Side panel (settings, inputs from, outputs to, raw JSON with copy; clicking a
@@ -340,6 +408,13 @@ the Wires menu (Curved, Straight, Angled, Hidden, Bundled, width, moving dots),
 the Colours menu, the Types list, subgraph levels with breadcrumb, keyboard focus
 (Tab into the canvas, arrows between connected nodes, Enter opens the panel),
 saved view preferences in `AppSettings`.
+
+Carried over from the P2 smoke:
+
+- A MarkdownNote shows its text as raw markdown. Render it as markdown, still
+  as plain text with no HTML, or show it as a note without the markdown marks.
+- A setting the file left unnamed shows as "Value N". Take the name from the
+  node's input list where the file has one.
 
 Acceptance: vitest for search matching, wire-shape geometry for all five shapes,
 Hidden still showing the selected node's wires, panel content from the contract,
@@ -389,8 +464,8 @@ Risks:
   no per-node-type name table is added (it would need upkeep per custom pack).
 - **Large real workflows** beyond the fixtures: the P2 perf gate and Rust caps.
 - **Paint cost unmeasured** in the spike; the P2 gate measures it in WebView2.
-- **Group membership** is computed from bounds as ComfyUI does; a node straddling
-  a group edge is left outside.
+- **Group membership** follows ComfyUI's rule: a node counts when the centre of
+  its box, title bar included, is inside the group.
 
 Not doing:
 

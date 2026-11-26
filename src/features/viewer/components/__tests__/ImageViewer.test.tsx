@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { ImageViewer } from '../ImageViewer';
 import { endOwnerSwitchForTest, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
+import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 
 const mockGetImageWithFullMetadata = vi.fn();
 const mockMetadataSidebar = vi.fn();
@@ -23,6 +24,8 @@ const captures = vi.hoisted(() => ({
 }));
 const zoomMocks = vi.hoisted(() => ({ resetZoom: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn() }));
 const toastMock = vi.hoisted(() => vi.fn());
+// Stands in for the workflow graph the real sidebar can open: it holds the keyboard while mounted.
+const graphProbe = vi.hoisted(() => ({ mounted: false }));
 const openFileMock = vi.hoisted(() => vi.fn());
 const copyImageMock = vi.hoisted(() => vi.fn());
 const assetAccessMock = vi.hoisted(() => vi.fn());
@@ -53,7 +56,7 @@ vi.mock('../MetadataSidebar', () => ({
     MetadataSidebar: (props: { image: AIImage } & Record<string, unknown>) => {
         mockMetadataSidebar(props);
         captures.sidebar = props;
-        return <div data-testid="metadata-sidebar" />;
+        return <div data-testid="metadata-sidebar">{graphProbe.mounted ? <GraphProbe /> : null}</div>;
     },
 }));
 
@@ -152,6 +155,14 @@ vi.mock('../../../../services/osOpen', () => ({
 vi.mock('../../../../services/imageClipboard', () => ({
     copyImageToClipboard: (...args: unknown[]) => copyImageMock(...args),
 }));
+
+function GraphProbe() {
+    React.useEffect(() => {
+        useWorkflowGraphStore.getState().setOpen(true);
+        return () => useWorkflowGraphStore.getState().setOpen(false);
+    }, []);
+    return <div data-testid="workflow-graph-probe" />;
+}
 
 const metadata = (positivePrompt: string) => ({
     tool: GeneratorTool.UNKNOWN,
@@ -585,6 +596,73 @@ describe('ImageViewer full metadata loading', () => {
 
         expect(aiState.value.closeModal).toHaveBeenCalled();
         expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('leaves every viewer shortcut to the workflow graph while it is open', () => {
+        const onClose = vi.fn();
+        const onDelete = vi.fn();
+        const onNext = vi.fn();
+        const onPrev = vi.fn();
+        const onToggleFavorite = vi.fn();
+        const onTogglePin = vi.fn();
+        const onToggleSidebar = vi.fn();
+        const { container } = renderViewer({ onClose, onDelete, onNext, onPrev, onToggleFavorite, onTogglePin, onToggleSidebar });
+        useWorkflowGraphStore.setState({ open: true });
+        try {
+            for (const key of [' ', 'Delete', 'Backspace', 'ArrowRight', 'ArrowLeft', 'f', 'p', 'i', 'z', 'Escape']) {
+                const event = new KeyboardEvent('keydown', { key, cancelable: true });
+                act(() => window.dispatchEvent(event));
+                expect(event.defaultPrevented).toBe(false);
+            }
+        } finally {
+            useWorkflowGraphStore.setState({ open: false });
+        }
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(onDelete).not.toHaveBeenCalled();
+        expect(onNext).not.toHaveBeenCalled();
+        expect(onPrev).not.toHaveBeenCalled();
+        expect(onToggleFavorite).not.toHaveBeenCalled();
+        expect(onTogglePin).not.toHaveBeenCalled();
+        expect(onToggleSidebar).not.toHaveBeenCalled();
+        expect(container.firstElementChild?.className).not.toContain('bg-black');
+    });
+
+    describe('with the workflow graph open', () => {
+        beforeEach(() => {
+            graphProbe.mounted = true;
+        });
+        afterEach(() => {
+            graphProbe.mounted = false;
+            useWorkflowGraphStore.setState({ open: false });
+        });
+
+        it('never mounts the graph for a masked image that is not revealed', () => {
+            renderViewer({ isMasked: true });
+            expect(screen.queryByTestId('workflow-graph-probe')).toBeNull();
+            expect(useWorkflowGraphStore.getState().open).toBe(false);
+        });
+
+        it('unmounts the graph when the image becomes masked', async () => {
+            const view = renderViewer();
+            await waitFor(() => expect(screen.getByTestId('workflow-graph-probe')).toBeTruthy());
+            expect(useWorkflowGraphStore.getState().open).toBe(true);
+
+            view.rerender(<ImageViewer {...view.props} isMasked />);
+            expect(screen.queryByTestId('workflow-graph-probe')).toBeNull();
+            expect(useWorkflowGraphStore.getState().open).toBe(false);
+        });
+
+        it('unmounts the graph while Privacy Mode waits for its mask index', async () => {
+            const view = renderViewer();
+            await waitFor(() => expect(screen.getByTestId('workflow-graph-probe')).toBeTruthy());
+
+            viewerSettings.privacyEnabled = true;
+            viewerSettings.privacyMaskIndexStatus = 'pending';
+            view.rerender(<ImageViewer {...view.props} />);
+            expect(screen.queryByTestId('workflow-graph-probe')).toBeNull();
+            expect(useWorkflowGraphStore.getState().open).toBe(false);
+        });
     });
 
     it('leaves all viewer shortcuts to an external modal while blocked', () => {

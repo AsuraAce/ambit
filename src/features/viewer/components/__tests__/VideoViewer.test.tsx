@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type VideoAsset } from '../../../../types';
 import { VideoViewer } from '../VideoViewer';
 import { endOwnerSwitchForTest, OWNER_SWITCH_TOAST, startOwnerSwitchForTest } from '../../../../test/ownerSwitch';
+import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 
 const mocks = vi.hoisted(() => ({
     updateVideoPlaybackStatus: vi.fn().mockResolvedValue(undefined),
@@ -679,6 +680,34 @@ describe('VideoViewer', () => {
 
         fireEvent.keyDown(closeButton, { key: 'Escape' });
         expect(props.onClose).toHaveBeenCalledOnce();
+    });
+
+    it('leaves playback, seeking and navigation keys to the workflow graph while it is open', async () => {
+        const { props } = setup();
+        const player = await waitFor(() => {
+            const element = document.querySelector('video') as HTMLVideoElement | null;
+            expect(element).not.toBeNull();
+            return element as HTMLVideoElement;
+        });
+        Object.defineProperty(player, 'duration', { configurable: true, value: 60 });
+        Object.defineProperty(player, 'paused', { configurable: true, value: true });
+        player.currentTime = 30;
+        const play = vi.spyOn(player, 'play').mockResolvedValue(undefined);
+
+        useWorkflowGraphStore.setState({ open: true });
+        try {
+            for (const key of [' ', 'j', 'l', 'ArrowLeft', 'ArrowRight', 'Delete', 'f', 'Escape']) {
+                fireEvent.keyDown(window, { key });
+            }
+        } finally {
+            useWorkflowGraphStore.setState({ open: false });
+        }
+
+        expect(play).not.toHaveBeenCalled();
+        expect(player.currentTime).toBe(30);
+        expect(props.onPrev).not.toHaveBeenCalled();
+        expect(props.onNext).not.toHaveBeenCalled();
+        expect(props.onClose).not.toHaveBeenCalled();
     });
 
     it('closes from bare playback background but not from the player', async () => {
