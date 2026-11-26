@@ -5,43 +5,34 @@ export const TITLE_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
 /** A title pill's distance from its group's edges. */
 export const TITLE_INSET = 6;
 
-/**
- * Where a group's title goes: a pill inside the group's top band (the owner's pick), drawn over the nodes, at the
- * first spot along the band with no node under it, or failing that no node header under it, or else at the left.
- */
-
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
-/** The leftmost x in [left, right] where a w×h box at y clears every rect, or null. */
-const firstGap = (left: number, right: number, y: number, w: number, h: number, avoid: readonly Rect[], gap: number) => {
-    if (right < left) return null;
-    const inBand = avoid.filter((rect) => rect.y < y + h && y < rect.y + rect.h).sort((a, b) => a.x - b.x);
-    let x = left;
-    for (const rect of inBand) {
-        if (rect.x >= x + w) break;
-        x = Math.max(x, rect.x + rect.w + gap);
-    }
-    return x <= right ? x : null;
-};
-
 /**
+ * Where a group's title goes: a pill at the top-left of the group (the owner's pick), drawn over the nodes. It never
+ * moves to dodge them, so it sits in the same place at every zoom and in both views.
+ *
  * @param group the group's box
  * @param w the title's full width, h its height (both in world units)
- * @param nodes the boxes of every shown node
- * @param texts where node text is drawn, the fallback for a band that nodes fill
  * @param inset the pill's distance from the group's edges
  */
-export const placeGroupTitle = (group: Rect, w: number, h: number, nodes: readonly Rect[], texts: readonly Rect[], inset: number): Rect => {
-    const pillW = Math.min(w, Math.max(0, group.w - inset * 2));
-    const y = group.y + inset;
-    const left = group.x + inset;
-    const right = group.x + group.w - inset - pillW;
-    const x = firstGap(left, right, y, pillW, h, nodes, inset / 2) ?? firstGap(left, right, y, pillW, h, texts, inset / 2) ?? left;
-    return { x, y, w: pillW, h };
-};
+export const placeGroupTitle = (group: Rect, w: number, h: number, inset: number): Rect => ({
+    x: group.x + inset,
+    y: group.y + inset,
+    w: Math.min(w, Math.max(0, group.w - inset * 2)),
+    h,
+});
 
-/** ComfyUI's name for a new group: it says nothing, so the overview leaves it out. */
-export const isDefaultGroupTitle = (title: string): boolean => title.trim().toLowerCase() === 'group';
+const contains = (outer: Rect, inner: Rect) =>
+    outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.w >= inner.x + inner.w && outer.y + outer.h >= inner.y + inner.h;
+
+/**
+ * Whether a group's pill stays inside its group and off every other group's box. Groups nested in it or around it
+ * don't count: pills over each other there are left to dropOverlaps. Zoomed far out a pill grows to hundreds of
+ * world units, and one that runs over the group below reads as that group's title.
+ */
+export const pillClear = (pill: Rect, group: Rect, groups: readonly Rect[]): boolean =>
+    pill.y + pill.h <= group.y + group.h &&
+    groups.every((other) => other === group || contains(other, group) || contains(group, other) || !overlaps(pill, other));
 
 /** The title gets a group label's room first: the node count shows only beside a whole title. */
 export const countFits = (titleWidth: number, countWidth: number, room: number): boolean => titleWidth + countWidth <= room;
@@ -76,7 +67,7 @@ export const keepsEnough = (fitted: string, full: string): boolean =>
  * when the title is left out.
  */
 export const fitOverviewTitle = (measure: Measure, title: string, px: number, width: number): { text: string; px: number } | null => {
-    if (isDefaultGroupTitle(title) || width <= 0) return null;
+    if (width <= 0) return null;
     const size = Math.min(px, GROUP_TITLE_CAP_PX);
     const full = measure(title, size);
     if (full <= width) return { text: title, px: size };

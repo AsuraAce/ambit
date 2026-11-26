@@ -3,7 +3,17 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 import { farSceneFor, layoutGroupLabels } from '../farCanvas';
-import { FAR_EXIT_SCALE, FAR_SCALE, FOLD_MS, LOWEST_SCALE, MIN_SCALE, sceneFor, wirePaths } from '../geometry';
+import {
+    DETAIL_FADE_SCALE,
+    DETAIL_STEPS,
+    FAR_EXIT_SCALE,
+    FAR_SCALE,
+    FOLD_MS,
+    LOWEST_SCALE,
+    MIN_SCALE,
+    sceneFor,
+    wirePaths,
+} from '../geometry';
 import { buildGraphModel, savedPositions } from '../graphModel';
 import { handleLayoutRequest, type LayoutRequest, type LayoutResponse } from '../tidyLayout';
 import { LAYOUT_TIME_CAP_MS } from '../useTidyPositions';
@@ -296,7 +306,6 @@ describe('WorkflowGraphView', () => {
             const member = screen.getByText(UNSAFE_TITLE).closest('.wg-node');
             expect(member?.classList.contains('leaving')).toBe(true);
             expect(member?.hasAttribute('inert')).toBe(true);
-            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(true);
             act(() => {
                 vi.advanceTimersByTime(FOLD_MS - 1);
             });
@@ -305,10 +314,100 @@ describe('WorkflowGraphView', () => {
                 vi.advanceTimersByTime(1);
             });
             expect(shown(UNSAFE_TITLE)).toBe(false);
-            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(false);
             // Unfolding brings them back at once, fading in.
             fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
             expect(screen.getByText(UNSAFE_TITLE).closest('.wg-node')?.classList.contains('arriving')).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // A group with a wire inside it (a→b), one leaving it (b→c), and one elsewhere (d→e).
+    const wired = () =>
+        render(
+            <WorkflowGraphView
+                report={report(
+                    level(
+                        [
+                            canvasNode('a', { title: 'A', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                            canvasNode('b', {
+                                title: 'B',
+                                pos: { x: 260, y: 80 },
+                                inputs: [port(0, 'LATENT')],
+                                outputs: [port(0, 'LATENT')],
+                            }),
+                            canvasNode('c', { title: 'C', pos: { x: 800, y: 80 }, inputs: [port(0, 'LATENT')] }),
+                            canvasNode('d', { title: 'D', pos: { x: 20, y: 600 }, outputs: [port(0, 'LATENT')] }),
+                            canvasNode('e', { title: 'E', pos: { x: 500, y: 600 }, inputs: [port(0, 'LATENT')] }),
+                        ],
+                        [canvasLink('a', 0, 'b', 0), canvasLink('b', 0, 'c', 0), canvasLink('d', 0, 'e', 0)],
+                        [canvasGroup('Sampling', 0, 0, 520, 400)]
+                    )
+                )}
+                fileName="wired.png"
+                onClose={vi.fn()}
+                makeLayoutWorker={fakeWorker}
+            />
+        ).container;
+    const wireEls = (container: HTMLElement) => Array.from(container.querySelectorAll<SVGPathElement>('.wg-wire'));
+    const motionOf = (wire: SVGPathElement) => ['morph', 'arriving', 'leaving'].find((motion) => wire.classList.contains(motion)) ?? null;
+
+    // The owner saw every wire in the graph blink off and back on at each fold. A fold now moves only the wires it
+    // touches, easing them to the folded box, and leaves the rest of the graph alone.
+    it('eases the wires a fold touches and leaves every other wire alone', () => {
+        vi.useFakeTimers();
+        try {
+            const container = wired();
+            const [inside, crossing, elsewhere] = wireEls(container);
+            const before = { crossing: crossing.getAttribute('d'), elsewhere: elsewhere.getAttribute('d') };
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            // Same elements in the same DOM order: each wire changes in place, and Chromium cancels the transition
+            // of an element that moves, so none may move while it eases.
+            expect(wireEls(container)).toEqual([inside, crossing, elsewhere]);
+            expect(motionOf(crossing)).toBe('morph');
+            expect(crossing.getAttribute('d')).not.toBe(before.crossing);
+            expect(motionOf(elsewhere)).toBeNull();
+            expect(elsewhere.getAttribute('d')).toBe(before.elsewhere);
+            // The wire inside the group fades out with the members, then goes.
+            expect(motionOf(inside)).toBe('leaving');
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS);
+            });
+            expect(wireEls(container)).toEqual([crossing, elsewhere]);
+            expect(wireEls(container).map(motionOf)).toEqual([null, null]);
+            // Unfolding brings the inside wire back, fading in after the wires already drawn, and eases the crossing
+            // one back.
+            fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+            const unfolded = wireEls(container);
+            expect(unfolded.slice(0, 2)).toEqual([crossing, elsewhere]);
+            expect(unfolded.map(motionOf)).toEqual(['morph', null, 'arriving']);
+            expect(crossing.getAttribute('d')).toBe(before.crossing);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // An unfold that lands mid-fold must not move a wire either: the leaving one fades back in where it stands.
+    it('keeps every drawn wire in place when an unfold follows a fold at once', () => {
+        vi.useFakeTimers();
+        try {
+            const container = wired();
+            const drawn = wireEls(container);
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+            expect(wireEls(container)).toEqual(drawn);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS / 2);
+            });
+            // Past the fold's own end time the unfold is still easing, and still nothing moves.
+            expect(wireEls(container)).toEqual(drawn);
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS);
+            });
+            expect(wireEls(container).map(motionOf)).toEqual([null, null, null]);
         } finally {
             vi.useRealTimers();
         }
@@ -318,10 +417,13 @@ describe('WorkflowGraphView', () => {
         const original = window.matchMedia;
         window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
         try {
-            renderGraph();
+            const container = wired();
             fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-            expect(shown(UNSAFE_TITLE)).toBe(false);
-            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(false);
+            expect(shown('A')).toBe(false);
+            // The wires snap to their new routes: no easing, no fade, and the inside wire is gone at once.
+            expect(wireEls(container)).toHaveLength(2);
+            expect(wireEls(container).map(motionOf)).toEqual([null, null]);
+            expect(wireEls(container).some((wire) => wire.getAttribute('style'))).toBe(false);
         } finally {
             window.matchMedia = original;
         }
@@ -377,11 +479,11 @@ describe('WorkflowGraphView', () => {
         for (const pill of [upper, lower]) expect(at(pill)[0] + parseFloat(pill.style.maxWidth)).toBe(394);
     });
 
-    // At the switch the far pill must sit exactly where the near pill does, or it slides during the cross-fade. The
-    // review found a group with a node about 100 units into its band placing the two pills in different spots.
-    it('places the far pill where the near pill is at the switch', () => {
+    // At the switch the far pill must sit exactly where the near pill does, or it slides during the cross-fade. Both
+    // stay at the group's top-left over the nodes: the owner read a pill sliding to dodge a node as inconsistent.
+    it('places the far pill where the near pill is at the switch, at the top-left over a node in the band', () => {
         const root = level(
-            [canvasNode('n', { title: 'Loader', pos: { x: 136, y: 20 }, size: { width: 200, height: 120 } })],
+            [canvasNode('n', { title: 'Loader', pos: { x: 20, y: 20 }, size: { width: 200, height: 120 } })],
             [],
             [canvasGroup('Sampling', 0, 0, 600, 300)]
         );
@@ -390,8 +492,8 @@ describe('WorkflowGraphView', () => {
         );
         const pill = container.querySelector<HTMLElement>('.wg-gtitle')!;
         const [nearX, nearY] = /translate\(([\d.]+)px, ([\d.]+)px\)/.exec(pill.style.transform)!.slice(1).map(Number);
-        // The gap left of the node is too short for the whole pill (fold button included), so it moved past the node.
-        expect(nearX).toBeGreaterThan(336);
+        // A node sits in the band, and the pill stays at the corner over it.
+        expect([nearX, nearY]).toEqual([6, 6]);
 
         const model = buildGraphModel(root);
         const positions = savedPositions(model);
@@ -399,7 +501,7 @@ describe('WorkflowGraphView', () => {
         const far = farSceneFor(model, positions, new Set(), new Set(), scene, wirePaths(model, positions, new Set(), scene, 'bundled'));
         // The near view's fallback measure in tests: an average glyph is 0.6 of the font size.
         const measure = (text: string, px: number) => text.length * px * 0.6;
-        const [label] = layoutGroupLabels({ groups: far.groups, boxes: far.nodes }, FAR_SCALE, 'far', measure);
+        const [label] = layoutGroupLabels({ groups: far.groups }, FAR_SCALE, 'far', measure);
         expect(label.rect.x).toBeCloseTo(nearX);
         expect(label.rect.y).toBeCloseTo(nearY);
     });
@@ -449,6 +551,28 @@ describe('WorkflowGraphView', () => {
         fireEvent.keyDown(document.body, { key: '+' });
         for (let i = 0; i < 30; i++) fireEvent.keyDown(document.body, { key: '-' });
         expect(scale()).toBeCloseTo(opened, 6);
+    });
+
+    // Zooming out toward far mode fades the body text through the world's data-detail step, before the switch.
+    it('fades node body text in steps as the view zooms toward far mode', () => {
+        renderGraph();
+        const world = screen.getByTestId('workflow-graph-world');
+        const scale = () => Number(/scale\(([\d.e-]+)\)/.exec(world.style.transform)?.[1]);
+        const graphCss = readFileSync('src/features/viewer/workflowGraph/workflowGraph.css', 'utf8');
+        const seen: string[] = [];
+        for (let i = 0; i < 14 && !world.classList.contains('far'); i++) {
+            fireEvent.keyDown(document.body, { key: '-' });
+            const detail = world.dataset.detail ?? '';
+            if (scale() < DETAIL_FADE_SCALE && !world.classList.contains('far')) seen.push(detail);
+        }
+        expect(seen.length).toBeGreaterThan(0);
+        // Fading, not yet gone: the near view still shows a trace of the text there, and the stylesheet dims it.
+        for (const detail of seen) {
+            expect(Number(detail)).toBeLessThan(DETAIL_STEPS);
+            expect(Number(detail)).toBeGreaterThan(0);
+            expect(graphCss).toMatch(new RegExp(`\\.wg-world\\[data-detail='${detail}'\\] \\.wg-nb \\{\\s*opacity: 0\\.\\d+;`));
+        }
+        expect(world.classList.contains('far')).toBe(true);
     });
 
     // Far mode shows no controls, so keyboard focus on a fold button there zooms in to what it folds.

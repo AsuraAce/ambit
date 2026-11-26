@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildGraphModel, FOLDED_GROUP_H, FOLDED_GROUP_W, HEADER_H, savedPositions, type Positions } from '../graphModel';
 import {
     boundsOf,
+    bundledPath,
     endpoint,
     fitView,
     LOWEST_SCALE,
@@ -21,6 +22,18 @@ const none = new Set<string>();
 const trunkX = (d: string) => Number((/Q(-?[\d.]+) /.exec(d) ?? /L(-?[\d.]+) /.exec(d))![1]);
 
 describe('bundled wires', () => {
+    // A fold eases a wire from its old route to its new one, which CSS can only do between paths with the same
+    // command list. A level wire has corners too tight to round; it must still use the same commands as one that
+    // steps, or folding a group level with its target would fall back to a fade.
+    it('draws every forward route with one command list, level or stepped', () => {
+        const commands = (d: string) => d.replace(/[^A-Za-z]/g, '');
+        const level = bundledPath({ x: 0, y: 100 }, { x: 400, y: 100 }, 200);
+        const stepped = bundledPath({ x: 0, y: 100 }, { x: 400, y: 260 }, 200);
+        const atTrunk = bundledPath({ x: 0, y: 100 }, { x: 400, y: 103 }, 20);
+        expect(commands(level)).toBe(commands(stepped));
+        expect(commands(atTrunk)).toBe(commands(stepped));
+    });
+
     // One output feeding several nodes must read as one trunk that splits near its targets.
     const fanOut = () => {
         const source = canvasNode('src', { pos: { x: 0, y: 30 }, outputs: [port(0, 'MODEL'), port(1, 'CLIP')] });

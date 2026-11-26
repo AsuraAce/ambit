@@ -52,6 +52,23 @@ export const viewLevel = (s: number, wasFar: boolean): ViewLevel => {
     return s < OVERVIEW_SCALE ? 'overview' : 'far';
 };
 
+/** Above this scale a node's body text shows in full; it fades out between here and FAR_SCALE. */
+export const DETAIL_FADE_SCALE = 0.65;
+/** How many steps the fade takes; workflowGraph.css holds one opacity rule per step. */
+export const DETAIL_STEPS = 3;
+
+/**
+ * How visible the near view's detail text is at scale s: gone at FAR_SCALE, full from DETAIL_FADE_SCALE, in a few
+ * steps between, so a zoom sweep restyles the nodes a few times instead of on every frame. The owner's wheel takes
+ * big steps, so the text has to be on its way out before the canvas takes over rather than vanish in the swap.
+ */
+export const detailOpacity = (s: number): number => {
+    if (s >= DETAIL_FADE_SCALE) return 1;
+    if (s <= FAR_SCALE) return 0;
+    // Less a hair, so a scale on a step's edge (0.55 is 1.0000000000000004 steps in) lands on that step.
+    return Math.ceil(((s - FAR_SCALE) / (DETAIL_FADE_SCALE - FAR_SCALE)) * DETAIL_STEPS - 1e-9) / DETAIL_STEPS;
+};
+
 export const clampScale = (s: number, floor = MIN_SCALE): number => Math.min(Math.max(s, floor), MAX_SCALE);
 
 /** Which folded group hides each node, and which groups sit inside a folded group. Groups apply only as saved. */
@@ -111,7 +128,10 @@ export const curvePath = (a: Point, b: Point): string => {
     return `M${f(a.x)} ${f(a.y)} C${f(a.x + dx)} ${f(a.y)} ${f(b.x - dx)} ${f(b.y)} ${f(b.x)} ${f(b.y)}`;
 };
 
-/** A polyline with its inner corners rounded to radius r. */
+/**
+ * A polyline with its inner corners rounded to radius r. Every corner is a line and a curve, even one too tight to
+ * round, so routes through the same number of points share one command list and a fold can ease one into another.
+ */
 export const roundedPath = (pts: Point[], r: number): string => {
     let d = `M${f(pts[0].x)} ${f(pts[0].y)}`;
     for (let i = 1; i < pts.length - 1; i++) {
@@ -122,7 +142,7 @@ export const roundedPath = (pts: Point[], r: number): string => {
         const lb = Math.hypot(b.x - p.x, b.y - p.y);
         const k = Math.min(r, la / 2, lb / 2);
         if (k < 0.5) {
-            d += ` L${f(p.x)} ${f(p.y)}`;
+            d += ` L${f(p.x)} ${f(p.y)} Q${f(p.x)} ${f(p.y)} ${f(p.x)} ${f(p.y)}`;
             continue;
         }
         const p1 = { x: p.x + ((a.x - p.x) / la) * k, y: p.y + ((a.y - p.y) / la) * k };

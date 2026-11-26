@@ -1,50 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { FAR_EXIT_SCALE, FAR_SCALE, OVERVIEW_SCALE, viewLevel } from '../geometry';
-import {
-    dropOverlaps,
-    fitOverviewTitle,
-    GROUP_TITLE_CAP_PX,
-    isDefaultGroupTitle,
-    keepsEnough,
-    OVERVIEW_TITLE_MIN_PX,
-    placeGroupTitle,
-} from '../groupTitles';
+import { DETAIL_FADE_SCALE, detailOpacity, FAR_EXIT_SCALE, FAR_SCALE, OVERVIEW_SCALE, viewLevel } from '../geometry';
+import { dropOverlaps, fitOverviewTitle, GROUP_TITLE_CAP_PX, keepsEnough, OVERVIEW_TITLE_MIN_PX, placeGroupTitle } from '../groupTitles';
 
 const group = { x: 100, y: 400, w: 300, h: 200 };
 
 describe('placeGroupTitle', () => {
-    // The owner's pick (2026-11-26): every group title is a pill inside the group's top band, never a tab above it,
-    // so nothing outside the group's own box carries its title.
-    it('puts the title in a pill inside the top band, at the left when the band is clear', () => {
-        expect(placeGroupTitle(group, 150, 24, [], [], 6)).toEqual({ x: 106, y: 406, w: 150, h: 24 });
-        // A node of the group above, reaching down to the edge, does not move it out of the band.
-        const above = { x: 90, y: 300, w: 200, h: 90 };
-        expect(placeGroupTitle(group, 150, 24, [above], [], 6)).toEqual({ x: 106, y: 406, w: 150, h: 24 });
-    });
-
-    it('slides the pill along the band to the first spot no node covers', () => {
-        const own = { x: 100, y: 400, w: 190, h: 120 };
-        const slot = placeGroupTitle(group, 80, 24, [own], [], 6);
-        expect(slot.y).toBe(406);
-        expect(slot.x).toBeGreaterThanOrEqual(own.x + own.w);
-        expect(slot.x + slot.w).toBeLessThanOrEqual(group.x + group.w);
-    });
-
-    // Where nodes fill the band, the pill still avoids their titles.
-    it('falls back to a spot clear of node text when nodes fill the band', () => {
-        const filling = { x: 90, y: 300, w: 400, h: 200 };
-        const title = { x: 90, y: 400, w: 150, h: 30 };
-        const slot = placeGroupTitle(group, 80, 24, [filling], [title], 6);
-        expect(slot.x).toBeGreaterThanOrEqual(title.x + title.w);
-    });
-
-    it('keeps the pill at the left when nothing in the band is clear', () => {
-        const filling = { x: 0, y: 0, w: 1000, h: 1000 };
-        expect(placeGroupTitle(group, 80, 24, [filling], [filling], 6)).toMatchObject({ x: 106 });
+    // The owner's pick (2026-11-26): every group title is a pill inside its group, never a tab above it. After the
+    // look pass the pill stays at the top-left: sliding along the band to dodge nodes read as inconsistent mid-zoom.
+    it('puts the title in a pill at the group’s top-left, inside its insets', () => {
+        expect(placeGroupTitle(group, 150, 24, 6)).toEqual({ x: 106, y: 406, w: 150, h: 24 });
     });
 
     it('never makes a title wider than its group, inside its insets', () => {
-        expect(placeGroupTitle(group, 900, 24, [], [], 6).w).toBe(group.w - 12);
+        expect(placeGroupTitle(group, 900, 24, 6).w).toBe(group.w - 12);
     });
 });
 
@@ -65,10 +33,10 @@ describe('fitOverviewTitle', () => {
         expect(fitOverviewTitle(measure, 'A very long group title', 18, 3 * OVERVIEW_TITLE_MIN_PX * 0.6)).toBeNull();
     });
 
-    it('leaves out ComfyUI’s default title', () => {
-        expect(isDefaultGroupTitle(' group ')).toBe(true);
-        expect(isDefaultGroupTitle('Group 2')).toBe(false);
-        expect(fitOverviewTitle(measure, 'Group', 18, 1000)).toBeNull();
+    // On Lily every group keeps ComfyUI's default "Group", and the owner wants group labels at Fit: they stay in, and
+    // the node count beside them tells them apart.
+    it('keeps ComfyUI’s default title', () => {
+        expect(fitOverviewTitle(measure, 'Group', 18, 1000)).toEqual({ text: 'Group', px: GROUP_TITLE_CAP_PX });
     });
 });
 
@@ -105,5 +73,30 @@ describe('viewLevel', () => {
         expect(viewLevel(OVERVIEW_SCALE, true)).toBe('far');
         expect(viewLevel(OVERVIEW_SCALE - 0.001, true)).toBe('overview');
         expect(viewLevel(OVERVIEW_SCALE - 0.001, false)).toBe('overview');
+    });
+});
+
+describe('detailOpacity', () => {
+    // The owner's look pass: body text should fade sooner, so it is gone or going before the canvas takes over
+    // instead of switching in the swap. It steps, so a sweep restyles 500 nodes a few times, not every frame.
+    it('fades body text out between DETAIL_FADE_SCALE and the switch, in a few steps', () => {
+        expect(detailOpacity(1)).toBe(1);
+        expect(detailOpacity(DETAIL_FADE_SCALE)).toBe(1);
+        expect(detailOpacity(FAR_SCALE)).toBe(0);
+        expect(DETAIL_FADE_SCALE).toBeGreaterThan(FAR_EXIT_SCALE);
+        const steps = new Set<number>();
+        for (let s = DETAIL_FADE_SCALE; s > FAR_SCALE; s -= 0.001) steps.add(detailOpacity(s));
+        expect(steps.size).toBeLessThanOrEqual(4);
+        expect([...steps].every((step) => step > 0 && step <= 1)).toBe(true);
+        // Already partly faded where the view comes back from far mode.
+        expect(detailOpacity(FAR_EXIT_SCALE)).toBeLessThan(1);
+    });
+
+    // The steps split the band evenly, so the view coming back from far mode at 55 % shows the text at a third.
+    it('steps at even thirds of the band, float rounding aside', () => {
+        expect(detailOpacity(0.55)).toBeCloseTo(1 / 3, 9);
+        expect(detailOpacity(0.6)).toBeCloseTo(2 / 3, 9);
+        expect(detailOpacity(0.5001)).toBeCloseTo(1 / 3, 9);
+        expect(detailOpacity(0.6499)).toBe(1);
     });
 });
