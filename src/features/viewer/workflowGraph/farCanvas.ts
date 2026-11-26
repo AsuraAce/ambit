@@ -1,6 +1,6 @@
 import type { GraphModel, Positions, WireType } from './graphModel';
 import { FAR_SCALE, GROUP_TAB_H, groupBox, nodeHeight, type Rect, type Scene, type View, type ViewLevel, type WirePath } from './geometry';
-import { dropOverlaps, fitOverviewTitle, fitText, GROUP_TITLE_CAP_PX, placeGroupTitle, type Measure } from './groupTitles';
+import { dropOverlaps, fitOverviewTitle, fitText, GROUP_TITLE_CAP_PX, keepsEnough, placeGroupTitle, type Measure } from './groupTitles';
 
 /**
  * Far mode draws the graph on one canvas instead of thousands of HTML elements, so a pan or zoom step
@@ -300,13 +300,14 @@ const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: nu
         const withType = node.nodeType !== null && node.h >= px + typePx * 1.6;
         const cy = node.y + node.h / 2 - (withType ? typePx * 0.7 : 0);
         const title = fitText(bold, node.title, px, width);
-        if (title) {
+        if (title && keepsEnough(title, node.title)) {
             labels.titles.push({ text: title, x: cx, y: cy, anchor: node.anchor });
             labels.texts.push({ x: node.x, y: cy - px * 0.6, w: node.w, h: px * 1.2 });
         }
         if (withType && node.nodeType) {
             const type = fitText(plain, node.nodeType, typePx, width);
-            if (type) labels.types.push({ text: type, x: cx, y: cy + px * 0.6 + typePx * 0.8, anchor: node.anchor });
+            if (type && keepsEnough(type, node.nodeType))
+                labels.types.push({ text: type, x: cx, y: cy + px * 0.6 + typePx * 0.8, anchor: node.anchor });
         }
     }
     drawing.labels.set(px, labels);

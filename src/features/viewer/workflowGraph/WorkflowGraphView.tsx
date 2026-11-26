@@ -48,6 +48,8 @@ const reducedMotion = () => typeof window.matchMedia === 'function' && window.ma
 
 /** A title tab's width: its text, plus padding, gaps, the fold button and borders (see .wg-gtitle). */
 const TAB_CHROME = 8 + 4 + 6 + 6 + 20 + 2;
+/** A chip's distance from its group's edges. */
+const TITLE_INSET = 6;
 let measureContext: CanvasRenderingContext2D | null | undefined;
 const textWidth = (text: string, px: number, weight: number, family: string): number => {
     if (measureContext === undefined) measureContext = document.createElement('canvas').getContext('2d');
@@ -115,7 +117,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             if (scene.hiddenGroups.has(group.key) || foldedGroups.has(group.key)) continue;
             const width =
                 textWidth(group.title, 13, 700, family) + textWidth(nodeCount(group.members.length), 11, 500, family) + TAB_CHROME;
-            slots.set(group.key, placeGroupTitle(groupBox(group, false), width, GROUP_TAB_H, boxes, headers, 6));
+            slots.set(group.key, placeGroupTitle(groupBox(group, false), width, GROUP_TAB_H, boxes, headers, TITLE_INSET));
         }
         return slots;
     }, [model, positions, scene, foldedNodes, foldedGroups]);
@@ -512,9 +514,12 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         model.groups.map((group) => {
             const slot = titleSlots.get(group.key);
             if (!slot || slot.kind !== kind) return null;
+            // The title sizes to its text; only the group's width caps it. The measured slot.w places it, and can
+            // fall a few pixels short (a web font still loading), which must not cut the title.
+            const box = groupBox(group, false);
             const style = {
                 transform: `translate(${slot.x}px, ${slot.y}px)`,
-                maxWidth: slot.w,
+                maxWidth: kind === 'tab' ? box.w : box.x + box.w - TITLE_INSET - slot.x,
                 '--gc': groupColour(group.color, palette),
             } as React.CSSProperties;
             return (

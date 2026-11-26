@@ -73,6 +73,9 @@ export const OVERVIEW_TITLE_MIN_PX = 13;
 export const GROUP_TITLE_CAP_PX = 18;
 /** A title cut shorter than this many characters tells nothing, so it is left out instead. */
 const MIN_KEPT_CHARS = 4;
+/** Whether `fitted`, cut from `full`, still keeps enough of it to say something. */
+export const keepsEnough = (fitted: string, full: string): boolean =>
+    fitted === full || fitted.length - 1 >= Math.min(MIN_KEPT_CHARS, full.length);
 
 /**
  * The overview's title for a group whose box is `width` pixels wide on screen: the size and text that fit, or null
@@ -87,8 +90,7 @@ export const fitOverviewTitle = (measure: Measure, title: string, px: number, wi
     if (fitting >= OVERVIEW_TITLE_MIN_PX) return { text: title, px: fitting };
     const shrunk = OVERVIEW_TITLE_MIN_PX;
     const text = fitText(measure, title, shrunk, width);
-    if (text === title) return { text, px: shrunk };
-    return text.length - 1 >= Math.min(MIN_KEPT_CHARS, title.length) ? { text, px: shrunk } : null;
+    return keepsEnough(text, title) ? { text, px: shrunk } : null;
 };
 
 /**

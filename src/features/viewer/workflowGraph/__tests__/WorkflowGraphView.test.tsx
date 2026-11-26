@@ -328,6 +328,11 @@ describe('WorkflowGraphView', () => {
         expect(chip?.textContent).toContain('Lower');
         expect(order.indexOf(tab!)).toBeLessThan(order.indexOf(node!));
         expect(order.indexOf(chip!)).toBeGreaterThan(order.indexOf(node!));
+        // Only the group's width caps a title, never the measured text width: a short measurement (seen on Lily
+        // while the web font loaded) cut "Group" to "Gro…". A chip stops at the group's right inset.
+        expect((tab as HTMLElement).style.maxWidth).toBe('400px');
+        const chipX = Number(/translate\(([\d.]+)px/.exec((chip as HTMLElement).style.transform)?.[1]);
+        expect(chipX + parseFloat((chip as HTMLElement).style.maxWidth)).toBe(394);
     });
 
     // A graph too wide for the usual 12 % limit opens showing all of it, and zooming out reaches that view again.

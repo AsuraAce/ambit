@@ -5,6 +5,7 @@ import {
     fitOverviewTitle,
     GROUP_TITLE_CAP_PX,
     isDefaultGroupTitle,
+    keepsEnough,
     OVERVIEW_TITLE_MIN_PX,
     placeGroupTitle,
 } from '../groupTitles';
@@ -76,6 +77,16 @@ describe('fitOverviewTitle', () => {
         expect(isDefaultGroupTitle(' group ')).toBe(true);
         expect(isDefaultGroupTitle('Group 2')).toBe(false);
         expect(fitOverviewTitle(measure, 'Group', 18, 1000)).toBeNull();
+    });
+});
+
+// Seen on Lily in the overview: a node title cut to "S…" tells nothing, so the canvas leaves it out instead.
+describe('keepsEnough', () => {
+    it('keeps a whole title or one cut to four characters or more, and drops a shorter cut', () => {
+        expect(keepsEnough('Save', 'Save')).toBe(true);
+        expect(keepsEnough('Save…', 'SaveImage')).toBe(true);
+        expect(keepsEnough('Sav…', 'SaveImage')).toBe(false);
+        expect(keepsEnough('S…', 'SaveImage')).toBe(false);
     });
 });
 
