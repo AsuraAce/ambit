@@ -1,4 +1,4 @@
-import { HEADER_H, type GraphModel, type Positions, type WireType } from './graphModel';
+import type { GraphModel, Positions, WireType } from './graphModel';
 import {
     FAR_SCALE,
     GROUP_TITLE_H,
@@ -26,19 +26,16 @@ import {
 /**
  * Far mode draws the graph on one canvas instead of thousands of HTML elements, so a pan or zoom step
  * re-rasters a few hundred shapes. It is presentation only: the boxes and wires come from the same model,
- * positions, folds and wire paths the HTML view draws. It has two levels: far, with node titles, and the
- * overview, where group titles are the only text.
+ * positions, folds and wire paths the HTML view draws. It has two levels, the owner's ladder below the near view's
+ * full detail: far, with group titles and node titles, and the overview, where group titles are the only text.
  */
 
 export interface FarNode extends Rect {
     id: string;
     title: string;
-    nodeType: string | null;
     variant: 'plain' | 'bypass' | 'mute' | 'reroute';
     /** The innermost open group the node belongs to, whose colour tints it in the overview. */
     group: string | null;
-    /** A selected output: its title stays in the overview, as an anchor for the eye. */
-    anchor: boolean;
 }
 
 export interface FarGroup extends Rect {
@@ -67,8 +64,7 @@ export const farSceneFor = (
     foldedGroups: ReadonlySet<string>,
     scene: Scene,
     wires: WirePath[],
-    laidOut: ReadonlyMap<string, number> = new Map(),
-    anchors: ReadonlySet<string> = new Set()
+    laidOut: ReadonlyMap<string, number> = new Map()
 ): FarScene => {
     const groups = model.groups
         .filter((group) => !scene.hiddenGroups.has(group.key))
@@ -95,10 +91,8 @@ export const farSceneFor = (
                 {
                     id: node.id,
                     title: node.title,
-                    nodeType: node.title !== node.nodeType ? node.nodeType : null,
                     variant,
                     group: innermost.get(node.id) ?? null,
-                    anchor: anchors.has(node.id),
                     x: at.x,
                     y: at.y,
                     w: node.width,
@@ -184,15 +178,20 @@ export const readFarPalette = (layer: HTMLElement): FarPalette => {
 /** Wires grow against the zoom up to a cap, as the HTML view did. */
 const WIRE_WIDTH = 2.2;
 const WIRE_SCALE_CAP = 2.4;
-/** Node titles, in world units: this size at the switch, and never under MIN_NODE_TITLE_PX on screen. */
-const LABEL_PX = 12 * 2.1;
-const TYPE_RATIO = 0.72;
+/**
+ * Node titles, in world units: 11 px on screen at the switch, and never under MIN_NODE_TITLE_PX. They sit a step
+ * below the group pills (smaller, lighter and muted), so the groups read first.
+ */
+const LABEL_PX = 11 / FAR_SCALE;
 const LABEL_PAD = 10;
 const MIN_NODE_TITLE_PX = 10;
-/** Below this scale a node shows its title only, without its type. */
-export const TYPE_LINE_SCALE = 0.35;
+const NODE_TITLE_WEIGHT = 600;
+/** Node borders are drawn fainter than in the HTML, so the boxes stay behind the group areas. */
+const NODE_STROKE_ALPHA = 0.6;
 /** The HTML pill's title size in world units, which far mode starts from so titles do not jump at the switch. */
 export const NEAR_GROUP_TITLE_PX = 13;
+/** A pill's node count against its title, as in the HTML (11 px beside 13 px). */
+const COUNT_RATIO = 11 / NEAR_GROUP_TITLE_PX;
 const OVERVIEW_WIRE_ALPHA = 0.4;
 const OVERVIEW_TINT_ALPHA = 0.35;
 
@@ -215,12 +214,6 @@ interface Label {
     text: string;
     x: number;
     y: number;
-    anchor: boolean;
-}
-
-interface NodeLabels {
-    titles: Label[];
-    types: Label[];
 }
 
 /** A group's title as drawn this frame: world rect, text and size on screen. */
@@ -240,10 +233,9 @@ export interface FarDrawing {
     wires: { path: Path2D; colour: string; bypassed: boolean }[];
     nodes: { path: Path2D; fill: string; stroke: string; alpha: number; dashed: boolean }[];
     tints: { path: Path2D; colour: string }[];
-    boxes: Rect[];
     sceneNodes: FarNode[];
-    /** Fitted titles by size, and whether only the overview's anchors were fitted. */
-    labels: Map<string, NodeLabels>;
+    /** Fitted node titles by size. */
+    labels: Map<number, Label[]>;
     font: string;
     text: string;
     muted: string;
@@ -302,7 +294,6 @@ export const prepareFarDrawing = (scene: FarScene, palette: FarPalette): FarDraw
             const look = palette.group.get(key);
             return look ? [{ path, colour: look.stroke }] : [];
         }),
-        boxes: scene.nodes.map(({ x, y, w, h }) => ({ x, y, w, h })),
         sceneNodes: scene.nodes,
         labels: new Map(),
         font: palette.font,
@@ -311,43 +302,31 @@ export const prepareFarDrawing = (scene: FarScene, palette: FarPalette): FarDraw
     };
 };
 
-/** Node titles fitted at one size, built the first time the view reaches it; the overview fits only its anchors. */
-const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: number, anchorsOnly: boolean): NodeLabels => {
-    const key = `${px}${anchorsOnly ? ' anchors' : ''}`;
-    const cached = drawing.labels.get(key);
+/** Node titles fitted at one size, centred in their nodes, built the first time the view reaches that size. */
+const nodeLabelsAt = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, px: number): Label[] => {
+    const cached = drawing.labels.get(px);
     if (cached) return cached;
-    const typePx = px * TYPE_RATIO;
-    const bold = canvasMeasure(ctx, drawing.font, 700);
-    const plain = canvasMeasure(ctx, drawing.font, 500);
-    const labels: NodeLabels = { titles: [], types: [] };
+    const measure = canvasMeasure(ctx, drawing.font, NODE_TITLE_WEIGHT);
+    const labels: Label[] = [];
     for (const node of drawing.sceneNodes) {
-        if (node.variant === 'reroute' || node.h < px || (anchorsOnly && !node.anchor)) continue;
-        // Centred: the title, and the node type below it when it differs and fits.
-        const width = node.w - LABEL_PAD * 2;
-        const cx = node.x + node.w / 2;
-        const withType = node.nodeType !== null && node.h >= px + typePx * 1.6;
-        const cy = node.y + node.h / 2 - (withType ? typePx * 0.7 : 0);
-        const title = fitText(bold, node.title, px, width);
-        if (title && keepsEnough(title, node.title)) {
-            labels.titles.push({ text: title, x: cx, y: cy, anchor: node.anchor });
-        }
-        if (withType && node.nodeType) {
-            const type = fitText(plain, node.nodeType, typePx, width);
-            if (type && keepsEnough(type, node.nodeType))
-                labels.types.push({ text: type, x: cx, y: cy + px * 0.6 + typePx * 0.8, anchor: node.anchor });
-        }
+        if (node.variant === 'reroute' || node.h < px) continue;
+        const title = fitText(measure, node.title, px, node.w - LABEL_PAD * 2);
+        if (title && keepsEnough(title, node.title)) labels.push({ text: title, x: node.x + node.w / 2, y: node.y + node.h / 2 });
     }
-    drawing.labels.set(key, labels);
+    drawing.labels.set(px, labels);
     return labels;
 };
 
+const nodeCount = (count: number) => (count === 1 ? '1 node' : `${count} nodes`);
+
 /**
- * Every group title for this frame. Sizes are on screen and rects in the world. An open group's far pill is the near
- * pill scaled up as the view zooms out: the same width, inset and obstacles, so at the switch it sits exactly where
- * the near pill does. The overview drops default and overlapping titles and shows no node counts.
+ * Every group title for this frame. Sizes are on screen and rects in the world. Each pill sits at its group's
+ * top-left. An open group's far pill is the near pill scaled up as the view zooms out, so at the switch it is the
+ * near pill exactly. The overview shrinks titles to fit, drops overlapping ones, and adds the node count after a
+ * whole title where it fits: that count is what tells apart groups that all kept ComfyUI's default name.
  */
 export const layoutGroupLabels = (
-    drawing: { groups: readonly FarGroup[]; boxes: readonly Rect[] },
+    drawing: { groups: readonly FarGroup[] },
     s: number,
     level: Exclude<ViewLevel, 'near'>,
     measure: Measure,
@@ -359,43 +338,51 @@ export const layoutGroupLabels = (
     const inset = 6 / s;
     // World units per near-pill unit: 1 at the switch, growing as the view zooms out.
     const k = px / (NEAR_GROUP_TITLE_PX * s);
-    const headers = drawing.boxes.map((box) => ({ ...box, h: HEADER_H }));
     const labels: GroupLabel[] = [];
     for (const group of drawing.groups) {
         const area = group.w * group.h;
+        const countText = nodeCount(group.count);
         if (level === 'far' && !group.shut) {
             const titleW = measure(group.title, NEAR_GROUP_TITLE_PX);
-            const countText = group.count === 1 ? '1 node' : `${group.count} nodes`;
             const countW = plain(countText, 11);
             const textRoom = group.w / k - 2 * TITLE_INSET - TITLE_CHROME;
             const withCount = countFits(titleW, countW, textRoom);
             const text = fitText(measure, group.title, NEAR_GROUP_TITLE_PX, textRoom - (withCount ? countW : 0));
             if (!text) continue;
             const width = k * (titleW + TITLE_CHROME + (withCount ? countW : 0));
-            const rect = placeGroupTitle(group, width, k * GROUP_TITLE_H, drawing.boxes, headers, k * TITLE_INSET);
+            const rect = placeGroupTitle(group, width, k * GROUP_TITLE_H, k * TITLE_INSET);
             labels.push({ key: group.key, kind: 'pill', rect, area, text, count: withCount ? countText : null, px });
             continue;
         }
         const room = group.w * s - padScreen * 2;
         let text: string;
         let size = px;
+        let count: string | null = null;
+        let countW = 0;
         if (level === 'overview') {
-            const fitted = fitOverviewTitle(measure, group.title, px, room - inset * s * 2);
+            const textRoom = room - inset * s * 2;
+            const fitted = fitOverviewTitle(measure, group.title, px, textRoom);
             if (!fitted) continue;
             text = fitted.text;
             size = fitted.px;
+            // The count goes after the gap the pill paints it at: one more padding.
+            const withGap = size * 0.6 + plain(countText, size * COUNT_RATIO);
+            if (!group.shut && text === group.title && countFits(measure(text, size), withGap, textRoom)) {
+                count = countText;
+                countW = withGap;
+            }
         } else {
             text = fitText(measure, group.title, px, room);
             if (!text) continue;
         }
-        const width = padScreen * 2 + measure(text, size);
+        const width = padScreen * 2 + measure(text, size) + countW;
         if (group.shut) {
             const rect = { x: group.x + 12 / s - padScreen / s, y: group.y + (group.h - hScreen / s) / 2, w: width / s, h: hScreen / s };
             labels.push({ key: group.key, kind: 'inside', rect, area, text, count: null, px: size });
             continue;
         }
-        const slot = placeGroupTitle(group, width / s, hScreen / s, drawing.boxes, headers, inset);
-        labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count: null, px: size });
+        const slot = placeGroupTitle(group, width / s, hScreen / s, inset);
+        labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count, px: size });
     }
     return level === 'overview' ? dropOverlaps(labels) : labels;
 };
@@ -437,7 +424,6 @@ export const drawFarScene = (
     }
 
     const titlePx = nodeTitleWorldPx(s);
-    const nodeLabels = nodeLabelsAt(ctx, drawing, titlePx, overview);
     const bold = canvasMeasure(ctx, drawing.font, 700);
     const groupLabels = layoutGroupLabels(drawing, s, level, bold, canvasMeasure(ctx, drawing.font, 500));
     const looks = new Map(drawing.groups.map((group) => [group.key, group]));
@@ -463,7 +449,7 @@ export const drawFarScene = (
         if (label.count) {
             const after = rect.x + pad * 2 + ctx.measureText(label.text).width;
             ctx.fillStyle = drawing.muted;
-            ctx.font = `500 ${label.px * (11 / NEAR_GROUP_TITLE_PX) * inv}px ${drawing.font}`;
+            ctx.font = `500 ${label.px * COUNT_RATIO * inv}px ${drawing.font}`;
             ctx.fillText(label.count, after, mid);
         }
     };
@@ -475,6 +461,7 @@ export const drawFarScene = (
         ctx.fillStyle = look.fill;
         ctx.fill(look.path);
         if (overview) continue;
+        ctx.globalAlpha = look.alpha * NODE_STROKE_ALPHA;
         ctx.strokeStyle = look.stroke;
         ctx.setLineDash(look.dashed ? [4 * inv, 3 * inv] : []);
         ctx.stroke(look.path);
@@ -489,16 +476,13 @@ export const drawFarScene = (
     }
     ctx.globalAlpha = 1;
 
-    // Node titles in far mode; in the overview, only the selected outputs keep theirs.
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = drawing.text;
-    ctx.font = `700 ${titlePx}px ${drawing.font}`;
-    for (const label of nodeLabels.titles) ctx.fillText(label.text, label.x, label.y);
-    if (s >= TYPE_LINE_SCALE) {
+    // Node titles in far mode only; the overview's only text is the group titles.
+    if (!overview) {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         ctx.fillStyle = drawing.muted;
-        ctx.font = `500 ${titlePx * TYPE_RATIO}px ${drawing.font}`;
-        for (const label of nodeLabels.types) ctx.fillText(label.text, label.x, label.y);
+        ctx.font = `${NODE_TITLE_WEIGHT} ${titlePx}px ${drawing.font}`;
+        for (const label of nodeLabelsAt(ctx, drawing, titlePx)) ctx.fillText(label.text, label.x, label.y);
     }
 
     for (const label of groupLabels) if (label.kind === 'pill') paintGroupLabel(label);

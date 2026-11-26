@@ -377,11 +377,11 @@ describe('WorkflowGraphView', () => {
         for (const pill of [upper, lower]) expect(at(pill)[0] + parseFloat(pill.style.maxWidth)).toBe(394);
     });
 
-    // At the switch the far pill must sit exactly where the near pill does, or it slides during the cross-fade. The
-    // review found a group with a node about 100 units into its band placing the two pills in different spots.
-    it('places the far pill where the near pill is at the switch', () => {
+    // At the switch the far pill must sit exactly where the near pill does, or it slides during the cross-fade. Both
+    // stay at the group's top-left over the nodes: the owner read a pill sliding to dodge a node as inconsistent.
+    it('places the far pill where the near pill is at the switch, at the top-left over a node in the band', () => {
         const root = level(
-            [canvasNode('n', { title: 'Loader', pos: { x: 136, y: 20 }, size: { width: 200, height: 120 } })],
+            [canvasNode('n', { title: 'Loader', pos: { x: 20, y: 20 }, size: { width: 200, height: 120 } })],
             [],
             [canvasGroup('Sampling', 0, 0, 600, 300)]
         );
@@ -390,8 +390,8 @@ describe('WorkflowGraphView', () => {
         );
         const pill = container.querySelector<HTMLElement>('.wg-gtitle')!;
         const [nearX, nearY] = /translate\(([\d.]+)px, ([\d.]+)px\)/.exec(pill.style.transform)!.slice(1).map(Number);
-        // The gap left of the node is too short for the whole pill (fold button included), so it moved past the node.
-        expect(nearX).toBeGreaterThan(336);
+        // A node sits in the band, and the pill stays at the corner over it.
+        expect([nearX, nearY]).toEqual([6, 6]);
 
         const model = buildGraphModel(root);
         const positions = savedPositions(model);
@@ -399,7 +399,7 @@ describe('WorkflowGraphView', () => {
         const far = farSceneFor(model, positions, new Set(), new Set(), scene, wirePaths(model, positions, new Set(), scene, 'bundled'));
         // The near view's fallback measure in tests: an average glyph is 0.6 of the font size.
         const measure = (text: string, px: number) => text.length * px * 0.6;
-        const [label] = layoutGroupLabels({ groups: far.groups, boxes: far.nodes }, FAR_SCALE, 'far', measure);
+        const [label] = layoutGroupLabels({ groups: far.groups }, FAR_SCALE, 'far', measure);
         expect(label.rect.x).toBeCloseTo(nearX);
         expect(label.rect.y).toBeCloseTo(nearY);
     });

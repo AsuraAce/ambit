@@ -7,7 +7,6 @@ import {
     NEAR_GROUP_TITLE_PX,
     prepareFarDrawing,
     readFarPalette,
-    TYPE_LINE_SCALE,
     type FarPalette,
 } from '../farCanvas';
 import { FAR_SCALE, groupBox, LOWEST_SCALE, OVERVIEW_SCALE, nodeHeight, sceneFor, wirePaths } from '../geometry';
@@ -52,9 +51,6 @@ describe('farSceneFor', () => {
         }
         expect(far.wires).toBe(wires);
         expect(far.nodes.map((node) => node.variant)).toEqual(['plain', 'bypass', 'mute', 'reroute']);
-        // The type is a second line only when the title does not already say it.
-        expect(far.nodes[0].nodeType).toBe('CheckpointLoader');
-        expect(far.nodes[1].nodeType).toBeNull();
     });
 
     // The HTML only sets a minimum height, so a node can lay out shorter than the model estimates.
@@ -71,15 +67,15 @@ describe('farSceneFor', () => {
         expect(far.groups).toEqual([{ key: groupKey, title: 'Loaders', count: 1, shut: true, ...groupBox(model.groups[0], true) }]);
     });
 
-    // The overview tints each node toward its group, and keeps the titles of the selected outputs only.
-    it('marks each node with its innermost open group and the selected outputs as anchors', () => {
+    // The overview tints each node toward its group.
+    it('marks each node with its innermost open group', () => {
         const scene = sceneFor(model, 'saved', new Set());
-        const far = farSceneFor(model, positions, new Set(), new Set(), scene, [], new Map(), new Set(['2']));
-        expect(far.nodes.map((node) => [node.id, node.group, node.anchor])).toEqual([
-            ['1', groupKey, false],
-            ['2', null, true],
-            ['3', null, false],
-            ['4', null, false],
+        const far = farSceneFor(model, positions, new Set(), new Set(), scene, []);
+        expect(far.nodes.map((node) => [node.id, node.group])).toEqual([
+            ['1', groupKey],
+            ['2', null],
+            ['3', null],
+            ['4', null],
         ]);
     });
 });
@@ -163,6 +159,7 @@ describe('drawFarScene', () => {
     });
     afterEach(() => vi.unstubAllGlobals());
 
+    // The owner's ladder: far shows group titles and node titles, nothing more, so no node type line.
     it('paints each group, wire and node, the group title in its pill, and the title of each node that is not a reroute', () => {
         const { ctx, calls, texts, paints } = recordingCanvas();
         const { far } = farScene(new Set(), new Set());
@@ -172,14 +169,17 @@ describe('drawFarScene', () => {
         drawFarScene(ctx, drawing, { x: 0, y: 0, s: 0.4 }, 2);
         // The group, the four node looks and the title pill's backing.
         expect(calls.filter((call) => call === 'fill')).toHaveLength(far.groups.length + 4 + 1);
-        expect(texts).toEqual(['Load', 'KSampler', 'Old', 'CheckpointLoader', 'KSampler', 'Loaders', '1 node']);
+        expect(texts).toEqual(['Load', 'KSampler', 'Old', 'Loaders', '1 node']);
 
         // Far mode stacks like the HTML view: wires under groups, the group's box under every node, and its title
         // pill over the nodes, so a node in the band never hides the title.
         const lastWire = paints.lastIndexOf('stroke:w@1');
         const groupPaints = paints.flatMap((paint, index) => (paint.includes(':g@') ? [index] : []));
         const firstNode = paints.indexOf('fill:a@1');
-        const lastNodeText = paints.lastIndexOf('fillText:t@1');
+        // Node titles (the first three texts) are muted, a step below the group title.
+        const textPaints = paints.flatMap((paint, index) => (paint.startsWith('fillText') ? [index] : []));
+        expect(textPaints.slice(0, 3).map((index) => paints[index])).toEqual(['fillText:m@1', 'fillText:m@1', 'fillText:m@1']);
+        const lastNodeText = textPaints[2];
         expect(lastWire).toBeGreaterThanOrEqual(0);
         expect(groupPaints.length).toBe(5);
         const [boxFill, boxStroke, ...pill] = groupPaints;
@@ -188,23 +188,13 @@ describe('drawFarScene', () => {
         expect(Math.min(...pill)).toBeGreaterThan(lastNodeText);
     });
 
-    // Below 35 % the node type line is noise: titles only.
-    it('drops the node type line below TYPE_LINE_SCALE', () => {
-        const { ctx, texts } = recordingCanvas();
-        const { far } = farScene(new Set(), new Set());
-        drawFarScene(ctx, prepareFarDrawing(far, palette), { x: 0, y: 0, s: TYPE_LINE_SCALE - 0.01 }, 1);
-        expect(texts).not.toContain('CheckpointLoader');
-        expect(texts).toContain('Load');
-    });
-
-    // The overview: soft shapes without borders, faint wires, group titles, and the selected outputs' titles only.
-    it('draws the overview with no node text but the selected outputs, faint wires and borderless nodes', () => {
+    // The overview: soft shapes without borders, faint wires and group titles as the only text. The owner read a lone
+    // output's title there ("SaveI…") as a bug.
+    it('draws the overview with no node text, faint wires and borderless nodes', () => {
         const { ctx, texts, paints } = recordingCanvas();
-        const scene = sceneFor(model, 'saved', new Set());
-        const wires = wirePaths(model, positions, new Set(), scene, 'bundled');
-        const far = farSceneFor(model, positions, new Set(), new Set(), scene, wires, new Map(), new Set(['2']));
+        const { far } = farScene(new Set(), new Set());
         drawFarScene(ctx, prepareFarDrawing(far, palette), { x: 0, y: 0, s: 0.15 }, 1, 'overview');
-        expect(texts).toEqual(['KSampler', 'Loaders']);
+        expect(texts).toEqual(['Loaders']);
         expect(paints).toContain('stroke:w@0.4');
         expect(paints).not.toContain('stroke:w@1');
         expect(paints.filter((paint) => paint.startsWith('stroke:b'))).toEqual([]);
@@ -213,24 +203,18 @@ describe('drawFarScene', () => {
     });
 
     // Fitting every node's title is the costly step of a far frame. A zoom sweep must reuse a few fitted sizes rather
-    // than fit all nodes again on nearly every wheel step, and the overview, which shows only its anchors, fits only
-    // those (the review found hundreds of full sets cached after one sweep of a 500-node graph).
-    it('fits node titles at a few sizes over a zoom sweep, and only the anchors in the overview', () => {
+    // than fit all nodes again on nearly every wheel step, and the overview, which shows no node text, fits none (the
+    // review found hundreds of full sets cached after one sweep of a 500-node graph).
+    it('fits node titles at a few sizes over a far sweep, and none in the overview', () => {
         const { ctx } = recordingCanvas();
-        const scene = sceneFor(model, 'saved', new Set());
-        const wires = wirePaths(model, positions, new Set(), scene, 'bundled');
-        const drawing = prepareFarDrawing(
-            farSceneFor(model, positions, new Set(), new Set(), scene, wires, new Map(), new Set(['2'])),
-            palette
-        );
-        for (let s = FAR_SCALE; s > LOWEST_SCALE; s *= 0.98)
-            drawFarScene(ctx, drawing, { x: 0, y: 0, s }, 1, s < OVERVIEW_SCALE ? 'overview' : 'far');
-        expect(drawing.labels.size).toBeLessThanOrEqual(30);
-        const overviewSets = [...drawing.labels].filter(([key]) => key.endsWith('anchors')).map(([, labels]) => labels);
-        // Far out, a title outgrows its node and none fit; where any does, it is the anchor's.
-        const fitted = overviewSets.map((labels) => labels.titles.map((label) => label.text));
-        expect(fitted).toContainEqual(['KSampler']);
-        expect(fitted.flat().every((text) => text === 'KSampler')).toBe(true);
+        const { far } = farScene(new Set(), new Set());
+        const drawing = prepareFarDrawing(far, palette);
+        for (let s = FAR_SCALE; s > OVERVIEW_SCALE; s *= 0.98) drawFarScene(ctx, drawing, { x: 0, y: 0, s }, 1, 'far');
+        const farSizes = drawing.labels.size;
+        expect(farSizes).toBeGreaterThan(0);
+        expect(farSizes).toBeLessThanOrEqual(8);
+        for (let s = OVERVIEW_SCALE; s > LOWEST_SCALE; s *= 0.98) drawFarScene(ctx, drawing, { x: 0, y: 0, s }, 1, 'overview');
+        expect(drawing.labels.size).toBe(farSizes);
     });
 });
 
@@ -247,23 +231,48 @@ describe('layoutGroupLabels', () => {
     });
     const measure = (text: string, px: number) => text.length * px * 0.6;
 
-    // ComfyUI names a new group "Group": in the overview that says nothing, so it is left out; far mode keeps it.
-    it('leaves default "Group" titles out of the overview only', () => {
-        const drawing = { groups: [group('a', 'Group', 0, 0, 2000, 1000), group('b', 'Upscale', 0, 2000, 2000, 1000)], boxes: [] };
-        expect(layoutGroupLabels(drawing, 0.1, 'overview', measure).map((label) => label.text)).toEqual(['Upscale']);
-        expect(layoutGroupLabels(drawing, 0.3, 'far', measure).map((label) => label.text)).toEqual(['Group', 'Upscale']);
+    // On Lily every group keeps ComfyUI's default "Group". The owner wants group labels at Fit, so the overview keeps
+    // them, and the node count beside a whole title is what tells such groups apart.
+    it('keeps default "Group" titles in the overview, with the node count where it fits', () => {
+        const drawing = { groups: [group('a', 'Group', 0, 0, 2000, 1000), group('b', 'Upscale', 0, 2000, 2000, 1000)] };
+        expect(layoutGroupLabels(drawing, 0.1, 'overview', measure).map((label) => [label.text, label.count])).toEqual([
+            ['Group', '2 nodes'],
+            ['Upscale', '2 nodes'],
+        ]);
+        // A group with room for its title only drops the count, not the title.
+        const s = 0.1;
+        const titleOnly = (measure('Group', GROUP_TITLE_CAP_PX) + 2 * GROUP_TITLE_CAP_PX * 0.6 + 12 + 4) / s;
+        const [narrow] = layoutGroupLabels({ groups: [group('a', 'Group', 0, 0, titleOnly, 1000)] }, s, 'overview', measure);
+        expect(narrow).toMatchObject({ text: 'Group', count: null });
+    });
+
+    // Every pill sits at its group's top-left at every level, so it never moves while the view zooms.
+    it('puts every pill at its group’s top-left, at every zoom', () => {
+        const box = group('a', 'Upscale', 300, 100, 2000, 1000);
+        for (const [s, level] of [
+            [0.45, 'far'],
+            [0.3, 'far'],
+            [0.15, 'overview'],
+        ] as const) {
+            const [label] = layoutGroupLabels({ groups: [box] }, s, level, measure);
+            // Inset from the corner by at most 6 px on screen, the same along both edges.
+            const inset = label.rect.x - box.x;
+            expect(inset).toBeGreaterThan(0);
+            expect(inset * s).toBeLessThanOrEqual(6 + 1e-9);
+            expect(label.rect.y - box.y).toBeCloseTo(inset, 9);
+        }
     });
 
     // Titles that would overlap: the bigger group's wins.
     it('keeps the bigger group’s title where two overlap in the overview', () => {
         const big = group('big', 'Sampling', 0, 0, 3000, 2000);
         const small = group('small', 'Loaders', 40, 0, 1000, 500);
-        const labels = layoutGroupLabels({ groups: [small, big], boxes: [] }, 0.1, 'overview', measure);
+        const labels = layoutGroupLabels({ groups: [small, big] }, 0.1, 'overview', measure);
         expect(labels.map((label) => label.key)).toEqual(['big']);
     });
 
     it('shows each far title with its node count, in a pill inside the group’s top band', () => {
-        const [label] = layoutGroupLabels({ groups: [group('a', 'Upscale', 0, 100, 2000, 1000)], boxes: [] }, 0.3, 'far', measure);
+        const [label] = layoutGroupLabels({ groups: [group('a', 'Upscale', 0, 100, 2000, 1000)] }, 0.3, 'far', measure);
         expect(label).toMatchObject({ kind: 'pill', text: 'Upscale', count: '2 nodes' });
         expect(label.rect.y).toBeGreaterThan(100);
     });
@@ -277,10 +286,10 @@ describe('layoutGroupLabels', () => {
         const title = 'Step1 - Load models';
         // Room for the whole title, but not for the title and its count.
         const w = k * (2 * TITLE_INSET + TITLE_CHROME + measure(title, NEAR_GROUP_TITLE_PX) + measure('2 nodes', 11) / 2);
-        const [narrow] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w, 1000)], boxes: [] }, s, 'far', measure);
+        const [narrow] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w, 1000)] }, s, 'far', measure);
         expect(narrow).toMatchObject({ text: title, count: null });
         // Narrower still, the title is cut, and the count still stays out.
-        const [cut] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w * 0.6, 1000)], boxes: [] }, s, 'far', measure);
+        const [cut] = layoutGroupLabels({ groups: [group('a', title, 0, 100, w * 0.6, 1000)] }, s, 'far', measure);
         expect(cut.text.endsWith('…')).toBe(true);
         expect(cut.count).toBeNull();
     });

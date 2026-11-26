@@ -23,7 +23,7 @@ import {
     type ViewLevel,
     type WireShape,
 } from './geometry';
-import { FOLDED_GROUP_W, HEADER_H } from './graphModel';
+import { FOLDED_GROUP_W } from './graphModel';
 import { countFits, placeGroupTitle, TITLE_CHROME, TITLE_INSET } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
 import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
@@ -98,30 +98,15 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         }
         return { leaving, arriving };
     }, [foldMotions]);
-    // The selected outputs keep their titles in the overview. A path's first id is the node at this level.
-    const anchors = React.useMemo(
-        () => new Set(report.selectedOutputPaths.flatMap((path) => (path.length > 0 ? [path[0]] : []))),
-        [report]
-    );
-
     const scene = React.useMemo(() => sceneFor(model, shownLayout, foldedGroups), [model, shownLayout, foldedGroups]);
     const wires = React.useMemo(
         () => (positions ? wirePaths(model, positions, foldedNodes, scene, shape) : []),
         [model, positions, foldedNodes, scene, shape]
     );
 
-    // Each open group's title is a pill in its top band, where it covers the fewest nodes.
+    // Each open group's title is a pill at its top-left.
     const titleSlots = React.useMemo(() => {
         const slots = new Map<string, { rect: Rect; count: boolean }>();
-        if (!positions) return slots;
-        const boxes: Rect[] = [];
-        const headers: Rect[] = [];
-        for (const node of model.nodes) {
-            const at = positions.get(node.id);
-            if (!at || scene.hiddenBy.has(node.id)) continue;
-            boxes.push({ x: at.x, y: at.y, w: node.width, h: nodeHeight(node, foldedNodes.has(node.id)) });
-            headers.push({ x: at.x, y: at.y, w: node.width, h: HEADER_H });
-        }
         const family = getComputedStyle(document.documentElement).fontFamily || 'sans-serif';
         for (const group of model.groups) {
             if (scene.hiddenGroups.has(group.key) || foldedGroups.has(group.key)) continue;
@@ -130,11 +115,11 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             // A narrow group drops the count before it cuts the title.
             const count = countFits(titleW, countW, group.w - 2 * TITLE_INSET - TITLE_CHROME);
             const width = titleW + TITLE_CHROME + (count ? countW : 0);
-            const rect = placeGroupTitle(groupBox(group, false), width, GROUP_TITLE_H, boxes, headers, TITLE_INSET);
+            const rect = placeGroupTitle(groupBox(group, false), width, GROUP_TITLE_H, TITLE_INSET);
             slots.set(group.key, { rect, count });
         }
         return slots;
-    }, [model, positions, scene, foldedNodes, foldedGroups]);
+    }, [model, scene, foldedGroups]);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
     const backRef = React.useRef<HTMLButtonElement>(null);
@@ -154,9 +139,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const foldTimersRef = React.useRef(new Map<string, number>());
     // The far drawing is built from the rendered graph on first use and dropped whenever the graph changes.
     const farDrawingRef = React.useRef<FarDrawing | null>(null);
-    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires, anchors });
+    const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires });
     React.useLayoutEffect(() => {
-        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires, anchors };
+        farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires };
     });
 
     // The graph owns the keyboard while it is open: the viewer and app shortcuts stand down.
@@ -202,8 +187,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 inputs.foldedGroups,
                 inputs.scene,
                 inputs.wires,
-                laidOut,
-                inputs.anchors
+                laidOut
             );
             drawing = prepareFarDrawing(farScene, readFarPalette(layer));
             farDrawingRef.current = drawing;
