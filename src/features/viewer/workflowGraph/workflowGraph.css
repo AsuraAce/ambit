@@ -81,6 +81,11 @@
     user-select: none;
 }
 
+/* Over a group's title pill on the far canvas: a click zooms to the group. */
+.wg-canvas.on-pill {
+    cursor: pointer;
+}
+
 .wg-canvas.panning {
     cursor: grabbing;
 }
@@ -228,10 +233,23 @@
     border: 1px solid color-mix(in srgb, var(--gc) 55%, transparent);
     border-radius: 7px;
     box-shadow: 0 4px 12px var(--graph-shadow);
+    cursor: pointer;
 }
 
+/* A click on the pill zooms to its group; the far canvas strokes a hovered pill in the same title colour. */
+.wg-gtitle:hover {
+    border-color: color-mix(in srgb, var(--gc), var(--graph-text) 55%);
+}
+
+/* The title is a button, so Tab and Enter reach the zoom too. */
 .wg-gtitle .wg-gt {
     font-size: 13px;
+    font-family: inherit;
+    line-height: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
 }
 
 .wg-gtitle .wg-cb {
@@ -688,7 +706,8 @@
 
 .wg-tbtn:focus-visible,
 .wg-seg button:focus-visible,
-.wg-cb:focus-visible {
+.wg-cb:focus-visible,
+.wg-gtitle .wg-gt:focus-visible {
     outline: 2px solid var(--graph-sage);
     outline-offset: 1px;
 }

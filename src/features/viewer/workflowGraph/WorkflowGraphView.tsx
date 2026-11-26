@@ -29,7 +29,7 @@ import {
 import { FOLDED_GROUP_W } from './graphModel';
 import { countFits, placeGroupTitle, TITLE_CHROME, TITLE_INSET } from './groupTitles';
 import { groupColour, type Palette } from './groupColour';
-import { drawFarScene, farSceneFor, prepareFarDrawing, readFarPalette, type FarDrawing } from './farCanvas';
+import { drawFarScene, farSceneFor, groupPillAt, prepareFarDrawing, readFarPalette, type FarDrawing, type GroupLabel } from './farCanvas';
 import { GraphNode } from './GraphNode';
 import { createLayoutWorker, useTidyPositions } from './useTidyPositions';
 import './workflowGraph.css';
@@ -182,6 +182,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const foldTimersRef = React.useRef(new Map<string, number>());
     // The far drawing is built from the rendered graph on first use and dropped whenever the graph changes.
     const farDrawingRef = React.useRef<FarDrawing | null>(null);
+    // The title pills the far canvas drew last, for clicks and hover, and the group whose pill the pointer is over.
+    const farPillsRef = React.useRef<GroupLabel[]>([]);
+    const hoverPillRef = React.useRef<string | null>(null);
     const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires });
     React.useLayoutEffect(() => {
         farInputs.current = { model, positions, foldedNodes, foldedGroups, scene, wires };
@@ -235,7 +238,14 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             drawing = prepareFarDrawing(farScene, readFarPalette(layer));
             farDrawingRef.current = drawing;
         }
-        drawFarScene(ctx, drawing, viewRef.current, dpr, levelRef.current === 'overview' ? 'overview' : 'far');
+        farPillsRef.current = drawFarScene(
+            ctx,
+            drawing,
+            viewRef.current,
+            dpr,
+            levelRef.current === 'overview' ? 'overview' : 'far',
+            hoverPillRef.current
+        );
     }, [canvasRect]);
 
     // Pan and zoom never re-render React: one transform on the world, the far canvas, the dot grid and the readout.
@@ -259,6 +269,9 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             if (far !== isFarRef.current) {
                 isFarRef.current = far;
                 world.classList.toggle('far', far);
+                // Near mode has HTML pills with their own hover, so a canvas pill's hover ends with far mode.
+                hoverPillRef.current = null;
+                canvasRef.current?.classList.remove('on-pill');
                 // Under reduced motion there is no fade, so the hidden canvas has nothing to follow.
                 if (!far && !reducedMotion()) farFadeEndRef.current = performance.now() + CROSS_FADE_MS;
             }
@@ -355,6 +368,17 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         const { bounds: current } = latest.current;
         if (current) flyTo(fitView(current, viewportSize()));
     }, [flyTo, viewportSize]);
+
+    // A group's title pill flies the view to fit that group, as Fit does the whole graph.
+    const zoomToGroup = React.useCallback(
+        (key: string) => {
+            const group = model.groups.find((candidate) => candidate.key === key);
+            if (!group) return;
+            flyTo(fitView(groupBox(group, latest.current.foldedGroups.has(key)), viewportSize()));
+            setInteracted(true);
+        },
+        [model, flyTo, viewportSize]
+    );
 
     // Zooming out stops where Fit would, for a graph too big for MIN_SCALE.
     const zoomFloorNow = React.useCallback(() => zoomFloor(latest.current.bounds, viewportSize()), [viewportSize]);
@@ -472,19 +496,41 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     }, [canvasRect, scheduleApply, zoomFloorNow]);
 
     const dragRef = React.useRef<{ id: number; x: number; y: number; view: View; panning: boolean } | null>(null);
+    // Whether the last press ended a pan: the click that follows it is not a click on a pill.
+    const pannedRef = React.useRef(false);
+    // The far pill under the pointer, if any: the canvas has no elements to hover, so the view hit-tests its pills.
+    const farPillUnder = (event: React.PointerEvent<HTMLDivElement>): string | null => {
+        if (!isFarRef.current) return null;
+        const rect = canvasRect();
+        const { x, y, s } = viewRef.current;
+        return groupPillAt(farPillsRef.current, (event.clientX - (rect?.left ?? 0) - x) / s, (event.clientY - (rect?.top ?? 0) - y) / s);
+    };
+    const setHoverPill = (canvas: HTMLElement, key: string | null) => {
+        if (key === hoverPillRef.current) return;
+        hoverPillRef.current = key;
+        canvas.classList.toggle('on-pill', key !== null);
+        if (isFarRef.current) drawFar();
+    };
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button'))) return;
+        // The title in a pill is a button too, but a drag that starts on it still pans.
+        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button:not(.wg-gt)'))) return;
+        pannedRef.current = false;
         stopFlight();
         dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, view: viewRef.current, panning: false };
     };
     const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
         const drag = dragRef.current;
-        if (!drag || drag.id !== event.pointerId) return;
+        if (!drag || drag.id !== event.pointerId) {
+            if (event.pointerType !== 'touch') setHoverPill(event.currentTarget, farPillUnder(event));
+            return;
+        }
         const dx = event.clientX - drag.x;
         const dy = event.clientY - drag.y;
         if (!drag.panning) {
             if (Math.hypot(dx, dy) < PAN_THRESHOLD) return;
             drag.panning = true;
+            pannedRef.current = true;
+            setHoverPill(event.currentTarget, null);
             event.currentTarget.setPointerCapture?.(event.pointerId);
             event.currentTarget.classList.add('panning');
             setInteracted(true);
@@ -493,9 +539,22 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         scheduleApply();
     };
     const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (dragRef.current?.id !== event.pointerId) return;
+        const drag = dragRef.current;
+        if (drag?.id !== event.pointerId) return;
         dragRef.current = null;
         event.currentTarget.classList.remove('panning');
+        // A press and release on a far pill, without a pan, zooms to its group.
+        if (event.type === 'pointerup' && !drag.panning) {
+            const key = farPillUnder(event);
+            if (key) zoomToGroup(key);
+        }
+    };
+    // In near mode the pill is HTML: a click on it, away from its fold button, zooms to its group. The title is a
+    // button, so Enter on it does the same (a click with no pointer press, detail 0, which no pan can precede).
+    const clickPill = (event: React.MouseEvent<HTMLDivElement>, key: string) => {
+        if (event.detail > 0 && pannedRef.current) return;
+        if (event.target instanceof Element && event.target.closest('.wg-cb')) return;
+        zoomToGroup(key);
     };
 
     const toggleNode = React.useCallback((id: string) => {
@@ -564,7 +623,13 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     };
     const titleContent = (key: string, title: string, count: number | null, shut: boolean) => (
         <>
-            <span className="wg-gt">{title}</span>
+            {shut ? (
+                <span className="wg-gt">{title}</span>
+            ) : (
+                <button type="button" className="wg-gt" aria-label={`Zoom to group ${title}`}>
+                    {title}
+                </button>
+            )}
             {count === null ? null : <span className="wg-gn">{nodeCount(count)}</span>}
             <button
                 type="button"
@@ -597,7 +662,13 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 '--gc': groupColour(group.color, palette),
             } as React.CSSProperties;
             return (
-                <div key={`title-${group.key}`} className="wg-gtitle" style={style} data-group-key={group.key}>
+                <div
+                    key={`title-${group.key}`}
+                    className="wg-gtitle"
+                    style={style}
+                    data-group-key={group.key}
+                    onClick={(event) => clickPill(event, group.key)}
+                >
                     {titleContent(group.key, group.title, placed.count ? group.members.length : null, false)}
                 </div>
             );
@@ -676,6 +747,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                 onPointerMove={handlePointerMove}
                 onPointerUp={endDrag}
                 onPointerCancel={endDrag}
+                onPointerLeave={(event) => setHoverPill(event.currentTarget, null)}
             >
                 <div ref={dotsRef} className="wg-dots" />
                 <div ref={worldRef} className="wg-world" data-testid="workflow-graph-world" onFocus={handleWorldFocus}>

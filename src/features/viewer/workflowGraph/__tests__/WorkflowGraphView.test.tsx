@@ -8,7 +8,9 @@ import {
     DETAIL_STEPS,
     FAR_EXIT_SCALE,
     FAR_SCALE,
+    fitView,
     FOLD_MS,
+    groupBox,
     LOWEST_SCALE,
     MIN_SCALE,
     sceneFor,
@@ -601,5 +603,147 @@ describe('WorkflowGraphView', () => {
         } finally {
             window.matchMedia = original;
         }
+    });
+    // The owner's ask at Fit on Lily: a group's title pill takes the view to that group. One click (or Enter on the
+    // title) fits the group, a drag that starts on the pill still pans, and the fold button in it still folds.
+    describe('a click on a group’s title pill', () => {
+        const root = level(
+            [
+                canvasNode('1', { title: 'Load', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                canvasNode('2', { title: 'Decode', pos: { x: 900, y: 600 }, inputs: [port(0, 'LATENT')] }),
+            ],
+            [canvasLink('1', 0, '2', 0)],
+            [canvasGroup('Sampling', 0, 0, 300, 300)]
+        );
+        const sampling = buildGraphModel(root).groups[0];
+        const viewOf = ({ x, y, s }: { x: number; y: number; s: number }) => `translate(${x}px, ${y}px) scale(${s})`;
+        // jsdom's canvas has no size, so the view fits to the window, 1024 × 768.
+        const groupFit = viewOf(fitView(groupBox(sampling, false), { w: window.innerWidth, h: window.innerHeight }));
+        const withReducedMotion = (run: () => void) => {
+            const original = window.matchMedia;
+            window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+            try {
+                run();
+            } finally {
+                window.matchMedia = original;
+            }
+        };
+        const renderRoot = () =>
+            render(<WorkflowGraphView report={report(root)} fileName="pill.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+
+        it('fits the view to that group, from a click on the pill or Enter on its title', () => {
+            withReducedMotion(() => {
+                const { container } = renderRoot();
+                const world = screen.getByTestId('workflow-graph-world');
+                // The whole graph's fit is not the group's, so the zoom is to the group.
+                expect(world.style.transform).not.toBe(groupFit);
+                fireEvent.click(container.querySelector('.wg-gtitle')!, { detail: 1 });
+                expect(world.style.transform).toBe(groupFit);
+                fireEvent.keyDown(document.body, { key: '-' });
+                expect(world.style.transform).not.toBe(groupFit);
+                // The title is a named button, so Tab reaches it and Enter clicks it (a click with no press, detail 0).
+                fireEvent.click(screen.getByRole('button', { name: 'Zoom to group Sampling' }), { detail: 0 });
+                expect(world.style.transform).toBe(groupFit);
+            });
+        });
+
+        it('folds, without zooming, from the fold button in the pill', () => {
+            withReducedMotion(() => {
+                renderRoot();
+                const world = screen.getByTestId('workflow-graph-world');
+                const before = world.style.transform;
+                fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }), { detail: 1 });
+                expect(screen.getByRole('button', { name: 'Unfold group Sampling' })).toBeTruthy();
+                expect(world.style.transform).toBe(before);
+            });
+        });
+
+        it('pans, without zooming, when a drag starts on the pill', () => {
+            const frames: FrameRequestCallback[] = [];
+            const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+            try {
+                withReducedMotion(() => {
+                    renderRoot();
+                    const world = screen.getByTestId('workflow-graph-world');
+                    const before = world.style.transform;
+                    const title = screen.getByRole('button', { name: 'Zoom to group Sampling' });
+                    fireEvent.pointerDown(title, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+                    fireEvent.pointerMove(title, { pointerId: 1, clientX: 140, clientY: 130 });
+                    fireEvent.pointerUp(title, { pointerId: 1, clientX: 140, clientY: 130 });
+                    fireEvent.click(title, { detail: 1 });
+                    act(() => frames.splice(0).forEach((frame) => frame(performance.now())));
+                    expect(world.style.transform).not.toBe(groupFit);
+                    expect(world.style.transform).not.toBe(before);
+                    // The next press starts afresh: a plain click zooms.
+                    fireEvent.pointerDown(title, { button: 0, pointerId: 2, clientX: 100, clientY: 100 });
+                    fireEvent.pointerUp(title, { pointerId: 2, clientX: 100, clientY: 100 });
+                    fireEvent.click(title, { detail: 1 });
+                    expect(world.style.transform).toBe(groupFit);
+                });
+            } finally {
+                raf.mockRestore();
+            }
+        });
+
+        // Far mode draws the pills on a canvas, so the view hit-tests the rects it drew.
+        it('zooms to the group from its pill on the far canvas, with a pointer cursor over it', () => {
+            const font = { value: '' };
+            const ctx = new Proxy(
+                {},
+                {
+                    get: (_target, key) =>
+                        key === 'measureText'
+                            ? (text: string) => ({ width: text.length * Number(/([\d.]+)px/.exec(font.value)?.[1] ?? 10) * 0.6 })
+                            : () => undefined,
+                    set: (_target, key, value) => {
+                        if (key === 'font') font.value = String(value);
+                        return true;
+                    },
+                }
+            );
+            vi.stubGlobal(
+                'Path2D',
+                class {
+                    roundRect() {}
+                    rect() {}
+                    moveTo() {}
+                    lineTo() {}
+                    bezierCurveTo() {}
+                    addPath() {}
+                    closePath() {}
+                }
+            );
+            const context = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            try {
+                withReducedMotion(() => {
+                    const { container } = renderRoot();
+                    const world = screen.getByTestId('workflow-graph-world');
+                    const canvas = container.ownerDocument.querySelector<HTMLElement>('.wg-canvas')!;
+                    const fitted = viewOf(fitView(groupBox(sampling, false), { w: 1024, h: 768 }));
+                    for (let i = 0; i < 14 && !world.classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                    expect(world.classList.contains('far')).toBe(true);
+                    const [x, y, s] = /translate\(([\d.e-]+)px, ([\d.e-]+)px\) scale\(([\d.e-]+)\)/
+                        .exec(world.style.transform)!
+                        .slice(1)
+                        .map(Number);
+                    // A point a little in from the group's top-left corner on screen: the pill sits 6 px in.
+                    const onPill = { clientX: x + sampling.x * s + 12, clientY: y + sampling.y * s + 12 };
+                    fireEvent.pointerMove(canvas, { pointerId: 1, ...onPill });
+                    expect(canvas.classList.contains('on-pill')).toBe(true);
+                    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 1000, clientY: 700 });
+                    expect(canvas.classList.contains('on-pill')).toBe(false);
+                    fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, ...onPill });
+                    fireEvent.pointerUp(canvas, { pointerId: 1, ...onPill });
+                    expect(world.style.transform).toBe(fitted);
+                    // Back in near mode the canvas has no pill under the pointer.
+                    expect(canvas.classList.contains('on-pill')).toBe(false);
+                });
+            } finally {
+                context.mockRestore();
+                box.mockRestore();
+                vi.unstubAllGlobals();
+            }
+        });
     });
 });

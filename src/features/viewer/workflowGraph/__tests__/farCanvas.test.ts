@@ -3,6 +3,7 @@ import {
     drawFarScene,
     farGroupTitlePx,
     farSceneFor,
+    groupPillAt,
     layoutGroupLabels,
     NEAR_GROUP_TITLE_PX,
     prepareFarDrawing,
@@ -218,6 +219,46 @@ describe('drawFarScene', () => {
     });
 });
 
+// A click on a far pill zooms to its group, so the canvas hands back the pills it drew and strokes the hovered one.
+describe('far title pills', () => {
+    beforeEach(() =>
+        vi.stubGlobal(
+            'Path2D',
+            class {
+                roundRect() {}
+            }
+        )
+    );
+    afterEach(() => vi.unstubAllGlobals());
+    const hoverPalette: FarPalette = {
+        ...palette,
+        group: new Map([[groupKey, { fill: 'g', stroke: 'g', titleColour: 'title', pillFill: 'g', pillStroke: 'edge' }]]),
+    };
+
+    it('returns the pills it drew, and strokes the hovered pill in its title colour', () => {
+        const { far } = farScene(new Set(), new Set());
+        const drawing = prepareFarDrawing(far, hoverPalette);
+        const plain = recordingCanvas();
+        const pills = drawFarScene(plain.ctx, drawing, { x: 0, y: 0, s: 0.4 }, 1);
+        expect(pills.map((pill) => pill.key)).toEqual([groupKey]);
+        expect(plain.paints).toContain('stroke:edge@1');
+        expect(plain.paints).not.toContain('stroke:title@1');
+        const hovered = recordingCanvas();
+        drawFarScene(hovered.ctx, drawing, { x: 0, y: 0, s: 0.4 }, 1, 'far', groupKey);
+        expect(hovered.paints).toContain('stroke:title@1');
+        expect(hovered.paints).not.toContain('stroke:edge@1');
+    });
+
+    it('finds the pill under a world point, edges included, and none outside every pill', () => {
+        const pill = (key: string, x: number) => ({ key, rect: { x, y: 0, w: 100, h: 20 } }) as Parameters<typeof groupPillAt>[0][number];
+        const pills = [pill('a', 0), pill('b', 200)];
+        expect(groupPillAt(pills, 50, 10)).toBe('a');
+        expect(groupPillAt(pills, 300, 20)).toBe('b');
+        expect(groupPillAt(pills, 150, 10)).toBeNull();
+        expect(groupPillAt(pills, 50, 21)).toBeNull();
+    });
+});
+
 describe('layoutGroupLabels', () => {
     const group = (key: string, title: string, x: number, y: number, w: number, h: number) => ({
         key,
@@ -284,11 +325,12 @@ describe('layoutGroupLabels', () => {
         });
 
         it('shrinks the overview pill to the floor when that fits, without its count', () => {
-            const short = group('short', 'Loaders', 0, 0, 3000, 320);
+            // At 10 % the pill's bottom sits about 318 world units down at the cap and 263 at the floor.
+            const short = group('short', 'Loaders', 0, 0, 3000, 280);
             const labels = layoutGroupLabels({ groups: [short, below] }, 0.1, 'overview', measure);
             const pill = labels.find((label) => label.key === 'short');
             expect(pill).toMatchObject({ text: 'Loaders', count: null, px: OVERVIEW_TITLE_MIN_PX });
-            expect(pill!.rect.y + pill!.rect.h).toBeLessThanOrEqual(320);
+            expect(pill!.rect.y + pill!.rect.h).toBeLessThanOrEqual(280);
             expect(pill!.rect.y + pill!.rect.h).toBeLessThan(below.y);
         });
 

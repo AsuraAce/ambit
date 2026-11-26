@@ -53,9 +53,12 @@ export const fitText = (measure: Measure, text: string, px: number, width: numbe
     return low > 0 ? `${text.slice(0, low)}…` : '';
 };
 
-/** Overview titles on screen: never above the cap, shrunk as far as the floor to fit, then shortened. */
-export const OVERVIEW_TITLE_MIN_PX = 13;
-export const GROUP_TITLE_CAP_PX = 18;
+/**
+ * Overview titles on screen: never above the cap, shrunk as far as the floor to fit, then shortened. The owner's look
+ * at Fit on Lily (2026-11-26): 13 to 18 px was bigger than the overview needs.
+ */
+export const OVERVIEW_TITLE_MIN_PX = 11;
+export const GROUP_TITLE_CAP_PX = 14;
 /** A title cut shorter than this many characters tells nothing, so it is left out instead. */
 const MIN_KEPT_CHARS = 4;
 /** Whether `fitted`, cut from `full`, still keeps enough of it to say something. */

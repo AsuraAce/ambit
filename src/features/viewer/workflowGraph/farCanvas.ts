@@ -411,14 +411,22 @@ export const layoutGroupLabels = (
     return level === 'overview' ? dropOverlaps(labels) : labels;
 };
 
-/** Paints the far drawing over the whole canvas, in the view's pan and zoom; `dpr` is the canvas's pixel ratio. */
+/** The group whose title pill is under a world point, of the pills drawn last; a click there zooms to the group. */
+export const groupPillAt = (pills: readonly GroupLabel[], x: number, y: number): string | null =>
+    pills.find(({ rect }) => x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h)?.key ?? null;
+
+/**
+ * Paints the far drawing over the whole canvas, in the view's pan and zoom; `dpr` is the canvas's pixel ratio. The
+ * pill of the `hover` group gets the near pill's hover border. Returns the title pills it drew, for hit-testing.
+ */
 export const drawFarScene = (
     ctx: CanvasRenderingContext2D,
     drawing: FarDrawing,
     view: View,
     dpr: number,
-    level: Exclude<ViewLevel, 'near'> = 'far'
-) => {
+    level: Exclude<ViewLevel, 'near'> = 'far',
+    hover: string | null = null
+): GroupLabel[] => {
     const { x, y, s } = view;
     const inv = 1 / s;
     const overview = level === 'overview';
@@ -460,7 +468,7 @@ export const drawFarScene = (
             backing.roundRect(rect.x, rect.y, rect.w, rect.h, 7 * inv);
             ctx.fillStyle = look.pillFill;
             ctx.fill(backing);
-            ctx.strokeStyle = look.pillStroke;
+            ctx.strokeStyle = label.key === hover ? look.titleColour : look.pillStroke;
             ctx.stroke(backing);
         }
         const pad = label.px * 0.6 * inv;
@@ -509,5 +517,7 @@ export const drawFarScene = (
         for (const label of nodeLabelsAt(ctx, drawing, titlePx)) ctx.fillText(label.text, label.x, label.y);
     }
 
-    for (const label of groupLabels) if (label.kind === 'pill') paintGroupLabel(label);
+    const pills = groupLabels.filter((label) => label.kind === 'pill');
+    for (const label of pills) paintGroupLabel(label);
+    return pills;
 };
