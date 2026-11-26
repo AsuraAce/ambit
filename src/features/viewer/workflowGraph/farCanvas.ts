@@ -17,6 +17,8 @@ import {
     fitText,
     GROUP_TITLE_CAP_PX,
     keepsEnough,
+    OVERVIEW_TITLE_MIN_PX,
+    pillClear,
     TITLE_CHROME,
     TITLE_INSET,
     placeGroupTitle,
@@ -192,6 +194,8 @@ const NODE_STROKE_ALPHA = 0.6;
 export const NEAR_GROUP_TITLE_PX = 13;
 /** A pill's node count against its title, as in the HTML (11 px beside 13 px). */
 const COUNT_RATIO = 11 / NEAR_GROUP_TITLE_PX;
+/** A pill's height against its title size, as in the HTML. */
+const PILL_H_RATIO = GROUP_TITLE_H / NEAR_GROUP_TITLE_PX;
 const OVERVIEW_WIRE_ALPHA = 0.4;
 const OVERVIEW_TINT_ALPHA = 0.35;
 
@@ -333,7 +337,7 @@ export const layoutGroupLabels = (
     plain: Measure = measure
 ): GroupLabel[] => {
     const px = farGroupTitlePx(s);
-    const hScreen = px * (GROUP_TITLE_H / NEAR_GROUP_TITLE_PX);
+    const hScreen = px * PILL_H_RATIO;
     const padScreen = px * 0.6;
     const inset = 6 / s;
     // World units per near-pill unit: 1 at the switch, growing as the view zooms out.
@@ -351,6 +355,7 @@ export const layoutGroupLabels = (
             if (!text) continue;
             const width = k * (titleW + TITLE_CHROME + (withCount ? countW : 0));
             const rect = placeGroupTitle(group, width, k * GROUP_TITLE_H, k * TITLE_INSET);
+            if (!pillClear(rect, group, drawing.groups)) continue;
             labels.push({ key: group.key, kind: 'pill', rect, area, text, count: withCount ? countText : null, px });
             continue;
         }
@@ -381,7 +386,26 @@ export const layoutGroupLabels = (
             labels.push({ key: group.key, kind: 'inside', rect, area, text, count: null, px: size });
             continue;
         }
+        if (level === 'overview') {
+            // A pill too big for its group, or running over another, shrinks to the floor; if that still does not
+            // fit, the group goes without a title.
+            const pillAt = (title: string, px: number, countRoom: number) =>
+                placeGroupTitle(group, (px * 1.2 + measure(title, px) + countRoom) / s, (px * PILL_H_RATIO) / s, inset);
+            let slot = pillAt(text, size, countW);
+            if (!pillClear(slot, group, drawing.groups)) {
+                if (size <= OVERVIEW_TITLE_MIN_PX) continue;
+                size = OVERVIEW_TITLE_MIN_PX;
+                text = fitText(measure, group.title, size, room - inset * s * 2);
+                if (!text || !keepsEnough(text, group.title)) continue;
+                count = null;
+                slot = pillAt(text, size, 0);
+                if (!pillClear(slot, group, drawing.groups)) continue;
+            }
+            labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count, px: size });
+            continue;
+        }
         const slot = placeGroupTitle(group, width / s, hScreen / s, inset);
+        if (!pillClear(slot, group, drawing.groups)) continue;
         labels.push({ key: group.key, kind: 'pill', rect: slot, area, text, count, px: size });
     }
     return level === 'overview' ? dropOverlaps(labels) : labels;

@@ -22,6 +22,18 @@ export const placeGroupTitle = (group: Rect, w: number, h: number, inset: number
     h,
 });
 
+const contains = (outer: Rect, inner: Rect) =>
+    outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.w >= inner.x + inner.w && outer.y + outer.h >= inner.y + inner.h;
+
+/**
+ * Whether a group's pill stays inside its group and off every other group's box. Groups nested in it or around it
+ * don't count: pills over each other there are left to dropOverlaps. Zoomed far out a pill grows to hundreds of
+ * world units, and one that runs over the group below reads as that group's title.
+ */
+export const pillClear = (pill: Rect, group: Rect, groups: readonly Rect[]): boolean =>
+    pill.y + pill.h <= group.y + group.h &&
+    groups.every((other) => other === group || contains(other, group) || contains(group, other) || !overlaps(pill, other));
+
 /** The title gets a group label's room first: the node count shows only beside a whole title. */
 export const countFits = (titleWidth: number, countWidth: number, room: number): boolean => titleWidth + countWidth <= room;
 

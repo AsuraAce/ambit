@@ -10,7 +10,7 @@ import {
     type FarPalette,
 } from '../farCanvas';
 import { FAR_SCALE, groupBox, LOWEST_SCALE, OVERVIEW_SCALE, nodeHeight, sceneFor, wirePaths } from '../geometry';
-import { GROUP_TITLE_CAP_PX, TITLE_CHROME, TITLE_INSET } from '../groupTitles';
+import { GROUP_TITLE_CAP_PX, OVERVIEW_TITLE_MIN_PX, TITLE_CHROME, TITLE_INSET } from '../groupTitles';
 import { buildGraphModel, savedPositions } from '../graphModel';
 import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
 
@@ -269,6 +269,39 @@ describe('layoutGroupLabels', () => {
         const small = group('small', 'Loaders', 40, 0, 1000, 500);
         const labels = layoutGroupLabels({ groups: [small, big] }, 0.1, 'overview', measure);
         expect(labels.map((label) => label.key)).toEqual(['big']);
+    });
+
+    // At Fit on Lily a short group's pill, a few hundred world units tall that far out, ran over the group below and
+    // read as its title. A pill has to stay inside its own group and off the others: it shrinks to the floor first,
+    // and a group it still won't fit goes without a title.
+    describe('a short group above another', () => {
+        const below = group('below', 'Sampling', 0, 340, 3000, 2000);
+        const keys = (labels: readonly { key: string }[]) => labels.map((label) => label.key);
+
+        it('drops the short group’s overview pill when not even the floor size fits', () => {
+            const short = group('short', 'Loaders', 0, 0, 3000, 200);
+            expect(keys(layoutGroupLabels({ groups: [short, below] }, 0.1, 'overview', measure))).toEqual(['below']);
+        });
+
+        it('shrinks the overview pill to the floor when that fits, without its count', () => {
+            const short = group('short', 'Loaders', 0, 0, 3000, 320);
+            const labels = layoutGroupLabels({ groups: [short, below] }, 0.1, 'overview', measure);
+            const pill = labels.find((label) => label.key === 'short');
+            expect(pill).toMatchObject({ text: 'Loaders', count: null, px: OVERVIEW_TITLE_MIN_PX });
+            expect(pill!.rect.y + pill!.rect.h).toBeLessThanOrEqual(320);
+            expect(pill!.rect.y + pill!.rect.h).toBeLessThan(below.y);
+        });
+
+        it('drops a far pill taller than its group', () => {
+            const short = group('short', 'Loaders', 0, 0, 3000, 60);
+            expect(keys(layoutGroupLabels({ groups: [short, below] }, 0.3, 'far', measure))).toEqual(['below']);
+        });
+
+        it('keeps the pill of a group around a nested one', () => {
+            const inner = group('inner', 'Loaders', 40, 40, 400, 300);
+            const outer = group('outer', 'Sampling', 0, 0, 3000, 2000);
+            expect(keys(layoutGroupLabels({ groups: [inner, outer] }, 0.3, 'far', measure))).toContain('outer');
+        });
     });
 
     it('shows each far title with its node count, in a pill inside the group’s top band', () => {
