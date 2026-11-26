@@ -115,16 +115,31 @@
     opacity: 0;
 }
 
-/* A fold reroutes wires at once: they hide, then fade back in once the fold has settled. */
-.wg-world.folding .wg-wires {
-    opacity: 0;
-    transition: none;
-}
-
 .wg-wire {
     fill: none;
     stroke-width: var(--wg-ww);
     stroke-linecap: round;
+}
+
+/* A fold moves only the wires it touches, in step with the box: a rerouted wire eases to its new ports, one whose
+   new route has another shape fades in on it, and one tucked into the folded box fades out with the members. */
+.wg-wire.morph {
+    transition: d 220ms var(--wg-out);
+}
+
+.wg-wire.arriving {
+    animation: wg-wire-in 220ms var(--wg-out);
+}
+
+@keyframes wg-wire-in {
+    from {
+        opacity: 0;
+    }
+}
+
+.wg-wire.leaving {
+    opacity: 0;
+    transition: opacity 220ms var(--wg-out);
 }
 
 .wg-wire.bypassed {
@@ -743,11 +758,14 @@
     .wg-node.leaving,
     .wg-nb,
     .wg-wires,
+    .wg-wire.morph,
+    .wg-wire.leaving,
     .wg-cb svg {
         transition: none;
     }
 
-    .wg-node.arriving {
+    .wg-node.arriving,
+    .wg-wire.arriving {
         animation: none;
     }
 }

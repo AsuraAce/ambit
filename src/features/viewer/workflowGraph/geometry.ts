@@ -126,7 +126,10 @@ export const curvePath = (a: Point, b: Point): string => {
     return `M${f(a.x)} ${f(a.y)} C${f(a.x + dx)} ${f(a.y)} ${f(b.x - dx)} ${f(b.y)} ${f(b.x)} ${f(b.y)}`;
 };
 
-/** A polyline with its inner corners rounded to radius r. */
+/**
+ * A polyline with its inner corners rounded to radius r. Every corner is a line and a curve, even one too tight to
+ * round, so routes through the same number of points share one command list and a fold can ease one into another.
+ */
 export const roundedPath = (pts: Point[], r: number): string => {
     let d = `M${f(pts[0].x)} ${f(pts[0].y)}`;
     for (let i = 1; i < pts.length - 1; i++) {
@@ -137,7 +140,7 @@ export const roundedPath = (pts: Point[], r: number): string => {
         const lb = Math.hypot(b.x - p.x, b.y - p.y);
         const k = Math.min(r, la / 2, lb / 2);
         if (k < 0.5) {
-            d += ` L${f(p.x)} ${f(p.y)}`;
+            d += ` L${f(p.x)} ${f(p.y)} Q${f(p.x)} ${f(p.y)} ${f(p.x)} ${f(p.y)}`;
             continue;
         }
         const p1 = { x: p.x + ((a.x - p.x) / la) * k, y: p.y + ((a.y - p.y) / la) * k };

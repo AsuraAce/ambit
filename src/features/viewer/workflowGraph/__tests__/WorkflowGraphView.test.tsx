@@ -296,7 +296,6 @@ describe('WorkflowGraphView', () => {
             const member = screen.getByText(UNSAFE_TITLE).closest('.wg-node');
             expect(member?.classList.contains('leaving')).toBe(true);
             expect(member?.hasAttribute('inert')).toBe(true);
-            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(true);
             act(() => {
                 vi.advanceTimersByTime(FOLD_MS - 1);
             });
@@ -305,10 +304,71 @@ describe('WorkflowGraphView', () => {
                 vi.advanceTimersByTime(1);
             });
             expect(shown(UNSAFE_TITLE)).toBe(false);
-            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(false);
             // Unfolding brings them back at once, fading in.
             fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
             expect(screen.getByText(UNSAFE_TITLE).closest('.wg-node')?.classList.contains('arriving')).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // A group with a wire inside it (a→b), one leaving it (b→c), and one elsewhere (d→e).
+    const wired = () =>
+        render(
+            <WorkflowGraphView
+                report={report(
+                    level(
+                        [
+                            canvasNode('a', { title: 'A', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                            canvasNode('b', {
+                                title: 'B',
+                                pos: { x: 260, y: 80 },
+                                inputs: [port(0, 'LATENT')],
+                                outputs: [port(0, 'LATENT')],
+                            }),
+                            canvasNode('c', { title: 'C', pos: { x: 800, y: 80 }, inputs: [port(0, 'LATENT')] }),
+                            canvasNode('d', { title: 'D', pos: { x: 20, y: 600 }, outputs: [port(0, 'LATENT')] }),
+                            canvasNode('e', { title: 'E', pos: { x: 500, y: 600 }, inputs: [port(0, 'LATENT')] }),
+                        ],
+                        [canvasLink('a', 0, 'b', 0), canvasLink('b', 0, 'c', 0), canvasLink('d', 0, 'e', 0)],
+                        [canvasGroup('Sampling', 0, 0, 520, 400)]
+                    )
+                )}
+                fileName="wired.png"
+                onClose={vi.fn()}
+                makeLayoutWorker={fakeWorker}
+            />
+        ).container;
+    const wireEls = (container: HTMLElement) => Array.from(container.querySelectorAll<SVGPathElement>('.wg-wire'));
+    const motionOf = (wire: SVGPathElement) => ['morph', 'arriving', 'leaving'].find((motion) => wire.classList.contains(motion)) ?? null;
+
+    // The owner saw every wire in the graph blink off and back on at each fold. A fold now moves only the wires it
+    // touches, easing them to the folded box, and leaves the rest of the graph alone.
+    it('eases the wires a fold touches and leaves every other wire alone', () => {
+        vi.useFakeTimers();
+        try {
+            const container = wired();
+            const [inside, crossing, elsewhere] = wireEls(container);
+            const before = { crossing: crossing.getAttribute('d'), elsewhere: elsewhere.getAttribute('d') };
+            fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+            // Same elements: each wire changes in place, so CSS can ease it.
+            expect(wireEls(container)).toEqual([crossing, elsewhere, inside]);
+            expect(motionOf(crossing)).toBe('morph');
+            expect(crossing.getAttribute('d')).not.toBe(before.crossing);
+            expect(motionOf(elsewhere)).toBeNull();
+            expect(elsewhere.getAttribute('d')).toBe(before.elsewhere);
+            // The wire inside the group fades out with the members, then goes.
+            expect(motionOf(inside)).toBe('leaving');
+            act(() => {
+                vi.advanceTimersByTime(FOLD_MS);
+            });
+            expect(wireEls(container)).toEqual([crossing, elsewhere]);
+            expect(wireEls(container).map(motionOf)).toEqual([null, null]);
+            // Unfolding brings the inside wire back, fading in, and eases the crossing one back.
+            fireEvent.click(screen.getByRole('button', { name: 'Unfold group Sampling' }));
+            const unfolded = wireEls(container);
+            expect(unfolded.map(motionOf)).toEqual(['arriving', 'morph', null]);
+            expect(unfolded[1].getAttribute('d')).toBe(before.crossing);
         } finally {
             vi.useRealTimers();
         }
@@ -318,10 +378,13 @@ describe('WorkflowGraphView', () => {
         const original = window.matchMedia;
         window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
         try {
-            renderGraph();
+            const container = wired();
             fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-            expect(shown(UNSAFE_TITLE)).toBe(false);
-            expect(screen.getByTestId('workflow-graph-world').classList.contains('folding')).toBe(false);
+            expect(shown('A')).toBe(false);
+            // The wires snap to their new routes: no easing, no fade, and the inside wire is gone at once.
+            expect(wireEls(container)).toHaveLength(2);
+            expect(wireEls(container).map(motionOf)).toEqual([null, null]);
+            expect(wireEls(container).some((wire) => wire.getAttribute('style'))).toBe(false);
         } finally {
             window.matchMedia = original;
         }

@@ -22,6 +22,7 @@ import {
     type Rect,
     type View,
     type ViewLevel,
+    type WirePath,
     type WireShape,
 } from './geometry';
 import { FOLDED_GROUP_W } from './graphModel';
@@ -64,7 +65,24 @@ const nodeCount = (count: number) => (count === 1 ? '1 node' : `${count} nodes`)
 interface FoldMotion {
     leaving: ReadonlySet<string>;
     arriving: ReadonlySet<string>;
+    /** The wires as drawn just before the fold, by key. */
+    wiresBefore: ReadonlyMap<string, WirePath>;
 }
+
+/** Two paths with the same command list, which CSS can ease one into the other. */
+const sameShape = (a: string, b: string) => a.replace(/[^A-Za-z]/g, '') === b.replace(/[^A-Za-z]/g, '');
+
+/**
+ * How a wire moves during a fold. One the fold reroutes eases to its new route when the two routes share a shape,
+ * and fades in on its new route when they do not; a wire new to the view fades in; one the fold tucks away fades out
+ * with the members. Every other wire stays as it is.
+ */
+type WireMotion = 'morph' | 'arriving' | 'leaving' | null;
+const wireMotion = (wire: WirePath, before: WirePath | undefined, folding: boolean): WireMotion => {
+    if (!folding || before?.d === wire.d) return null;
+    if (!before) return 'arriving';
+    return sameShape(before.d, wire.d) ? 'morph' : 'arriving';
+};
 
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -93,17 +111,30 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
     const foldMotion = React.useMemo(() => {
         const leaving = new Set<string>();
         const arriving = new Set<string>();
+        // The oldest fold's picture of a wire wins: that is where the wire was last at rest.
+        const wiresBefore = new Map<string, WirePath>();
         for (const motion of foldMotions.values()) {
             for (const id of motion.leaving) leaving.add(id);
             for (const id of motion.arriving) arriving.add(id);
+            for (const [key, wire] of motion.wiresBefore) if (!wiresBefore.has(key)) wiresBefore.set(key, wire);
         }
-        return { leaving, arriving };
+        return { leaving, arriving, wiresBefore };
     }, [foldMotions]);
     const scene = React.useMemo(() => sceneFor(model, shownLayout, foldedGroups), [model, shownLayout, foldedGroups]);
     const wires = React.useMemo(
         () => (positions ? wirePaths(model, positions, foldedNodes, scene, shape) : []),
         [model, positions, foldedNodes, scene, shape]
     );
+    // During a fold the wires it moves ease or fade, and the ones it tucks away stay drawn while they fade out. One
+    // list, so a wire keeps its element as it goes from drawn to leaving.
+    const shownWires = React.useMemo(() => {
+        const folding = foldMotions.size > 0;
+        const shown = wires.map((wire) => ({ wire, motion: wireMotion(wire, foldMotion.wiresBefore.get(wire.key), folding) }));
+        if (!folding) return shown;
+        const current = new Set(wires.map((wire) => wire.key));
+        for (const [key, wire] of foldMotion.wiresBefore) if (!current.has(key)) shown.push({ wire, motion: 'leaving' });
+        return shown;
+    }, [wires, foldMotions, foldMotion]);
 
     // Each open group's title is a pill at its top-left.
     const titleSlots = React.useMemo(() => {
@@ -478,8 +509,8 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
         );
         holder?.querySelector<HTMLButtonElement>('.wg-cb')?.focus({ preventScroll: true });
     }, [foldedGroups]);
-    // The box eases to its new size in CSS. Members fade toward it, staying mounted until they have, and the
-    // rerouted wires fade back in once the fold has settled.
+    // The box eases to its new size in CSS. Members fade toward it, staying mounted until they have, and the wires the
+    // fold touches ease to their new routes; every other wire stays drawn.
     const toggleGroup = (key: string) => {
         const group = model.groups.find((candidate) => candidate.key === key);
         const folding = !foldedGroups.has(key);
@@ -490,14 +521,14 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             if (!next.delete(key)) next.add(key);
             return next;
         });
-        const world = worldRef.current;
-        if (!group || !world || reducedMotion()) return;
+        // Under reduced motion everything, wires included, snaps to the new state.
+        if (!group || reducedMotion()) return;
         const members = new Set(group.members.filter((id) => !scene.hiddenBy.has(id)));
+        const wiresBefore = new Map(wires.map((wire) => [wire.key, wire]));
         const motion: FoldMotion = folding
-            ? { leaving: members, arriving: new Set() }
-            : { leaving: new Set(), arriving: new Set(group.members) };
+            ? { leaving: members, arriving: new Set(), wiresBefore }
+            : { leaving: new Set(), arriving: new Set(group.members), wiresBefore };
         setFoldMotions((current) => new Map(current).set(key, motion));
-        world.classList.add('folding');
         const timers = foldTimersRef.current;
         const running = timers.get(key);
         if (running !== undefined) window.clearTimeout(running);
@@ -505,7 +536,6 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
             key,
             window.setTimeout(() => {
                 timers.delete(key);
-                if (timers.size === 0) world.classList.remove('folding');
                 setFoldMotions((current) => {
                     const next = new Map(current);
                     next.delete(key);
@@ -634,11 +664,14 @@ const WorkflowGraphView: React.FC<WorkflowGraphViewProps> = ({ report, fileName,
                     {positions ? (
                         <>
                             <svg className="wg-wires" aria-hidden="true">
-                                {wires.map((wire) => (
+                                {shownWires.map(({ wire, motion }) => (
                                     <path
                                         key={wire.key}
-                                        className={`wg-wire t-${wire.type}${wire.bypassed ? ' bypassed' : ''}`}
+                                        className={`wg-wire t-${wire.type}${wire.bypassed ? ' bypassed' : ''}${motion ? ` ${motion}` : ''}`}
                                         d={wire.d}
+                                        // CSS eases the d property, not the attribute: a morphing wire carries its route
+                                        // in its style too, so the change from the old route is a transition.
+                                        style={motion === 'morph' ? { d: `path("${wire.d}")` } : undefined}
                                     />
                                 ))}
                             </svg>
