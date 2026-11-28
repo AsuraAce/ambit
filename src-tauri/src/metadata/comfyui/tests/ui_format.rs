@@ -269,7 +269,7 @@ fn test_extract_comfyui_ui_format() {
 #[test]
 fn test_extract_comfyui_ui_format_complex() {
     // Huge UI format workflow with Text to Conditioning, Text Concatenate, Text Multiline, Text String
-    // Simplified chain based on user's JSON structure for the reproduction
+    // Simplified synthetic chain for the reproduction
     let workflow_fixed = r#"{
         "nodes": [
             { "id": 3, "type": "KSampler", "inputs": [{"name": "positive", "link": 1}] },
@@ -299,7 +299,7 @@ fn test_extract_comfyui_ui_format_complex() {
 
 #[test]
 fn test_extract_comfyui_stylealigned_reproduction() {
-    // User provided StyleAligned workflow (UI format)
+    // Synthetic StyleAligned workflow (UI format)
     let workflow = r#"{
         "last_node_id": 98,
         "last_link_id": 230,
@@ -330,25 +330,25 @@ fn test_extract_comfyui_stylealigned_reproduction() {
                 ],
                 "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [144], "shape": 3, "slot_index": 0}],
                 "properties": {"Node name for S&R": "BatchPromptScheduleEncodeSDXL"},
-                "widgets_values": [4096, 4096, 0, 0, 1024, 1024, "formatted_json_omitted_for_brevity", "formatted_json_omitted_for_brevity", 4, false, "Low poly, Game asset", "Unreal Engine, Octane Render, flat background", "Low poly, Game asset", "Unreal Engine, Octane Render, flat background", 0, 0, 0, 0]
+                "widgets_values": [4096, 4096, 0, 0, 1024, 1024, "formatted_json_omitted_for_brevity", "formatted_json_omitted_for_brevity", 4, false, "Simple sketch, Still life", "soft light, plain background", "Simple sketch, Still life", "soft light, plain background", 0, 0, 0, 0]
             },
             {
                 "id": 38, "type": "PrimitiveNode",
                 "outputs": [{"name": "STRING", "type": "STRING", "links": [40, 41], "slot_index": 0, "widget": {"name": "text_g"}}],
                 "title": "Subjects",
-                "widgets_values": ["\"0\": \"crystal\",\n\"1\": \"pine tree\""]
+                "widgets_values": ["\"0\": \"apple\",\n\"1\": \"pear\""]
             },
             {
                 "id": 41, "type": "PrimitiveNode",
                 "outputs": [{"name": "STRING", "type": "STRING", "links": [43, 44], "slot_index": 0, "widget": {"name": "pre_text_G"}}],
                 "title": "Pre_Subject",
-                "widgets_values": ["Low poly, Game asset"]
+                "widgets_values": ["Simple sketch, Still life"]
             },
             {
                 "id": 42, "type": "PrimitiveNode",
                 "outputs": [{"name": "STRING", "type": "STRING", "links": [45, 46], "slot_index": 0, "widget": {"name": "app_text_G"}}],
                 "title": "After_Subjects",
-                "widgets_values": ["Unreal Engine, Octane Render, flat background"]
+                "widgets_values": ["soft light, plain background"]
             },
             {
                 "id": 90,
@@ -373,13 +373,13 @@ fn test_extract_comfyui_stylealigned_reproduction() {
                 ],
                 "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [178, 183], "shape": 3, "slot_index": 0}],
                 "properties": {"Node name for S&R": "CLIPTextEncodeSDXL"},
-                "widgets_values": [4095, 4096, 0, 0, 1024, 1024, "A Japanese plastic toy of goku , flat white background", "A Japanese plastic toy of goku , flat white background"]
+                "widgets_values": [4095, 4096, 0, 0, 1024, 1024, "A small clay figure of an apple, plain white background", "A small clay figure of an apple, plain white background"]
             },
             {
                 "id": 68,
                 "type": "PrimitiveNode",
                 "outputs": [{"name": "STRING", "type": "STRING", "links": [77, 78], "slot_index": 0, "widget": {"name": "text_g"}}],
-                "widgets_values": ["A Japanese plastic toy of goku , flat white background"]
+                "widgets_values": ["A small clay figure of an apple, plain white background"]
             },
             {
                 "id": 88, "type": "SaveImage",
@@ -420,6 +420,6 @@ fn test_extract_comfyui_stylealigned_reproduction() {
     let meta = extract_comfyui_metadata(&chunks);
 
     assert_eq!(meta.tool, "ComfyUI");
-    assert!(meta.positive_prompt.contains("Low poly"));
-    assert!(meta.positive_prompt.contains("crystal"));
+    assert!(meta.positive_prompt.contains("Simple sketch"));
+    assert!(meta.positive_prompt.contains("apple"));
 }

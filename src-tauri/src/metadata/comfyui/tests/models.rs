@@ -329,7 +329,7 @@ fn test_extract_comfyui_workflow_hypernetwork_loader_strength() {
 
 #[test]
 fn test_extract_comfyui_supir_conflict() {
-    // User reported case where "SUPIR" (refine ckpt) is detected instead of "novaAnimeXL" (main ckpt)
+    // Case where "SUPIR" (refine ckpt) is detected instead of "novaAnimeXL" (main ckpt)
     let prompt = r#"{
         "3": {
             "class_type": "KSampler",

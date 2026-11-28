@@ -5,7 +5,7 @@ use std::collections::HashMap;
 #[test]
 fn test_unet_loader_extraction() {
     let workflow = r#"{
-        "id": "ad18abd3-bdee-4f80-8fae-d15d4f845b9d",
+        "id": "00000000-0000-4000-8000-000000000004",
         "nodes": [
             {
                 "id": 12,

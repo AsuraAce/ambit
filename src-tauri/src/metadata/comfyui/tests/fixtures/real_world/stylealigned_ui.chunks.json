@@ -20,7 +20,7 @@
         "id": 3,
         "type": "CLIPTextEncode",
         "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [3] }],
-        "widgets_values": ["Low poly crystal pine tree, flat background"]
+        "widgets_values": ["Simple sketch of an apple and a pear, plain background"]
       },
       {
         "id": 4,

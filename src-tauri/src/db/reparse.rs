@@ -1422,7 +1422,7 @@ mod tests {
             let conn = Connection::open(&path).expect("setup connection");
             conn.execute(
                 "INSERT INTO invoke_owner_scope_state (state_key, db_path, images_root, scope_mode, owner_id, updated_at)
-                 VALUES ('current', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'owner', 'odin', 0)",
+                 VALUES ('current', 'D:/Invoke/invokeai.db', 'D:/Invoke', 'owner', 'oscar', 0)",
                 [],
             )
             .expect("owner scope");
@@ -1472,7 +1472,7 @@ Steps: 20, Sampler: Euler\"}', 'D:/Invoke/invokeai.db', 'system')",
         let (result, progress) = job.join().unwrap();
         assert_eq!(result.expect("reparse job").processed, 5);
         // The first event is the "counting" placeholder; the second carries the up-front count.
-        assert_eq!(progress.get(1), Some(&(0, 3)), "counted in Odin's scope");
+        assert_eq!(progress.get(1), Some(&(0, 3)), "counted in Oscar's scope");
         assert_eq!(
             progress.last(),
             Some(&(5, 5)),
@@ -1532,14 +1532,14 @@ Steps: 20, Sampler: Euler\"}', 'D:/Invoke/invokeai.db', 'system')",
             (result, progress.into_inner().unwrap())
         });
         std::thread::sleep(PAUSE_POLL * 3);
-        // The switch to Odin hides the shared user's rows, leaving nothing stale in scope.
+        // The switch to Oscar hides the shared user's rows, leaving nothing stale in scope.
         Connection::open(&path)
             .expect("switch connection")
             .execute(
-                "UPDATE invoke_owner_scope_state SET scope_mode = 'owner', owner_id = 'odin'",
+                "UPDATE invoke_owner_scope_state SET scope_mode = 'owner', owner_id = 'oscar'",
                 [],
             )
-            .expect("switch to Odin");
+            .expect("switch to Oscar");
         state.is_paused.store(false, Ordering::SeqCst);
 
         let (result, progress) = job.join().unwrap();

@@ -232,7 +232,7 @@ fn krea_workflow_only_expands_official_subgraph_metadata() {
     let normalized_ids = normalized_node_ids(&workflow_json);
 
     assert_eq!(meta.model, "krea2_turbo_fp8_scaled");
-    assert_eq!(meta.seed, Some(552_211_234_818_773));
+    assert_eq!(meta.seed, Some(123_456_789_012_345));
     assert_eq!(meta.steps, 8);
     assert_eq!(meta.cfg, 1.0);
     assert_eq!(meta.sampler, "euler (simple)");

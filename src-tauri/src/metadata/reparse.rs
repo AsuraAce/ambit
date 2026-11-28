@@ -260,8 +260,8 @@ mod tests {
         let result = reparse_from_json(original, "ComfyUI").expect("reparse metadata");
 
         assert_eq!(result.metadata.tool, "ComfyUI");
-        assert_eq!(result.metadata.model, "ArrogantBastard_ponyV33SS");
-        assert_eq!(result.metadata.model_hash.as_deref(), Some("ed5932e68b"));
+        assert_eq!(result.metadata.model, "exampleModel_v10");
+        assert_eq!(result.metadata.model_hash.as_deref(), Some("a1b2c3d4e5"));
         assert_eq!(result.metadata.steps, 20);
         assert_eq!(result.metadata.cfg, 8.0);
         assert_eq!(result.metadata.sampler, "euler_simple");

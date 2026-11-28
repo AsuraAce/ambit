@@ -2,7 +2,7 @@
   "prompt": {
     "44": {
       "inputs": {
-        "seed": 515018389178561,
+        "seed": 111111111111111,
         "steps": 6,
         "cfg": 1.0,
         "sampler_name": "res_multistep",
@@ -42,7 +42,7 @@
       "class_type": "PrimitiveString"
     },
     "84": {
-      "inputs": { "value": "Aiyana Lumiere Nyoka..." },
+      "inputs": { "value": "A red apple on a wooden table..." },
       "class_type": "PrimitiveStringMultiline"
     },
     "80": {
@@ -51,11 +51,11 @@
     },
     "79": {
       "inputs": {
-        "text": "<lora:Mystic-XXX:1.0> <lora:Asians:0.65>",
+        "text": "<lora:example_style:1.0> <lora:example_detail:0.65>",
         "loras": {
           "__value__": [
-            { "name": "Mystic-XXX", "strength": 1.0 },
-            { "name": "Asians", "strength": 0.65 }
+            { "name": "example_style", "strength": 1.0 },
+            { "name": "example_detail", "strength": 0.65 }
           ]
         },
         "model": ["46", 0],

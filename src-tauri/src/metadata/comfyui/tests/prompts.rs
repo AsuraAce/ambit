@@ -417,7 +417,7 @@ fn extract_basic_guider_prompt(
 
 #[test]
 fn test_extract_comfyui_complex_prompt() {
-    // User report: CLIPTextEncode text input linked to JoinStringMulti -> ImpactWildcardProcessor
+    // Synthetic case: CLIPTextEncode text input linked to JoinStringMulti -> ImpactWildcardProcessor
     let prompt = r#"{
         "870": {
             "class_type": "KSampler",
@@ -455,7 +455,7 @@ fn test_extract_comfyui_complex_prompt() {
         "941": {
             "class_type": "ImpactWildcardProcessor",
             "inputs": {
-                "populated_text": "A battle-hardened mercenary captain..."
+                "populated_text": "A red apple on a wooden table..."
             }
         },
         "854": { "class_type": "ApplyFBCacheOnModel", "inputs": { "model": ["1",0] } },
@@ -471,7 +471,7 @@ fn test_extract_comfyui_complex_prompt() {
     // nor does it handle JoinStringMulti or ImpactWildcardProcessor
     assert_eq!(
         meta.positive_prompt,
-        "trigger_abc, A battle-hardened mercenary captain..."
+        "trigger_abc, A red apple on a wooden table..."
     );
     assert_eq!(meta.embeddings.len(), 0);
 }
@@ -740,7 +740,7 @@ fn test_extract_comfyui_embeddings() {
 
 #[test]
 fn test_extract_comfyui_show_anything() {
-    // User provided case with "easy showAnything" and "JoinStringMulti"
+    // Synthetic case with "easy showAnything" and "JoinStringMulti"
     let prompt = r#"{
         "3": {
             "class_type": "KSampler",
@@ -777,7 +777,7 @@ fn test_extract_comfyui_show_anything() {
         "792": {
             "class_type": "easy showAnything",
             "inputs": {
-                "text": "hentai, female anime character, Naruto franchise",
+                "text": "still life, red apple, wooden table",
                 "anything": ["795", 0]
             }
         },
@@ -790,14 +790,12 @@ fn test_extract_comfyui_show_anything() {
 
     let meta = extract_comfyui_metadata(&chunks);
 
-    assert!(meta
-        .positive_prompt
-        .contains("hentai, female anime character"));
+    assert!(meta.positive_prompt.contains("still life, red apple"));
 }
 
 #[test]
 fn test_extract_comfyui_failed_case_2() {
-    // User provided failure case #2 (JoinStringMulti + smZ CLIPTextEncode + easy showAnything)
+    // Synthetic failure case #2 (JoinStringMulti + smZ CLIPTextEncode + easy showAnything)
     // This validates if the mix of these specific nodes causes issues.
     let prompt = r#"{
         "3": {
@@ -818,7 +816,7 @@ fn test_extract_comfyui_failed_case_2() {
             "inputs": {"string": "\n"}, "class_type": "StringConstantMultiline"
         },
         "792": {
-            "inputs": {"text": "A highly detailed and dynamic figure drawing reference pose..."},
+            "inputs": {"text": "A highly detailed still life of a red apple..."},
             "class_type": "easy showAnything", "_meta": {"title": "Show Any"}
         },
         "177": { "inputs": { "text": "negative..." }, "class_type": "smZ CLIPTextEncode" },
@@ -933,7 +931,7 @@ fn test_extract_comfyui_conditioning_concat() {
 
 #[test]
 fn test_extract_comfyui_text_concatenate() {
-    // User report: Text to Conditioning -> Text Concatenate
+    // Synthetic case: Text to Conditioning -> Text Concatenate
     let prompt = r#"{
         "3": {
             "class_type": "KSampler",
@@ -1057,7 +1055,7 @@ fn test_find_reachable_prompts_unknown_passthrough() {
 
 #[test]
 fn test_missing_prompt_extraction() {
-    // This test replicates the specific workflow provided by the user where prompt extraction fails.
+    // Synthetic reproduction of a workflow shape where prompt extraction used to fail.
     // It involves PrimitiveString, JoinStringMulti, TriggerWord Toggle (LoraManager), and recursive inputs.
     let prompt = r#"{
         "44": {
@@ -1096,7 +1094,7 @@ fn test_missing_prompt_extraction() {
         },
         "84": {
             "inputs": {
-                "value": "Aiyana Lumiere Nyoka..."
+                "value": "A red apple on a wooden table..."
             },
             "class_type": "PrimitiveStringMultiline"
         },
@@ -1108,11 +1106,11 @@ fn test_missing_prompt_extraction() {
         },
         "79": {
             "inputs": {
-                "text": "<lora:Mystic-XXX:1.0> <lora:Asians:0.65>",
+                "text": "<lora:example_style:1.0> <lora:example_detail:0.65>",
                 "loras": {
                      "__value__": [
-                         { "name": "Mystic-XXX", "strength": 1.0 },
-                         { "name": "Asians", "strength": 0.65 }
+                         { "name": "example_style", "strength": 1.0 },
+                         { "name": "example_detail", "strength": 0.65 }
                      ]
                 }
             },
@@ -1130,7 +1128,7 @@ fn test_missing_prompt_extraction() {
     // Debug assertion
     assert_eq!(
         meta.positive_prompt,
-        "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1> <lora:Asians:0.65>"
+        "A red apple on a wooden table..., <lora:example_style:1> <lora:example_detail:0.65>"
     );
 }
 
@@ -1163,7 +1161,7 @@ fn test_extract_comfyui_flux_zero_out_negative() {
         "6": {
             "class_type": "CLIPTextEncode",
             "inputs": {
-                "text": "color the androids hair green, only the hair not the eyes or the explosion"
+                "text": "make the apple green, only the apple not the table or the cloth"
             }
         },
         "177": {
@@ -1189,7 +1187,7 @@ fn test_extract_comfyui_flux_zero_out_negative() {
 
     assert_eq!(
         meta.positive_prompt,
-        "color the androids hair green, only the hair not the eyes or the explosion"
+        "make the apple green, only the apple not the table or the cloth"
     );
     // This is the critical part: it should NOT be the same as positive_prompt
     assert_eq!(meta.negative_prompt, "");

@@ -1,1 +1,1 @@
-{"parameters":"unknown\nNegative prompt: unknown\nSteps: 20, Sampler: euler_simple, CFG Scale: 8.0, Seed: 0, Size: 512x512, Model hash: ed5932e68b, Model: ArrogantBastard_ponyV33SS, Version: ComfyUI"}
+{"parameters": "unknown\nNegative prompt: unknown\nSteps: 20, Sampler: euler_simple, CFG Scale: 8.0, Seed: 0, Size: 512x512, Model hash: a1b2c3d4e5, Model: exampleModel_v10, Version: ComfyUI"}

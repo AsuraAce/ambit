@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-const DEV_PATH: &str = "C:/Users/Artemis/AppData/Roaming/com.ambit.dev/images.db";
+const DEV_DB_UNDER_APPDATA: &str = "/com.ambit.dev/images.db";
 const BUDGET: Duration = Duration::from_secs(15 * 60);
 const QUERY_LIMIT: Duration = Duration::from_secs(60);
 const REPORT_LIMIT: usize = 256 * 1024;
@@ -184,9 +184,21 @@ fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(value)
 }
 
+/// The regular-dev database of the current Windows user: `%APPDATA%/com.ambit.dev/images.db`.
+fn dev_path() -> Option<String> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    Some(format!(
+        "{}{DEV_DB_UNDER_APPDATA}",
+        appdata.replace('\\', "/")
+    ))
+}
+
 fn lexical_target(path: &Path) -> bool {
+    let Some(dev) = dev_path() else {
+        return false;
+    };
     path.to_str()
-        .is_some_and(|value| value.replace('\\', "/").eq_ignore_ascii_case(DEV_PATH))
+        .is_some_and(|value| value.replace('\\', "/").eq_ignore_ascii_case(&dev))
 }
 
 fn validate_target(path: &Path) -> ProbeResult<PathBuf> {
@@ -839,16 +851,20 @@ fn four_queries_follow_shipping_definitions_and_keep_distinct_visibility() {
 
 #[test]
 fn unexpected_and_production_paths_fail_before_access() {
+    // Near misses of the real dev path, so the check stays exact on any machine.
+    let appdata = std::env::var("APPDATA")
+        .map(|value| value.replace('\\', "/"))
+        .unwrap_or_else(|_| "C:/Users/example/AppData/Roaming".to_string());
     for path in [
-        "C:/Users/Artemis/AppData/Roaming/com.ambit.app/images.db",
-        "D:/images.db",
-        "images.db",
-        "C:/Users/Artemis/AppData/Roaming/com.ambit.dev/../com.ambit.dev/images.db",
-        "C:/Users/Artemis/AppData/Roaming/com.ambit.dev/images.db:stream",
+        format!("{appdata}/com.ambit.app/images.db"),
+        "D:/images.db".to_string(),
+        "images.db".to_string(),
+        format!("{appdata}/com.ambit.dev/../com.ambit.dev/images.db"),
+        format!("{appdata}/com.ambit.dev/images.db:stream"),
     ] {
-        assert!(!lexical_target(Path::new(path)));
+        assert!(!lexical_target(Path::new(&path)));
         assert_eq!(
-            validate_target(Path::new(path)),
+            validate_target(Path::new(&path)),
             Err(Failure::InvalidTarget)
         );
     }
