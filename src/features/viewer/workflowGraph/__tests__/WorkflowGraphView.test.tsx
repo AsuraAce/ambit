@@ -1909,16 +1909,37 @@ describe('WorkflowGraphView', () => {
             }
         });
 
-        it('only picks a node clicked in the Detailed level: the view stays where it is', () => {
-            withReducedMotion(() => {
-                renderGraph();
-                const before = world().style.transform;
-                const element = document.querySelector<HTMLElement>('.wg-world [data-node-id="2"]')!;
-                fireEvent.pointerDown(element, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
-                fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
-                expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
-                expect(world().style.transform).toBe(before);
-            });
+        // The owner's look on smoke-423: a node clicked in the Detailed level comes to the centre, at the zoom they
+        // chose, even where its text is still faded; its own fold button folds it where it is.
+        it('centres a node clicked in the Detailed level and keeps the zoom; its fold button does not move the view', () => {
+            const frames: FrameRequestCallback[] = [];
+            const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            try {
+                withReducedMotion(() => {
+                    renderGraph();
+                    const clickNode = (target: Element) => {
+                        fireEvent.pointerDown(target, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+                        fireEvent.pointerUp(target, { pointerId: 1, clientX: 10, clientY: 10 });
+                    };
+                    const node = () => document.querySelector<HTMLElement>('.wg-world [data-node-id="2"]')!;
+                    for (const zoom of [DETAIL_FADE_SCALE - 0.05, 1.4]) {
+                        zoomTo(frames, zoom);
+                        const before = view();
+                        const fold = node().querySelector('.wg-cb')!;
+                        clickNode(fold);
+                        expect(view()).toEqual(before);
+                        clickNode(node());
+                        expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+                        expect(view().s).toBeCloseTo(zoom, 6);
+                        expect(view().y).toBeCloseTo(centredY(zoom), 6);
+                        fireEvent.keyDown(document.body, { key: 'Escape' });
+                    }
+                });
+            } finally {
+                box.mockRestore();
+                raf.mockRestore();
+            }
         });
 
         // Below the zoom where body text shows in full, a node reached from the side is not readable yet.
@@ -2153,6 +2174,39 @@ describe('WorkflowGraphView', () => {
                 now.mockRestore();
                 box.mockRestore();
                 raf.mockRestore();
+                restore();
+            }
+        });
+
+        // The owner's look on smoke-423: a graph that opened far showed its nodes whole while the zoom cross-fade
+        // hid them, then arrived again on the canvas. The first level switches with no cross-fade, so the first
+        // painted frame is already the entrance's start; later zooms keep the fade.
+        it('opens far without the cross-fade, so the nodes never show before the entrance', () => {
+            const { restore } = fakeCanvases();
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            // The transitions in force at the moment the level switches.
+            const atSwitch: string[] = [];
+            const realToggle = DOMTokenList.prototype.toggle;
+            DOMTokenList.prototype.toggle = function (this: DOMTokenList, token: string, force?: boolean) {
+                if (token === 'far') {
+                    const world = document.querySelector<HTMLElement>('[data-testid="workflow-graph-world"]')!;
+                    const farCanvas = document.querySelector<HTMLElement>('.wg-farcanvas')!;
+                    atSwitch.push(world.style.transition, farCanvas.style.transition);
+                }
+                return realToggle.call(this, token, force);
+            };
+            try {
+                const wide = report(level([canvasNode('a', { pos: { x: 0, y: 30 } }), canvasNode('b', { pos: { x: 40_000, y: 30 } })]));
+                render(<WorkflowGraphView report={wide} fileName="wide.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+                const world = screen.getByTestId('workflow-graph-world');
+                expect(world.classList.contains('far')).toBe(true);
+                expect(atSwitch).toEqual(['none', 'none']);
+                // The fade is back for the owner's own zooms.
+                expect(world.style.transition).toBe('');
+                expect(document.querySelector<HTMLElement>('.wg-farcanvas')!.style.transition).toBe('');
+            } finally {
+                DOMTokenList.prototype.toggle = realToggle;
+                box.mockRestore();
                 restore();
             }
         });

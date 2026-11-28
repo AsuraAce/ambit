@@ -686,8 +686,24 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         if (!previous) {
             if (snapshot) viewRef.current = snapshot.view;
             else if (bounds) viewRef.current = startView(bounds, viewportSize());
+            // The level shows at its start zoom at once: the cross-fade between the nodes and the far canvas is for
+            // zooming. A level that opens far would otherwise show its nodes whole while they faded out, then play
+            // the entrance on the canvas, so the graph seemed to arrive twice.
+            const world = worldRef.current;
+            const farCanvas = farRef.current;
+            if (world) world.style.transition = 'none';
+            if (farCanvas) farCanvas.style.transition = 'none';
             apply();
             startEntrance(positions);
+            if (world) {
+                // Styles are worked out with the transitions off before they come back on.
+                void getComputedStyle(world).opacity;
+                world.style.transition = '';
+            }
+            if (farCanvas) {
+                void getComputedStyle(farCanvas).opacity;
+                farCanvas.style.transition = '';
+            }
             return;
         }
         const world = worldRef.current;
@@ -798,12 +814,13 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             if (!first || entry[1].y < first[1].y || (entry[1].y === first[1].y && entry[1].x < first[1].x)) first = entry;
         return first?.[0] ?? null;
     };
-    const flyToNode = (id: string) => {
+    const flyToNode = (id: string, keepZoom = false) => {
         const rect = drawnRect(id);
         if (!rect) return;
         const { w, h } = viewportSize();
         // A node is gone to where it can be read: below the zoom where body text shows in full, the view goes to 100 %.
-        const s = viewRef.current.s < DETAIL_FADE_SCALE ? 1 : viewRef.current.s;
+        // A click in the Detailed level only centres it, at the zoom the owner chose.
+        const s = !keepZoom && viewRef.current.s < DETAIL_FADE_SCALE ? 1 : viewRef.current.s;
         flyTo({ s, x: roomWidth(w, true) / 2 - (rect.x + rect.w / 2) * s, y: h / 2 - (rect.y + rect.h / 2) * s });
         setInteracted(true);
     };
@@ -996,8 +1013,10 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         }
         if (!(event.target instanceof Element) || event.target.closest('.wg-gtitle, .wg-group.shut, .wg-tb, .wg-hint')) return;
         const id = event.target.closest<HTMLElement>('[data-node-id]')?.dataset.nodeId;
-        if (id) select(id);
-        else setSelected(null);
+        if (id) {
+            select(id);
+            flyToNode(id, true);
+        } else setSelected(null);
     };
     // In near mode the pill is HTML: a click on it, away from its fold button, zooms to its group. The title is a
     // button, so Enter on it does the same (a click with no pointer press, detail 0, which no pan can precede).

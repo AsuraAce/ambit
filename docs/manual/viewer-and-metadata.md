@@ -139,7 +139,7 @@ Moving around:
 
 Reading nodes:
 
-- Click a node to open its side panel. Zoomed out, at the node titles or further, the click also flies to the node and zooms in to 100 %. Going to a node from the search, the side panel or the picture centres it, and zooms to 100 % if its text is still faded; the zoom and the move happen together. The panel shows the node's settings, **Inputs from** (where each input comes from), **Outputs to** (where each output goes), and its raw JSON with **Copy**. Click a row under Inputs from or Outputs to to go to that node.
+- Click a node to open its side panel. The view glides to centre the node and keeps your zoom; zoomed out, at the node titles or further, the click instead flies to the node and zooms in to 100 %. Going to a node from the search, the side panel or the picture centres it, and zooms to 100 % if its text is still faded; the zoom and the move happen together. The panel shows the node's settings, **Inputs from** (where each input comes from), **Outputs to** (where each output goes), and its raw JSON with **Copy**. Click a row under Inputs from or Outputs to to go to that node.
 - Bypassed and muted nodes are marked as in ComfyUI. A note node shows its text.
 - Each node and each group has a fold button. Folding a group shrinks it to one box, and its wires join at the box.
 - `/` opens the search, **Find a node or value**. It matches node titles, node types and setting values. The matching nodes light up, and the Up and Down arrows and Enter pick one from the list.
