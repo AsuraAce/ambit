@@ -69,6 +69,7 @@ Production app builds run `verify:release` before `tauri build --ci`.
 - Keep business logic in hooks or feature modules rather than growing component bodies when practical.
 - Preserve virtualization for large library views; do not replace `VirtualGrid`-style flows with eager full renders.
 - Keep the product local-first. Preserve only the documented network paths: enabled updater checks, user-triggered Gemini actions/key verification, confirmed CivitAI hash resolution, and user-clicked external links. New network behavior requires an explicit product decision.
+- Committed fixtures and test data are synthetic or come from a documented upstream example, never data from a real image library (prompts, seeds, file names, paths, user names, screenshots). Private support bundles stay out of the repository. See `docs/comfyui-support-workflow.md`.
 - Respect Tauri filesystem scope registration and `APPLOCALDATA` or resource-safe access patterns.
 - For SQLite filters and sorts, prefer equality-friendly predicates when semantics allow.
 - Use branches with a conventional type prefix (`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`) and conventional commits; release automation depends on the commit history.

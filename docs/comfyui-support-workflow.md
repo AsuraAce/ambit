@@ -1,13 +1,25 @@
 # ComfyUI Parser Support Workflow
 
 Status: Canonical
-Last reviewed: 2026-08-09
+Last reviewed: 2026-11-28
 
 ## Purpose
 
 Use this workflow to turn a real ComfyUI parser problem into a reviewable,
 offline regression fixture without sharing image pixels or committing a private
 support bundle. The desktop export and all four package commands are local-only.
+
+## Fixture Source Rule
+
+Committed fixtures and test data are synthetic or come from a documented
+upstream example (for example the official ComfyUI templates or a custom node's
+published example workflow, with its source recorded in the fixture README).
+They never hold data from a real image library: no prompts, seeds, file names,
+local paths, user names, private model names, or screenshots of a real library.
+A real case becomes a fixture by rebuilding it: keep the node types, links and
+widget layout that reproduce the problem, and replace every value with a neutral
+stand-in. Support bundles, fixture candidates and inspector reports stay out of
+the repository.
 
 This process does not automatically redact private data or decide that a fixture
 is safe to publish. Human review remains mandatory.
@@ -18,7 +30,7 @@ is safe to publish. Human review remains mandatory.
 | --- | --- | --- |
 | Diagnostics clipboard summary | Parsed prompts, models, resources, provenance, and chunk summaries | Review before sharing; it omits raw chunks and image identity but may still contain private prompt text. |
 | Support bundle | Exact raw metadata chunks plus diagnostics and a minimal image descriptor | Private. Store outside the repository and never commit it. |
-| Fixture candidate | Exact chunk map copied from the support bundle, possibly edited | Private until every chunk has been manually reviewed and approved. |
+| Fixture candidate | Exact chunk map copied from the support bundle, possibly edited | Private. Never committed; the committed fixture is a synthetic rebuild of it. |
 | Inspector report | Parsed diagnostics, hashes, summaries, and optional differences | Review before sharing because parsed prompt and resource values may be sensitive. |
 | Batch replay summary | Content hashes, status counts, and value-redacted per-bundle summaries | Review before sharing. It omits filenames, paths, and raw values, but still describes private parser cases. |
 
@@ -144,15 +156,16 @@ was removed.
 
 ## 4. Review And Minimize
 
-Open the candidate itself and inspect every chunk. Remove private paths,
-filenames, prompts, URLs, account identifiers, and unrelated workflow material
-unless they are required to reproduce the parser behavior and are approved for
-publication.
+Open the candidate itself and inspect every chunk. Replace every prompt, seed,
+filename, path, URL, account identifier and private model name with a neutral
+stand-in, and remove unrelated workflow material, as the Fixture Source Rule
+requires.
 
 Keep the smallest graph that preserves the failing path. Use valid structured
-JSON edits rather than global text replacement. If removing sensitive content
-changes the behavior under test, create a synthetic equivalent or retain the
-fixture privately instead of publishing the original data.
+JSON edits rather than global text replacement. If replacing a value changes the
+behavior under test, build a synthetic value with the same shape (the same
+syntax, length class or link) or keep the fixture private; never publish the
+original data.
 
 Do not derive expected metadata blindly from the current parser. Expectations
 must describe the intended behavior established by the source workflow and the
@@ -189,9 +202,9 @@ JSON, remains byte-sensitive and does change the hash.
 
 ## 6. Register An Approved Regression
 
-Only after privacy review:
+Only after the candidate is a synthetic rebuild under the Fixture Source Rule:
 
-1. Move the approved `.chunks.json` file into the appropriate ComfyUI fixture directory.
+1. Move the synthetic `.chunks.json` file into the appropriate ComfyUI fixture directory.
 2. Add generic provenance to that directory's README without private local paths.
 3. Register the fixture with `include_str!` in the appropriate Rust test module.
 4. Assert exact metadata, resources, output selection, and field provenance.
