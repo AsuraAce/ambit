@@ -168,11 +168,9 @@ export const FloatingImage: React.FC<FloatingImageProps> = ({
         if (dragRef.current?.id === event.pointerId) dragRef.current = null;
     };
 
+    const noteId = React.useId();
     if (!visible) return null;
     const linked = targets > 0;
-    const pictureTip = linked
-        ? 'Point at the image to light the node that saved it; click to go to that node.'
-        : 'The node that saved this image is not on this level.';
     return (
         <div
             ref={rootRef}
@@ -215,7 +213,9 @@ export const FloatingImage: React.FC<FloatingImageProps> = ({
                 style={{ aspectRatio: String(aspect) }}
                 aria-label={linked ? 'Go to the node that saved this image' : 'This image'}
                 aria-disabled={linked ? undefined : true}
-                title={pictureTip}
+                aria-describedby={linked ? undefined : noteId}
+                // No native title here: WebView2 draws it as a window under the pointer, so a pointer moving onto it
+                // leaves the picture and the lit node flickers. The note below says why nothing lights.
                 onPointerEnter={() => linked && onPoint(true)}
                 onPointerLeave={() => onPoint(false)}
                 onFocus={() => linked && onPoint(true)}
@@ -241,6 +241,11 @@ export const FloatingImage: React.FC<FloatingImageProps> = ({
                     </span>
                 ) : null}
             </div>
+            {linked ? null : (
+                <p id={noteId} className="wg-fnote">
+                    The node that saved this image is not on this level.
+                </p>
+            )}
             <span
                 className="wg-grip"
                 aria-hidden="true"

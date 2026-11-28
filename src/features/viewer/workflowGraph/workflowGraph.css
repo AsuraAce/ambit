@@ -1574,6 +1574,7 @@ button.wg-crumb:hover {
 
 .wg-float.shut .wg-fpic,
 .wg-float.shut .wg-fcap,
+.wg-float.shut .wg-fnote,
 .wg-float.shut .wg-grip {
     display: none;
 }
@@ -1633,6 +1634,15 @@ button.wg-crumb:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--graph-body);
+}
+
+/* Why pointing lights nothing: the output's node is not on this level. */
+.wg-fnote {
+    margin: 0;
+    padding: 0 10px 7px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--graph-muted);
 }
 
 .wg-grip {
