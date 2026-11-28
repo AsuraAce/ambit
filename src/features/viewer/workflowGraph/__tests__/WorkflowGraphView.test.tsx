@@ -7,6 +7,7 @@ import { createDefaultAppSettings } from '../../../../constants/defaultSettings'
 import { useSettingsStore } from '../../../../stores/settingsStore';
 import { useWorkflowGraphStore } from '../../../../stores/workflowGraphStore';
 import { useViewerKeyboard } from '../../hooks/useViewerKeyboard';
+import { WIRE_DRAW_LIMIT } from '../entrance';
 import { farSceneFor, layoutGroupLabels } from '../farCanvas';
 import {
     DETAIL_FADE_SCALE,
@@ -2031,6 +2032,60 @@ describe('WorkflowGraphView', () => {
             } finally {
                 restore();
                 vi.useRealTimers();
+            }
+        });
+
+        // A dashed wire would lose its dashes to the drawing dash, and drawing hundreds of wires costs too much:
+        // those fade in, with nothing measured on them.
+        const fadedOnly = (path: SVGPathElement) => {
+            const entry = played.find((candidate) => candidate.element === path)!;
+            expect(entry.keyframes).toEqual([{ opacity: 0 }]);
+            expect(path.hasAttribute('pathLength')).toBe(false);
+        };
+
+        it('fades a bypassed wire in rather than drawing it', () => {
+            const restore = stubAnimate();
+            try {
+                const bypassed = report(
+                    level(
+                        [
+                            canvasNode('a', { pos: { x: 0, y: 30 }, outputs: [port(0, 'LATENT')] }),
+                            canvasNode('b', { pos: { x: 400, y: 30 }, inputs: [port(0, 'LATENT')], mode: 'bypassed' }),
+                        ],
+                        [canvasLink('a', 0, 'b', 0)]
+                    )
+                );
+                render(<WorkflowGraphView report={bypassed} fileName="bypass.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+                fadedOnly(wire());
+            } finally {
+                restore();
+            }
+        });
+
+        it(`fades every wire in on a level with more than ${WIRE_DRAW_LIMIT} wires`, () => {
+            const restore = stubAnimate();
+            // A tall view, so the two tall nodes open near enough to draw in the HTML.
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1200, 8000));
+            try {
+                const count = WIRE_DRAW_LIMIT + 1;
+                const slots = Array.from({ length: count }, (_, slot) => port(slot, 'LATENT'));
+                const many = report(
+                    level(
+                        [
+                            canvasNode('a', { pos: { x: 0, y: 30 }, outputs: slots }),
+                            canvasNode('b', { pos: { x: 400, y: 30 }, inputs: slots }),
+                        ],
+                        slots.map((_, slot) => canvasLink('a', slot, 'b', slot))
+                    )
+                );
+                render(<WorkflowGraphView report={many} fileName="many.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+                const paths = document.querySelectorAll<SVGPathElement>('.wg-wire');
+                expect(paths).toHaveLength(count);
+                expect(screen.getByTestId('workflow-graph-world').classList.contains('far')).toBe(false);
+                paths.forEach(fadedOnly);
+            } finally {
+                box.mockRestore();
+                restore();
             }
         });
 

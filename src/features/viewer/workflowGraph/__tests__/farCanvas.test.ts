@@ -426,4 +426,20 @@ describe('the far canvas entrance', () => {
         expect(at(plan.end).every((paint) => paint.endsWith('@1'))).toBe(true);
         expect(at(plan.end)).toHaveLength(arrival.nodes.reduce((sum, step) => sum + step.drawing.nodes.length, 0));
     });
+
+    // A ring at full strength around a node not yet drawn reads as a stray mark: it fades in with its node.
+    it('fades the picked node’s ring in with its node', () => {
+        const arrival = prepareFarArrival(far, palette, plan);
+        const ringAt = (t: number) => {
+            const { ctx, paints } = recordingCanvas();
+            const marks = { ...NO_FAR_MARKS, selected: '1' };
+            drawFarScene(ctx, prepareFarDrawing(far, palette), { x: 0, y: 0, s: 0.4 }, 1, 'far', null, marks, { steps: arrival, t });
+            return paints.filter((paint) => paint.startsWith('stroke:sage@')).map((paint) => Number(paint.split('@')[1]));
+        };
+        expect(ringAt(0)).toEqual([0]);
+        const [early] = ringAt(60);
+        expect(early).toBeGreaterThan(0);
+        expect(early).toBeLessThan(1);
+        expect(ringAt(plan.end)).toEqual([1]);
+    });
 });

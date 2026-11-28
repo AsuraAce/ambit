@@ -444,8 +444,11 @@ export const farNodeAt = (nodes: readonly FarNode[], x: number, y: number): stri
     return null;
 };
 
-/** Rings drawn over the nodes: a search's hits, then the picked node, then the arrow keys' node outside it. */
-const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: FarMarks, inv: number) => {
+/**
+ * Rings drawn over the nodes: a search's hits, then the picked node, then the arrow keys' node outside it. `alpha`
+ * is the nodes' own, so during the entrance a ring fades in with its node.
+ */
+const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: FarMarks, inv: number, alpha: number) => {
     if (!marks.hits && marks.selected === null && marks.cursor === null) return;
     const ring = (node: FarNode, gap: number, width: number) => {
         const path = new Path2D();
@@ -456,15 +459,15 @@ const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: F
     ctx.strokeStyle = drawing.accent;
     for (const node of drawing.sceneNodes) {
         if (marks.hits?.has(node.id)) {
-            ctx.globalAlpha = 0.7;
+            ctx.globalAlpha = 0.7 * alpha;
             ring(node, 2, 2);
         }
         if (node.id === marks.selected) {
-            ctx.globalAlpha = 1;
+            ctx.globalAlpha = alpha;
             ring(node, 1, 2);
         }
         if (node.id === marks.cursor) {
-            ctx.globalAlpha = 1;
+            ctx.globalAlpha = alpha;
             ctx.setLineDash([4 * inv, 3 * inv]);
             ring(node, 5, 2);
             ctx.setLineDash([]);
@@ -627,7 +630,7 @@ export const drawFarScene = (
     }
     ctx.globalAlpha = 1;
 
-    paintMarks(ctx, drawing, marks, inv);
+    for (const layer of nodeLayers) paintMarks(ctx, layer.drawing, marks, inv, layer.alpha);
 
     ctx.globalAlpha = groupAlpha;
     const pills = groupLabels.filter((label) => label.kind === 'pill');
