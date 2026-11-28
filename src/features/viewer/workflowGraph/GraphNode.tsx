@@ -151,7 +151,9 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({
                     type="button"
                     className="wg-door"
                     tabIndex={-1}
-                    aria-label={`Open subgraph ${node.title}`}
+                    aria-label={
+                        node.inside === null ? `Open subgraph ${node.title}` : `Open subgraph ${node.title}, ${insideCount(node.inside)}`
+                    }
                     onClick={() => onOpen(node.id)}
                 >
                     <span className="wg-door-label">

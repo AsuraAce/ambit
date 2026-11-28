@@ -156,6 +156,36 @@ describe('a subgraph instance’s open row', () => {
         expect(known.minHeight).toBe(without.minHeight);
     });
 
+    // A group's count must match ComfyUI's for the same file, which knows nothing of the row.
+    it('keeps the row out of group membership for a node saved without a size', () => {
+        const sizeless = canvasNode('9', { kind: 'subgraph', nodeType: uuid, subgraphId: uuid, size: null, pos: { x: 20, y: 60 } });
+        const plain = buildGraphModel(level([sizeless])).byId.get('9')!;
+        // The group's bottom edge sits just under the centre of the file's box, above the centre the row would give it.
+        const bottom = plain.saved!.y + plain.height / 2 + DOOR_H / 4;
+        const grouped = buildGraphModel(
+            level([sizeless], [], [canvasGroup('Group', 0, 0, 400, bottom)]),
+            new Map([[uuid, { name: 'Stage', nodes: 7 }]])
+        );
+        expect(grouped.byId.get('9')!.height).toBe(plain.height + DOOR_H);
+        expect(grouped.groups[0].members).toEqual(['9']);
+    });
+
+    // The row is added below the slots, so wires still meet the drawn pins.
+    it('leaves the port pins where they are', () => {
+        const ported = canvasNode('9', {
+            kind: 'subgraph',
+            nodeType: uuid,
+            subgraphId: uuid,
+            inputs: [port(0, 'LATENT')],
+            outputs: [port(1, 'IMAGE')],
+        });
+        const without = buildGraphModel(level([ported])).byId.get('9')!;
+        const known = buildGraphModel(level([ported]), new Map([[uuid, { name: 'Stage', nodes: 7 }]])).byId.get('9')!;
+        expect(known.inside).toBe(7);
+        expect(known.inPin).toEqual(without.inPin);
+        expect(known.outPin).toEqual(without.outPin);
+    });
+
     // Without a definition the report cannot open it, so there is no row to make room for.
     it('has no count and no row when the report has no definition for it', () => {
         const node = buildGraphModel(level([instance]), new Map([['other', { name: 'Other', nodes: 2 }]])).byId.get('9')!;

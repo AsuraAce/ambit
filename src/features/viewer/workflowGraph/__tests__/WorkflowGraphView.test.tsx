@@ -235,7 +235,7 @@ describe('WorkflowGraphView', () => {
         const { unmount } = render(
             <WorkflowGraphView report={report(two)} fileName="a.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />
         );
-        expect(document.querySelector('.wg-facts')?.textContent).toBe('ComfyUI · 2 nodes · 1 wires');
+        expect(document.querySelector('.wg-facts')?.textContent).toBe('ComfyUI · 2 nodes · 1 wire');
         unmount();
         render(
             <WorkflowGraphView
@@ -247,7 +247,7 @@ describe('WorkflowGraphView', () => {
         );
         const badge = screen.getByText('Partly shown');
         expect(badge.getAttribute('title')).toMatch(/part of it is not shown/);
-        expect(document.querySelector('.wg-count')?.textContent).toBe('ComfyUI API prompt · 2 nodes · 1 wires');
+        expect(document.querySelector('.wg-count')?.textContent).toBe('ComfyUI API prompt · 2 nodes · 1 wire');
     });
 
     // The viewer's own listener closes the viewer on Escape: one press must close the graph only.
@@ -877,7 +877,7 @@ describe('WorkflowGraphView', () => {
         // Escape steps back one thing at a time, so it never throws away more than the user meant.
         it('steps back with Escape: the search, the panel, the subgraph level, then the graph', () => {
             const { onClose } = renderReading();
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' }));
             expect(screen.getByRole('navigation', { name: 'Workflow levels' }).textContent).toContain('Upscale stage');
             expect(shown('Inner')).toBe(true);
             click(nodeElement('u1'));
@@ -903,7 +903,7 @@ describe('WorkflowGraphView', () => {
         it('keeps a level’s folds while a subgraph is open, and goes back from the breadcrumb', () => {
             renderReading();
             fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' }));
             expect(shown('Load')).toBe(false);
             fireEvent.click(screen.getByRole('button', { name: 'read.png' }));
             expect(screen.getByRole('button', { name: 'Unfold group Sampling' })).toBeTruthy();
@@ -912,7 +912,7 @@ describe('WorkflowGraphView', () => {
         // The owner's pick: a row under the subgraph's body says what opening it leads to.
         it('opens a subgraph from the row under its body, which counts the nodes inside', () => {
             renderReading();
-            const row = screen.getByRole('button', { name: 'Open subgraph Upscale stage' });
+            const row = screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' });
             expect(row.classList.contains('wg-door')).toBe(true);
             expect(row.textContent).toBe('Open subgraph · 1 node inside');
             fireEvent.click(row);
@@ -925,9 +925,9 @@ describe('WorkflowGraphView', () => {
         it('hides the open row with the body when the subgraph node is folded', () => {
             renderReading();
             fireEvent.click(screen.getByRole('button', { name: 'Fold Upscale stage' }));
-            expect(screen.queryByRole('button', { name: 'Open subgraph Upscale stage' })).toBeNull();
+            expect(screen.queryByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' })).toBeNull();
             fireEvent.click(screen.getByRole('button', { name: 'Unfold Upscale stage' }));
-            expect(screen.getByRole('button', { name: 'Open subgraph Upscale stage' })).toBeTruthy();
+            expect(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' })).toBeTruthy();
         });
 
         // A row that cannot open would be a dead control.
@@ -944,7 +944,7 @@ describe('WorkflowGraphView', () => {
             const levels = () => screen.getByRole('navigation', { name: 'Workflow levels' });
             expect(levels().querySelector('[aria-current]')?.textContent).toBe('read.png');
             expect(levels().querySelector('button')).toBeNull();
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' }));
             expect(levels().textContent).toBe('read.pngUpscale stage');
             fireEvent.click(screen.getByRole('button', { name: 'read.png' }));
             expect(shown('Load')).toBe(true);
@@ -1050,7 +1050,7 @@ describe('WorkflowGraphView', () => {
         it('keeps the nodes’ own buttons out of the Tab order, and names the canvas for screen readers', () => {
             renderReading();
             expect(screen.getByRole('button', { name: 'Fold Load' }).tabIndex).toBe(-1);
-            expect(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }).tabIndex).toBe(-1);
+            expect(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' }).tabIndex).toBe(-1);
             expect(canvas().tabIndex).toBe(0);
             expect(document.getElementById(canvas().getAttribute('aria-describedby')!)?.textContent).toMatch(/Arrow keys/);
         });
@@ -1658,7 +1658,7 @@ describe('WorkflowGraphView', () => {
                 fireEvent.pointerEnter(pic());
                 expect(lit()).toEqual(['3']);
                 fireEvent.pointerLeave(pic());
-                fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+                fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' }));
                 expect(place()).toEqual(before);
                 fireEvent.pointerEnter(pic());
                 expect(lit()).toEqual(['u1']);
@@ -1718,7 +1718,7 @@ describe('WorkflowGraphView', () => {
 
         it('leaves Escape as it was: up a level, then out, with the window still shown', () => {
             const { onClose } = renderFloat(savedInside);
-            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' }));
             fireEvent.keyDown(document.body, { key: 'Escape' });
             expect(screen.getByRole('navigation', { name: 'Workflow levels' }).querySelector('[aria-current]')?.textContent).toBe(
                 'render.png'
@@ -2225,7 +2225,7 @@ describe('WorkflowGraphView', () => {
                 fireEvent.click(screen.getByRole('button', { name: 'Tidy' }));
                 await waitFor(() => expect(vi.mocked(forNode('1')[0].cancel).mock.calls.length).toBeGreaterThan(0));
                 expect(forNode('1')).toHaveLength(1);
-                fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+                fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage, 1 node inside' }));
                 expect(forNode('u1')).toHaveLength(1);
             } finally {
                 restore();

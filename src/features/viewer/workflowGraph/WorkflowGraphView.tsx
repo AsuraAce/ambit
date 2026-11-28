@@ -99,6 +99,7 @@ const textWidth = (text: string, px: number, weight: number, family: string): nu
     return text.length * px * 0.6;
 };
 const nodeCount = (count: number) => (count === 1 ? '1 node' : `${count} nodes`);
+const wireCount = (count: number) => (count === 1 ? '1 wire' : `${count} wires`);
 
 interface FoldMotion {
     leaving: ReadonlySet<string>;
@@ -1301,8 +1302,8 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                         </span>
                     ) : null}
                     <span className="wg-count">
-                        {report.source === 'api_prompt' ? 'ComfyUI API prompt' : 'ComfyUI'} · {model.nodes.length} nodes ·{' '}
-                        {model.links.length} wires
+                        {report.source === 'api_prompt' ? 'ComfyUI API prompt' : 'ComfyUI'} · {nodeCount(model.nodes.length)} ·{' '}
+                        {wireCount(model.links.length)}
                     </span>
                 </span>
             </header>

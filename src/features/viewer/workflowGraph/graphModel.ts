@@ -211,7 +211,9 @@ const buildNode = (node: WorkflowCanvasNode, subgraphs: ReadonlyMap<string, Subg
  */
 const insideGroup = (node: GraphNode, group: GraphGroup): boolean => {
     if (!node.saved) return false;
-    const height = node.kind === 'reroute' ? 0 : node.collapsed ? HEADER_H : node.minHeight || node.height;
+    // The open row is Ambit's, not the file's: it never moves a node's centre.
+    const height =
+        node.kind === 'reroute' ? 0 : node.collapsed ? HEADER_H : node.minHeight || node.height - (node.inside === null ? 0 : DOOR_H);
     const width = node.kind === 'reroute' ? 0 : node.width;
     const cx = node.saved.x + width / 2;
     const cy = node.saved.y + height / 2;
