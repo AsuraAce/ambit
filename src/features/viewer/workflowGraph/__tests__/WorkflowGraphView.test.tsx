@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import * as React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useGlobalShortcuts } from '../../../../hooks/useGlobalShortcuts';
 import { createDefaultAppSettings } from '../../../../constants/defaultSettings';
@@ -1037,7 +1037,7 @@ describe('WorkflowGraphView', () => {
             expect(announced()).toBe('Upscale stage, KSampler');
             fireEvent.keyDown(canvas(), { key: 'Enter' });
             expect(panel()?.getAttribute('aria-label')).toBe('Node Upscale stage');
-            expect(screen.getByRole('button', { name: 'Open subgraph' })).toBeTruthy();
+            expect(within(panel() as HTMLElement).getByRole('button', { name: 'Open subgraph Upscale stage, 1 node inside' })).toBeTruthy();
             fireEvent.keyDown(canvas(), { key: 'Enter' });
             expect(shown('Inner')).toBe(true);
             expect(document.activeElement).toBe(canvas());

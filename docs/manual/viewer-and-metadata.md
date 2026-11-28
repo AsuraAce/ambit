@@ -143,7 +143,7 @@ Reading nodes:
 - Bypassed and muted nodes are marked as in ComfyUI. A note node shows its text.
 - Each node and each group has a fold button. Folding a group shrinks it to one box, and its wires join at the box.
 - `/` opens the search, **Find a node or value**. It matches node titles, node types and setting values. The matching nodes light up, and the Up and Down arrows and Enter pick one from the list.
-- A subgraph node has a row under its body, **Open subgraph · N nodes inside** (and its side panel **Open subgraph**), which shows the subgraph as its own level. Zoomed out, the row shows as a green band along the bottom of the node. The path in the top bar starts with the image's file name (file name › subgraph name); click a step to go back up. Each level keeps its folds, layout and view while the graph stays open.
+- A subgraph node has a row under its body, **Open subgraph · N nodes inside** (and its side panel an **Open** button beside Fold and Close), which shows the subgraph as its own level. Zoomed out, the row shows as a green band along the bottom of the node. The path in the top bar starts with the image's file name (file name › subgraph name); click a step to go back up. Each level keeps its folds, layout and view while the graph stays open.
 
 Wires and colours:
 

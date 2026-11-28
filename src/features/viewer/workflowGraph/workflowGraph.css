@@ -1201,14 +1201,14 @@ button.wg-crumb:hover {
     border-bottom: 1px solid var(--graph-line);
 }
 
+/* One row that never wraps: at a narrow panel the node's class gives way, never the buttons. */
 .wg-ph .row {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     gap: 8px;
 }
 
-/* The node's class takes the room, so Fold and Close sit at the right end. */
+/* The node's class takes the room, so the mark, Open, Fold and Close sit at the right end. */
 .wg-ph .cls {
     flex: 1;
     min-width: 0;
@@ -1223,20 +1223,37 @@ button.wg-crumb:hover {
     margin-left: -6px;
 }
 
+.wg-ph .wg-mark {
+    margin-left: 0;
+}
+
+/* Open, in the sage of the node's own Open row. */
+.wg-po {
+    flex: none;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--graph-sage) 28%, transparent);
+    background: color-mix(in srgb, var(--graph-sage) 10%, transparent);
+    color: var(--graph-sage);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 140ms var(--wg-out);
+}
+
+.wg-po:hover {
+    background: color-mix(in srgb, var(--graph-sage) 20%, transparent);
+}
+
 .wg-ph h3 {
-    margin: 6px 0 8px;
+    margin: 6px 0 0;
     font-size: 15px;
     font-weight: 700;
     overflow-wrap: anywhere;
-}
-
-.wg-ph h3:last-child {
-    margin-bottom: 0;
-}
-
-.wg-ph .wg-pa {
-    height: 26px;
-    border-color: var(--graph-line-hi);
 }
 
 .wg-pb {
@@ -1385,6 +1402,7 @@ button.wg-crumb:hover {
 }
 
 .wg-door:focus-visible,
+.wg-po:focus-visible,
 .wg-crumb:focus-visible,
 .wg-lk:focus-visible,
 .wg-cp:focus-visible {
@@ -1742,6 +1760,7 @@ button.wg-crumb:hover {
     .wg-wire.leaving,
     .wg-cb svg,
     .wg-door,
+    .wg-po,
     .wg-tb.top-right,
     .wg-map,
     .wg-fpic::after {

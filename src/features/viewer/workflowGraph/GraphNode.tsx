@@ -25,7 +25,7 @@ interface GraphNodeProps {
 
 const KIND_ICONS = { note: StickyNote, subgraph: Layers } as const;
 
-const insideCount = (count: number) => (count === 1 ? '1 node inside' : `${count} nodes inside`);
+export const insideCount = (count: number) => (count === 1 ? '1 node inside' : `${count} nodes inside`);
 
 // Every string drawn here comes from the file and is rendered as React text only.
 const GraphNodeView: React.FC<GraphNodeProps> = ({
