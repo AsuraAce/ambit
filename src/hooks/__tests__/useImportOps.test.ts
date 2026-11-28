@@ -624,12 +624,12 @@ describe('useImportOps', () => {
     // owner, so they must not be prepended into the previous owner's view that the store still shows.
     it('refetches instead of prepending an automatic import while an owner switch is pending', async () => {
         const invalidateQueries = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
-        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('odin-row', 2000)] }));
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('oscar-row', 2000)] }));
         const { result, setImages } = renderImportOps({}, [importedImage('freya-row')]);
         startOwnerSwitchForTest();
         try {
             await act(async () => {
-                await result.current.handleImportPaths(['D:/Invoke/outputs/images/odin.png'], undefined, { mode: 'startup' });
+                await result.current.handleImportPaths(['D:/Invoke/outputs/images/oscar.png'], undefined, { mode: 'startup' });
             });
             expect(mocks.processNativePaths).toHaveBeenCalled();
             expect(setImages).not.toHaveBeenCalled();

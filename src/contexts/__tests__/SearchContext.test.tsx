@@ -805,7 +805,7 @@ describe('SearchProvider', () => {
     // the store and the context keeps the owner on screen until the swap.
     describe('a user owner switch (#527)', () => {
         const freyaImage = image({ id: 'freya-image' });
-        const odinImage = image({ id: 'odin-image' });
+        const oscarImage = image({ id: 'oscar-image' });
         const facetsOf = (model: string) => ({
             checkpoints: [{ name: model, count: 1 }],
             loras: [],
@@ -847,14 +847,14 @@ describe('SearchProvider', () => {
         };
         const storedIds = () => (mocks.searchState.current as SearchValue).images.map((item) => item.id);
 
-        it("keeps Freya's images, counts, facets and stats in the store and the context after Odin's first page is cached", () => {
+        it("keeps Freya's images, counts, facets and stats in the store and the context after Oscar's first page is cached", () => {
             showOwner('freya', [freyaImage], 10);
             const view = renderProvider();
             show(view);
             expect(storedIds()).toEqual([freyaImage.id]);
 
             act(() => startOwnerSwitchForTest());
-            showOwner('odin', [odinImage], 3);
+            showOwner('oscar', [oscarImage], 3);
             show(view);
 
             expect(storedIds()).toEqual([freyaImage.id]);
@@ -867,9 +867,9 @@ describe('SearchProvider', () => {
             act(() => endOwnerSwitchForTest());
             show(view);
 
-            expect(storedIds()).toEqual([odinImage.id]);
+            expect(storedIds()).toEqual([oscarImage.id]);
             expect(latest.totalImages).toBe(3);
-            expect(latest.facets.checkpoints).toEqual([{ name: 'odin-model', count: 1 }]);
+            expect(latest.facets.checkpoints).toEqual([{ name: 'oscar-model', count: 1 }]);
         });
 
         // Privacy: the kept page was loaded under the old settings, so any privacy change withholds it.

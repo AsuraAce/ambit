@@ -63,13 +63,13 @@ describe('useOwnerScopeTransitionPresentation', () => {
 
 describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)', () => {
     const freya: InvokeSyncScope = { dbPath: 'C:/invoke/db', imagesRoot: 'C:/invoke/outputs', mode: 'owner', ownerId: 'freya' };
-    const odin: InvokeSyncScope = { ...freya, ownerId: 'odin' };
+    const oscar: InvokeSyncScope = { ...freya, ownerId: 'oscar' };
     const retained = (overrides: Partial<RetainedOwnerScope> = {}): RetainedOwnerScope => ({
         operationId: Symbol('switch'),
         rootPath: 'C:/invoke',
         scope: freya,
         label: 'Freya',
-        targetLabel: 'Odin',
+        targetLabel: 'Oscar',
         ...overrides,
     });
 
@@ -103,8 +103,8 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
     };
 
     const admittedFreya: InvokeOwnerScopeState = { status: 'ready', rootPath: 'C:/invoke', scope: freya };
-    const applyingOdin: InvokeOwnerScopeState = { status: 'applying', rootPath: 'C:/invoke', scope: odin };
-    const admittedOdin: InvokeOwnerScopeState = { status: 'ready', rootPath: 'C:/invoke', scope: odin };
+    const applyingOscar: InvokeOwnerScopeState = { status: 'applying', rootPath: 'C:/invoke', scope: oscar };
+    const admittedOscar: InvokeOwnerScopeState = { status: 'ready', rootPath: 'C:/invoke', scope: oscar };
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -121,7 +121,7 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
         expect(view.result.current.shown).toBe('freya');
 
         view.rerender({
-            ownerScopeState: applyingOdin,
+            ownerScopeState: applyingOscar,
             retainedOwnerScope: switching,
             canSwapOwnerView: true,
             isExplicitPreparation: true,
@@ -141,23 +141,23 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
         const switching = retained();
         useInvokeOwnerScopeStore.getState().retainOwnerScope(switching);
         const view = renderSwitch({ ownerScopeState: admittedFreya, retainedOwnerScope: null, canSwapOwnerView: false });
-        view.rerender({ ownerScopeState: applyingOdin, retainedOwnerScope: switching, canSwapOwnerView: false });
-        view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: switching, canSwapOwnerView: false });
+        view.rerender({ ownerScopeState: applyingOscar, retainedOwnerScope: switching, canSwapOwnerView: false });
+        view.rerender({ ownerScopeState: admittedOscar, retainedOwnerScope: switching, canSwapOwnerView: false });
 
         expect(view.result.current.shown).toBe('freya');
         expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBe(switching);
         expect(view.onClearStaleView).not.toHaveBeenCalled();
 
-        view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: switching, canSwapOwnerView: true });
+        view.rerender({ ownerScopeState: admittedOscar, retainedOwnerScope: switching, canSwapOwnerView: true });
 
         expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
         expect(view.onClearStaleView).toHaveBeenCalledOnce();
-        view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: null, canSwapOwnerView: true });
-        expect(view.result.current.shown).toBe('odin');
+        view.rerender({ ownerScopeState: admittedOscar, retainedOwnerScope: null, canSwapOwnerView: true });
+        expect(view.result.current.shown).toBe('oscar');
     });
 
     // N2: the swap's stale-view clear calls the guarded Clear filters, which refuses while a switch is pending.
-    // The swap must release the retained owner first, or Freya's filters would survive into Odin's view.
+    // The swap must release the retained owner first, or Freya's filters would survive into Oscar's view.
     it.each([
         ['when the view can swap', false],
         ['on "Switch now"', true],
@@ -168,7 +168,7 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
         const pendingAtClear: boolean[] = [];
         view.onClearStaleView.mockImplementation(() => pendingAtClear.push(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())));
 
-        view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: switching, canSwapOwnerView: !swapRequested });
+        view.rerender({ ownerScopeState: admittedOscar, retainedOwnerScope: switching, canSwapOwnerView: !swapRequested });
 
         expect(pendingAtClear).toEqual([false]);
     });
@@ -177,7 +177,7 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
         const switching = retained({ swapRequested: true });
         useInvokeOwnerScopeStore.getState().retainOwnerScope(switching);
         const view = renderSwitch({ ownerScopeState: admittedFreya, retainedOwnerScope: null, canSwapOwnerView: false });
-        view.rerender({ ownerScopeState: admittedOdin, retainedOwnerScope: switching, canSwapOwnerView: false });
+        view.rerender({ ownerScopeState: admittedOscar, retainedOwnerScope: switching, canSwapOwnerView: false });
 
         expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull();
         expect(view.onClearStaleView).toHaveBeenCalledOnce();
@@ -187,7 +187,7 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
     it('does not clear the view when the switch returns to the previous owner', () => {
         const switching = retained();
         const view = renderSwitch({ ownerScopeState: admittedFreya, retainedOwnerScope: null, canSwapOwnerView: true });
-        view.rerender({ ownerScopeState: applyingOdin, retainedOwnerScope: switching, canSwapOwnerView: true });
+        view.rerender({ ownerScopeState: applyingOscar, retainedOwnerScope: switching, canSwapOwnerView: true });
         view.rerender({ ownerScopeState: admittedFreya, retainedOwnerScope: switching, canSwapOwnerView: true });
         view.rerender({ ownerScopeState: admittedFreya, retainedOwnerScope: null, canSwapOwnerView: true });
 
@@ -199,7 +199,7 @@ describe('useOwnerScopeTransitionPresentation during a user owner switch (#527)'
     it('ignores a retained owner of another root', () => {
         const view = renderSwitch({ ownerScopeState: admittedFreya, retainedOwnerScope: null, canSwapOwnerView: true });
         view.rerender({
-            ownerScopeState: applyingOdin,
+            ownerScopeState: applyingOscar,
             retainedOwnerScope: retained({ rootPath: 'D:/other-invoke' }),
             canSwapOwnerView: true,
             isExplicitPreparation: true,

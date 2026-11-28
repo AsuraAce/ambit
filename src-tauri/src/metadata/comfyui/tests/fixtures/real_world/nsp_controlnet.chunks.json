@@ -2,7 +2,7 @@
   "prompt": {
     "3": {
       "inputs": {
-        "seed": 273138048298546,
+        "seed": 101010101010101,
         "steps": 12,
         "cfg": 4.0,
         "sampler_name": "dpmpp_sde",
@@ -40,8 +40,8 @@
     "34": {
       "inputs": {
         "noodle_key": "::",
-        "seed": 483340363264397,
-        "text": "Alina Smirnov: young dancer on a boat, detailed dress and face",
+        "seed": 303030303030303,
+        "text": "Still life: a red apple on a wooden table, soft window light",
         "clip": ["32", 1]
       },
       "class_type": "CLIPTextEncode (NSP)"
@@ -60,7 +60,7 @@
     "114": {
       "inputs": {
         "noodle_key": "__",
-        "seed": 608481745342694,
+        "seed": 404040404040404,
         "text": "bad_quality",
         "clip": ["32", 1]
       },

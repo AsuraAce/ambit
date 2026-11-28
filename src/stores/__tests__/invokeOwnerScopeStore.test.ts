@@ -53,7 +53,7 @@ describe('InvokeAI owner admission state', () => {
             rootPath: 'D:/Invoke',
             scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke/outputs/images', mode: 'owner', ownerId: 'freya' },
             label: 'Freya',
-            targetLabel: 'Odin',
+            targetLabel: 'Oscar',
         });
 
         it('lets only the retaining operation release the shown owner', () => {

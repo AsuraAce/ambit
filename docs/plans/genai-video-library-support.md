@@ -607,7 +607,7 @@ Owner acceptance uses an existing corpus video; no generated video is required.
 For the current local corpus, prepare a trusted sidecar with:
 
 ```powershell
-pnpm run prepare:video-metadata-smoke -- "C:\Users\Artemis\Videos\Ambit Smoke Test\Watched Folder\01-folder-video.mp4"
+pnpm run prepare:video-metadata-smoke -- "C:\Users\<user>\Videos\Ambit Smoke Test\Watched Folder\01-folder-video.mp4"
 pnpm run app:video-smoke
 ```
 

@@ -1,9 +1,9 @@
 {
-  "parameters": "undefined ,, Negative prompt: undefined Steps: 1024, Sampler: dpmpp_2m_karras, CFG scale: 7.0, Seed: 1300847582, Size: 1024x1536, Model: revAnimated_v122, Version: ComfyUI",
+  "parameters": "undefined ,, Negative prompt: undefined Steps: 1024, Sampler: dpmpp_2m_karras, CFG scale: 7.0, Seed: 1234567890, Size: 1024x1536, Model: revAnimated_v122, Version: ComfyUI",
   "prompt": {
     "1149": {
       "inputs": {
-        "text": "(((Cosplay as Asuka Langley Soryu from Neon Genesis Evangelion) with a red and black plugsuit, a red hair clip, and an interface headset.)),"
+        "text": "(((still life of a red apple on a wooden table) with a white cloth, a glass of water, and soft window light.)),"
       },
       "class_type": "ShowText"
     },

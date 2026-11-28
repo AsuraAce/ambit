@@ -20,7 +20,7 @@ const createDiscovery = (dbPath: string): InvokeOwnerDiscovery => ({
     schemaMode: 'multi_user',
     dbPath,
     imagesRoot: 'D:/Invoke',
-    owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+    owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 12 }],
     unassignedImageCount: 0,
 });
 
@@ -51,14 +51,14 @@ describe('InvokeOwnerScopeGate', () => {
             id: Symbol('switch'),
             origin: 'user',
             rootPath: 'D:/Invoke',
-            targetLabel: 'Odin',
+            targetLabel: 'Oscar',
             phase: 'preparing',
             viewCommitted: false,
             progress: { current: 1, total: 4 },
             cancel,
         });
         renderGate({ status: 'applying', rootPath: 'D:/Invoke' });
-        expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBe(document.activeElement);
+        expect(screen.getByRole('heading', { name: 'Preparing view — Oscar' })).toBe(document.activeElement);
         const button = screen.getByRole('button', { name: 'Cancel' });
         button.focus();
         fireEvent.click(button);
@@ -134,13 +134,13 @@ describe('InvokeOwnerScopeGate', () => {
                     schemaMode: 'multi_user',
                     dbPath: 'D:/Invoke/databases/invokeai.db',
                     imagesRoot: 'D:/Invoke',
-                    owners: [{ ownerId: 'owner-a', displayName: 'Odin', imageCount: 12 }],
+                    owners: [{ ownerId: 'owner-a', displayName: 'Oscar', imageCount: 12 }],
                     unassignedImageCount: 0,
                 },
                 progress: { current: 0, total: 0, message: 'Updating changed InvokeAI filters...' },
             });
 
-            expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBeTruthy();
+            expect(screen.getByRole('heading', { name: 'Preparing view — Oscar' })).toBeTruthy();
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(5000);
             });
@@ -158,14 +158,14 @@ describe('InvokeOwnerScopeGate', () => {
                 schemaMode: 'multi_user',
                 dbPath: 'D:/Invoke/databases/invokeai.db',
                 imagesRoot: 'D:/Invoke',
-                owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+                owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 12 }],
                 unassignedImageCount: 2,
             },
         });
 
         const heading = screen.getByRole('heading', { name: 'Choose which InvokeAI images to show' });
         await waitFor(() => expect(document.activeElement).toBe(heading));
-        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        fireEvent.click(screen.getByRole('button', { name: /alex/i }));
         expect(callbacks.onSelect).not.toHaveBeenCalled();
         const openView = screen.getByRole('button', { name: 'Open view' });
         expect(document.activeElement).toBe(openView);
@@ -185,7 +185,7 @@ describe('InvokeOwnerScopeGate', () => {
                 schemaMode: 'multi_user',
                 dbPath: 'D:/Invoke/databases/invokeai.db',
                 imagesRoot: 'D:/Invoke',
-                owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+                owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 12 }],
                 unassignedImageCount: 2,
             },
         });
@@ -230,7 +230,7 @@ describe('InvokeOwnerScopeGate', () => {
                         schemaMode: 'multi_user',
                         dbPath: 'D:/Invoke/databases/invokeai.db',
                         imagesRoot: 'D:/Invoke',
-                        owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+                        owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 12 }],
                         unassignedImageCount: 0,
                     },
                 }}
@@ -238,7 +238,7 @@ describe('InvokeOwnerScopeGate', () => {
             />
         );
 
-        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        fireEvent.click(screen.getByRole('button', { name: /alex/i }));
         const openView = screen.getByRole('button', { name: 'Open view' });
         fireEvent.click(openView);
         fireEvent.click(openView);
@@ -276,7 +276,7 @@ describe('InvokeOwnerScopeGate', () => {
                 id: Symbol('cancelled operation'),
                 origin: 'user',
                 rootPath: 'D:/Invoke',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
                 phase: 'cancelled',
                 viewCommitted: false,
                 progress: { current: 0, total: 0 },
@@ -305,7 +305,7 @@ describe('InvokeOwnerScopeGate', () => {
             id: Symbol('failed operation'),
             origin: 'user',
             rootPath: 'D:/Invoke',
-            targetLabel: 'Odin',
+            targetLabel: 'Oscar',
             phase: 'failed',
             viewCommitted: true,
             progress: { current: 2, total: 3 },
@@ -380,7 +380,7 @@ describe('InvokeOwnerScopeGate', () => {
                 id: Symbol(id),
                 origin: 'user' as const,
                 rootPath: 'D:/Invoke',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
                 phase: 'preparing' as const,
                 viewCommitted: false,
                 progress: { current: 0, total: 0 },
@@ -416,7 +416,7 @@ describe('InvokeOwnerScopeGate', () => {
 
         it('drops the pending choice and a failed submit message when another InvokeAI database is discovered', async () => {
             const { rerenderState } = renderSelection(() => Promise.reject(new Error('Could not open view')));
-            fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+            fireEvent.click(screen.getByRole('button', { name: /alex/i }));
             fireEvent.click(openViewButton());
             expect((await screen.findByRole('alert')).textContent).toBe('Could not open view');
             expect(openViewButton().disabled).toBe(false);
@@ -439,7 +439,7 @@ describe('InvokeOwnerScopeGate', () => {
         it('stops the Opening view state when the status leaves selection_required', () => {
             const onSelect = vi.fn(() => new Promise<void>(() => undefined));
             const { rerenderState } = renderSelection(onSelect);
-            fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+            fireEvent.click(screen.getByRole('button', { name: /alex/i }));
             fireEvent.click(openViewButton());
             expect(openViewButton().textContent).toBe('Opening view…');
             expect(openViewButton().disabled).toBe(true);

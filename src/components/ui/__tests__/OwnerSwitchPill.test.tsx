@@ -22,32 +22,32 @@ const scopeOf = (ownerId: string): InvokeSyncScope => ({
     ownerId,
 });
 
-const PENDING = "Showing Freya's images · switching to Odin";
+const PENDING = "Showing Freya's images · switching to Oscar";
 
 const startSwitch = (): symbol => {
     const operationId = Symbol('switch');
     act(() => {
         const store = useInvokeOwnerScopeStore.getState();
-        store.setOwnerScopeState({ status: 'applying', rootPath: 'D:/Invoke', scope: scopeOf('odin') });
+        store.setOwnerScopeState({ status: 'applying', rootPath: 'D:/Invoke', scope: scopeOf('oscar') });
         store.setOperation({
             id: operationId,
             origin: 'user',
             rootPath: 'D:/Invoke',
-            targetLabel: 'Odin',
+            targetLabel: 'Oscar',
             phase: 'preparing',
             viewCommitted: false,
             progress: { current: 0, total: 0 },
         });
-        store.retainOwnerScope({ operationId, rootPath: 'D:/Invoke', scope: scopeOf('freya'), label: 'Freya', targetLabel: 'Odin' });
+        store.retainOwnerScope({ operationId, rootPath: 'D:/Invoke', scope: scopeOf('freya'), label: 'Freya', targetLabel: 'Oscar' });
     });
     return operationId;
 };
 
-const endSwitch = (operationId: symbol, owner: 'freya' | 'odin', phase: InvokeOperationState['phase']) => {
+const endSwitch = (operationId: symbol, owner: 'freya' | 'oscar', phase: InvokeOperationState['phase']) => {
     act(() => {
         const store = useInvokeOwnerScopeStore.getState();
         store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf(owner) });
-        store.setOperation((current) => current && { ...current, phase, viewCommitted: owner === 'odin' });
+        store.setOperation((current) => current && { ...current, phase, viewCommitted: owner === 'oscar' });
         store.releaseRetainedOwnerScope(operationId);
     });
 };
@@ -78,9 +78,9 @@ describe('OwnerSwitchPill', () => {
 
         act(() => vi.advanceTimersByTime(1));
         expect(screen.getByRole('button', { name: PENDING })).toBeTruthy();
-        // It stays through the Q2 hold: Odin is admitted, the swap waits.
+        // It stays through the Q2 hold: Oscar is admitted, the swap waits.
         act(() => {
-            useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('odin') });
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('oscar') });
             vi.advanceTimersByTime(60_000);
         });
         expect(screen.getByRole('button', { name: PENDING })).toBeTruthy();
@@ -91,11 +91,11 @@ describe('OwnerSwitchPill', () => {
         expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
         expect(useLibraryStore.getState().isActivityDockMinimized).toBe(false);
 
-        endSwitch(operationId, 'odin', 'completed');
-        expect(screen.getByText("Now showing Odin's images")).toBeTruthy();
+        endSwitch(operationId, 'oscar', 'completed');
+        expect(screen.getByText("Now showing Oscar's images")).toBeTruthy();
         expect(screen.queryByRole('button')).toBeNull();
         act(() => vi.advanceTimersByTime(3000));
-        expect(screen.queryByText("Now showing Odin's images")).toBeNull();
+        expect(screen.queryByText("Now showing Oscar's images")).toBeNull();
     });
 
     it.each([
@@ -122,7 +122,7 @@ describe('OwnerSwitchPill', () => {
             useInvokeOwnerScopeStore.getState().setOperation((current) => current && { ...current, phase: 'cancelling', cancel: undefined })
         );
 
-        const cancelling = "Showing Freya's images · cancelling switch to Odin";
+        const cancelling = "Showing Freya's images · cancelling switch to Oscar";
         expect(screen.getByRole('button', { name: cancelling })).toBeTruthy();
         expect(screen.queryByText(PENDING)).toBeNull();
         endSwitch(operationId, 'freya', 'cancelled');
@@ -136,22 +136,22 @@ describe('OwnerSwitchPill', () => {
         act(() => vi.advanceTimersByTime(600));
         act(() => {
             const store = useInvokeOwnerScopeStore.getState();
-            store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('odin') });
+            store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('oscar') });
             store.setOperation((current) => current && { ...current, phase: 'cancelling', viewCommitted: true });
         });
 
         expect(screen.getByRole('button', { name: PENDING })).toBeTruthy();
     });
 
-    // R1: once Odin is admitted the switch is done. Cancelling or failing its catch-up during the held swap
-    // stops only the catch-up, so the swap shows Odin and the note must not claim Freya is still shown.
+    // R1: once Oscar is admitted the switch is done. Cancelling or failing its catch-up during the held swap
+    // stops only the catch-up, so the swap shows Oscar and the note must not claim Freya is still shown.
     it.each(['cancelled', 'failed'] as const)('names the target after a held swap whose catch-up was %s', (phase) => {
         render(<OwnerSwitchPill />);
         const operationId = startSwitch();
         act(() => vi.advanceTimersByTime(600));
-        endSwitch(operationId, 'odin', phase);
+        endSwitch(operationId, 'oscar', phase);
 
-        expect(screen.getByText("Now showing Odin's images")).toBeTruthy();
+        expect(screen.getByText("Now showing Oscar's images")).toBeTruthy();
         expect(screen.queryByText(/still showing Freya/)).toBeNull();
     });
 
@@ -160,23 +160,23 @@ describe('OwnerSwitchPill', () => {
         const operationId = startSwitch();
         act(() => {
             const store = useInvokeOwnerScopeStore.getState();
-            store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('odin') });
+            store.setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', scope: scopeOf('oscar') });
             store.setOperation((current) => current && { ...current, id: Symbol('retry'), phase: 'failed', viewCommitted: true });
             store.releaseRetainedOwnerScope(operationId);
         });
 
-        expect(screen.getByText("Now showing Odin's images")).toBeTruthy();
+        expect(screen.getByText("Now showing Oscar's images")).toBeTruthy();
     });
 
     it('shows only the "Now showing" note for a warm switch admitted within 600 ms', () => {
         render(<OwnerSwitchPill />);
         const operationId = startSwitch();
         act(() => vi.advanceTimersByTime(550));
-        endSwitch(operationId, 'odin', 'syncing');
+        endSwitch(operationId, 'oscar', 'syncing');
         act(() => vi.advanceTimersByTime(100));
 
         expect(screen.queryByText(PENDING)).toBeNull();
-        expect(screen.getByText("Now showing Odin's images")).toBeTruthy();
+        expect(screen.getByText("Now showing Oscar's images")).toBeTruthy();
     });
 
     it('drops an earlier note as soon as another switch starts', () => {

@@ -263,7 +263,7 @@ describe('InvokeAI connection helpers', () => {
             if (sql.includes('LEFT JOIN users')) {
                 return [
                     { owner_id: null, display_name: null, count: 2 },
-                    { owner_id: 'owner-a', display_name: ' Artemis ', count: 12, intermediate_count: 4 },
+                    { owner_id: 'owner-a', display_name: ' Alex ', count: 12, intermediate_count: 4 },
                     { owner_id: 'owner-b', display_name: null, count: 4 },
                 ];
             }
@@ -276,7 +276,7 @@ describe('InvokeAI connection helpers', () => {
             dbPath: 'D:/Invoke/databases/invokeai.db',
             imagesRoot: 'D:/Invoke',
             owners: [
-                { ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12, intermediateImageCount: 4 },
+                { ownerId: 'owner-a', displayName: 'Alex', imageCount: 12, intermediateImageCount: 4 },
                 { ownerId: 'owner-b', displayName: undefined, imageCount: 4 },
             ],
             unassignedImageCount: 2,

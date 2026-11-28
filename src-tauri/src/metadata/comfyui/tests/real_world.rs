@@ -127,11 +127,11 @@ fn test_real_world_fixtures_extract_expected_metadata() {
         "sdprompt_saver_setnode",
         ExpectedMetadata {
             model: "dreamshaper_8",
-            seed: Some(501574468386073),
+            seed: Some(777777777777777),
             steps: 20,
             cfg: 5.0,
             sampler: "dpmpp_2m (karras)",
-            positive_prompt: "avatar themed portrait with blue skin and leaf clothing",
+            positive_prompt: "still life of a red apple on a wooden table",
             negative_prompt: "low quality, watermark",
             loras: &[],
             control_nets: &[],
@@ -162,7 +162,7 @@ fn test_real_world_fixtures_extract_expected_metadata() {
             steps: 28,
             cfg: 6.5,
             sampler: "euler (normal)",
-            positive_prompt: "Low poly crystal pine tree, flat background",
+            positive_prompt: "Simple sketch of an apple and a pear, plain background",
             negative_prompt: "text, watermark",
             loras: &[],
             control_nets: &[],
@@ -192,11 +192,11 @@ fn test_real_world_fixtures_extract_expected_metadata() {
         "nsp_controlnet",
         ExpectedMetadata {
             model: "revanimated_v11",
-            seed: Some(273138048298546),
+            seed: Some(101010101010101),
             steps: 12,
             cfg: 4.0,
             sampler: "dpmpp_sde (karras)",
-            positive_prompt: "Alina Smirnov: young dancer on a boat, detailed dress and face",
+            positive_prompt: "Still life: a red apple on a wooden table, soft window light",
             negative_prompt: "bad_quality",
             loras: &["epinoiseoffset_v2"],
             control_nets: &["control_sd15_openpose"],
@@ -270,13 +270,13 @@ fn test_real_world_fixtures_extract_expected_metadata() {
         "prompt_composition",
         ExpectedMetadata {
             model: "z_image_turbo_bf16",
-            seed: Some(515018389178561),
+            seed: Some(111111111111111),
             steps: 6,
             cfg: 1.0,
             sampler: "res_multistep (simple)",
-            positive_prompt: "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1> <lora:Asians:0.65>",
+            positive_prompt: "A red apple on a wooden table..., <lora:Example-Style:1> <lora:Example-Detail:0.65>",
             negative_prompt: "",
-            loras: &["mystic_xxx", "asians (0.65)"],
+            loras: &["example_style", "example_detail (0.65)"],
             control_nets: &[],
             ip_adapters: &[],
         },
@@ -304,11 +304,11 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
         "issue_1024_sdprompt_saver",
         ExpectedMetadata {
             model: "revAnimated_v122",
-            seed: Some(1300847582),
+            seed: Some(1234567890),
             steps: 20,
             cfg: 7.0,
             sampler: "dpmpp_2m_karras",
-            positive_prompt: "(((Cosplay as Asuka Langley Soryu from Neon Genesis Evangelion) with a red and black plugsuit, a red hair clip, and an interface headset.)),",
+            positive_prompt: "(((still life of a red apple on a wooden table) with a white cloth, a glass of water, and soft window light.)),",
             negative_prompt: "",
             loras: &[],
             control_nets: &[],
@@ -333,7 +333,7 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
         "inspire_faceid_resources",
         ExpectedMetadata {
             model: "Unknown",
-            seed: Some(511923121704050),
+            seed: Some(515151515151515),
             steps: 20,
             cfg: 8.0,
             sampler: "dpmpp_2m (karras)",
@@ -650,7 +650,7 @@ fn test_krea2_turbo_official_template_extracts_expected_metadata() {
         &meta,
         ExpectedMetadata {
             model: "krea2_turbo_fp8_scaled",
-            seed: Some(552211234818773),
+            seed: Some(123456789012345),
             steps: 8,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -662,7 +662,7 @@ fn test_krea2_turbo_official_template_extracts_expected_metadata() {
         },
     );
     assert!(
-        expected_prompt.contains("A lone astronaut standing in a dark, dilapidated spaceship"),
+        expected_prompt.contains("a red apple on a wooden table"),
         "Krea expected prompt should come from the user prompt node"
     );
     assert_archival_chunk_preserved(
@@ -704,10 +704,7 @@ fn test_format_parity_flat_jpeg_webp_parameters_parse_cfg_and_unknown_prompts() 
         let meta = extract_a1111_metadata(parameters, None);
 
         assert_eq!(meta.tool, "ComfyUI", "{fixture_name} tool");
-        assert_eq!(
-            meta.model, "ArrogantBastard_ponyV33SS",
-            "{fixture_name} model"
-        );
+        assert_eq!(meta.model, "exampleModel_v10", "{fixture_name} model");
         assert_eq!(meta.steps, 20, "{fixture_name} steps");
         assert_eq!(meta.cfg, 8.0, "{fixture_name} cfg");
         assert_eq!(meta.seed, Some(0), "{fixture_name} seed");
@@ -743,7 +740,7 @@ fn test_format_parity_png_graph_overrides_stale_flat_save_metadata() {
         &merged,
         ExpectedMetadata {
             model: "krea2_turbo_fp8_scaled",
-            seed: Some(582731718186426),
+            seed: Some(345678901234567),
             steps: 8,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -871,7 +868,7 @@ fn test_krea2_regular_saveimage_remains_sampler_traversal() {
         &meta,
         ExpectedMetadata {
             model: "krea2_turbo_fp8_scaled",
-            seed: Some(784968955782057),
+            seed: Some(234567890123456),
             steps: 8,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -926,7 +923,7 @@ fn test_moss_reference_image_enhancer_shows_the_request() {
         &meta,
         ExpectedMetadata {
             model: "moss_image_sft_bf16",
-            seed: Some(625_008_744_861_891),
+            seed: Some(123_412_341_234_123),
             steps: 25,
             cfg: 2.5,
             sampler: "er_sde (simple)",
