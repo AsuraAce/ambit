@@ -1,16 +1,13 @@
 # Architecture
-
 Status: Canonical
 Last reviewed: 2026-09-06
 
 ## System Overview
-
 Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Library assets and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring. Images remain the default asset type; videos use an explicit discriminator and bounded native probe through manual import, folder scans, and Live Watch.
 
 ## Major Subsystems
 
 ### Desktop Shell and Command Surface
-
 Purpose: boot the Tauri app, register plugins, manage app-scoped state, and export Specta bindings.
 Code: `src-tauri/src/lib.rs`, `src-tauri/src/main.rs`, `src/bindings.ts`
 Interacts with: frontend services that call `commands.*`, Tauri plugins for SQL, filesystem, dialog, shell, and window state
@@ -18,7 +15,6 @@ Risks: command signature changes can break TypeScript callers; use `pnpm run bin
 Related docs: `docs/progress.md#current-constraints`
 
 ### SQLite Data, Migrations, and Maintenance
-
 Purpose: store image records, parsed metadata, facet caches, backups, reparsing state, and database maintenance behavior.
 Code: `src-tauri/src/db/`
 Interacts with: Rust scanner and metadata modules, TypeScript repo modules under `src/services/db/`, settings-backed folder sync
@@ -26,7 +22,6 @@ Risks: PRAGMA or migration changes affect startup, large-library performance, an
 Deferred work: [#348](https://github.com/AsuraAce/ambit/issues/348) (persistence boundary and legacy app-data fallbacks)
 
 ### Metadata Extraction, Scanning, and Watcher Flows
-
 Purpose: scan image and video files, extract metadata and workflows, resolve models, and watch library folders.
 Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/media.rs`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
 Interacts with: frontend import, settings, maintenance, and viewer flows
@@ -34,7 +29,6 @@ Risks: parser heuristics and watcher behavior can create wrong metadata or miss 
 Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`, `docs/comfyui-support-workflow.md`
 
 ### Video Assets and Metadata
-
 Purpose: probe local video candidates, generate static posters, scope playback/export, and preserve ComfyUI generation evidence.
 Code: `src-tauri/src/media.rs`, `src-tauri/src/metadata/video.rs`, `src/services/videoService.ts`, `src/services/importService.ts`, `src/features/viewer/components/VideoViewer.tsx`
 Interacts with: typed folder events, SQLite media columns, resource facets, metadata refresh, and shared viewer controls
@@ -44,7 +38,6 @@ Related docs: `docs/manual/viewer-and-metadata.md`, `docs/plans/genai-video-libr
 MP4, WebM, MOV, M4V, and MKV candidates are probed through the bundled Windows MediaInfo executable. Poster extraction uses the Windows media path; browser playback success or failure determines playback status. Grid and timeline use static posters, with a generic fallback when extraction fails. Video metadata has its own `VIDEO_PARSER_VERSION`, independent of image reparsing. A validated exact sibling `<stem>.workflow.json` takes precedence over embedded evidence; original evidence and conflicts are retained, and explicit user overrides survive refresh. Sidecar changes route back to the associated video through the import service. The active video plan records remaining owner acceptance and later assurance work separately from implemented behavior.
 
 ### Thumbnail Generation and Optimization
-
 Purpose: generate cached WebP thumbnails, repair or upgrade thumbnail records in the background, expose maintenance controls, and throttle or cancel native work around foreground activity.
 Code: `src-tauri/src/thumb/`, `src/services/thumbnailService.ts`, `src/hooks/useThumbnailQueue.ts`, `src/hooks/useThumbnailOps.ts`
 Interacts with: SQLite image rows, app-local thumbnail storage, Activity Dock state, maintenance UI, collection thumbnail refresh, and generated Tauri bindings
@@ -104,7 +97,6 @@ A repair after readiness, such as the first switch to another InvokeAI user, sen
 The source repair behind a first owner switch (`reconcileInvokeSourceFacts`) stays within these rules. Selected-owner facts are read in 500-row batches; identities are read 10,000 rows at a time and legacy paths verified 5,000 at a time, each batch checking cancellation and reporting progress so the switch panel still updates every few seconds. The folder listing (`collect_images_recursive`) runs the canonical scope check only for files that are reparse points on Windows or whose attributes cannot be read. On other platforms a symlinked file is detected from `DirEntry::file_type` without following it and never listed, as before, so no listed file needs the per-file check. A plain file inside a folder that was itself canonical-checked cannot leave the library root, because leaving it requires a link, and a link is either a reparse point (checked), a symlink (excluded) or a folder (checked on entry). Two exposures are unchanged from the per-file check: hard links are not detected (canonicalize never resolved them), and a folder swapped for a link between its check and its `read_dir` leaves a window of microseconds, about what the per-file check left. Listed path strings are unchanged. Legacy path verification checks scope for all paths on the bounded scan pool (at most four threads, so a running library scan is not starved), then applies refusals in the original order. The owner inventory is filled from temporary tables keyed by `rowid` using the existing `idx_images_invoke_source_owner` covering index and the primary-key indexes; it fills the temporary inventory first (no lock on the library), then waits out a running facet build and starts an IMMEDIATE transaction, so the write lock is held from BEGIN through the reads and the update, and it writes only rows whose owner changes.
 
 ### Frontend App Shell and Feature Surfaces
-
 Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`
 Interacts with: contexts, stores, hooks, `src/services/`, generated bindings, and Tauri plugins
@@ -112,7 +104,6 @@ Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can reg
 Deferred work: [#345](https://github.com/AsuraAce/ambit/issues/345) (app shell and state coordination), [#346](https://github.com/AsuraAce/ambit/issues/346) (shared viewer capabilities)
 
 ### Workflow Graph
-
 Purpose: show a ComfyUI workflow saved in an image or video as a full-screen, read-only node graph.
 Code: `src-tauri/src/metadata/comfyui/workflow_canvas.rs` (the `inspect_workflow_canvas` command), `src/features/viewer/components/WorkflowInspector.tsx` (the Graph button), `src/features/viewer/workflowGraph/`, `src/stores/workflowGraphStore.ts`
 Interacts with: the viewers' privacy gate, the viewer and app keyboard handlers, `AppSettings.workflowGraph`, and the viewer's display sources
@@ -122,7 +113,6 @@ Privacy and persistence: file text is rendered as plain text only. The floating 
 Related docs: `docs/manual/viewer-and-metadata.md` (Workflow Graph), `docs/plans/workflow-node-graph.md`
 
 ### Query, State, and Persistence Adapters
-
 Purpose: own frontend query flows, transient UI state, JSON-backed settings and recent-search persistence, thumbnail services, and database helper modules.
 Code: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
 Interacts with: `src/features/`, `src/bindings.ts`, `src-tauri/src/db/`, app-local `library.json`
@@ -131,7 +121,6 @@ Related docs: `docs/progress.md#current-constraints`
 Deferred work: [#345](https://github.com/AsuraAce/ambit/issues/345) (app shell and state coordination)
 
 ### Network Surface
-
 Purpose: keep the core app local-first while supporting explicit public-beta network paths.
 Code: `src/hooks/useAppUpdater.ts`, `src/services/geminiService.ts`, `src-tauri/src/metadata/civitai.rs`, `src/features/settings/`
 Interacts with: GitHub Releases updater feed, optional Gemini API requests, optional CivitAI hash resolution, and user-clicked external support/project links
@@ -139,7 +128,6 @@ Risks: passive third-party assets or unclear copy can make local-first behavior 
 Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 
 ## Invariants
-
 - SQLite is the source of truth for image records and heavy metadata. On Windows, the main library database lives in Local AppData, with Roaming AppData retained only as a legacy fallback during the public-beta transition. `library.json` should not become a second image store.
 - Rust-exposed command and type changes should flow through Specta into `src/bindings.ts`; do not hand-maintain Rust-backed TypeScript mirrors.
 - Generated binding updates are explicit: run `pnpm run bindings:generate`, then verify with `pnpm run bindings:check` or a broader gate that includes it.
@@ -171,7 +159,6 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - A Live Watch file whose import fails is sent again through the same Live Watch queue after 2, 4, 8, 16 and 30 s (#547). A typical cause is "database is locked" when a background job holds SQLite's write lock for longer than the busy timeout: `save_images_batch` begins an immediate transaction, so it waits up to the connection's 60 s busy timeout and fails only after that (#602). It decodes replacement thumbnails before taking the lock and, under the lock, decodes again only a replacement path that changed or was added since that read. The queue's pending set dedupes a retry with a fresh event for the same file, and a retry is skipped for a file that a later cycle imported or is importing, or whose monitored folder is no longer active. After the last retry, or when Live Watch is turned off, the file is left to the next folder catch-up, which still lists it because a Live Watch import never moves the cursor. Each failed cycle writes one WARN line to Ambit.log through `log_frontend_warning`: the counts, the retry, and a fixed failure kind (`db_locked`, `scope`, `scan_error`, `video_error`, `sync_rejected` or `other`), never the error text, which can hold paths and file names. Successful cycles write nothing there, except one WARN line, with only the repair kind and reason, for each repair Live Watch stops.
 
 ## High-Risk Areas
-
 - `src/App.tsx`: app shell integration point for selection, viewer, import, shortcuts, modals, and layout state.
 - `src/contexts/SearchContext.tsx`: bridges React Query, SQL filter construction, collection refresh, and legacy store synchronization.
 - `src-tauri/src/db/migrations/`: schema changes and backfills affect existing user libraries.

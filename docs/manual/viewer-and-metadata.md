@@ -154,7 +154,7 @@ Wires and colours:
 The floating image:
 
 - **Image** (`I`) floats the picture over the graph in a small window. For a video it shows the poster.
-- Drag the window by its bar, and drag its bottom-right corner to resize it. The fold button shrinks it to its bar, and the close button hides it until you press Image or `I` again. The window stays inside the graph, and keeps its place while you open subgraphs.
+- Drag the window by its bar, and drag its bottom-right corner to resize it. The fold button shrinks it to its bar, and the close button hides it until you press Image or `I` again. Its bar stays on the graph, so you can always drag it back. The window moves out from under a node's panel when the panel opens, and keeps its place while you open subgraphs.
 - Point at the picture to light up the node that saved it, or the subgraph that holds that node. Click the picture to go to that node and open its panel.
 
 Keys while the graph is open:
