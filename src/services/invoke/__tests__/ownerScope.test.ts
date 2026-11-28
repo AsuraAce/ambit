@@ -40,7 +40,7 @@ const discovery = {
     schemaMode: 'multi_user' as const,
     dbPath: 'D:/Invoke/databases/invokeai.db',
     imagesRoot: 'D:/Invoke',
-    owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+    owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 2 }],
     unassignedImageCount: 0,
 };
 
@@ -152,7 +152,7 @@ describe('applyInvokeOwnerScope', () => {
                 failureKind: 'database-busy',
             })
         );
-        expect(JSON.stringify(mocks.recordStartupDiagnostic.mock.calls)).not.toMatch(/Artemis|Invoke\/databases|owner-a/);
+        expect(JSON.stringify(mocks.recordStartupDiagnostic.mock.calls)).not.toMatch(/Alex|Invoke\/databases|owner-a/);
     });
     beforeEach(() => {
         vi.clearAllMocks();

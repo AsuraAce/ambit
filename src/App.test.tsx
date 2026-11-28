@@ -684,8 +684,8 @@ describe('App orchestration', () => {
             dbPath: 'D:/Invoke/databases/invokeai.db',
             imagesRoot: 'D:/Invoke',
             owners: [
-                { ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 },
-                { ownerId: 'owner-b', displayName: 'Odin', imageCount: 3 },
+                { ownerId: 'owner-a', displayName: 'Alex', imageCount: 2 },
+                { ownerId: 'owner-b', displayName: 'Oscar', imageCount: 3 },
             ],
             unassignedImageCount: 0,
         };
@@ -717,7 +717,7 @@ describe('App orchestration', () => {
                 fireEvent.change(path, { target: { value: 'D:/Invoke' } });
                 fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
             }
-            fireEvent.click(await screen.findByRole('button', { name: /Odin/ }));
+            fireEvent.click(await screen.findByRole('button', { name: /Oscar/ }));
             fireEvent.click(screen.getByRole('button', { name: connected ? 'Switch view' : 'Connect & Import' }));
         };
         const acceptPreparation = (draft: InvokeConnectionDraft, options?: ApplyInvokeConnectionOptions) => {
@@ -736,7 +736,7 @@ describe('App orchestration', () => {
                 id: Symbol('owner operation'),
                 origin: 'user',
                 rootPath: 'D:/Invoke',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
                 phase: 'preparing',
                 viewCommitted: false,
                 progress: { current: 1, total: 3, message: 'Updating InvokeAI image details...' },
@@ -766,7 +766,7 @@ describe('App orchestration', () => {
                         id: Symbol('accepted preparation'),
                         origin: 'user',
                         rootPath: draft.invokeAiPath,
-                        targetLabel: 'Odin',
+                        targetLabel: 'Oscar',
                         phase: 'preparing',
                         viewCommitted: false,
                         progress: { current: 0, total: 0 },
@@ -775,7 +775,7 @@ describe('App orchestration', () => {
                     options.onAccepted?.();
                 });
                 expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
-                expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBeTruthy();
+                expect(screen.getByRole('heading', { name: 'Preparing view — Oscar' })).toBeTruthy();
                 expect(screen.queryByTestId('app-layout')).toBeNull();
 
                 await act(async () => {
@@ -806,7 +806,7 @@ describe('App orchestration', () => {
                 cancel = acceptPreparation(draft, options);
             });
             await waitFor(() => expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull());
-            await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+            await screen.findByRole('heading', { name: 'Preparing view — Oscar' });
             expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
             expect(screen.queryByTestId('app-layout')).toBeNull();
             fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -839,7 +839,7 @@ describe('App orchestration', () => {
             act(() => {
                 acceptPreparation(draft, options);
             });
-            await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+            await screen.findByRole('heading', { name: 'Preparing view — Oscar' });
             fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
             expect(screen.queryByTestId('app-layout')).toBeNull();
 
@@ -878,7 +878,7 @@ describe('App orchestration', () => {
                 act(() => {
                     cancel = acceptPreparation(draft, options);
                 });
-                await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+                await screen.findByRole('heading', { name: 'Preparing view — Oscar' });
                 act(() => {
                     useInvokeOwnerScopeStore
                         .getState()
@@ -895,7 +895,7 @@ describe('App orchestration', () => {
                 });
                 expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
                 expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
-                expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+                expect(screen.getByText('InvokeAI · Oscar')).toBeTruthy();
                 const browse = screen.getByRole('button', { name: 'Browse gallery' });
                 browse.focus();
                 fireEvent.click(browse);
@@ -947,14 +947,14 @@ describe('App orchestration', () => {
                     id: Symbol('current owner'),
                     origin: 'user',
                     rootPath: 'D:/Invoke',
-                    targetLabel: 'Artemis',
+                    targetLabel: 'Alex',
                     phase: 'preparing',
                     viewCommitted: false,
                     progress: { current: 1, total: 2 },
                     cancel,
                 });
             });
-            const heading = await screen.findByRole('heading', { name: 'Preparing view — Artemis' });
+            const heading = await screen.findByRole('heading', { name: 'Preparing view — Alex' });
             expect(document.activeElement).not.toBe(heading);
             expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy();
             fireEvent.click(screen.getByRole('button', { name: 'Cancel sync' }));
@@ -1577,7 +1577,7 @@ describe('App orchestration', () => {
             ownerId,
         });
         const freyaImage = image('freya-image');
-        const odinImage = image('odin-image');
+        const oscarImage = image('oscar-image');
 
         const renderFreya = () => {
             mocks.settings = createDefaultAppSettings({ hasCompletedOnboarding: true, invokeAiPath: 'D:/Invoke' });
@@ -1589,13 +1589,13 @@ describe('App orchestration', () => {
         const startSwitch = (view: ReturnType<typeof render>) => {
             act(() => startOwnerSwitchForTest());
             mocks.images = [];
-            mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke', scope: ownerScope('odin') };
+            mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke', scope: ownerScope('oscar') };
             view.rerender(<App />);
         };
 
-        const admitOdin = (view: ReturnType<typeof render>) => {
-            mocks.images = [odinImage];
-            mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke', scope: ownerScope('odin') };
+        const admitOscar = (view: ReturnType<typeof render>) => {
+            mocks.images = [oscarImage];
+            mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke', scope: ownerScope('oscar') };
             view.rerender(<App />);
         };
 
@@ -1622,7 +1622,7 @@ describe('App orchestration', () => {
             await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
             const clearFiltersCalls = mocks.clearAllFilters.mock.calls.length;
             startSwitch(view);
-            admitOdin(view);
+            admitOscar(view);
 
             expect(captured.viewer?.image.id).toBe(freyaImage.id);
             expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([freyaImage]);
@@ -1633,7 +1633,7 @@ describe('App orchestration', () => {
 
             await waitFor(() => expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull());
             expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCalls + 1);
-            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([odinImage]);
+            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([oscarImage]);
         });
 
         it('swaps on "Switch now" even with the viewer open, and closes the viewer', async () => {
@@ -1641,7 +1641,7 @@ describe('App orchestration', () => {
             act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
             await waitFor(() => expect(captured.viewer?.image.id).toBe(freyaImage.id));
             startSwitch(view);
-            admitOdin(view);
+            admitOscar(view);
             const retained = useInvokeOwnerScopeStore.getState().retainedOwnerScope;
             if (!retained) throw new Error('expected a retained owner');
 
@@ -1649,7 +1649,7 @@ describe('App orchestration', () => {
 
             await waitFor(() => expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope).toBeNull());
             expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
-            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([odinImage]);
+            expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([oscarImage]);
         });
 
         // A cancelled or failed switch returns to where the user was: viewer, selection and filters stay.
@@ -1679,9 +1679,9 @@ describe('App orchestration', () => {
             mocks.privacyEnabled = true;
             const view = renderFreya();
             act(() => startOwnerSwitchForTest());
-            // The search store keeps Freya's pages until the swap; only the mask index follows Odin.
+            // The search store keeps Freya's pages until the swap; only the mask index follows Oscar.
             mocks.privacyMaskIndexStatus = 'pending';
-            mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke', scope: ownerScope('odin') };
+            mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke', scope: ownerScope('oscar') };
             view.rerender(<App />);
             mocks.handleImageClick.mockImplementationOnce(
                 (_event: React.MouseEvent, _id: string, index: number, callback: (nextIndex: number) => void) => callback(index)
@@ -2506,11 +2506,11 @@ describe('App orchestration', () => {
     it('does not treat differently cased POSIX InvokeAI roots as the same installation', () => {
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,
-            invokeAiPath: '/home/Artemis/Invoke/databases',
+            invokeAiPath: '/home/alex/Invoke/databases',
         });
         mocks.invokeOwnerScopeState = {
             status: 'ready',
-            rootPath: '/home/artemis/Invoke',
+            rootPath: '/home/Alex/Invoke',
         };
 
         const view = render(<App />);

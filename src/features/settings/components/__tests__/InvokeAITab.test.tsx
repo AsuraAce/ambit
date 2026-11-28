@@ -239,14 +239,14 @@ describe('InvokeAITab draft connection flow', () => {
             schemaMode: 'multi_user',
             dbPath: 'D:/Candidate/databases/invokeai.db',
             imagesRoot: 'D:/Candidate',
-            owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+            owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 2 }],
             unassignedImageCount: 1,
         });
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
-        await screen.findByRole('button', { name: /artemis/i });
-        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        await screen.findByRole('button', { name: /alex/i });
+        fireEvent.click(screen.getByRole('button', { name: /alex/i }));
         expect(mocks.apply).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
         await waitFor(() =>
@@ -263,14 +263,14 @@ describe('InvokeAITab draft connection flow', () => {
             schemaMode: 'multi_user',
             dbPath: 'D:/Candidate/databases/invokeai.db',
             imagesRoot: 'D:/Candidate',
-            owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+            owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 2 }],
             unassignedImageCount: 1,
         });
         render(<DraftNavigationHarness settings={settings()} />);
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
         fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
-        await screen.findByRole('button', { name: /artemis/i });
-        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        await screen.findByRole('button', { name: /alex/i });
+        fireEvent.click(screen.getByRole('button', { name: /alex/i }));
         fireEvent.click(screen.getByRole('button', { name: /import intermediates: false/i }));
         fireEvent.click(screen.getByRole('button', { name: 'Toggle Invoke tab' }));
         fireEvent.click(screen.getByRole('button', { name: 'Toggle Invoke tab' }));
@@ -294,7 +294,7 @@ describe('InvokeAITab draft connection flow', () => {
             schemaMode: 'multi_user',
             dbPath: 'D:/Candidate/databases/invokeai.db',
             imagesRoot: 'D:/Candidate',
-            owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }],
+            owners: [{ ownerId: 'owner-a', displayName: 'Alex', imageCount: 2 }],
             unassignedImageCount: 0,
         });
         render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
@@ -520,7 +520,7 @@ describe('InvokeAITab draft connection flow', () => {
                 imagesRoot: 'D:/Applied',
                 owners: [
                     { ownerId: 'freya', displayName: 'Freya', imageCount: 2 },
-                    { ownerId: 'odin', displayName: 'Odin', imageCount: 3 },
+                    { ownerId: 'oscar', displayName: 'Oscar', imageCount: 3 },
                 ],
                 unassignedImageCount: 0,
             },
@@ -530,14 +530,14 @@ describe('InvokeAITab draft connection flow', () => {
             invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner' as const, ownerId: 'freya' },
         };
         render(<DraftHarness settings={applied} setSettings={vi.fn()} />);
-        expect(screen.getByRole('button', { name: /odin/i })).toBeTruthy();
+        expect(screen.getByRole('button', { name: /oscar/i })).toBeTruthy();
 
         act(() => {
             useInvokeOwnerScopeStore.getState().setOperation({
                 id: operationId,
                 origin: 'user',
                 rootPath: 'D:/Applied',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
                 phase: 'preparing',
                 viewCommitted: false,
                 progress: { current: 0, total: 0 },
@@ -548,18 +548,18 @@ describe('InvokeAITab draft connection flow', () => {
                 rootPath: 'D:/Applied',
                 scope: { dbPath: 'D:/Applied/databases/invokeai.db', imagesRoot: 'D:/Applied', mode: 'owner', ownerId: 'freya' },
                 label: 'Freya',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
             });
         });
 
-        expect(screen.queryByRole('button', { name: /odin/i })).toBeNull();
-        expect(screen.getByText('Switching to Odin. Cancel the switch to choose again.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /oscar/i })).toBeNull();
+        expect(screen.getByText('Switching to Oscar. Cancel the switch to choose again.')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel switch' }));
         expect(cancel).toHaveBeenCalledOnce();
 
         act(() => useInvokeOwnerScopeStore.getState().releaseRetainedOwnerScope(operationId));
         expect(screen.queryByText(/Cancel the switch to choose again/)).toBeNull();
-        expect(screen.getByRole('button', { name: /odin/i })).toBeTruthy();
+        expect(screen.getByRole('button', { name: /oscar/i })).toBeTruthy();
     });
 
     it('formats owner preparation progress with the active locale', () => {

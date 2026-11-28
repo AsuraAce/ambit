@@ -2612,7 +2612,7 @@ describe('Library Integration (Provider Stack)', () => {
             dbPath,
             imagesRoot: 'D:/Invoke',
             owners: [
-                { ownerId: 'odin', imageCount: 4 },
+                { ownerId: 'oscar', imageCount: 4 },
                 { ownerId: 'other', imageCount: 146162 },
             ],
             unassignedImageCount: 0,
@@ -2676,12 +2676,12 @@ describe('Library Integration (Provider Stack)', () => {
             imported: 4,
             updated: 0,
             maxTimestamp: 200,
-            syncedIds: new Set(['odin-1', 'odin-2', 'odin-3', 'odin-4']),
+            syncedIds: new Set(['oscar-1', 'oscar-2', 'oscar-3', 'oscar-4']),
             boardMapping: new Map(),
             touchedFacetTypes: ['loras'],
             touchedFacetResources: {
                 checkpoints: [],
-                loras: ['OdinDetail'],
+                loras: ['OscarDetail'],
                 embeddings: [],
                 hypernetworks: [],
                 controlNets: [],
@@ -2693,7 +2693,7 @@ describe('Library Integration (Provider Stack)', () => {
             await syncHook!.startInvokeSync({ mode: 'startup' });
         });
         expect(libraryHook?.settings.invokeDbSnapshot).toMatchObject({ dbPath, lastSyncedAt: 200, sourceFingerprint: changedFingerprint });
-        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(expect.objectContaining({ loras: ['OdinDetail'] }), {
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(expect.objectContaining({ loras: ['OscarDetail'] }), {
             signal: expect.any(AbortSignal),
         });
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
@@ -2731,7 +2731,7 @@ describe('Library Integration (Provider Stack)', () => {
             importOrphans: false,
             syncBoardsToCollections: false,
             scopeMode: reason === 'selected owner' ? 'owner' : 'all',
-            scopeOwnerId: reason === 'selected owner' ? 'odin' : null,
+            scopeOwnerId: reason === 'selected owner' ? 'oscar' : null,
             pathRepairVersion: reason === 'old path repair' ? 0 : INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
             importSchemaVersion: reason === 'old import schema' ? 0 : INVOKE_IMPORT_SCHEMA_VERSION,
             files: [],
@@ -2742,7 +2742,7 @@ describe('Library Integration (Provider Stack)', () => {
             dbPath,
             imagesRoot: 'D:/Invoke',
             owners: [
-                { ownerId: 'odin', imageCount: 4 },
+                { ownerId: 'oscar', imageCount: 4 },
                 { ownerId: 'other', imageCount: 100 },
             ],
             unassignedImageCount: 0,
@@ -2767,7 +2767,7 @@ describe('Library Integration (Provider Stack)', () => {
             libraryHook?.setSettings({
                 invokeAiPath: 'D:/Invoke',
                 lastSyncedAt: 100,
-                invokeOwnerSelection: reason === 'selected owner' ? { dbPath, mode: 'owner', ownerId: 'odin' } : { dbPath, mode: 'all' },
+                invokeOwnerSelection: reason === 'selected owner' ? { dbPath, mode: 'owner', ownerId: 'oscar' } : { dbPath, mode: 'all' },
                 invokeDbSnapshot: reason === 'missing snapshot' ? undefined : snapshot,
             })
         );
@@ -2808,7 +2808,7 @@ describe('Library Integration (Provider Stack)', () => {
             schemaMode: 'multi_user',
             dbPath,
             imagesRoot: 'D:/Invoke',
-            owners: [{ ownerId: 'odin', imageCount: 100 }],
+            owners: [{ ownerId: 'oscar', imageCount: 100 }],
             unassignedImageCount: 0,
         });
         mocks.readInvokeSourceFingerprint.mockResolvedValue(fingerprint);
@@ -4537,17 +4537,17 @@ describe('Library Integration (Provider Stack)', () => {
             dbPath: 'D:/Invoke/databases/invokeai.db',
             imagesRoot: 'D:/Invoke',
             owners: [
-                { ownerId: 'odin', imageCount: 4 },
+                { ownerId: 'oscar', imageCount: 4 },
                 { ownerId: 'system', imageCount: 5 },
             ],
             unassignedImageCount: 0,
         };
         const board = (id: string, name: string): Collection => ({ id, name, source: 'invoke', imageIds: [], createdAt: 1 });
         const systemBoard = board('system-board', 'Explicit - Unsorted');
-        const odinBoard = board('odin-board', 'Odin board');
+        const oscarBoard = board('oscar-board', 'Oscar board');
         type Selection = { dbPath: string; mode: 'owner'; ownerId: string } | { dbPath: string; mode: 'all' };
         const allUsers: Selection = { dbPath: discovery.dbPath, mode: 'all' };
-        const odin: Selection = { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'odin' };
+        const oscar: Selection = { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'oscar' };
 
         // The collection list follows the applied scope, as `scoped_collections` does.
         const startIn = async (selection: Selection) => {
@@ -4565,7 +4565,7 @@ describe('Library Integration (Provider Stack)', () => {
                 };
             });
             mocks.getAllCollectionsWithStats.mockImplementation(async () =>
-                scope.mode === 'all' ? [systemBoard, odinBoard] : [odinBoard]
+                scope.mode === 'all' ? [systemBoard, oscarBoard] : [oscarBoard]
             );
             let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
             let syncHook: SyncHook | undefined;
@@ -4624,11 +4624,11 @@ describe('Library Integration (Provider Stack)', () => {
             return { library, switchTo, select };
         };
 
-        it("clears another owner's board when switching to Odin, and no query after the swap filters by it", async () => {
+        it("clears another owner's board when switching to Oscar, and no query after the swap filters by it", async () => {
             const { library, switchTo, select } = await startIn(allUsers);
             await select(systemBoard);
 
-            const before = await switchTo(odin);
+            const before = await switchTo(oscar);
 
             await waitFor(() => expect(library().filters.collectionId).toBeNull());
             // While the switch is held, the admitted target prewarms with the held selection (#527), so those reads
@@ -4641,21 +4641,21 @@ describe('Library Integration (Provider Stack)', () => {
                 ...mocks.getParameterRanges.mock.calls.slice(before.ranges).map((call) => call[2]),
             ];
             expect(afterSwap).not.toContain(systemBoard.id);
-            // Odin's view lists no board of another owner, so nothing can name it in the header.
-            expect(library().collections.map((collection: Collection) => collection.id)).toEqual([odinBoard.id]);
+            // Oscar's view lists no board of another owner, so nothing can name it in the header.
+            expect(library().collections.map((collection: Collection) => collection.id)).toEqual([oscarBoard.id]);
         });
 
-        it("keeps Odin's own board selected across switches to All users and back", async () => {
-            const { library, switchTo, select } = await startIn(odin);
-            await select(odinBoard);
+        it("keeps Oscar's own board selected across switches to All users and back", async () => {
+            const { library, switchTo, select } = await startIn(oscar);
+            await select(oscarBoard);
 
             await switchTo(allUsers);
             await act(async () => {});
-            expect(library().filters.collectionId).toBe(odinBoard.id);
+            expect(library().filters.collectionId).toBe(oscarBoard.id);
 
-            await switchTo(odin);
+            await switchTo(oscar);
             await act(async () => {});
-            expect(library().filters.collectionId).toBe(odinBoard.id);
+            expect(library().filters.collectionId).toBe(oscarBoard.id);
         });
     });
 
@@ -8716,7 +8716,7 @@ describe('Library Integration (Provider Stack)', () => {
             // (and so the screen) while the previous owner is still shown.
             it('keeps a watcher import from putting the target owner rows on screen before the swap', async () => {
                 const freyaRow = { id: 'freya-row', path: 'D:/Invoke/outputs/images/freya.png' };
-                const odinRow = { id: 'odin-row', path: 'D:/Invoke/outputs/images/odin.png' };
+                const oscarRow = { id: 'oscar-row', path: 'D:/Invoke/outputs/images/oscar.png' };
                 mocks.searchImages.mockResolvedValue([freyaRow]);
                 const hook = await setup(true);
                 await waitFor(() => expect(useSearchStore.getState().images.map((row) => row.id)).toEqual(['freya-row']));
@@ -8728,16 +8728,16 @@ describe('Library Integration (Provider Stack)', () => {
                 });
                 expect(isOwnerSwitchPending(useInvokeOwnerScopeStore.getState())).toBe(true);
 
-                mocks.searchImages.mockClear().mockResolvedValue([odinRow, freyaRow]);
+                mocks.searchImages.mockClear().mockResolvedValue([oscarRow, freyaRow]);
                 mocks.processTargetedFiles.mockResolvedValueOnce({
-                    handledPaths: ['D:/Invoke/outputs/images/odin.png'],
+                    handledPaths: ['D:/Invoke/outputs/images/oscar.png'],
                     failedPaths: [],
                     stats: { imported: 1 },
                     touchedFacetTypes: [],
                     touchedFacetResources: undefined,
                 });
                 await act(async () => {
-                    await hook.startTargetedLiveSync(['D:/Invoke/outputs/images/odin.png']);
+                    await hook.startTargetedLiveSync(['D:/Invoke/outputs/images/oscar.png']);
                 });
 
                 // The drain ran and the query refetched the target owner's rows...

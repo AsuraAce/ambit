@@ -75,7 +75,7 @@ describe('FolderItem', () => {
     });
 
     it('protects counts and actions from long monitored-folder paths', () => {
-        const longPath = 'D:/AI/art/archive/images/a1111/outputs/img2img-images';
+        const longPath = 'D:/Images/archive/generated/a1111/outputs/img2img-images';
         const { container } = setup(folder({ path: longPath, imageCount: 0 }));
 
         expect(container.firstElementChild?.className).toContain('grid');

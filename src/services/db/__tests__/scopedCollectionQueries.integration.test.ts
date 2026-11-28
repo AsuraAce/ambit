@@ -30,8 +30,8 @@ const imageColumns = [
 const DB_PATH = 'D:/Invoke/databases/invokeai.db';
 
 /**
- * Odin's view after an owner switch, with a System board still selected (#572). The board holds one of
- * Odin's images, so a query that trusts the stale id would show that membership in Odin's view.
+ * Oscar's view after an owner switch, with a System board still selected (#572). The board holds one of
+ * Oscar's images, so a query that trusts the stale id would show that membership in Oscar's view.
  */
 describe('collection-filtered queries in an owner scope', () => {
     let db: DatabaseSync;
@@ -64,20 +64,20 @@ describe('collection-filtered queries in an owner scope', () => {
                         media_type, source_kind) VALUES (?, ?, 1, ?, ?, 0, 0, 'image', 'generated')`
                 )
                 .run(id, `D:/Invoke/outputs/images/${id}.png`, owner, DB_PATH);
-        insertImage('odin-image', 'odin');
+        insertImage('oscar-image', 'oscar');
         insertImage('system-image', 'system');
         const insertBoard = db.prepare(
             `INSERT INTO collections (id, name, source, invoke_source_id, invoke_owner_id, invoke_board_verified)
              VALUES (?, ?, 'invoke', ?, ?, 1)`
         );
         insertBoard.run('system-board', 'Explicit - Unsorted', DB_PATH, 'system');
-        insertBoard.run('odin-board', 'Odin board', DB_PATH, 'odin');
+        insertBoard.run('oscar-board', 'Oscar board', DB_PATH, 'oscar');
         const addMember = db.prepare('INSERT INTO collection_images VALUES (?, ?)');
-        addMember.run('system-board', 'odin-image');
+        addMember.run('system-board', 'oscar-image');
         addMember.run('system-board', 'system-image');
-        addMember.run('odin-board', 'odin-image');
-        db.prepare('INSERT INTO image_loras VALUES (?, ?)').run('odin-image', 'detailer');
-        db.prepare("INSERT INTO invoke_owner_scope_state VALUES ('current', ?, 'owner', 'odin', 1)").run(DB_PATH);
+        addMember.run('oscar-board', 'oscar-image');
+        db.prepare('INSERT INTO image_loras VALUES (?, ?)').run('oscar-image', 'detailer');
+        db.prepare("INSERT INTO invoke_owner_scope_state VALUES ('current', ?, 'owner', 'oscar', 1)").run(DB_PATH);
 
         mocks.getDb.mockResolvedValue({ select: run });
         mocks.selectReadonly.mockImplementation(run);
@@ -96,15 +96,15 @@ describe('collection-filtered queries in an owner scope', () => {
     });
 
     it("still filters by the owner's own board", async () => {
-        expect(await search('odin-board')).toEqual(['odin-image']);
-        expect(await search('odin-board', 'detailer')).toEqual(['odin-image']);
-        expect(await countImages('', [], 'odin-board')).toBe(1);
-        expect((await countLibraryScopes('', [], 'odin-board')).media.all).toBe(1);
+        expect(await search('oscar-board')).toEqual(['oscar-image']);
+        expect(await search('oscar-board', 'detailer')).toEqual(['oscar-image']);
+        expect(await countImages('', [], 'oscar-board')).toBe(1);
+        expect((await countLibraryScopes('', [], 'oscar-board')).media.all).toBe(1);
     });
 
     it('shows the same board in All users, where it is visible', async () => {
         db.exec("UPDATE invoke_owner_scope_state SET scope_mode = 'all', owner_id = NULL");
-        expect((await search('system-board')).sort()).toEqual(['odin-image', 'system-image']);
+        expect((await search('system-board')).sort()).toEqual(['oscar-image', 'system-image']);
         expect(await countImages('', [], 'system-board')).toBe(2);
     });
 
