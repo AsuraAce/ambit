@@ -217,11 +217,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     onClose,
     makeLayoutWorker,
 }) => {
-    const subgraphNames = React.useMemo(
-        () => new Map(report.subgraphs.filter((subgraph) => subgraph.name).map((subgraph) => [subgraph.id, subgraph.name])),
+    const subgraphs = React.useMemo(
+        () => new Map(report.subgraphs.map((subgraph) => [subgraph.id, { name: subgraph.name, nodes: subgraph.level.nodes.length }])),
         [report]
     );
-    const model = React.useMemo(() => buildGraphModel(canvasLevel, subgraphNames), [canvasLevel, subgraphNames]);
+    const model = React.useMemo(() => buildGraphModel(canvasLevel, subgraphs), [canvasLevel, subgraphs]);
     const depth = crumbs.length - 1;
     const canShowSaved = report.hasSavedLayout && hasSavedPositions(model);
     const saved = React.useMemo(() => (canShowSaved ? savedPositions(model) : null), [canShowSaved, model]);
@@ -1266,36 +1266,44 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                     <ArrowLeft aria-hidden="true" className="h-4 w-4" />
                     Back to image
                 </button>
-                <span className="wg-name" title={fileName}>
-                    {fileName}
-                </span>
-                {depth > 0 ? (
-                    <nav className="wg-crumbs" aria-label="Workflow levels">
-                        {crumbs.map((crumb, index) =>
-                            index < depth ? (
-                                <React.Fragment key={crumb.key}>
-                                    <button type="button" className="wg-crumb" onClick={() => onGoToDepth(index, 'pointer')}>
-                                        {crumb.name}
-                                    </button>
-                                    <ChevronRight aria-hidden="true" className="h-3 w-3 flex-none" />
-                                </React.Fragment>
-                            ) : (
-                                <span key={crumb.key} className="wg-crumb here" aria-current="location">
-                                    {crumb.name}
-                                </span>
-                            )
-                        )}
-                    </nav>
-                ) : null}
-                <span className="wg-badge">ComfyUI</span>
-                {report.source === 'api_prompt' ? <span className="wg-badge">API prompt</span> : null}
-                {report.truncated ? (
-                    <span className="wg-badge" title="This workflow is larger than Ambit draws, so part of it is not shown.">
-                        Partly shown
+                {/* One path from the image down to the level shown: the file name is its first step. */}
+                <nav className="wg-crumbs" aria-label="Workflow levels">
+                    {crumbs.map((crumb, index) => {
+                        const name = index === 0 ? fileName : crumb.name;
+                        return index < depth ? (
+                            <React.Fragment key={crumb.key}>
+                                <button
+                                    type="button"
+                                    className={index === 0 ? 'wg-crumb root' : 'wg-crumb'}
+                                    title={name}
+                                    onClick={() => onGoToDepth(index, 'pointer')}
+                                >
+                                    {name}
+                                </button>
+                                <ChevronRight aria-hidden="true" className="h-3 w-3 flex-none" />
+                            </React.Fragment>
+                        ) : (
+                            <span
+                                key={crumb.key}
+                                className={index === 0 ? 'wg-crumb root here' : 'wg-crumb here'}
+                                title={name}
+                                aria-current="location"
+                            >
+                                {name}
+                            </span>
+                        );
+                    })}
+                </nav>
+                <span className="wg-facts">
+                    {report.truncated ? (
+                        <span className="wg-badge" title="This workflow is larger than Ambit draws, so part of it is not shown.">
+                            Partly shown
+                        </span>
+                    ) : null}
+                    <span className="wg-count">
+                        {report.source === 'api_prompt' ? 'ComfyUI API prompt' : 'ComfyUI'} · {model.nodes.length} nodes ·{' '}
+                        {model.links.length} wires
                     </span>
-                ) : null}
-                <span className="wg-count">
-                    {model.nodes.length} nodes · {model.links.length} wires
                 </span>
             </header>
             <div className="wg-stage" data-panel={selectedNode ? '' : undefined}>

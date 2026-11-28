@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildGraphModel, COORD_LIMIT, HEADER_H, savedPositions, WIDGET_TEXT_LIMIT, wireTypeOf } from '../graphModel';
+import { buildGraphModel, COORD_LIMIT, DOOR_H, HEADER_H, savedPositions, WIDGET_TEXT_LIMIT, wireTypeOf } from '../graphModel';
 import { canvasGroup, canvasLink, canvasNode, level, port } from './canvasFixtures';
 
 describe('saved-position mapping', () => {
@@ -129,13 +129,37 @@ describe('subgraph instance titles', () => {
 
     // A subgraph's type is a UUID: its node is named as its breadcrumb is, by the definition's name.
     it('names an instance by its definition, as the breadcrumb does', () => {
-        const names = new Map([[uuid, 'Upscale and sharpen']]);
+        const names = new Map([[uuid, { name: 'Upscale and sharpen', nodes: 3 }]]);
         expect(buildGraphModel(level([instance('')]), names).byId.get('9')!.title).toBe('Upscale and sharpen');
         expect(buildGraphModel(level([instance('My title')]), names).byId.get('9')!.title).toBe('Upscale and sharpen');
     });
 
     it('falls back to the instance title, then the type, when the definition has no name', () => {
+        const unnamed = new Map([[uuid, { name: '', nodes: 3 }]]);
+        expect(buildGraphModel(level([instance('My title')]), unnamed).byId.get('9')!.title).toBe('My title');
         expect(buildGraphModel(level([instance('My title')])).byId.get('9')!.title).toBe('My title');
         expect(buildGraphModel(level([instance('')])).byId.get('9')!.title).toBe(uuid);
+    });
+});
+
+// The owner's pick for the Open button: a row under the body, "Open subgraph · N nodes inside".
+describe('a subgraph instance’s open row', () => {
+    const uuid = 'def';
+    const instance = canvasNode('9', { kind: 'subgraph', nodeType: uuid, subgraphId: uuid, size: { width: 260, height: 120 } });
+
+    it('counts the nodes inside, and makes room for the row under the saved body', () => {
+        const without = buildGraphModel(level([instance])).byId.get('9')!;
+        const known = buildGraphModel(level([instance]), new Map([[uuid, { name: 'Stage', nodes: 7 }]])).byId.get('9')!;
+        expect(known.inside).toBe(7);
+        expect(known.height).toBe(without.height + DOOR_H);
+        // Group membership follows the file's own box, which has no row.
+        expect(known.minHeight).toBe(without.minHeight);
+    });
+
+    // Without a definition the report cannot open it, so there is no row to make room for.
+    it('has no count and no row when the report has no definition for it', () => {
+        const node = buildGraphModel(level([instance]), new Map([['other', { name: 'Other', nodes: 2 }]])).byId.get('9')!;
+        expect(node.inside).toBeNull();
+        expect(buildGraphModel(level([canvasNode('p')]), new Map([[uuid, { name: 'Stage', nodes: 7 }]])).byId.get('p')!.inside).toBeNull();
     });
 });

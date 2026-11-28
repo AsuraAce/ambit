@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Box, ChevronDown, Layers, LogIn, StickyNote } from 'lucide-react';
-import type { GraphNode as GraphNodeData, Point } from './graphModel';
+import { ArrowRight, Box, ChevronDown, Layers, StickyNote } from 'lucide-react';
+import { DOOR_H, type GraphNode as GraphNodeData, type Point } from './graphModel';
 import { isMarkdownNote, NoteMarkdown } from './NoteMarkdown';
 
 /** The tooltip on a value the file does not name. */
@@ -24,6 +24,8 @@ interface GraphNodeProps {
 }
 
 const KIND_ICONS = { note: StickyNote, subgraph: Layers } as const;
+
+const insideCount = (count: number) => (count === 1 ? '1 node inside' : `${count} nodes inside`);
 
 // Every string drawn here comes from the file and is rendered as React text only.
 const GraphNodeView: React.FC<GraphNodeProps> = ({
@@ -58,13 +60,16 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({
     if (node.mode === 'muted') classes.push('mute');
     if (folded) classes.push('shut');
     if (states) classes.push(states);
+    // A subgraph the report can open has a row under its body that opens it; a fold hides it with the body.
+    const door = onOpen !== undefined && node.kind === 'subgraph';
+    if (door) classes.push('door');
     const rows = Math.max(node.inputs.length, node.outputs.length);
     const toggle = () => onToggleFold(node.id);
 
     return (
         <div
             className={classes.join(' ')}
-            style={folded ? style : { ...style, minHeight: node.minHeight || undefined }}
+            style={folded ? style : { ...style, minHeight: node.minHeight ? node.minHeight + (door ? DOOR_H : 0) : undefined }}
             data-node-id={node.id}
             inert={leaving}
         >
@@ -77,18 +82,6 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({
                 </span>
                 {node.mode === 'bypassed' ? <span className="wg-mark">Bypassed</span> : null}
                 {node.mode === 'muted' ? <span className="wg-mark mute">Muted</span> : null}
-                {onOpen ? (
-                    <button
-                        type="button"
-                        className="wg-open"
-                        tabIndex={-1}
-                        aria-label={`Open subgraph ${node.title}`}
-                        onClick={() => onOpen(node.id)}
-                    >
-                        <LogIn aria-hidden="true" className="h-3 w-3" />
-                        Open
-                    </button>
-                ) : null}
                 {/* The canvas is the graph's one Tab stop; the side panel has a Fold button for the keyboard. */}
                 <button
                     type="button"
@@ -153,6 +146,21 @@ const GraphNodeView: React.FC<GraphNodeProps> = ({
                     )}
                 </div>
             )}
+            {door && !folded ? (
+                <button
+                    type="button"
+                    className="wg-door"
+                    tabIndex={-1}
+                    aria-label={`Open subgraph ${node.title}`}
+                    onClick={() => onOpen(node.id)}
+                >
+                    <span className="wg-door-label">
+                        Open subgraph
+                        {node.inside !== null ? <span className="wg-door-count"> · {insideCount(node.inside)}</span> : null}
+                    </span>
+                    <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+                </button>
+            ) : null}
         </div>
     );
 };

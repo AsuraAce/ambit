@@ -443,3 +443,44 @@ describe('the far canvas entrance', () => {
         expect(ringAt(plan.end)).toEqual([1]);
     });
 });
+
+// A subgraph's open row must still read as a door when the graph is too far out for its text.
+describe('the open row at far and overview', () => {
+    beforeEach(() =>
+        vi.stubGlobal(
+            'Path2D',
+            class {
+                roundRect() {}
+            }
+        )
+    );
+    afterEach(() => vi.unstubAllGlobals());
+    const withDoor = buildGraphModel(
+        level([
+            canvasNode('s', { kind: 'subgraph', subgraphId: 'def', pos: { x: 0, y: 30 } }),
+            canvasNode('x', { kind: 'subgraph', subgraphId: 'gone', pos: { x: 400, y: 30 } }),
+        ]),
+        new Map([['def', { name: 'Stage', nodes: 3 }]])
+    );
+    const doorScene = (foldedNodes: ReadonlySet<string>) =>
+        farSceneFor(withDoor, savedPositions(withDoor), foldedNodes, new Set(), sceneFor(withDoor, 'saved', new Set()), []);
+
+    it('marks only a subgraph that can open, and not while it is folded', () => {
+        expect(doorScene(new Set()).nodes.map((node) => [node.id, node.door])).toEqual([
+            ['s', true],
+            ['x', false],
+        ]);
+        expect(doorScene(new Set(['s'])).nodes.every((node) => !node.door)).toBe(true);
+    });
+
+    it('draws the band in the accent at both far levels', () => {
+        for (const level of ['far', 'overview'] as const) {
+            const { ctx, paints } = recordingCanvas();
+            drawFarScene(ctx, prepareFarDrawing(doorScene(new Set()), palette), { x: 0, y: 0, s: 0.2 }, 1, level);
+            expect(paints).toContain('fill:sage@0.3');
+        }
+        const { ctx, paints } = recordingCanvas();
+        drawFarScene(ctx, prepareFarDrawing(doorScene(new Set(['s'])), palette), { x: 0, y: 0, s: 0.2 }, 1, 'far');
+        expect(paints).not.toContain('fill:sage@0.3');
+    });
+});
