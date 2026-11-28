@@ -644,12 +644,14 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         entranceRef.current = entrance;
         const play = (element: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) =>
             entrance.animations.push(element.animate(keyframes, { fill: 'backwards', ...options }));
+        // Each animation starts from its hidden frame, at offset 0: a lone keyframe is where an animation ends, so
+        // without it the nodes showed whole, faded out and came back (the owner's look on smoke-423).
+        const hidden = { opacity: 0, offset: 0 };
         for (const element of world.querySelectorAll<HTMLElement>('.wg-node[data-node-id]')) {
             const delay = plan.nodeDelay.get(element.dataset.nodeId ?? '') ?? 0;
-            play(element, [{ opacity: 0, translate: '0 8px' }], { duration: NODE_ARRIVE_MS, delay, easing: NODE_ARRIVE_EASE });
+            play(element, [{ ...hidden, translate: '0 8px' }], { duration: NODE_ARRIVE_MS, delay, easing: NODE_ARRIVE_EASE });
         }
-        for (const element of world.querySelectorAll('.wg-group, .wg-gtitle'))
-            play(element, [{ opacity: 0 }], { duration: GROUP_ARRIVE_MS });
+        for (const element of world.querySelectorAll('.wg-group, .wg-gtitle')) play(element, [hidden], { duration: GROUP_ARRIVE_MS });
         // A wire draws itself from its source: with a path length of 1, the dash needs no measuring. A dashed
         // (bypassed) wire keeps its dashes and fades in, and so does every wire on a level with very many.
         const paths = world.querySelectorAll<SVGPathElement>('.wg-wire');
@@ -664,16 +666,16 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                 play(
                     path,
                     [
-                        { strokeDasharray: '1 1', strokeDashoffset: 1, opacity: 0 },
+                        { ...hidden, strokeDasharray: '1 1', strokeDashoffset: 1 },
                         { strokeDasharray: '1 1', strokeDashoffset: 0.9, opacity: 1, offset: 0.1 },
                         { strokeDasharray: '1 1', strokeDashoffset: 0 },
                     ],
                     { duration: WIRE_DRAW_MS, delay, easing: WIRE_DRAW_EASE }
                 );
-            } else play(path, [{ opacity: 0 }], { duration: WIRE_DRAW_MS, delay });
+            } else play(path, [hidden], { duration: WIRE_DRAW_MS, delay });
         });
         for (const element of world.querySelectorAll('.wg-flow'))
-            play(element, [{ opacity: 0 }], { duration: WIRE_DRAW_MS, delay: plan.end - WIRE_DRAW_MS });
+            play(element, [hidden], { duration: WIRE_DRAW_MS, delay: plan.end - WIRE_DRAW_MS });
         entrance.timer = window.setTimeout(stopEntrance, plan.end);
     };
 

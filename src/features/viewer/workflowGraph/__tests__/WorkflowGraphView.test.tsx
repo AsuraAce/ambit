@@ -2056,11 +2056,25 @@ describe('WorkflowGraphView', () => {
             }
         });
 
+        // The owner's look on smoke-423: a graph that opened in Detailed showed its nodes whole, faded them out and
+        // brought them back, because a lone keyframe is where an animation ends. Every entrance animation starts from
+        // its hidden frame, so the first painted frame is already the entrance's start.
+        it('starts every animation hidden, so the first frame is the start of the entrance', () => {
+            const restore = stubAnimate();
+            try {
+                renderGraph();
+                expect(played.length).toBeGreaterThan(0);
+                for (const { keyframes } of played) expect(keyframes[0]).toMatchObject({ opacity: 0, offset: 0 });
+            } finally {
+                restore();
+            }
+        });
+
         // A dashed wire would lose its dashes to the drawing dash, and drawing hundreds of wires costs too much:
         // those fade in, with nothing measured on them.
         const fadedOnly = (path: SVGPathElement) => {
             const entry = played.find((candidate) => candidate.element === path)!;
-            expect(entry.keyframes).toEqual([{ opacity: 0 }]);
+            expect(entry.keyframes).toEqual([{ opacity: 0, offset: 0 }]);
             expect(path.hasAttribute('pathLength')).toBe(false);
         };
 
