@@ -4679,19 +4679,19 @@ mod tests {
     }
 
     // #568: a row whose source id is spelled with backslashes belongs to the source; when its
-    // owner moved (Odin to System) the inventory must move it, or the old owner still sees it.
+    // owner moved (Oscar to System) the inventory must move it, or the old owner still sees it.
     #[test]
     fn owner_inventory_moves_a_backslash_spelled_row_to_its_new_owner() {
         let conn = Connection::open_in_memory().unwrap();
         apply_all_migrations(&conn);
         for (table, id, extra_columns, extra_values) in [
-            ("images", "active-odin", "", ""),
-            ("removed_images", "removed-odin", "removed_at, ", "1, "),
+            ("images", "active-oscar", "", ""),
+            ("removed_images", "removed-oscar", "removed_at, ", "1, "),
         ] {
             conn.execute(
                 &format!(
                     "INSERT INTO {table} (id, path, timestamp, {extra_columns}invoke_source_id, invoke_owner_id)
-                     VALUES (?1, ?2, 1, {extra_values}?3, 'odin')"
+                     VALUES (?1, ?2, 1, {extra_values}?3, 'oscar')"
                 ),
                 params![
                     id,
@@ -4703,7 +4703,7 @@ mod tests {
         }
         let input = super::InvokeImageOwnerInventoryInput {
             db_path: "c:/invoke/databases/invokeai.db".to_string(),
-            images: ["active-odin", "removed-odin"]
+            images: ["active-oscar", "removed-oscar"]
                 .into_iter()
                 .map(|id| super::InvokeImageOwnerInventoryItem {
                     id: id.to_string(),
@@ -4717,14 +4717,14 @@ mod tests {
         if cfg!(windows) {
             assert_eq!((result.active_updated, result.removed_updated), (1, 1));
             for table in ["images", "removed_images"] {
-                let visible_to_odin: i64 = conn
+                let visible_to_oscar: i64 = conn
                     .query_row(
-                        &format!("SELECT COUNT(*) FROM {table} WHERE invoke_owner_id = 'odin'"),
+                        &format!("SELECT COUNT(*) FROM {table} WHERE invoke_owner_id = 'oscar'"),
                         [],
                         |row| row.get(0),
                     )
                     .unwrap();
-                assert_eq!(visible_to_odin, 0, "{table} still shows Odin's old owner");
+                assert_eq!(visible_to_oscar, 0, "{table} still shows Oscar's old owner");
             }
         } else {
             // Off Windows the source id is compared exactly, so this spelling is another source.

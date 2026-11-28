@@ -21,7 +21,7 @@ const SAMPLE_PROMPTS = [
 
 const NEGATIVE_PROMPTS = [
     'blurry, low quality, watermark, text, bad anatomy, deformed hands, extra digits',
-    'nsfw, nude, ugly, duplicate, morbid, mutilated, tranny, mutated hands, poorly drawn face',
+    'nsfw, nude, ugly, duplicate, morbid, mutilated, mutated hands, poorly drawn face',
 ];
 
 const LORAS = [

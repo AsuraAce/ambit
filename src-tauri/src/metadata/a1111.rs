@@ -512,11 +512,11 @@ mod tests {
 
     #[test]
     fn test_extract_comfy_flat_parameters_cfg_scale_and_unknown_prompts() {
-        let raw = "unknown\nNegative prompt: unknown\nSteps: 20, Sampler: euler_simple, CFG Scale: 8.0, Seed: 0, Size: 512x512, Model hash: ed5932e68b, Model: ArrogantBastard_ponyV33SS, Version: ComfyUI";
+        let raw = "unknown\nNegative prompt: unknown\nSteps: 20, Sampler: euler_simple, CFG Scale: 8.0, Seed: 0, Size: 512x512, Model hash: a1b2c3d4e5, Model: exampleModel_v10, Version: ComfyUI";
         let meta = extract_a1111_metadata(raw, None);
 
         assert_eq!(meta.tool, "ComfyUI");
-        assert_eq!(meta.model, "ArrogantBastard_ponyV33SS");
+        assert_eq!(meta.model, "exampleModel_v10");
         assert_eq!(meta.steps, 20);
         assert_eq!(meta.cfg, 8.0);
         assert_eq!(meta.seed, Some(0));
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_a1111_parsing_weird_string() {
-        let raw = r#"masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire.",masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire." Negative prompt: low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor, Steps: 36, Sampler: deis beta, CFG scale: 6.0, Seed: 287184813799736, Size: 896x1152, Model: novaAnimeXL_ilV30HappyNewYear, VAE: sdxl_vae, Clip skip: 1, RNG: CPU, TI hashes: "masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire." , low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,", Version: ComfyUI"#;
+        let raw = r#"best quality, highres, pencil sketch, "A red apple on a wooden table, soft window light, a white cloth beside it.",best quality, highres, pencil sketch, "A red apple on a wooden table, soft window light, a white cloth beside it." Negative prompt: low quality,worst quality, blurry, jpeg artifacts, watermark, signature,,low quality,worst quality, blurry, jpeg artifacts, watermark, signature,,low quality,worst quality, blurry, jpeg artifacts, watermark, signature,,low quality,worst quality, blurry, jpeg artifacts, watermark, signature, Steps: 36, Sampler: deis beta, CFG scale: 6.0, Seed: 121212121212121, Size: 896x1152, Model: novaAnimeXL_ilV30HappyNewYear, VAE: sdxl_vae, Clip skip: 1, RNG: CPU, TI hashes: "best quality, highres, pencil sketch, "A red apple on a wooden table, soft window light, a white cloth beside it." , low quality,worst quality, blurry, jpeg artifacts, watermark, signature,,low quality,worst quality, blurry, jpeg artifacts, watermark, signature,", Version: ComfyUI"#;
 
         let meta = extract_a1111_metadata(raw, None);
 
@@ -549,11 +549,11 @@ mod tests {
 
     #[test]
     fn test_extract_a1111_with_controlnet() {
-        let raw = "parameters: Negative prompt: (hands, feet, teeth), (low resolution, lowres, blurry), (watermark, signature, patreon reward, patreon username), [(worst quality, low quality:1.75), (interlocked finger:1.15), (low resolution, lowres, blurry), (watermark, signature, patreon) (hands, feet, teeth),(zombie,horror)::0.95] Steps: 48, Sampler: Restart, CFG scale: 5, Seed: 83289333, Size: 512x768, Model hash: 41e59d8b2e, Model: realcartoonSpecial_sp1, ControlNet 0: \"Module: ip-adapter_clip_sd15, Model: ip-adapter_sd15_light [932b88cf], Weight: 0.75, Resize Mode: Crop and Resize, Low Vram: False, Processor Res: 512, Guidance Start: 0, Guidance End: 0.77, Pixel Perfect: True, Control Mode: Balanced, Save Detected Map: True\", BMAB_face_option: \"disable_extra_networks=False\", Version: 1.7.0";
+        let raw = "parameters: Negative prompt: (blurry, noisy), (low resolution, lowres), (watermark, signature, text), [(worst quality, low quality:1.75), (cropped:1.15), (low resolution, lowres), (watermark, signature) (blurry, noisy),(dark,grainy)::0.95] Steps: 48, Sampler: Restart, CFG scale: 5, Seed: 12345678, Size: 512x768, Model hash: 41e59d8b2e, Model: realcartoonSpecial_sp1, ControlNet 0: \"Module: ip-adapter_clip_sd15, Model: ip-adapter_sd15_light [932b88cf], Weight: 0.75, Resize Mode: Crop and Resize, Low Vram: False, Processor Res: 512, Guidance Start: 0, Guidance End: 0.77, Pixel Perfect: True, Control Mode: Balanced, Save Detected Map: True\", BMAB_face_option: \"disable_extra_networks=False\", Version: 1.7.0";
         let meta = extract_a1111_metadata(raw, None);
 
         assert_eq!(meta.model, "realcartoonSpecial_sp1");
-        assert_eq!(meta.seed, Some(83289333));
+        assert_eq!(meta.seed, Some(12345678));
         assert_eq!(meta.steps, 48);
 
         // Should be moved to IP-Adapter by the classifier
@@ -598,14 +598,14 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
 
     #[test]
     fn test_extract_comfyui_jumbled_parameters() {
-        let raw = "Model: Osaka[REV3].fp16.safetensors, Seed: 819601553905272, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1 Negative prompt: Model: Osaka[REV3].fp16.safetensors, Seed: 819601553905272, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1 Steps: 36, Sampler: dpmpp_2m_karras, CFG scale: 6, Seed: 819601553905272, Size: 512x768, Model: Osaka[REV3].fp16, Version: ComfyUI, Extra info: Model: Osaka[REV3].fp16.safetensors, Seed: 819601553905272, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1";
+        let raw = "Model: Sketchbook[REV3].fp16.safetensors, Seed: 919191919191919, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1 Negative prompt: Model: Sketchbook[REV3].fp16.safetensors, Seed: 919191919191919, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1 Steps: 36, Sampler: dpmpp_2m_karras, CFG scale: 6, Seed: 919191919191919, Size: 512x768, Model: Sketchbook[REV3].fp16, Version: ComfyUI, Extra info: Model: Sketchbook[REV3].fp16.safetensors, Seed: 919191919191919, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1";
         let meta = extract_a1111_metadata(raw, None);
         println!("EXTRACTED META: {:#?}", meta);
 
         // Current buggy state:
         // - positive_prompt should NOT contain the technical data
         // - negative_prompt should NOT contain the technical data
-        // - model should be Osaka[REV3].fp16
+        // - model should be Sketchbook[REV3].fp16
         // - sampler should be dpmpp_2m (or dpmpp_2m_karras)
 
         assert!(
@@ -620,20 +620,20 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         );
         assert_eq!(meta.steps, 36);
         assert_eq!(meta.cfg, 6.0);
-        assert_eq!(meta.seed, Some(819601553905272));
-        assert!(meta.model.contains("Osaka[REV3]"));
+        assert_eq!(meta.seed, Some(919191919191919));
+        assert!(meta.model.contains("Sketchbook[REV3]"));
     }
 
     #[test]
     fn test_extract_comfyui_mock_sampler() {
-        let raw = "Steps: 20, Sampler: _, CFG scale: 5, Seed: 1047146944135898, Size: 512x768, Model: , Version: ComfyUI";
+        let raw = "Steps: 20, Sampler: _, CFG scale: 5, Seed: 1000000000000001, Size: 512x768, Model: , Version: ComfyUI";
         let meta = extract_a1111_metadata(raw, None);
 
         // Sampler should be Unknown, not "_"
         assert_eq!(meta.sampler, "Unknown");
         assert_eq!(meta.steps, 20);
         assert_eq!(meta.cfg, 5.0);
-        assert_eq!(meta.seed, Some(1047146944135898));
+        assert_eq!(meta.seed, Some(1000000000000001));
     }
 
     #[test]

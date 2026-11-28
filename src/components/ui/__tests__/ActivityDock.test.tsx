@@ -54,7 +54,7 @@ const createInvokeOperation = (overrides: Partial<InvokeOperationState> = {}): I
     id: Symbol('sync'),
     origin: 'user',
     rootPath: 'D:/Invoke',
-    targetLabel: 'Odin',
+    targetLabel: 'Oscar',
     phase: 'syncing',
     viewCommitted: true,
     progress: { current: 0, total: 0, message: 'Catching up images and boards...' },
@@ -153,7 +153,7 @@ describe('ActivityDock', () => {
             id: Symbol('sync'),
             origin: 'user',
             rootPath: 'D:/Invoke',
-            targetLabel: 'Odin',
+            targetLabel: 'Oscar',
             phase: 'syncing',
             viewCommitted: true,
             progress: { current: 2, total: 5, message: 'Processing images: 2/5' },
@@ -162,7 +162,7 @@ describe('ActivityDock', () => {
             cancel,
         });
         render(<ActivityDock />);
-        expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+        expect(screen.getByText('InvokeAI · Oscar')).toBeTruthy();
         expect(screen.getByRole('status').textContent).toBe('Processing images: 2/5');
         expect(screen.getByText('1 added')).toBeTruthy();
         // P3 of the #529 owner smoke: a zero count is left out, the non-zero one stays.
@@ -181,7 +181,7 @@ describe('ActivityDock', () => {
                 id: Symbol('sync'),
                 origin: 'user',
                 rootPath: 'D:/Invoke',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
                 phase,
                 viewCommitted: true,
                 progress: { current: 2, total: 5 },
@@ -328,7 +328,7 @@ describe('ActivityDock', () => {
             });
             render(<ActivityDock />);
             act(() => vi.advanceTimersByTime(2499));
-            expect(screen.queryByText('InvokeAI · Odin')).toBeNull();
+            expect(screen.queryByText('InvokeAI · Oscar')).toBeNull();
             expect(screen.queryByText('Legacy catch-up progress')).toBeNull();
 
             act(() => completeInvokeOperation({ hasChanges: false }));
@@ -672,7 +672,7 @@ describe('ActivityDock', () => {
                 rootPath: 'D:/Invoke',
                 scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'freya' },
                 label: 'Freya',
-                targetLabel: 'Odin',
+                targetLabel: 'Oscar',
             });
             return operation;
         };
@@ -686,10 +686,10 @@ describe('ActivityDock', () => {
             const operation = startSwitch();
             render(<ActivityDock />);
             act(() => vi.advanceTimersByTime(599));
-            expect(screen.queryByText('Switching to Odin')).toBeNull();
+            expect(screen.queryByText('Switching to Oscar')).toBeNull();
 
             act(() => vi.advanceTimersByTime(1));
-            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByText('Switching to Oscar')).toBeTruthy();
             expect(screen.getByText("You can keep browsing Freya's images.")).toBeTruthy();
             fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
             expect(operation.cancel).toHaveBeenCalledOnce();
@@ -705,31 +705,31 @@ describe('ActivityDock', () => {
                     .setOperation((current) => current && { ...current, phase: 'syncing', viewCommitted: true })
             );
             act(() => vi.advanceTimersByTime(1000));
-            expect(screen.queryByText('Switching to Odin')).toBeNull();
+            expect(screen.queryByText('Switching to Oscar')).toBeNull();
         });
 
         // Q2: the target is ready but the gallery holds the previous owner; the result waits with "Switch now".
-        const admitOdin = () =>
+        const admitOscar = () =>
             act(() =>
                 useInvokeOwnerScopeStore.getState().setOwnerScopeState({
                     status: 'ready',
                     rootPath: 'D:/Invoke',
-                    scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'odin' },
+                    scope: { dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', mode: 'owner', ownerId: 'oscar' },
                 })
             );
 
-        // R1: once Odin is admitted the switch is done; Cancel would stop only the catch-up, so the hold offers
+        // R1: once Oscar is admitted the switch is done; Cancel would stop only the catch-up, so the hold offers
         // "Switch now" alone, and a catch-up failure keeps its message.
         it('hides Cancel during the hold and keeps a failed catch-up message', () => {
             startSwitch({ phase: 'syncing', viewCommitted: true });
-            admitOdin();
+            admitOscar();
             render(<ActivityDock />);
             expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
             expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
 
             act(() => completeInvokeOperation({ phase: 'failed', message: 'Board sync failed.' }));
             expect(screen.getByText('Board sync failed.')).toBeTruthy();
-            expect(screen.getByText('Odin is ready. Its catch-up did not finish.')).toBeTruthy();
+            expect(screen.getByText('Oscar is ready. Its catch-up did not finish.')).toBeTruthy();
             expect(screen.getByRole('button', { name: 'Switch now' })).toBeTruthy();
         });
 
@@ -737,7 +737,7 @@ describe('ActivityDock', () => {
         // "Switch now", ahead of it.
         it('keeps "Switch now" ahead of background work once the held catch-up finished', () => {
             startSwitch({ phase: 'syncing', viewCommitted: true });
-            admitOdin();
+            admitOscar();
             useLibraryStore.setState({
                 isBackgroundHealingActive: true,
                 backgroundHealingProgress: { current: 3, total: 10, message: 'Optimized 3 thumbnails' },
@@ -745,8 +745,8 @@ describe('ActivityDock', () => {
             render(<ActivityDock />);
             act(() => completeInvokeOperation());
 
-            expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
-            expect(screen.getByText('Odin is ready.')).toBeTruthy();
+            expect(screen.getByText('InvokeAI · Oscar')).toBeTruthy();
+            expect(screen.getByText('Oscar is ready.')).toBeTruthy();
             expect(screen.queryByText('Smart Thumbnails')).toBeNull();
             fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
             expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
@@ -755,7 +755,7 @@ describe('ActivityDock', () => {
         // R2: Retry runs the catch-up under a new operation; the swap is still held, so "Switch now" stays.
         it('keeps "Switch now" when a retried catch-up is the current operation', () => {
             const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
-            admitOdin();
+            admitOscar();
             render(<ActivityDock />);
             act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'syncing', viewCommitted: true })));
 
@@ -766,11 +766,11 @@ describe('ActivityDock', () => {
 
         it('offers "Switch now" while the swap is held and keeps the result until the swap', () => {
             const operation = startSwitch({ phase: 'syncing', viewCommitted: true });
-            admitOdin();
+            admitOscar();
             render(<ActivityDock />);
             act(() => completeInvokeOperation());
 
-            expect(screen.getByText('Odin is ready.')).toBeTruthy();
+            expect(screen.getByText('Oscar is ready.')).toBeTruthy();
             act(() => vi.advanceTimersByTime(10000));
             fireEvent.click(screen.getByRole('button', { name: 'Switch now' }));
             expect(useInvokeOwnerScopeStore.getState().retainedOwnerScope?.swapRequested).toBe(true);
@@ -793,7 +793,7 @@ describe('ActivityDock', () => {
             expect(dock().className).toContain('z-[110]');
             expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
             fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
-            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByText('Switching to Oscar')).toBeTruthy();
             // The image viewer leaves Space to buttons inside this marker only (B1 of the #529 closure review).
             expect(screen.getByRole('button', { name: 'Cancel' }).closest('[data-activity-dock] button')).toBeTruthy();
             fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -807,7 +807,7 @@ describe('ActivityDock', () => {
 
         it('raises "Switch now" above an open viewer during the hold', () => {
             startSwitch({ phase: 'syncing', viewCommitted: true });
-            admitOdin();
+            admitOscar();
             render(<ActivityDock isViewerOpen />);
 
             expect(dock().className).toContain('z-[110]');
@@ -832,7 +832,7 @@ describe('ActivityDock', () => {
             expect(overViewer.length).toBeGreaterThan(0);
             expect(placement()).toEqual(overViewer);
             expect(dock().className).toContain('z-[40]');
-            expect(screen.getByText('Switching to Odin')).toBeTruthy();
+            expect(screen.getByText('Switching to Oscar')).toBeTruthy();
             expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
         });
     });

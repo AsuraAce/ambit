@@ -44,7 +44,7 @@ fn test_repro_ip_adapter_lora() {
                      {"name": "model", "type": "MODEL", "link": 2693},
                      {"name": "positive", "type": "CONDITIONING", "link": 9902}
                  ],
-                 "widgets_values": [511923121704050, "randomize", 20, 8, "dpmpp_2m", "karras", 1, "GPU(=A1111)", "incremental", 0, 0],
+                 "widgets_values": [515151515151515, "randomize", 20, 8, "dpmpp_2m", "karras", 1, "GPU(=A1111)", "incremental", 0, 0],
                  "properties": {"Node name for S&R": "KSampler //Inspire"}
             },
             {

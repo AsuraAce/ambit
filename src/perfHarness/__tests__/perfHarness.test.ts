@@ -69,10 +69,10 @@ describe('runPerfHarnessScenario', () => {
 
     it('switches owner by replacing only the owner selection', async () => {
         const { deps } = makeDeps();
-        await runPerfHarnessScenario({ label: 'c3', steps: [{ kind: 'switch-owner', ownerId: 'odin' }] }, deps);
+        await runPerfHarnessScenario({ label: 'c3', steps: [{ kind: 'switch-owner', ownerId: 'oscar' }] }, deps);
         expect(deps.applyInvokeConnection).toHaveBeenCalledWith(
             expect.objectContaining({
-                invokeOwnerSelection: { dbPath: settings.invokeOwnerSelection?.dbPath, mode: 'owner', ownerId: 'odin' },
+                invokeOwnerSelection: { dbPath: settings.invokeOwnerSelection?.dbPath, mode: 'owner', ownerId: 'oscar' },
             })
         );
     });

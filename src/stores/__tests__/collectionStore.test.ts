@@ -190,10 +190,10 @@ describe('collectionStore smart count refresh', () => {
 
         requiredAttempt.resolve([makeStaticCollection({ id: 'stale', name: 'Stale' })]);
         await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(3));
-        requiredRetry.resolve([makeStaticCollection({ id: 'odin', name: 'Odin' })]);
+        requiredRetry.resolve([makeStaticCollection({ id: 'oscar', name: 'Oscar' })]);
 
         await expect(requiredRun).resolves.toBeUndefined();
-        expect(useCollectionStore.getState().collections).toEqual([expect.objectContaining({ id: 'odin', name: 'Odin' })]);
+        expect(useCollectionStore.getState().collections).toEqual([expect.objectContaining({ id: 'oscar', name: 'Oscar' })]);
     });
 
     it('serializes overlapping required collection refreshes without superseding each other', async () => {
@@ -1549,13 +1549,13 @@ describe('collectionStore smart count refresh', () => {
         });
         await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(3));
         requiredRetry.resolve({
-            'static-1': { thumbnail: 'asset://odin.webp', thumbnailSourceKind: 'dynamic' },
+            'static-1': { thumbnail: 'asset://oscar.webp', thumbnailSourceKind: 'dynamic' },
         });
 
         await expect(requiredRun).resolves.toBeUndefined();
         expect(useCollectionStore.getState().collections[0]).toEqual(
             expect.objectContaining({
-                thumbnail: 'asset://odin.webp',
+                thumbnail: 'asset://oscar.webp',
             })
         );
     });
@@ -1959,7 +1959,7 @@ describe('collectionStore smart count refresh', () => {
         useCollectionStore.setState({
             collections: [
                 makeStaticCollection({
-                    id: 'odin-smart',
+                    id: 'oscar-smart',
                     filters: createDefaultFilters({ dateRange: 'today' }),
                 }),
             ],
@@ -1975,16 +1975,16 @@ describe('collectionStore smart count refresh', () => {
         const competingRun = useCollectionStore.getState().refreshSmartCounts({ includePromptSearch: true });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(2));
         competingRefresh.resolve({
-            'odin-smart': { count: 2, thumbnailSourceKind: 'dynamic' },
+            'oscar-smart': { count: 2, thumbnailSourceKind: 'dynamic' },
         });
         await competingRun;
 
         requiredAttempt.resolve({
-            'odin-smart': { count: 1, thumbnailSourceKind: 'dynamic' },
+            'oscar-smart': { count: 1, thumbnailSourceKind: 'dynamic' },
         });
         await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(3));
         requiredRetry.resolve({
-            'odin-smart': { count: 3, thumbnailSourceKind: 'dynamic' },
+            'oscar-smart': { count: 3, thumbnailSourceKind: 'dynamic' },
         });
 
         await expect(requiredRun).resolves.toBeUndefined();

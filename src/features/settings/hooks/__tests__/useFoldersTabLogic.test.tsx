@@ -1096,7 +1096,7 @@ describe('useFoldersTabLogic', () => {
 
                 // Waiting: nothing scanned and nothing recorded, so the folder stays queued with no cursor.
                 expect(onScanFolder).not.toHaveBeenCalled();
-                expect(addToastMock).toHaveBeenCalledWith('The new folder is scanned after the switch to Odin.', 'info');
+                expect(addToastMock).toHaveBeenCalledWith('The new folder is scanned after the switch to Oscar.', 'info');
                 expect(setSettings).toHaveBeenCalledOnce();
                 const added = (setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings)(baseSettings);
                 expect(added.monitoredFolders[0]).toMatchObject({ path: 'D:/Art', initialScanPending: true });

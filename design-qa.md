@@ -1,9 +1,9 @@
 # Design QA — Library image-kind dropdown
 
-- Source visual truth: `C:\Users\Artemis\.codex\generated_images\019f75e1-15c5-7982-9375-a1cd742bc30a\exec-00931d71-49cd-46ac-8a77-420c1c7ce491.png`
-- Implementation screenshot: `C:\Users\Artemis\.codex\visualizations\2026\07\18\019f75e1-15c5-7982-9375-a1cd742bc30a\ambit-image-kind-persisted-desktop.png`
-- Open-state screenshot: `C:\Users\Artemis\.codex\visualizations\2026\07\18\019f75e1-15c5-7982-9375-a1cd742bc30a\ambit-image-kind-open-desktop.png`
-- Combined comparison: `C:\Users\Artemis\.codex\visualizations\2026\07\18\019f75e1-15c5-7982-9375-a1cd742bc30a\ambit-image-kind-comparison.png`
+- Source visual truth: `C:\Users\<user>\.codex\generated_images\019f75e1-15c5-7982-9375-a1cd742bc30a\exec-00931d71-49cd-46ac-8a77-420c1c7ce491.png`
+- Implementation screenshot: `C:\Users\<user>\.codex\visualizations\2026\07\18\019f75e1-15c5-7982-9375-a1cd742bc30a\ambit-image-kind-persisted-desktop.png`
+- Open-state screenshot: `C:\Users\<user>\.codex\visualizations\2026\07\18\019f75e1-15c5-7982-9375-a1cd742bc30a\ambit-image-kind-open-desktop.png`
+- Combined comparison: `C:\Users\<user>\.codex\visualizations\2026\07\18\019f75e1-15c5-7982-9375-a1cd742bc30a\ambit-image-kind-comparison.png`
 - Source pixels: 1727 × 911
 - Browser CSS viewport: 1379 × 727 at devicePixelRatio 2.97
 - Implementation capture pixels: 1293 × 727

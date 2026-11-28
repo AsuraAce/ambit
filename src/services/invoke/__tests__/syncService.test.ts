@@ -2405,11 +2405,11 @@ describe('syncImages live mode', () => {
     it('catches up new All users rows by timestamp without reconciling unrelated owners', async () => {
         const afterTimestamp = 100;
         const expectedCursor = '1970-01-01 00:00:00.100';
-        const odinRows = [
-            { image_name: 'odin-1.png', created_at: '2026-04-18 12:00:01', user_id: 'odin' },
-            { image_name: 'odin-2.png', created_at: '2026-04-18 12:00:02', user_id: 'odin' },
-            { image_name: 'odin-3.png', created_at: '2026-04-18 12:00:03', user_id: 'odin' },
-            { image_name: 'odin-4.png', created_at: '2026-04-18 12:00:04', user_id: 'odin' },
+        const oscarRows = [
+            { image_name: 'oscar-1.png', created_at: '2026-04-18 12:00:01', user_id: 'oscar' },
+            { image_name: 'oscar-2.png', created_at: '2026-04-18 12:00:02', user_id: 'oscar' },
+            { image_name: 'oscar-3.png', created_at: '2026-04-18 12:00:03', user_id: 'oscar' },
+            { image_name: 'oscar-4.png', created_at: '2026-04-18 12:00:04', user_id: 'oscar' },
         ].map((row) => ({
             ...row,
             metadata_blob: { positive_prompt: row.image_name },
@@ -2433,11 +2433,11 @@ describe('syncImages live mode', () => {
             }
             if (query.includes('SELECT count(*) as count FROM images i')) {
                 expect(params).toEqual([expectedCursor]);
-                return [{ count: odinRows.length }];
+                return [{ count: oscarRows.length }];
             }
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
                 expect(params).toEqual([expectedCursor]);
-                return odinRows;
+                return oscarRows;
             }
             if (query.includes('FROM images i') && query.includes('OFFSET 4')) return [];
             return [];
@@ -2457,15 +2457,15 @@ describe('syncImages live mode', () => {
             reconcileSourceFacts: false,
         });
 
-        const odinIds = odinRows.map(({ image_name }) => `D:/AmbitFixtures/InvokeAI/outputs/images/${image_name}`);
+        const oscarIds = oscarRows.map(({ image_name }) => `D:/AmbitFixtures/InvokeAI/outputs/images/${image_name}`);
         expect(result).toMatchObject({ imported: 4, updated: 0 });
-        expect(getImagesByIds).toHaveBeenCalledWith(odinIds, { includeOwnerHidden: true });
+        expect(getImagesByIds).toHaveBeenCalledWith(oscarIds, { includeOwnerHidden: true });
         expect(insertImagesBatch).toHaveBeenCalledWith(
             expect.arrayContaining([
-                expect.objectContaining({ id: odinIds[0], invokeImageName: 'odin-1.png', invokeOwnerId: 'odin' }),
-                expect.objectContaining({ id: odinIds[1], invokeImageName: 'odin-2.png', invokeOwnerId: 'odin' }),
-                expect.objectContaining({ id: odinIds[2], invokeImageName: 'odin-3.png', invokeOwnerId: 'odin' }),
-                expect.objectContaining({ id: odinIds[3], invokeImageName: 'odin-4.png', invokeOwnerId: 'odin' }),
+                expect.objectContaining({ id: oscarIds[0], invokeImageName: 'oscar-1.png', invokeOwnerId: 'oscar' }),
+                expect.objectContaining({ id: oscarIds[1], invokeImageName: 'oscar-2.png', invokeOwnerId: 'oscar' }),
+                expect.objectContaining({ id: oscarIds[2], invokeImageName: 'oscar-3.png', invokeOwnerId: 'oscar' }),
+                expect.objectContaining({ id: oscarIds[3], invokeImageName: 'oscar-4.png', invokeOwnerId: 'oscar' }),
             ])
         );
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0]).toHaveLength(4);

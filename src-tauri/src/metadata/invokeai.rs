@@ -321,7 +321,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     }
 
     // Check for favorite/starred status
-    // User report: "subject:favorite" key value pair in older InvokeAI images
+    // "subject:favorite" key value pair in older InvokeAI images
     if let Some(subject) = root.get("subject").and_then(|s| s.as_str()) {
         if subject == "favorite" {
             meta.is_favorite = true;
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_extract_invokeai_v2x_archived_format() {
-        // Real v2.x format from InvokeAI 2.2.5 archived images
+        // Synthetic payload in the v2.x format of InvokeAI 2.2.5 archived images
         let payload = json!({
             "model": "stable diffusion",
             "model_weights": "Cyberpunk-Anime-Diffusion",
@@ -412,11 +412,11 @@ mod tests {
             "app_version": "2.2.5",
             "image": {
                 "prompt": [
-                    {"prompt": "human flower by Android Jones", "weight": 1.0}
+                    {"prompt": "a red apple on a wooden table", "weight": 1.0}
                 ],
                 "steps": 50,
                 "cfg_scale": 7.5,
-                "seed": 3038946690_u64,
+                "seed": 1234567891_u64,
                 "sampler": "k_lms",
                 "type": "txt2img",
                 "width": 512,
@@ -433,22 +433,22 @@ mod tests {
         );
         assert_eq!(meta.steps, 50);
         assert_eq!(meta.cfg, 7.5);
-        assert_eq!(meta.seed, Some(3038946690));
+        assert_eq!(meta.seed, Some(1234567891));
         assert_eq!(meta.sampler, "k_lms");
         assert_eq!(meta.generation_type, "txt2img");
-        assert!(meta.positive_prompt.contains("human flower"));
+        assert!(meta.positive_prompt.contains("red apple"));
     }
 
     #[test]
     fn test_extract_invokeai_v3x_format() {
-        // Real v3.x format with generation_mode, model object, clip_skip, hrf_*
+        // Synthetic payload in the v3.x format with generation_mode, model object, clip_skip, hrf_*
         let payload = json!({
             "generation_mode": "txt2img",
-            "positive_prompt": "A young couple enjoying kendo",
+            "positive_prompt": "a red apple on a wooden table",
             "negative_prompt": "(worst quality, low quality)",
             "width": 1024,
             "height": 1536,
-            "seed": 624077823,
+            "seed": 123456789,
             "cfg_scale": 7.0,
             "steps": 24,
             "scheduler": "dpmpp_2m_k",
@@ -468,13 +468,13 @@ mod tests {
         assert_eq!(meta.model, "westernAnimation_v1");
         assert_eq!(meta.steps, 24);
         assert_eq!(meta.cfg, 7.0);
-        assert_eq!(meta.seed, Some(624077823));
+        assert_eq!(meta.seed, Some(123456789));
         assert_eq!(meta.sampler, "dpmpp_2m_k");
         assert_eq!(meta.generation_type, "txt2img");
         assert_eq!(meta.clip_skip, Some(2));
         assert_eq!(meta.denoising_strength, Some(0.6));
         assert_eq!(meta.hires_upscaler.as_deref(), Some("bilinear"));
-        assert!(meta.positive_prompt.contains("kendo"));
+        assert!(meta.positive_prompt.contains("red apple"));
         assert!(meta.negative_prompt.contains("worst quality"));
     }
 
@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn test_extract_invokeai_prompt_embeddings() {
         let payload = json!({
-            "positive_prompt": "a beautiful forest, <easynegative>, <style1>, <<<<full body shot, <lora:methurlant:1>",
+            "positive_prompt": "a beautiful forest, <easynegative>, <style1>, <<<<full body shot, <lora:ink_style:1>",
             "negative_prompt": "<bad_quality>, ugly, <hypernet:A1 Extra:0.15>",
             "steps": 20
         });
