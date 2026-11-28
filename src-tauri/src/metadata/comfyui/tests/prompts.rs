@@ -1106,11 +1106,11 @@ fn test_missing_prompt_extraction() {
         },
         "79": {
             "inputs": {
-                "text": "<lora:example_style:1.0> <lora:example_detail:0.65>",
+                "text": "<lora:Example-Style:1.0> <lora:Example-Detail:0.65>",
                 "loras": {
                      "__value__": [
-                         { "name": "example_style", "strength": 1.0 },
-                         { "name": "example_detail", "strength": 0.65 }
+                         { "name": "Example-Style", "strength": 1.0 },
+                         { "name": "Example-Detail", "strength": 0.65 }
                      ]
                 }
             },
@@ -1128,7 +1128,7 @@ fn test_missing_prompt_extraction() {
     // Debug assertion
     assert_eq!(
         meta.positive_prompt,
-        "A red apple on a wooden table..., <lora:example_style:1> <lora:example_detail:0.65>"
+        "A red apple on a wooden table..., <lora:Example-Style:1> <lora:Example-Detail:0.65>"
     );
 }
 

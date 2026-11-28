@@ -373,13 +373,13 @@ fn test_extract_comfyui_stylealigned_reproduction() {
                 ],
                 "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [178, 183], "shape": 3, "slot_index": 0}],
                 "properties": {"Node name for S&R": "CLIPTextEncodeSDXL"},
-                "widgets_values": [4095, 4096, 0, 0, 1024, 1024, "A small clay figure of an apple, plain white background", "A small clay figure of an apple, plain white background"]
+                "widgets_values": [4095, 4096, 0, 0, 1024, 1024, "A small clay figure of a teapot, plain white background", "A small clay figure of a teapot, plain white background"]
             },
             {
                 "id": 68,
                 "type": "PrimitiveNode",
                 "outputs": [{"name": "STRING", "type": "STRING", "links": [77, 78], "slot_index": 0, "widget": {"name": "text_g"}}],
-                "widgets_values": ["A small clay figure of an apple, plain white background"]
+                "widgets_values": ["A small clay figure of a teapot, plain white background"]
             },
             {
                 "id": 88, "type": "SaveImage",

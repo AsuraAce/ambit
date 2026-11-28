@@ -274,7 +274,7 @@ fn test_real_world_fixtures_extract_expected_metadata() {
             steps: 6,
             cfg: 1.0,
             sampler: "res_multistep (simple)",
-            positive_prompt: "A red apple on a wooden table..., <lora:example_style:1> <lora:example_detail:0.65>",
+            positive_prompt: "A red apple on a wooden table..., <lora:Example-Style:1> <lora:Example-Detail:0.65>",
             negative_prompt: "",
             loras: &["example_style", "example_detail (0.65)"],
             control_nets: &[],
