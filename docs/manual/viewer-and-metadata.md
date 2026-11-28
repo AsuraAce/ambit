@@ -124,6 +124,56 @@ The Workflow tab can:
 
 Some images have no recorded workflow. Some workflow data is valid JSON but not a standard node graph, especially complex InvokeAI session data or unusual generator formats. In those cases Ambit can still offer a JSON preview, Copy, or Download when raw workflow data exists.
 
+### Workflow Graph
+
+For a ComfyUI image or video, the **Graph** button in the Workflow tab opens the saved workflow as a full-screen node graph, drawn the way ComfyUI lays it out. The graph only shows the workflow; it never changes it. When Ambit can't draw a graph, because the file has no ComfyUI workflow or the tool isn't ComfyUI, the button stays disabled and its tooltip says why. **Back to image** or `Esc` returns to the viewer.
+
+The graph opens where the file saved its nodes. A file with no saved positions, such as one that only carries an API prompt, is laid out by Ambit from left to right; the badge **API prompt** and the hint "Laid out by Ambit" say so. A very large workflow shows **Partly shown** when Ambit draws only part of it.
+
+Moving around:
+
+- Drag the empty space to pan, and use the mouse wheel to zoom around the pointer.
+- **Fit** (`F`) shows the whole level. The **−** and **+** buttons, or the `-` and `+` keys, zoom out and in.
+- Zoomed far out, only the coloured group pills show, each with its node count. Closer in, the node titles appear, and close up every setting shows. Click a group's title pill to zoom to that group.
+- **As saved** shows the file's own layout. **Tidy** lets Ambit lay the nodes out again, left to right.
+
+Reading nodes:
+
+- Click a node to open its side panel. The panel shows the node's settings, **Inputs from** (where each input comes from), **Outputs to** (where each output goes), and its raw JSON with **Copy**. Click a row under Inputs from or Outputs to to go to that node.
+- Bypassed and muted nodes are marked as in ComfyUI. A note node shows its text.
+- Each node and each group has a fold button. Folding a group shrinks it to one box, and its wires join at the box.
+- `/` opens the search, **Find a node or value**. It matches node titles, node types and setting values. The matching nodes light up, and the Up and Down arrows and Enter pick one from the list.
+- A subgraph node has **Open** (and its side panel **Open subgraph**), which shows the subgraph as its own level. The breadcrumb above the graph (Workflow › subgraph name) leads back up. Each level keeps its folds, layout and view while the graph stays open.
+
+Wires and colours:
+
+- **Wires** picks how the wires are drawn: **Curved**, **Straight**, **Angled**, **Bundled** (the default: wires from one output share a line and split near the end) or **Hidden** (only the clicked node's wires show). It also sets the wire **Width** (**Thin**, **Normal**, **Thick**) and turns on **Moving dots**, which run along the clicked node's wires.
+- **Types** lists the wire colours in this level with their counts. Under **Colours** you pick **Quiet** (the default, softer tones) or **Familiar** (ComfyUI's own colours).
+- **Map**, in the bottom-right corner, shows the whole level with a frame for the part on screen. Click or drag in it to move the view. `M` or its fold button hides and shows it.
+
+The floating image:
+
+- **Image** (`I`) floats the picture over the graph in a small window. For a video it shows the poster.
+- Drag the window by its bar, and drag its bottom-right corner to resize it. The fold button shrinks it to its bar, and the close button hides it until you press Image or `I` again. Its bar stays on the graph, so you can always drag it back. The window moves out from under a node's panel when the panel opens, and keeps its place while you open subgraphs.
+- Point at the picture to light up the node that saved it, or the subgraph that holds that node. Click the picture to go to that node and open its panel.
+
+Keys while the graph is open:
+
+| Key                                      | Action                                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Esc`                                    | Closes an open menu, then the search, then the side panel, then goes up one subgraph level, then closes the graph |
+| `/`                                      | Opens the search                                                                                                  |
+| `F`                                      | Fits the level on screen                                                                                          |
+| `+` / `-`                                | Zooms in and out                                                                                                  |
+| `M`                                      | Shows or hides the map                                                                                            |
+| `I`                                      | Shows or hides the floating image                                                                                 |
+| `Tab` to the canvas, then the arrow keys | Moves between nodes; Right and Left follow the wires                                                              |
+| `Enter`                                  | Opens the side panel for the node the arrow keys reached. On a subgraph, a second Enter opens it                  |
+
+While the graph is open, the viewer's own keys, such as Delete, `F` for favourite and the arrows, do nothing to the image.
+
+Ambit remembers your wire shape, width, moving dots, colours and whether the map shows. It saves nothing else: folds, the Tidy layout, the search and the floating image's place reset when the graph closes. A hidden (masked) image shows no graph until you reveal it.
+
 ## Video Playback And Metadata
 
 Videos open with playback controls and start muted. Space toggles playback; J and L seek backward or forward by ten seconds. Previous/Next navigates the current result set. Open in Default App remains available when the Windows media runtime cannot decode a cataloged file. Export Original copies the original video without transcoding. Image comparison, image versions, slideshows, and Gemini image recovery are image-only.

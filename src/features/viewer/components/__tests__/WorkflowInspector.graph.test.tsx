@@ -80,7 +80,8 @@ describe('WorkflowInspector graph button', () => {
         const dialog = await screen.findByRole('dialog', { name: 'Workflow graph' }, { timeout: 5000 });
         // Portalled to the body, so no ancestor's overflow or stacking clips it.
         expect(dialog.parentElement).toBe(document.body);
-        expect(useWorkflowGraphStore.getState().open).toBe(true);
+        // Set in an effect, which a cold first load of the chunk can flush a tick after the dialog shows.
+        await waitFor(() => expect(useWorkflowGraphStore.getState().open).toBe(true));
     });
 
     it('returns focus to the Graph button when the graph closes', async () => {
@@ -102,6 +103,25 @@ describe('WorkflowInspector graph button', () => {
         unmount();
         expect(graphDialog()).toBeNull();
         expect(useWorkflowGraphStore.getState().open).toBe(false);
+    });
+
+    // The floating image is the picture the viewer already shows, never a new read of the file: the image itself, or a
+    // video's poster. No command beyond the canvas read runs (the mock above has no other).
+    it.each([
+        ['an image', makeImage(), 'comfy.png'],
+        [
+            'a video, by its poster',
+            makeImage({ mediaType: 'video', url: 'asset://clip.mp4', thumbnailUrl: 'asset://poster.webp' } as Partial<AIImage>),
+            'poster.webp',
+        ],
+    ])('floats the viewer’s picture for %s', async (_, image, shown) => {
+        render(<WorkflowInspector image={image} />);
+        await waitFor(() => expect(graphButton().getAttribute('aria-disabled')).toBeNull());
+        fireEvent.click(graphButton());
+        const picture = await screen.findByTestId('graph-float');
+        expect(picture.querySelector('img')?.getAttribute('src')).toContain(shown);
+        expect(document.body.innerHTML).not.toContain('clip.mp4');
+        expect(mockInspectWorkflowCanvas).toHaveBeenCalledTimes(1);
     });
 
     it.each([

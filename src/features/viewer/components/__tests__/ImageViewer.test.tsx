@@ -56,7 +56,7 @@ vi.mock('../MetadataSidebar', () => ({
     MetadataSidebar: (props: { image: AIImage } & Record<string, unknown>) => {
         mockMetadataSidebar(props);
         captures.sidebar = props;
-        return <div data-testid="metadata-sidebar">{graphProbe.mounted ? <GraphProbe /> : null}</div>;
+        return <div data-testid="metadata-sidebar">{graphProbe.mounted ? <GraphProbe src={props.image.url} /> : null}</div>;
     },
 }));
 
@@ -156,12 +156,17 @@ vi.mock('../../../../services/imageClipboard', () => ({
     copyImageToClipboard: (...args: unknown[]) => copyImageMock(...args),
 }));
 
-function GraphProbe() {
+/** Also floats the viewer's picture, as the real graph does. */
+function GraphProbe({ src }: { src: string }) {
     React.useEffect(() => {
         useWorkflowGraphStore.getState().setOpen(true);
         return () => useWorkflowGraphStore.getState().setOpen(false);
     }, []);
-    return <div data-testid="workflow-graph-probe" />;
+    return (
+        <div data-testid="workflow-graph-probe">
+            <img data-testid="graph-float" src={src} alt="" />
+        </div>
+    );
 }
 
 const metadata = (positivePrompt: string) => ({
@@ -637,19 +642,25 @@ describe('ImageViewer full metadata loading', () => {
             useWorkflowGraphStore.setState({ open: false });
         });
 
-        it('never mounts the graph for a masked image that is not revealed', () => {
-            renderViewer({ isMasked: true });
+        // The graph, and the picture it floats, live only in the sidebar's subtree: a masked image that is not revealed
+        // mounts neither, and its source never reaches the page.
+        it('never mounts the graph or its floating image for a masked image that is not revealed', () => {
+            const { props } = renderViewer({ isMasked: true });
             expect(screen.queryByTestId('workflow-graph-probe')).toBeNull();
+            expect(screen.queryByTestId('graph-float')).toBeNull();
+            expect(document.body.innerHTML).not.toContain(props.image.url);
             expect(useWorkflowGraphStore.getState().open).toBe(false);
         });
 
-        it('unmounts the graph when the image becomes masked', async () => {
+        it('unmounts the graph and its floating image when the image becomes masked', async () => {
             const view = renderViewer();
             await waitFor(() => expect(screen.getByTestId('workflow-graph-probe')).toBeTruthy());
+            expect(screen.getByTestId('graph-float').getAttribute('src')).toBe(view.props.image.url);
             expect(useWorkflowGraphStore.getState().open).toBe(true);
 
             view.rerender(<ImageViewer {...view.props} isMasked />);
             expect(screen.queryByTestId('workflow-graph-probe')).toBeNull();
+            expect(document.body.innerHTML).not.toContain(view.props.image.url);
             expect(useWorkflowGraphStore.getState().open).toBe(false);
         });
 

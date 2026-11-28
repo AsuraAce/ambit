@@ -45,6 +45,9 @@ export const GROUP_TITLE_H = 24;
 /** How long a group fold takes; workflowGraph.css uses the same time. */
 export const FOLD_MS = 220;
 
+/** Whether the user asked for less motion: then nothing in the graph animates. */
+export const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export type ViewLevel = 'near' | 'far' | 'overview';
 
 /** What the view draws at scale s, given whether far mode was on. */

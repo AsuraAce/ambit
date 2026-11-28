@@ -103,6 +103,15 @@ Interacts with: contexts, stores, hooks, `src/services/`, generated bindings, an
 Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature. Gallery and Maintenance both route to shared `ImageViewer.tsx` and `VideoViewer.tsx` components under `src/features/viewer/components/`, but each owns context-specific session navigation and action wiring; viewer feature changes must verify both entry points.
 Deferred work: [#345](https://github.com/AsuraAce/ambit/issues/345) (app shell and state coordination), [#346](https://github.com/AsuraAce/ambit/issues/346) (shared viewer capabilities)
 
+### Workflow Graph
+Purpose: show a ComfyUI workflow saved in an image or video as a full-screen, read-only node graph.
+Code: `src-tauri/src/metadata/comfyui/workflow_canvas.rs` (the `inspect_workflow_canvas` command), `src/features/viewer/components/WorkflowInspector.tsx` (the Graph button), `src/features/viewer/workflowGraph/`, `src/stores/workflowGraphStore.ts`
+Interacts with: the viewers' privacy gate, the viewer and app keyboard handlers, `AppSettings.workflowGraph`, and the viewer's display sources
+Shape: the canvas report is read from the file's chunks only when Graph is pressed, and is capped (`truncated` marks a partial draw). The view is a lazy chunk, portalled to the body but rendered by `WorkflowInspector`, so whatever closes the sidebar (a masked item, Privacy Mode waiting for its index, another item) unmounts it. Near zoom draws HTML nodes; far and overview zoom paint one canvas (`farCanvas.ts`), switched without a React render. Tidy runs the layout in a worker (`useTidyPositions.ts`) with a time cap. Subgraphs open as their own levels; each level's folds, Tidy layout and view are kept while the graph is open.
+Keyboard: while the graph is open, `workflowGraphStore.open` makes the viewer and app shortcut handlers stand down, and the graph's own capture-phase `keydown` listener stops each key it handles.
+Privacy and persistence: file text is rendered as plain text only. The floating image uses the viewer's display source (a video's poster), never a new file read. Only the view preferences in `AppSettings.workflowGraph` (palette, wire shape and width, moving dots, map shown) are saved; no graph content is.
+Related docs: `docs/manual/viewer-and-metadata.md` (Workflow Graph), `docs/plans/workflow-node-graph.md`
+
 ### Query, State, and Persistence Adapters
 Purpose: own frontend query flows, transient UI state, JSON-backed settings and recent-search persistence, thumbnail services, and database helper modules.
 Code: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
