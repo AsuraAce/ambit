@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.17.0](https://github.com/AsuraAce/ambit/compare/v0.16.2...v0.17.0) (2026-11-28)
+
+
+### Features
+
+* **workflow:** add the workflow canvas data contract ([#614](https://github.com/AsuraAce/ambit/issues/614)) ([45991f7](https://github.com/AsuraAce/ambit/commit/45991f71a7886540691a219f12232faadcb79d14))
+* **workflow:** draw the workflow as a read-only node graph ([#619](https://github.com/AsuraAce/ambit/issues/619)) ([a583cc2](https://github.com/AsuraAce/ambit/commit/a583cc2ed2af0c89644a64aeb1f1f97c26bff1e2))
+* **workflow:** ease folds and tune the graph's zoom levels (round 2) ([#633](https://github.com/AsuraAce/ambit/issues/633)) ([f1a575e](https://github.com/AsuraAce/ambit/commit/f1a575eb5f40fd4f72cd018866d0bd778a237839))
+* **workflow:** float the saved image over the graph (P4) ([#638](https://github.com/AsuraAce/ambit/issues/638)) ([5413ffb](https://github.com/AsuraAce/ambit/commit/5413ffbab80cdea746560d4ee82bfd21b70ed0d9))
+* **workflow:** polish the graph's look (P2b) ([#631](https://github.com/AsuraAce/ambit/issues/631)) ([4047216](https://github.com/AsuraAce/ambit/commit/404721662ec747fa4f6f0c4eaebd96f26eb159f1))
+* **workflow:** read a workflow graph node by node (P3a) ([#635](https://github.com/AsuraAce/ambit/issues/635)) ([29eda2c](https://github.com/AsuraAce/ambit/commit/29eda2cd6c30f9eb52a2fb257840a33f91cc6889))
+* **workflow:** wire shapes, colours and a map for the graph (P3b) ([#637](https://github.com/AsuraAce/ambit/issues/637)) ([52e31cd](https://github.com/AsuraAce/ambit/commit/52e31cdcf28a914e659d3246e2cf5f7408748635))
+* **workflow:** zoom to a group from its title pill, and smaller overview pills ([#634](https://github.com/AsuraAce/ambit/issues/634)) ([886e067](https://github.com/AsuraAce/ambit/commit/886e067bad280909ae1789250489e2ef77cfdb93))
+
+
+### Bug Fixes
+
+* **import:** show the library refresh in the dock after an import's files are written ([#610](https://github.com/AsuraAce/ambit/issues/610)) ([959acb7](https://github.com/AsuraAce/ambit/commit/959acb73fa60a68bd9ad90d362b18f3224063def))
+* **import:** show when an import is waiting for the library database ([#612](https://github.com/AsuraAce/ambit/issues/612)) ([2aa171b](https://github.com/AsuraAce/ambit/commit/2aa171b0537570f1800afb4147f11a8121ea8ef1))
+* **library:** load gallery tiles without a thumbnail eagerly ([#624](https://github.com/AsuraAce/ambit/issues/624)) ([1647223](https://github.com/AsuraAce/ambit/commit/164722337ef2e6ef79633e44e874c475b0378661))
+* **startup:** journal an owner-cache build stopped by a switch as cancelled ([#606](https://github.com/AsuraAce/ambit/issues/606)) ([c51f85a](https://github.com/AsuraAce/ambit/commit/c51f85a0e901dca57b742f3cf66eaf3b6af01815)), closes [#592](https://github.com/AsuraAce/ambit/issues/592)
+* **watch:** make Live Watch thumbnails during import ([#626](https://github.com/AsuraAce/ambit/issues/626)) ([6278884](https://github.com/AsuraAce/ambit/commit/6278884c2c12bd6bfc15e0f3e2989d2dfc75f49e))
+* **watch:** stop the startup cache repair for Live Watch imports ([#617](https://github.com/AsuraAce/ambit/issues/617)) ([a2c3b70](https://github.com/AsuraAce/ambit/commit/a2c3b709a1a5f0827a73530e0319d0368804c8b3))
+* **workflow:** stop the floating image's hover lighting from flickering ([#642](https://github.com/AsuraAce/ambit/issues/642)) ([df57f3c](https://github.com/AsuraAce/ambit/commit/df57f3c20453e6875b65e8193cadc0aab9d6b5c6)), closes [#452](https://github.com/AsuraAce/ambit/issues/452)
+
+
+### Performance Improvements
+
+* **db:** begin save_images_batch with an immediate transaction ([#611](https://github.com/AsuraAce/ambit/issues/611)) ([cfbf38f](https://github.com/AsuraAce/ambit/commit/cfbf38f097a234c2bdb6876c353871b637f0d12d))
+
 ## [0.16.2](https://github.com/AsuraAce/ambit/compare/v0.16.1...v0.16.2) (2026-11-24)
 
 
