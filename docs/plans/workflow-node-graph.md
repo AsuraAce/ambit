@@ -1,6 +1,6 @@
 # Workflow Node Graph
 
-Status: Approved 2026-11-25. P1 to P4 built; owner smoke pending.
+Status: Accepted. Approved 2026-11-25; P1 to P4 built and owner-accepted on 2026-11-28.
 
 Approval conditions (planner): render every file string as plain text (no
 `dangerouslySetInnerHTML`, no markdown to HTML without the app's own sanitiser)
