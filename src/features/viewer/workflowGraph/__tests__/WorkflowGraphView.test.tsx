@@ -18,6 +18,7 @@ import {
     groupBox,
     LOWEST_SCALE,
     MIN_SCALE,
+    nodeHeight,
     sceneFor,
     wirePaths,
 } from '../geometry';
@@ -1836,6 +1837,268 @@ describe('WorkflowGraphView', () => {
             } finally {
                 window.matchMedia = original;
                 motion.restore();
+            }
+        });
+    });
+
+    // The owner's polish round: a click on a node box far out flies in to it, a click in the Detailed level only
+    // picks, and a click from the side (search, panel, picture) lands the node in the centre where it can be read.
+    describe('the camera on a click', () => {
+        const withReducedMotion = (run: () => void) => {
+            const original = window.matchMedia;
+            window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+            try {
+                run();
+            } finally {
+                window.matchMedia = original;
+            }
+        };
+        const world = () => screen.getByTestId('workflow-graph-world');
+        const view = () => {
+            const [x, y, s] = /translate\(([\d.e-]+)px, ([\d.e-]+)px\) scale\(([\d.e-]+)\)/
+                .exec(world().style.transform)!
+                .slice(1)
+                .map(Number);
+            return { x, y, s };
+        };
+        const decode = savedPositions(buildGraphModel(graph.root)).get('2')!;
+        const decodeNode = buildGraphModel(graph.root).byId.get('2')!;
+        const canvas = () => document.querySelector<HTMLElement>('.wg-canvas')!;
+        /** Wheel turns, flushed a frame at a time, until the zoom is `target`. */
+        const zoomTo = (frames: FrameRequestCallback[], target: number) => {
+            const deltaY = -Math.log(target / view().s) / 0.0016;
+            fireEvent.wheel(canvas(), { deltaY, clientX: 512, clientY: 384 });
+            act(() => frames.splice(0).forEach((frame) => frame(performance.now())));
+            expect(view().s).toBeCloseTo(target, 6);
+        };
+        const pick = (text: string) => {
+            const box = screen.getByRole('combobox', { name: 'Find a node or value' });
+            fireEvent.change(box, { target: { value: text } });
+            fireEvent.keyDown(box, { key: 'Enter' });
+        };
+        const centredY = (s: number) => 768 / 2 - (decode.y + nodeHeight(decodeNode, false) / 2) * s;
+
+        it('flies in to a node box clicked in far view, at 100 %, and opens it; a pan that starts on it does not', () => {
+            const { restore } = fakeCanvases();
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            try {
+                withReducedMotion(() => {
+                    renderGraph();
+                    for (let i = 0; i < 14 && !world().classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                    const far = view();
+                    const onDecode = { clientX: far.x + (decode.x + 100) * far.s, clientY: far.y + (decode.y + 30) * far.s };
+                    // A drag that starts on the box pans and stays far.
+                    fireEvent.pointerDown(canvas(), { button: 0, pointerId: 1, ...onDecode });
+                    fireEvent.pointerMove(canvas(), { pointerId: 1, clientX: onDecode.clientX + 40, clientY: onDecode.clientY });
+                    fireEvent.pointerUp(canvas(), { pointerId: 1, clientX: onDecode.clientX + 40, clientY: onDecode.clientY });
+                    expect(view().s).toBe(far.s);
+                    expect(document.querySelector('.wg-panel')).toBeNull();
+                    const panned = view();
+                    const onDecodeNow = { clientX: panned.x + (decode.x + 100) * panned.s, clientY: panned.y + (decode.y + 30) * panned.s };
+                    fireEvent.pointerDown(canvas(), { button: 0, pointerId: 2, ...onDecodeNow });
+                    fireEvent.pointerUp(canvas(), { pointerId: 2, ...onDecodeNow });
+                    expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+                    expect(view().s).toBe(1);
+                    expect(view().y).toBeCloseTo(centredY(1), 6);
+                    expect(world().classList.contains('far')).toBe(false);
+                });
+            } finally {
+                box.mockRestore();
+                restore();
+            }
+        });
+
+        it('only picks a node clicked in the Detailed level: the view stays where it is', () => {
+            withReducedMotion(() => {
+                renderGraph();
+                const before = world().style.transform;
+                const element = document.querySelector<HTMLElement>('.wg-world [data-node-id="2"]')!;
+                fireEvent.pointerDown(element, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+                fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
+                expect(document.querySelector('.wg-panel')?.getAttribute('aria-label')).toBe('Node Decode');
+                expect(world().style.transform).toBe(before);
+            });
+        });
+
+        // Below the zoom where body text shows in full, a node reached from the side is not readable yet.
+        it('centres a node picked from the side, zooming to 100 % where its text would still be faded', () => {
+            const frames: FrameRequestCallback[] = [];
+            const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            try {
+                withReducedMotion(() => {
+                    renderGraph();
+                    for (const [from, landed] of [
+                        [DETAIL_FADE_SCALE - 0.05, 1],
+                        [0.8, 0.8],
+                        [1.4, 1.4],
+                    ]) {
+                        zoomTo(frames, from);
+                        pick('Decode');
+                        expect(view().s).toBeCloseTo(landed, 6);
+                        expect(view().y).toBeCloseTo(centredY(landed), 6);
+                        fireEvent.keyDown(document.body, { key: 'Escape' });
+                    }
+                });
+            } finally {
+                box.mockRestore();
+                raf.mockRestore();
+            }
+        });
+
+        // #641: the switch from the far canvas to the Detailed nodes popped while a flight raced through it. A
+        // flight now fades the nodes in over the rest of its way; a wheel zoom keeps the short fade.
+        it('fades the Detailed level in over the rest of a flight into it, and quickly on a wheel zoom', () => {
+            const { restore } = fakeCanvases();
+            const frames: FrameRequestCallback[] = [];
+            const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            let clock = 1000;
+            const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+            const flush = () => act(() => frames.splice(0).forEach((frame) => frame(clock)));
+            try {
+                renderGraph();
+                flush();
+                for (let i = 0; i < 14 && !world().classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                expect(world().classList.contains('far')).toBe(true);
+                pick('Decode');
+                const started = clock;
+                let crossed: string | null = null;
+                while (clock < started + 600 && frames.length > 0) {
+                    clock += 16;
+                    flush();
+                    if (crossed === null && !world().classList.contains('far')) crossed = world().style.transitionDuration;
+                }
+                expect(view().s).toBe(1);
+                const fade = Number.parseFloat(crossed ?? '');
+                expect(fade).toBeGreaterThan(160);
+                expect(fade).toBeLessThan(560);
+                expect(document.querySelector<HTMLElement>('.wg-farcanvas')!.style.transitionDelay).toBe(`0s, ${fade}ms`);
+
+                for (let i = 0; i < 14 && !world().classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                expect(world().style.transitionDuration).toBe('');
+                zoomTo(frames, 0.9);
+                expect(world().classList.contains('far')).toBe(false);
+                expect(world().style.transitionDuration).toBe('');
+            } finally {
+                now.mockRestore();
+                box.mockRestore();
+                raf.mockRestore();
+                restore();
+            }
+        });
+    });
+
+    // UX-L267's entrance, which the owner liked: the nodes fade and rise in from left to right and the wires draw in.
+    describe('the entrance', () => {
+        type Played = { element: Element; keyframes: Keyframe[]; options: KeyframeAnimationOptions; cancel: () => void };
+        const played: Played[] = [];
+        const stubAnimate = () => {
+            played.length = 0;
+            const original = Element.prototype.animate as typeof Element.prototype.animate | undefined;
+            Element.prototype.animate = function (this: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) {
+                const cancel = vi.fn();
+                played.push({ element: this, keyframes, options, cancel });
+                return { cancel, finished: Promise.resolve() } as unknown as Animation;
+            } as typeof Element.prototype.animate;
+            return () => {
+                if (original) Element.prototype.animate = original;
+                else delete (Element.prototype as Partial<Element>).animate;
+            };
+        };
+        const forNode = (id: string) => played.filter((entry) => (entry.element as HTMLElement).dataset?.nodeId === id);
+        const wire = () => document.querySelector<SVGPathElement>('.wg-wire')!;
+
+        it('brings the nodes in from left to right, fades the groups in and draws each wire from its source', () => {
+            vi.useFakeTimers();
+            const restore = stubAnimate();
+            try {
+                renderGraph();
+                const [left] = forNode('1');
+                const [right] = forNode('2');
+                expect(left.options.delay).toBe(0);
+                expect(right.options.delay!).toBeGreaterThan(0);
+                expect(left.keyframes[0]).toMatchObject({ opacity: 0, translate: '0 8px' });
+                expect(played.some((entry) => (entry.element as HTMLElement).classList.contains('wg-group'))).toBe(true);
+                const drawn = played.find((entry) => entry.element === wire())!;
+                expect(drawn.keyframes[0]).toMatchObject({ strokeDashoffset: 1 });
+                expect(drawn.options.delay!).toBeGreaterThan(0);
+                expect(wire().getAttribute('pathLength')).toBe('1');
+                // When it ends, nothing it set stays on the elements.
+                act(() => vi.advanceTimersByTime(2000));
+                expect(wire().hasAttribute('pathLength')).toBe(false);
+                expect(played.every((entry) => vi.mocked(entry.cancel).mock.calls.length > 0)).toBe(true);
+            } finally {
+                restore();
+                vi.useRealTimers();
+            }
+        });
+
+        it('plays nothing under reduced motion', () => {
+            const restore = stubAnimate();
+            const original = window.matchMedia;
+            window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+            try {
+                renderGraph();
+                expect(played).toEqual([]);
+                expect(wire().hasAttribute('pathLength')).toBe(false);
+            } finally {
+                window.matchMedia = original;
+                restore();
+            }
+        });
+
+        // Tidy and As saved glide the nodes to their new places; the entrance is for a level that opens.
+        it('ends when the layout changes, without playing again, and plays again on a subgraph level', async () => {
+            const restore = stubAnimate();
+            try {
+                const withSubgraph = report(
+                    level([
+                        canvasNode('1', { title: 'Load', pos: { x: 20, y: 80 } }),
+                        canvasNode('s', { title: 'Stage', kind: 'subgraph', subgraphId: 'def', pos: { x: 400, y: 80 } }),
+                    ]),
+                    {
+                        subgraphs: [
+                            { id: 'def', name: 'Stage', level: level([canvasNode('u1', { title: 'Inner', pos: { x: 0, y: 30 } })]) },
+                        ],
+                    }
+                );
+                render(<WorkflowGraphView report={withSubgraph} fileName="enter.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+                expect(forNode('1')).toHaveLength(1);
+                fireEvent.click(screen.getByRole('button', { name: 'Tidy' }));
+                await waitFor(() => expect(vi.mocked(forNode('1')[0].cancel).mock.calls.length).toBeGreaterThan(0));
+                expect(forNode('1')).toHaveLength(1);
+                fireEvent.click(screen.getByRole('button', { name: 'Open subgraph Stage' }));
+                expect(forNode('u1')).toHaveLength(1);
+            } finally {
+                restore();
+            }
+        });
+
+        // A big graph opens far out, on the canvas: it draws the entrance a frame at a time, then stops drawing.
+        it('draws the far canvas in until the entrance ends, and then asks for no more frames', () => {
+            const { restore } = fakeCanvases();
+            const frames: FrameRequestCallback[] = [];
+            const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+            const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1024, 768));
+            let clock = 1000;
+            const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+            try {
+                const wide = report(level([canvasNode('a', { pos: { x: 0, y: 30 } }), canvasNode('b', { pos: { x: 40_000, y: 30 } })]));
+                render(<WorkflowGraphView report={wide} fileName="wide.png" onClose={vi.fn()} makeLayoutWorker={fakeWorker} />);
+                expect(screen.getByTestId('workflow-graph-world').classList.contains('far')).toBe(true);
+                expect(frames.length).toBeGreaterThan(0);
+                clock += 300;
+                act(() => frames.splice(0).forEach((frame) => frame(clock)));
+                expect(frames.length).toBeGreaterThan(0);
+                clock += 2000;
+                act(() => frames.splice(0).forEach((frame) => frame(clock)));
+                expect(frames).toHaveLength(0);
+            } finally {
+                now.mockRestore();
+                box.mockRestore();
+                raf.mockRestore();
+                restore();
             }
         });
     });

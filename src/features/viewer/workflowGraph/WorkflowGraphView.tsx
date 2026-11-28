@@ -8,10 +8,11 @@ import { normalizeWorkflowGraphPrefs } from '../../../utils/settingsUtils';
 import { buildGraphModel, hasSavedPositions, savedPositions, type Positions } from './graphModel';
 import {
     boundsOf,
+    DETAIL_FADE_SCALE,
     DETAIL_STEPS,
     detailOpacity,
-    FAR_EXIT_SCALE,
     fitView,
+    flightView,
     FOLD_MS,
     GROUP_TITLE_H,
     groupBox,
@@ -40,12 +41,25 @@ import {
     farSceneFor,
     groupPillAt,
     NO_FAR_MARKS,
+    prepareFarArrival,
     prepareFarDrawing,
     readFarPalette,
+    type FarArrival,
     type FarDrawing,
     type FarMarks,
     type GroupLabel,
 } from './farCanvas';
+import {
+    GROUP_ARRIVE_MS,
+    NODE_ARRIVE_EASE,
+    NODE_ARRIVE_MS,
+    planEntrance,
+    WIRE_DRAW_EASE,
+    WIRE_DRAW_LIMIT,
+    WIRE_DRAW_MS,
+    wireDelay,
+    type EntrancePlan,
+} from './entrance';
 import { FLOAT_INITIAL, FloatingImage, type FloatSource, type FloatState } from './FloatingImage';
 import { GraphMap, type MapGroup } from './GraphMap';
 import { GraphMenus, type MenuName } from './GraphMenus';
@@ -104,6 +118,18 @@ const sameShape = (a: string, b: string) => a.replace(/[^A-Za-z]/g, '') === b.re
  * with the members. Every other wire stays as it is.
  */
 type WireMotion = 'morph' | 'arriving' | 'leaving' | null;
+
+/** The entrance while it plays: its plan, the HTML animations it started, and the far canvas's steps and frame. */
+interface Entrance {
+    start: number;
+    plan: EntrancePlan;
+    animations: Animation[];
+    /** Wires given a path length of 1 for their draw, which they lose when it ends. */
+    measured: SVGPathElement[];
+    far: FarArrival | null;
+    frame: number | null;
+    timer: number | null;
+}
 const wireMotion = (wire: WirePath, before: WirePath | undefined, folding: boolean): WireMotion => {
     if (!folding || before?.d === wire.d) return null;
     if (!before) return 'arriving';
@@ -282,6 +308,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         for (const [key, entry] of byKey) if (!placed.has(key)) ordered.push(entry);
         return ordered;
     }, [wires, foldMotions, foldMotion]);
+    // The wires as drawn, for the entrance to match its paths to.
+    const shownWiresRef = React.useRef(shownWires);
+    React.useLayoutEffect(() => {
+        shownWiresRef.current = shownWires;
+    });
 
     // Each open group's title is a pill at its top-left.
     const titleSlots = React.useMemo(() => {
@@ -309,6 +340,8 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     const farRef = React.useRef<HTMLCanvasElement>(null);
     const viewRef = React.useRef<View>({ x: 0, y: 0, s: 1 });
     const flightRef = React.useRef<number | null>(null);
+    // When the running flight lands, so a flight into the Detailed level can fade it in over the rest of the way.
+    const flightEndRef = React.useRef(0);
     const frameRef = React.useRef<number | null>(null);
     const rectRef = React.useRef<DOMRect | null>(null);
     const isFarRef = React.useRef(false);
@@ -324,6 +357,17 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     const hoverPillRef = React.useRef<string | null>(null);
     const farMarksRef = React.useRef<FarMarks>(NO_FAR_MARKS);
     const mapRedrawRef = React.useRef<(() => void) | null>(null);
+    const entranceRef = React.useRef<Entrance | null>(null);
+    // Ends the entrance at once, wherever it is: what it animated shows as it is now drawn.
+    const stopEntrance = React.useCallback(() => {
+        const entrance = entranceRef.current;
+        if (!entrance) return;
+        entranceRef.current = null;
+        for (const animation of entrance.animations) animation.cancel();
+        for (const path of entrance.measured) path.removeAttribute('pathLength');
+        if (entrance.frame !== null) cancelAnimationFrame(entrance.frame);
+        if (entrance.timer !== null) window.clearTimeout(entrance.timer);
+    }, []);
     // With Hidden, the far canvas draws only the picked node's wires, as the near view does.
     const drawnWires = React.useMemo(() => visibleWires(wires, shape, selected), [wires, shape, selected]);
     const farInputs = React.useRef({ model, positions, foldedNodes, foldedGroups, scene, wires: drawnWires });
@@ -387,9 +431,13 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                 inputs.wires,
                 laidOut
             );
-            drawing = prepareFarDrawing(farScene, readFarPalette(layer));
+            const palette = readFarPalette(layer);
+            drawing = prepareFarDrawing(farScene, palette);
             farDrawingRef.current = drawing;
+            const entrance = entranceRef.current;
+            if (entrance) entrance.far = prepareFarArrival(farScene, palette, entrance.plan);
         }
+        const entrance = entranceRef.current;
         farPillsRef.current = drawFarScene(
             ctx,
             drawing,
@@ -397,7 +445,8 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             dpr,
             levelRef.current === 'overview' ? 'overview' : 'far',
             hoverPillRef.current,
-            farMarksRef.current
+            farMarksRef.current,
+            entrance?.far ? { steps: entrance.far, t: performance.now() - entrance.start } : null
         );
     }, [canvasRect]);
 
@@ -421,6 +470,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             // The two views cross-fade in CSS; the HTML stops painting once the far canvas has faded in.
             if (far !== isFarRef.current) {
                 isFarRef.current = far;
+                stopEntrance();
                 world.classList.toggle('far', far);
                 // The HTML is unseen outside near view, so it leaves the Tab order; focus in it moves to the canvas.
                 world.toggleAttribute('inert', far);
@@ -428,8 +478,19 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                 // Near mode has HTML pills with their own hover, so a canvas pill's hover ends with far mode.
                 hoverPillRef.current = null;
                 canvasRef.current?.classList.remove('on-pill');
-                // Under reduced motion there is no fade, so the hidden canvas has nothing to follow.
-                if (!far && !reducedMotion()) farFadeEndRef.current = performance.now() + CROSS_FADE_MS;
+                // A flight into the Detailed level fades the nodes in over the rest of the flight, with the far canvas
+                // under them until it lands, so the swap from boxes to nodes is not a pop at full speed (#641). A
+                // wheel zoom keeps the short fade. Under reduced motion there is no fade, so the canvas has nothing to
+                // follow.
+                const fade = Math.max(CROSS_FADE_MS, flightRef.current !== null ? flightEndRef.current - performance.now() : 0);
+                const slow = !far && fade > CROSS_FADE_MS && !reducedMotion();
+                const farCanvas = farRef.current;
+                world.style.transitionDuration = slow ? `${Math.round(fade)}ms` : '';
+                if (farCanvas) {
+                    farCanvas.style.transitionDuration = slow ? `${Math.round(fade)}ms, 0s` : '';
+                    farCanvas.style.transitionDelay = slow ? `0s, ${Math.round(fade)}ms` : '';
+                }
+                if (!far && !reducedMotion()) farFadeEndRef.current = performance.now() + fade;
             }
         }
         if (far || performance.now() < farFadeEndRef.current) drawFar();
@@ -443,7 +504,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         }
         if (zoomRef.current) zoomRef.current.textContent = `${Math.round(s * 100)}%`;
         mapRedrawRef.current?.();
-    }, [drawFar]);
+    }, [drawFar, stopEntrance]);
 
     // The far canvas rings the picked node, the arrow keys' node and a search's hits (or the image's nodes).
     React.useLayoutEffect(() => {
@@ -453,9 +514,10 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
 
     // A changed graph (layout, folds, wires, colours) is redrawn at once when far mode is showing it.
     React.useLayoutEffect(() => {
+        stopEntrance();
         farDrawingRef.current = null;
         if (isFarRef.current) drawFar();
-    }, [model, positions, foldedNodes, foldedGroups, scene, drawnWires, palette, prefs.wireWidth, drawFar]);
+    }, [stopEntrance, model, positions, foldedNodes, foldedGroups, scene, drawnWires, palette, prefs.wireWidth, drawFar]);
 
     // Wheel and pointer input can arrive several times a frame: the view is drawn once per frame.
     const scheduleApply = React.useCallback(() => {
@@ -496,16 +558,12 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             }
             const from = viewRef.current;
             const started = performance.now();
+            flightEndRef.current = started + FLY_MS;
             const step = (now: number) => {
                 const t = Math.min(1, (now - started) / FLY_MS);
-                const k = easeOutCubic(t);
-                viewRef.current = {
-                    x: from.x + (target.x - from.x) * k,
-                    y: from.y + (target.y - from.y) * k,
-                    s: from.s + (target.s - from.s) * k,
-                };
-                apply();
+                viewRef.current = flightView(from, target, easeOutCubic(t));
                 flightRef.current = t < 1 ? requestAnimationFrame(step) : null;
+                apply();
             };
             flightRef.current = requestAnimationFrame(step);
         },
@@ -556,6 +614,69 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         [apply, viewportSize, zoomFloorNow]
     );
 
+    // UX-L267's entrance, when a level opens: in the Detailed level the HTML nodes, groups and wires animate; in far
+    // and overview the canvas draws them in steps. Under reduced motion the graph is simply there.
+    const startEntrance = (shownPositions: Positions) => {
+        const world = worldRef.current;
+        if (!world || reducedMotion()) return;
+        const nodes = model.nodes.flatMap((node) => {
+            const at = shownPositions.get(node.id);
+            return at && !scene.hiddenBy.has(node.id) ? [{ id: node.id, x: at.x, y: at.y }] : [];
+        });
+        const plan = planEntrance(nodes, shownLayout === 'tidy');
+        const entrance: Entrance = { start: performance.now(), plan, animations: [], measured: [], far: null, frame: null, timer: null };
+        if (isFarRef.current) {
+            entranceRef.current = entrance;
+            // The far drawing is rebuilt with the entrance's steps, then drawn each frame until the entrance ends.
+            farDrawingRef.current = null;
+            const tick = () => {
+                const current = entranceRef.current;
+                if (current !== entrance) return;
+                if (performance.now() - entrance.start >= plan.end) stopEntrance();
+                else entrance.frame = requestAnimationFrame(tick);
+                drawFar();
+            };
+            tick();
+            return;
+        }
+        // jsdom's elements cannot animate (SVG ones included); nor can a webview without the Web Animations API.
+        if (typeof Element.prototype.animate !== 'function') return;
+        entranceRef.current = entrance;
+        const play = (element: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) =>
+            entrance.animations.push(element.animate(keyframes, { fill: 'backwards', ...options }));
+        for (const element of world.querySelectorAll<HTMLElement>('.wg-node[data-node-id]')) {
+            const delay = plan.nodeDelay.get(element.dataset.nodeId ?? '') ?? 0;
+            play(element, [{ opacity: 0, translate: '0 8px' }], { duration: NODE_ARRIVE_MS, delay, easing: NODE_ARRIVE_EASE });
+        }
+        for (const element of world.querySelectorAll('.wg-group, .wg-gtitle'))
+            play(element, [{ opacity: 0 }], { duration: GROUP_ARRIVE_MS });
+        // A wire draws itself from its source: with a path length of 1, the dash needs no measuring. A dashed
+        // (bypassed) wire keeps its dashes and fades in, and so does every wire on a level with very many.
+        const paths = world.querySelectorAll<SVGPathElement>('.wg-wire');
+        const draw = paths.length <= WIRE_DRAW_LIMIT;
+        paths.forEach((path, index) => {
+            const wire = shownWiresRef.current[index]?.wire;
+            if (!wire) return;
+            const delay = wireDelay(plan, wire);
+            if (draw && !wire.bypassed) {
+                path.setAttribute('pathLength', '1');
+                entrance.measured.push(path);
+                play(
+                    path,
+                    [
+                        { strokeDasharray: '1 1', strokeDashoffset: 1, opacity: 0 },
+                        { strokeDasharray: '1 1', strokeDashoffset: 0.9, opacity: 1, offset: 0.1 },
+                        { strokeDasharray: '1 1', strokeDashoffset: 0 },
+                    ],
+                    { duration: WIRE_DRAW_MS, delay, easing: WIRE_DRAW_EASE }
+                );
+            } else play(path, [{ opacity: 0 }], { duration: WIRE_DRAW_MS, delay });
+        });
+        for (const element of world.querySelectorAll('.wg-flow'))
+            play(element, [{ opacity: 0 }], { duration: WIRE_DRAW_MS, delay: plan.end - WIRE_DRAW_MS });
+        entrance.timer = window.setTimeout(stopEntrance, plan.end);
+    };
+
     // First view once there is something to show; later layout switches glide and refit.
     const shownRef = React.useRef<Positions | null>(null);
     React.useLayoutEffect(() => {
@@ -566,6 +687,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
             if (snapshot) viewRef.current = snapshot.view;
             else if (bounds) viewRef.current = startView(bounds, viewportSize());
             apply();
+            startEntrance(positions);
             return;
         }
         const world = worldRef.current;
@@ -587,6 +709,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
     }, [positions]);
 
     React.useEffect(() => stopFlight, []);
+    React.useEffect(() => stopEntrance, [stopEntrance]);
 
     // Escape steps back one thing at a time: the search, the side panel, the subgraph level, then the graph.
     const escape = () => {
@@ -679,7 +802,8 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         const rect = drawnRect(id);
         if (!rect) return;
         const { w, h } = viewportSize();
-        const s = viewRef.current.s < FAR_EXIT_SCALE ? 1 : viewRef.current.s;
+        // A node is gone to where it can be read: below the zoom where body text shows in full, the view goes to 100 %.
+        const s = viewRef.current.s < DETAIL_FADE_SCALE ? 1 : viewRef.current.s;
         flyTo({ s, x: roomWidth(w, true) / 2 - (rect.x + rect.w / 2) * s, y: h / 2 - (rect.y + rect.h / 2) * s });
         setInteracted(true);
     };
@@ -851,7 +975,8 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         dragRef.current = null;
         event.currentTarget.classList.remove('panning');
         if (event.type !== 'pointerup' || drag.panning) return;
-        // A press and release on a far pill, without a pan, zooms to its group; on a far node, it opens the node.
+        // A press and release on a far pill, without a pan, zooms to its group; on a far node, it flies in to the node
+        // and opens it, as a search result does.
         if (isFarRef.current) {
             const key = farPillUnder(event);
             if (key) {
@@ -865,7 +990,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                 (event.clientX - (rect?.left ?? 0) - x) / s,
                 (event.clientY - (rect?.top ?? 0) - y) / s
             );
-            if (id) select(id);
+            if (id) goTo(id);
             else setSelected(null);
             return;
         }
