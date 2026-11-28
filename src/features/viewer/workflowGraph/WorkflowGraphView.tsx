@@ -259,6 +259,11 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         return { leaving, arriving, wiresBefore, order };
     }, [foldMotions]);
     const scene = React.useMemo(() => sceneFor(model, shownLayout, foldedGroups), [model, shownLayout, foldedGroups]);
+    // A node the image points at that is folded away in a group is not drawn: the folded group's box lights instead.
+    const spotGroups = React.useMemo(
+        () => (hits || !pointed ? null : new Set(imageTargets.flatMap((id) => scene.hiddenBy.get(id)?.key ?? []))),
+        [hits, pointed, imageTargets, scene]
+    );
     const wires = React.useMemo(
         () => (positions ? wirePaths(model, positions, foldedNodes, scene, shape) : []),
         [model, positions, foldedNodes, scene, shape]
@@ -783,6 +788,13 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
         const root = rootRef.current;
         if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
     }, [selected]);
+    // So does closing the floating image, by its × or I, with focus inside it: it fades out and then unmounts.
+    React.useLayoutEffect(() => {
+        const root = rootRef.current;
+        const active = document.activeElement;
+        if (float.open || !root) return;
+        if (!root.contains(active) || (active instanceof Element && active.closest('.wg-float'))) root.focus({ preventScroll: true });
+    }, [float.open]);
 
     const dragRef = React.useRef<{ id: number; x: number; y: number; view: View; panning: boolean } | null>(null);
     // Whether the last press ended a pan: the click that follows it is not a click on a pill.
@@ -1203,7 +1215,7 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                                     return (
                                         <div
                                             key={group.key}
-                                            className={shut ? 'wg-group shut' : 'wg-group'}
+                                            className={`wg-group${shut ? ' shut' : ''}${spotGroups?.has(group.key) ? ' hit' : ''}`}
                                             style={style}
                                             data-group-key={group.key}
                                         >
@@ -1336,6 +1348,10 @@ const GraphLevel: React.FC<GraphLevelProps> = ({
                             state={float}
                             onState={onFloat}
                             targets={imageTargets.length}
+                            reserveRight={selectedNode ? PANEL_W : 0}
+                            onEnter={() => {
+                                if (canvasRef.current) setHoverPill(canvasRef.current, null);
+                            }}
                             onPoint={setPointed}
                             onPick={() => {
                                 if (imageTargets.length > 0) goTo(imageTargets[0]);

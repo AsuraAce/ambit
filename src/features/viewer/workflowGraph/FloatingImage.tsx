@@ -36,6 +36,10 @@ interface FloatingImageProps {
     onState: (next: FloatState) => void;
     /** How many nodes on this level the picture points at: the output nodes, or the subgraph holding them. */
     targets: number;
+    /** Canvas pixels on the right the window keeps clear of: the side panel's width while it is open. */
+    reserveRight: number;
+    /** The pointer came onto the window, so nothing under it on the canvas is hovered any more. */
+    onEnter: () => void;
     /** The pointer or focus is on the picture, or has left it. */
     onPoint: (on: boolean) => void;
     /** The picture was clicked: go to the node that saved it. */
@@ -43,17 +47,28 @@ interface FloatingImageProps {
 }
 
 /** The saved image, floating over the graph: drag it by its bar, resize it from the corner, fold or close it. */
-export const FloatingImage: React.FC<FloatingImageProps> = ({ source, fileName, state, onState, targets, onPoint, onPick }) => {
+export const FloatingImage: React.FC<FloatingImageProps> = ({
+    source,
+    fileName,
+    state,
+    onState,
+    targets,
+    reserveRight,
+    onEnter,
+    onPoint,
+    onPick,
+}) => {
     const rootRef = React.useRef<HTMLDivElement>(null);
     const latest = React.useRef(state);
     React.useLayoutEffect(() => {
         latest.current = state;
     });
     const aspect = source.width > 0 && source.height > 0 ? source.width / source.height : 1;
-    // The canvas the window sits on: its parent, which fills the window and changes size only on a resize.
+    // The canvas the window sits on: its parent, which fills the window and changes size only on a resize, less the
+    // side panel that covers its right edge while open.
     const room = (): Room => {
         const rect = rootRef.current?.parentElement?.getBoundingClientRect();
-        return { w: rect?.width ?? 0, h: rect?.height ?? 0 };
+        return { w: Math.max(0, (rect?.width ?? 0) - reserveRight), h: rect?.height ?? 0 };
     };
     const setBox = (box: FloatBox) => {
         const current = latest.current;
@@ -97,16 +112,17 @@ export const FloatingImage: React.FC<FloatingImageProps> = ({ source, fileName, 
     }, [state.open]);
     const visible = state.open || leaving;
 
-    // A window that was moved to a corner stays on the canvas when the canvas shrinks, and on first show.
+    // A window that was moved to a corner stays on the canvas when the canvas shrinks, on first show, and when the side
+    // panel opens over it.
     React.useLayoutEffect(() => {
         if (!visible) return;
         setBox(placeFloat(latest.current.box, room()));
         const keep = () => setBox(placeFloat(latest.current.box, room()));
         window.addEventListener('resize', keep);
         return () => window.removeEventListener('resize', keep);
-        // setBox and room read refs only.
+        // setBox reads refs only; room reads reserveRight.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [visible]);
+    }, [visible, reserveRight]);
 
     // Folding eases the height between the full window and its bar.
     const foldFromRef = React.useRef<number | null>(null);
@@ -163,6 +179,7 @@ export const FloatingImage: React.FC<FloatingImageProps> = ({ source, fileName, 
             role="group"
             aria-label="This image"
             data-testid="graph-float"
+            onPointerEnter={onEnter}
             onPointerMove={drag}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}

@@ -880,6 +880,14 @@
     opacity: 0.5;
 }
 
+/* A folded group holding the node the floating image points at. */
+.wg-world[data-searching] .wg-group.hit {
+    opacity: 1;
+    box-shadow:
+        0 0 0 2px var(--graph-sage),
+        0 0 22px color-mix(in srgb, var(--graph-sage) 45%, transparent);
+}
+
 .wg-open {
     height: 20px;
     display: inline-flex;

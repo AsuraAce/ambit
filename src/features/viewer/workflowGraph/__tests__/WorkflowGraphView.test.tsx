@@ -1650,6 +1650,141 @@ describe('WorkflowGraphView', () => {
             expect(win()).not.toBeNull();
         });
 
+        // Focus left on a window that goes away drops to the page, and the graph's own keys (Tab trap, arrows, Esc) stop.
+        describe('hands focus back to the graph when it closes with focus inside', () => {
+            const dialog = () => screen.getByRole('dialog', { name: 'Workflow graph' });
+            const focusKept = () => {
+                const active = document.activeElement;
+                expect(dialog().contains(active)).toBe(true);
+                expect(active?.closest('.wg-float')).toBeNull();
+            };
+
+            it('from its ×, at once and while it fades out', () => {
+                renderFloat();
+                const close = screen.getByRole('button', { name: 'Close the image' });
+                close.focus();
+                fireEvent.click(close);
+                expect(win()).toBeNull();
+                focusKept();
+
+                const motion = fakeAnimate();
+                try {
+                    fireEvent.click(imageButton());
+                    pic().focus();
+                    fireEvent.click(pic());
+                    screen.getByRole('button', { name: 'Close the image' }).focus();
+                    fireEvent.click(screen.getByRole('button', { name: 'Close the image' }));
+                    // Still fading, so still mounted, but no longer holding focus.
+                    expect(win()).not.toBeNull();
+                    focusKept();
+                    motion.finish(motion.calls.at(-1)!.animation);
+                    focusKept();
+                } finally {
+                    motion.restore();
+                }
+            });
+
+            it('from I pressed on the picture', () => {
+                renderFloat();
+                pic().focus();
+                fireEvent.keyDown(pic(), { key: 'i' });
+                expect(win()).toBeNull();
+                focusKept();
+            });
+        });
+
+        it('moves out from under the side panel while it is open', () => {
+            const box = withCanvas(1024, 768);
+            try {
+                renderFloat();
+                dragBy(bar(), 5000, 0);
+                expect(place().left).toBe(`${1024 - 200 - 6}px`);
+                fireEvent.click(pic());
+                expect(panel()).toBe('Node Decode');
+                expect(place().left).toBe(`${1024 - 340 - 200 - 6}px`);
+                // While the panel is open, a drag stops at its edge too.
+                dragBy(bar(), 5000, 0, 8);
+                expect(place().left).toBe(`${1024 - 340 - 200 - 6}px`);
+            } finally {
+                box.mockRestore();
+            }
+        });
+
+        it('closes the panel a picture click opened on Escape, and leaves the window open', () => {
+            const { onClose } = renderFloat();
+            fireEvent.click(pic());
+            expect(panel()).toBe('Node Decode');
+            fireEvent.keyDown(document.body, { key: 'Escape' });
+            expect(panel()).toBeUndefined();
+            expect(win()).not.toBeNull();
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
+        describe('with the saving node in a group', () => {
+            const grouped = report(
+                level(
+                    [
+                        canvasNode('1', { title: 'Load', pos: { x: 20, y: 80 }, outputs: [port(0, 'LATENT')] }),
+                        canvasNode('2', { title: 'Decode', pos: { x: 400, y: 80 }, inputs: [port(0, 'LATENT')] }),
+                    ],
+                    [canvasLink('1', 0, '2', 0)],
+                    [canvasGroup('Sampling', 380, 40, 300, 200)]
+                ),
+                { selectedOutputPaths: [['2']] }
+            );
+            const groupBoxEl = () => document.querySelector<HTMLElement>('.wg-world .wg-group')!;
+
+            // A folded group's members are not drawn, so the group itself is what lights.
+            it('lights the folded group while the picture is pointed at', () => {
+                vi.useFakeTimers();
+                try {
+                    renderFloat(grouped);
+                    fireEvent.pointerEnter(pic());
+                    expect(lit()).toEqual(['2']);
+                    expect(groupBoxEl().classList.contains('hit')).toBe(false);
+                    fireEvent.pointerLeave(pic());
+                    fireEvent.click(screen.getByRole('button', { name: 'Fold group Sampling' }));
+                    act(() => {
+                        vi.advanceTimersByTime(FOLD_MS);
+                    });
+                    expect(document.querySelector('.wg-world [data-node-id="2"]')).toBeNull();
+                    fireEvent.pointerEnter(pic());
+                    expect(groupBoxEl().classList.contains('hit')).toBe(true);
+                    fireEvent.pointerLeave(pic());
+                    expect(groupBoxEl().classList.contains('hit')).toBe(false);
+                } finally {
+                    vi.useRealTimers();
+                }
+            });
+
+            // The window stops pointer moves reaching the canvas, so a pill hovered just before is cleared on the way in.
+            it('clears a far pill’s hover when the pointer moves straight onto the window', () => {
+                const canvases = fakeCanvases();
+                const box = withCanvas(1024, 768);
+                const original = window.matchMedia;
+                window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as typeof window.matchMedia;
+                try {
+                    renderFloat(grouped);
+                    const world = screen.getByTestId('workflow-graph-world');
+                    const canvas = document.querySelector<HTMLElement>('.wg-canvas')!;
+                    for (let i = 0; i < 20 && !world.classList.contains('far'); i++) fireEvent.keyDown(document.body, { key: '-' });
+                    expect(world.classList.contains('far')).toBe(true);
+                    const [x, y, s] = /translate\(([\d.e-]+)px, ([\d.e-]+)px\) scale\(([\d.e-]+)\)/
+                        .exec(world.style.transform)!
+                        .slice(1)
+                        .map(Number);
+                    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: x + 380 * s + 12, clientY: y + 40 * s + 12 });
+                    expect(canvas.classList.contains('on-pill')).toBe(true);
+                    fireEvent.pointerEnter(win()!);
+                    expect(canvas.classList.contains('on-pill')).toBe(false);
+                } finally {
+                    window.matchMedia = original;
+                    box.mockRestore();
+                    canvases.restore();
+                }
+            });
+        });
+
         it('under reduced motion, folds and closes with no animation', () => {
             const motion = fakeAnimate();
             const original = window.matchMedia;
