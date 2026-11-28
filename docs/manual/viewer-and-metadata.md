@@ -128,7 +128,7 @@ Some images have no recorded workflow. Some workflow data is valid JSON but not 
 
 For a ComfyUI image or video, the **Graph** button in the Workflow tab opens the saved workflow as a full-screen node graph, drawn the way ComfyUI lays it out. The graph only shows the workflow; it never changes it. When Ambit can't draw a graph, because the file has no ComfyUI workflow or the tool isn't ComfyUI, the button stays disabled and its tooltip says why. **Back to image** or `Esc` returns to the viewer.
 
-The graph opens where the file saved its nodes. A file with no saved positions, such as one that only carries an API prompt, is laid out by Ambit from left to right; the badge **API prompt** and the hint "Laid out by Ambit" say so. A very large workflow shows **Partly shown** when Ambit draws only part of it.
+The graph opens where the file saved its nodes. A file with no saved positions, such as one that only carries an API prompt, is laid out by Ambit from left to right; the top bar reads **ComfyUI API prompt** and the hint "Laid out by Ambit" says so. The right of the top bar also counts the level's nodes and wires. A very large workflow shows **Partly shown** when Ambit draws only part of it.
 
 Moving around:
 
@@ -143,7 +143,7 @@ Reading nodes:
 - Bypassed and muted nodes are marked as in ComfyUI. A note node shows its text.
 - Each node and each group has a fold button. Folding a group shrinks it to one box, and its wires join at the box.
 - `/` opens the search, **Find a node or value**. It matches node titles, node types and setting values. The matching nodes light up, and the Up and Down arrows and Enter pick one from the list.
-- A subgraph node has **Open** (and its side panel **Open subgraph**), which shows the subgraph as its own level. The breadcrumb above the graph (Workflow › subgraph name) leads back up. Each level keeps its folds, layout and view while the graph stays open.
+- A subgraph node has a row under its body, **Open subgraph · N nodes inside** (and its side panel an **Open** button beside Fold and Close), which shows the subgraph as its own level. Zoomed out, the row shows as a green band along the bottom of the node. The path in the top bar starts with the image's file name (file name › subgraph name); click a step to go back up. Each level keeps its folds, layout and view while the graph stays open.
 
 Wires and colours:
 

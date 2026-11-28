@@ -105,9 +105,44 @@ describe('NodePanel', () => {
 
     it('folds the node and offers Open only for a subgraph it can open', () => {
         const { onToggleFold } = renderPanel();
-        fireEvent.click(screen.getByRole('button', { name: 'Fold' }));
+        // An icon beside Close, so its name and tooltip say what it does.
+        const fold = screen.getByRole('button', { name: 'Fold the node' });
+        expect(fold.getAttribute('title')).toBe('Fold the node');
+        expect(fold.closest('.row')?.querySelector('[aria-label="Close the node details"]')).toBeTruthy();
+        fireEvent.click(fold);
         expect(onToggleFold).toHaveBeenCalledWith('7');
-        expect(screen.queryByRole('button', { name: 'Open subgraph' })).toBeNull();
+        expect(screen.queryByRole('button', { name: /^Open subgraph/ })).toBeNull();
+    });
+
+    // The owner's look on smoke-423: Open sat on a row of its own under the title, as Fold had. The header is one
+    // row: the node's class, its mark, Open, Fold and Close; nothing goes under the title.
+    it('puts Open and the mark on the header row, with nothing under the title', () => {
+        const withSubgraph = buildGraphModel(
+            level([canvasNode('5', { title: 'Stage', kind: 'subgraph', subgraphId: 'def', mode: 'muted' })]),
+            new Map([['def', { name: 'Stage', nodes: 3 }]])
+        );
+        const onOpen = vi.fn();
+        render(
+            <NodePanel
+                model={withSubgraph}
+                node={withSubgraph.byId.get('5')!}
+                folded={false}
+                onClose={vi.fn()}
+                onGo={vi.fn()}
+                onToggleFold={vi.fn()}
+                onOpen={onOpen}
+            />
+        );
+        const open = screen.getByRole('button', { name: 'Open subgraph Stage, 3 nodes inside' });
+        expect(open.getAttribute('title')).toBe('Open subgraph, 3 nodes inside');
+        const header = document.querySelector('.wg-ph')!;
+        const row = header.querySelector('.row')!;
+        expect(header.querySelectorAll('.row')).toHaveLength(1);
+        expect(open.parentElement).toBe(row);
+        expect(screen.getByText('Muted').parentElement).toBe(row);
+        expect(header.lastElementChild?.tagName).toBe('H3');
+        fireEvent.click(open);
+        expect(onOpen).toHaveBeenCalledWith('5');
     });
 });
 

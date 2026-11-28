@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { ArrowRight, Check, ChevronDown, Copy, LogIn, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, Copy, X } from 'lucide-react';
 import { linksOf, type LinkRow } from './graphReading';
 import type { GraphModel, GraphNode } from './graphModel';
-import { UNNAMED_SETTING_TIP } from './GraphNode';
+import { insideCount, UNNAMED_SETTING_TIP } from './GraphNode';
 import { isMarkdownNote, NoteMarkdown } from './NoteMarkdown';
 
 interface NodePanelProps {
@@ -90,27 +90,42 @@ export const NodePanel: React.FC<NodePanelProps> = ({ model, node, folded, onClo
                     <span className="cls">
                         #{node.id} · {node.nodeType}
                     </span>
-                    <button type="button" className="wg-tbtn wg-px" aria-label="Close the node details" onClick={onClose}>
+                    {node.mode === 'bypassed' ? <span className="wg-mark">Bypassed</span> : null}
+                    {node.mode === 'muted' ? <span className="wg-mark mute">Muted</span> : null}
+                    {/* The owner's look on smoke-423: Open and Fold sit on the header row, not on rows of their own. */}
+                    {onOpen ? (
+                        <button
+                            type="button"
+                            className="wg-po"
+                            aria-label={
+                                node.inside === null
+                                    ? `Open subgraph ${node.title}`
+                                    : `Open subgraph ${node.title}, ${insideCount(node.inside)}`
+                            }
+                            title={node.inside === null ? 'Open subgraph' : `Open subgraph, ${insideCount(node.inside)}`}
+                            onClick={() => onOpen(node.id)}
+                        >
+                            Open
+                            <ArrowRight aria-hidden="true" className="h-3 w-3" />
+                        </button>
+                    ) : null}
+                    {canFold ? (
+                        <button
+                            type="button"
+                            className="wg-tbtn"
+                            aria-label={folded ? 'Unfold the node' : 'Fold the node'}
+                            title={folded ? 'Unfold the node' : 'Fold the node'}
+                            aria-expanded={!folded}
+                            onClick={() => onToggleFold(node.id)}
+                        >
+                            <ChevronDown aria-hidden="true" className={folded ? 'h-3.5 w-3.5 -rotate-90' : 'h-3.5 w-3.5'} />
+                        </button>
+                    ) : null}
+                    <button type="button" className="wg-tbtn" aria-label="Close the node details" title="Close" onClick={onClose}>
                         <X aria-hidden="true" className="h-3.5 w-3.5" />
                     </button>
                 </div>
                 <h3>{node.title}</h3>
-                <div className="row">
-                    {node.mode === 'bypassed' ? <span className="wg-mark">Bypassed</span> : null}
-                    {node.mode === 'muted' ? <span className="wg-mark mute">Muted</span> : null}
-                    {onOpen ? (
-                        <button type="button" className="wg-tbtn wg-pa" onClick={() => onOpen(node.id)}>
-                            <LogIn aria-hidden="true" className="h-3.5 w-3.5" />
-                            Open subgraph
-                        </button>
-                    ) : null}
-                    {canFold ? (
-                        <button type="button" className="wg-tbtn wg-pa" aria-expanded={!folded} onClick={() => onToggleFold(node.id)}>
-                            <ChevronDown aria-hidden="true" className={folded ? 'h-3.5 w-3.5 -rotate-90' : 'h-3.5 w-3.5'} />
-                            {folded ? 'Unfold' : 'Fold'}
-                        </button>
-                    ) : null}
-                </div>
             </div>
             <div className="wg-pb">
                 {isNote ? (

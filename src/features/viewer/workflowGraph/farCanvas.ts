@@ -1,4 +1,4 @@
-import type { GraphModel, Positions, WireType } from './graphModel';
+import { DOOR_H, type GraphModel, type Positions, type WireType } from './graphModel';
 import {
     FAR_SCALE,
     GROUP_TITLE_H,
@@ -37,6 +37,8 @@ export interface FarNode extends Rect {
     id: string;
     title: string;
     variant: 'plain' | 'bypass' | 'mute' | 'reroute';
+    /** A subgraph instance with its open row showing, which the canvas marks with the same band. */
+    door: boolean;
     /** The innermost open group the node belongs to, whose colour tints it in the overview. */
     group: string | null;
 }
@@ -95,6 +97,7 @@ export const farSceneFor = (
                     id: node.id,
                     title: node.title,
                     variant,
+                    door: node.kind === 'subgraph' && node.inside !== null && !folded,
                     group: innermost.get(node.id) ?? null,
                     x: at.x,
                     y: at.y,
@@ -195,6 +198,10 @@ const LABEL_PX = 11 / FAR_SCALE;
 const LABEL_PAD = 10;
 const MIN_NODE_TITLE_PX = 10;
 const NODE_TITLE_WEIGHT = 600;
+/** The open row's band: its HTML height, at least DOOR_MIN_PX on screen, and never more than DOOR_MAX_SHARE of the box. */
+const DOOR_MIN_PX = 4;
+const DOOR_MAX_SHARE = 0.4;
+const DOOR_ALPHA = 0.3;
 /** Node borders are drawn fainter than in the HTML, so the boxes stay behind the group areas. */
 const NODE_STROKE_ALPHA = 0.6;
 /** The HTML pill's title size in world units, which far mode starts from so titles do not jump at the switch. */
@@ -244,6 +251,8 @@ export interface FarDrawing {
     wires: { path: Path2D; colour: string; bypassed: boolean }[];
     nodes: { path: Path2D; fill: string; stroke: string; alpha: number; dashed: boolean }[];
     tints: { path: Path2D; colour: string }[];
+    /** Subgraph instances whose open row the canvas draws as a band. */
+    doors: FarNode[];
     sceneNodes: FarNode[];
     /** Fitted node titles by size. */
     labels: Map<number, Label[]>;
@@ -316,6 +325,7 @@ export const prepareFarDrawing = (scene: FarScene, palette: FarPalette): FarDraw
             const look = palette.group.get(key);
             return look ? [{ path, colour: look.stroke }] : [];
         }),
+        doors: scene.nodes.filter((node) => node.door),
         sceneNodes: scene.nodes,
         labels: new Map(),
         font: palette.font,
@@ -617,6 +627,17 @@ export const drawFarScene = (
                 ctx.fillStyle = tint.colour;
                 ctx.fill(tint.path);
             }
+        }
+        // The open row of a subgraph instance, at every far level, so a door reads as one before it is readable.
+        if (layer.drawing.doors.length > 0) {
+            ctx.globalAlpha = DOOR_ALPHA * layer.alpha;
+            ctx.fillStyle = drawing.accent;
+            const band = new Path2D();
+            for (const node of layer.drawing.doors) {
+                const h = Math.min(Math.max(DOOR_H, DOOR_MIN_PX * inv), node.h * DOOR_MAX_SHARE);
+                band.roundRect(node.x, node.y + node.h - h, node.w, h, [0, 0, 8, 8]);
+            }
+            ctx.fill(band);
         }
         // Node titles in far mode only; the overview's only text is the group titles.
         if (!overview) {

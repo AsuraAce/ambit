@@ -11,6 +11,8 @@ import type {
 /** ComfyUI draws a node's title bar above its saved position. */
 export const HEADER_H = 30;
 export const REROUTE_SIZE = 18;
+/** The row under a subgraph instance that opens its level. */
+export const DOOR_H = 28;
 export const FOLDED_GROUP_W = 240;
 export const FOLDED_GROUP_H = 46;
 const BODY_PAD_TOP = 5;
@@ -69,6 +71,8 @@ export interface GraphNode {
     nodeType: string;
     /** For a subgraph instance, the definition its level comes from. */
     subgraphId: string | null;
+    /** For a subgraph instance the report has a definition for, the nodes on its level; otherwise null. */
+    inside: number | null;
     /** The node as saved, for the side panel; null past the report's byte caps. */
     rawJson: string | null;
     mode: WorkflowCanvasNodeMode;
@@ -132,7 +136,14 @@ const toPort = (port: WorkflowCanvasPort): GraphPort => ({
 /** The first port row's centre: border, title bar, body padding, half a row. */
 const FIRST_PIN = 1 + HEADER_H + BODY_PAD_TOP + SLOT_H / 2;
 
-const buildNode = (node: WorkflowCanvasNode, subgraphNames: ReadonlyMap<string, string>): GraphNode => {
+/** What the graph knows of a subgraph definition: its name, and how many nodes its level holds. */
+export interface SubgraphInfo {
+    name: string;
+    nodes: number;
+}
+
+const buildNode = (node: WorkflowCanvasNode, subgraphs: ReadonlyMap<string, SubgraphInfo>): GraphNode => {
+    const definition = node.kind === 'subgraph' && node.subgraphId ? subgraphs.get(node.subgraphId) : undefined;
     const inputs = node.inputs.map(toPort);
     const outputs = node.outputs.map(toPort);
     const widgets = node.widgets.map((widget) => ({
@@ -164,6 +175,8 @@ const buildNode = (node: WorkflowCanvasNode, subgraphNames: ReadonlyMap<string, 
         const rows = Math.max(inputs.length, outputs.length);
         const widgetHeight = widgets.reduce((sum, widget) => sum + (widget.isLongText ? LONG_WIDGET_H : WIDGET_H), 0);
         height = Math.max(savedHeight, 1 + HEADER_H + BODY_PAD_TOP + rows * SLOT_H + widgetHeight + BODY_PAD_BOTTOM);
+        // The open row sits under the body as the file saved it.
+        if (definition) height += DOOR_H;
     }
 
     // The title bar sits above the saved position; a reroute is drawn at its position.
@@ -173,9 +186,10 @@ const buildNode = (node: WorkflowCanvasNode, subgraphNames: ReadonlyMap<string, 
         id: node.id,
         kind: node.kind,
         // A subgraph instance is named as its breadcrumb is: the definition's name first, as its type is a UUID.
-        title: (node.subgraphId ? subgraphNames.get(node.subgraphId) : undefined) || node.title || node.nodeType,
+        title: definition?.name || node.title || node.nodeType,
         nodeType: node.nodeType,
         subgraphId: node.subgraphId,
+        inside: definition ? definition.nodes : null,
         rawJson: node.rawJson,
         mode: node.mode,
         collapsed: node.collapsed,
@@ -197,20 +211,22 @@ const buildNode = (node: WorkflowCanvasNode, subgraphNames: ReadonlyMap<string, 
  */
 const insideGroup = (node: GraphNode, group: GraphGroup): boolean => {
     if (!node.saved) return false;
-    const height = node.kind === 'reroute' ? 0 : node.collapsed ? HEADER_H : node.minHeight || node.height;
+    // The open row is Ambit's, not the file's: it never moves a node's centre.
+    const height =
+        node.kind === 'reroute' ? 0 : node.collapsed ? HEADER_H : node.minHeight || node.height - (node.inside === null ? 0 : DOOR_H);
     const width = node.kind === 'reroute' ? 0 : node.width;
     const cx = node.saved.x + width / 2;
     const cy = node.saved.y + height / 2;
     return cx >= group.x && cx < group.x + group.w && cy >= group.y && cy < group.y + group.h;
 };
 
-/** `subgraphNames` maps a subgraph definition's id to its name, for the instances' titles. */
-export const buildGraphModel = (level: WorkflowCanvasLevel, subgraphNames: ReadonlyMap<string, string> = new Map()): GraphModel => {
+/** `subgraphs` maps a subgraph definition's id to its name and size, for the instances' titles and open rows. */
+export const buildGraphModel = (level: WorkflowCanvasLevel, subgraphs: ReadonlyMap<string, SubgraphInfo> = new Map()): GraphModel => {
     const nodes: GraphNode[] = [];
     const byId = new Map<string, GraphNode>();
     for (const raw of level.nodes) {
         if (byId.has(raw.id)) continue;
-        const node = buildNode(raw, subgraphNames);
+        const node = buildNode(raw, subgraphs);
         nodes.push(node);
         byId.set(node.id, node);
     }
