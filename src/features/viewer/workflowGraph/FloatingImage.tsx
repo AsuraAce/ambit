@@ -65,10 +65,12 @@ export const FloatingImage: React.FC<FloatingImageProps> = ({
     });
     const aspect = source.width > 0 && source.height > 0 ? source.width / source.height : 1;
     // The canvas the window sits on: its parent, which fills the window and changes size only on a resize, less the
-    // side panel that covers its right edge while open.
+    // side panel that covers its right edge while open. As with the view's own room, a narrow canvas keeps at least
+    // half its width, so the room never collapses to nothing and the window stays clamped.
     const room = (): Room => {
         const rect = rootRef.current?.parentElement?.getBoundingClientRect();
-        return { w: Math.max(0, (rect?.width ?? 0) - reserveRight), h: rect?.height ?? 0 };
+        const width = rect?.width ?? 0;
+        return { w: reserveRight > 0 ? Math.max(width - reserveRight, width / 2) : width, h: rect?.height ?? 0 };
     };
     const setBox = (box: FloatBox) => {
         const current = latest.current;

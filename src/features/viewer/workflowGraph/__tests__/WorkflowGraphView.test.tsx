@@ -1710,6 +1710,25 @@ describe('WorkflowGraphView', () => {
             }
         });
 
+        // A canvas no wider than the panel would leave no room at all, and an empty room clamps nothing.
+        it('stays on a canvas no wider than the side panel while the panel is open', () => {
+            // So narrow a canvas fits the graph in far view, which draws on a canvas.
+            const canvases = fakeCanvases();
+            const box = withCanvas(340, 600);
+            try {
+                renderFloat();
+                fireEvent.click(pic());
+                expect(panel()).toBe('Node Decode');
+                // Half the canvas is kept: 170 px, so the window shrinks to its smallest width at the left margin.
+                expect(place()).toMatchObject({ left: '6px', width: '160px' });
+                dragBy(bar(), 5000, 5000);
+                expect(place()).toMatchObject({ left: '6px', top: `${600 - 32 - 6}px`, width: '160px' });
+            } finally {
+                box.mockRestore();
+                canvases.restore();
+            }
+        });
+
         it('closes the panel a picture click opened on Escape, and leaves the window open', () => {
             const { onClose } = renderFloat();
             fireEvent.click(pic());
