@@ -1566,6 +1566,20 @@ describe('WorkflowGraphView', () => {
             expect(panel()).toBe('Node Decode');
         });
 
+        // WebView2 draws a native title as its own window under the pointer: moving onto it leaves the picture, so the
+        // lit node went dark and came back as the tooltip showed and hid. Nothing over the picture may carry one.
+        it('puts no native tooltip on the picture, so pointing at it keeps the node lit', () => {
+            renderFloat();
+            expect(pic().hasAttribute('title')).toBe(false);
+            expect(pic().querySelector('[title]')).toBeNull();
+            expect(pic().getAttribute('aria-label')).toBe('Go to the node that saved this image');
+            expect(win()!.querySelector('.wg-fnote')).toBeNull();
+            fireEvent.pointerEnter(pic());
+            fireEvent.pointerMove(pic(), { pointerId: 1, clientX: 60, clientY: 120 });
+            fireEvent.pointerMove(pic(), { pointerId: 1, clientX: 140, clientY: 180 });
+            expect(lit()).toEqual(['2']);
+        });
+
         // The output inside a subgraph is reached through its instance: the picture points at the instance, then,
         // one level down, at the node itself. The window keeps its place across the levels.
         it('points at the subgraph holding the output, then at the output inside it, keeping its place', () => {
@@ -1591,7 +1605,10 @@ describe('WorkflowGraphView', () => {
         it('lights nothing, and says why, where the output is on no path from this level', () => {
             renderFloat(report(root, { subgraphs, selectedOutputPaths: [] }));
             expect(pic().getAttribute('aria-disabled')).toBe('true');
-            expect(pic().getAttribute('title')).toContain('not on this level');
+            // Said on the window, not in a native tooltip over the picture.
+            const note = win()!.querySelector('.wg-fnote')!;
+            expect(note.textContent).toContain('not on this level');
+            expect(pic().getAttribute('aria-describedby')).toBe(note.id);
             fireEvent.pointerEnter(pic());
             fireEvent.click(pic());
             expect(lit()).toEqual([]);
