@@ -24,6 +24,7 @@ import {
     placeGroupTitle,
     type Measure,
 } from './groupTitles';
+import { ARRIVE_STEPS, arrived, arriveStep, GROUP_ARRIVE_MS, NODE_ARRIVE_MS, WIRE_DRAW_MS, wireDelay, type EntrancePlan } from './entrance';
 
 /**
  * Far mode draws the graph on one canvas instead of thousands of HTML elements, so a pan or zoom step
@@ -443,8 +444,11 @@ export const farNodeAt = (nodes: readonly FarNode[], x: number, y: number): stri
     return null;
 };
 
-/** Rings drawn over the nodes: a search's hits, then the picked node, then the arrow keys' node outside it. */
-const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: FarMarks, inv: number) => {
+/**
+ * Rings drawn over the nodes: a search's hits, then the picked node, then the arrow keys' node outside it. `alpha`
+ * is the nodes' own, so during the entrance a ring fades in with its node.
+ */
+const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: FarMarks, inv: number, alpha: number) => {
     if (!marks.hits && marks.selected === null && marks.cursor === null) return;
     const ring = (node: FarNode, gap: number, width: number) => {
         const path = new Path2D();
@@ -455,15 +459,15 @@ const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: F
     ctx.strokeStyle = drawing.accent;
     for (const node of drawing.sceneNodes) {
         if (marks.hits?.has(node.id)) {
-            ctx.globalAlpha = 0.7;
+            ctx.globalAlpha = 0.7 * alpha;
             ring(node, 2, 2);
         }
         if (node.id === marks.selected) {
-            ctx.globalAlpha = 1;
+            ctx.globalAlpha = alpha;
             ring(node, 1, 2);
         }
         if (node.id === marks.cursor) {
-            ctx.globalAlpha = 1;
+            ctx.globalAlpha = alpha;
             ctx.setLineDash([4 * inv, 3 * inv]);
             ring(node, 5, 2);
             ctx.setLineDash([]);
@@ -473,8 +477,44 @@ const paintMarks = (ctx: CanvasRenderingContext2D, drawing: FarDrawing, marks: F
 };
 
 /**
+ * The far canvas's entrance: the nodes and wires split into a few steps by when they arrive, each step drawn as its
+ * own small drawing with one opacity, so a frame of it costs about one plain draw.
+ */
+export interface FarArrival {
+    nodes: { delay: number; drawing: FarDrawing }[];
+    wires: { delay: number; drawing: FarDrawing }[];
+}
+
+export const prepareFarArrival = (scene: FarScene, palette: FarPalette, plan: EntrancePlan): FarArrival => {
+    const span = Math.max(0, ...plan.nodeDelay.values());
+    const nodeSteps = Array.from({ length: ARRIVE_STEPS }, () => ({ delay: 0, nodes: [] as FarNode[] }));
+    for (const node of scene.nodes) {
+        const { step, delay } = arriveStep(plan.nodeDelay.get(node.id) ?? 0, span);
+        nodeSteps[step].delay = delay;
+        nodeSteps[step].nodes.push(node);
+    }
+    // A wire starts after the later of its ends, plus a lag; the steps keep that lag.
+    const lag = wireDelay(plan, { from: '', to: '' });
+    const wireSteps = Array.from({ length: ARRIVE_STEPS }, () => ({ delay: 0, wires: [] as WirePath[] }));
+    for (const wire of scene.wires) {
+        const { step, delay } = arriveStep(wireDelay(plan, wire) - lag, span);
+        wireSteps[step].delay = delay + lag;
+        wireSteps[step].wires.push(wire);
+    }
+    return {
+        nodes: nodeSteps
+            .filter((step) => step.nodes.length > 0)
+            .map((step) => ({ delay: step.delay, drawing: prepareFarDrawing({ groups: [], nodes: step.nodes, wires: [] }, palette) })),
+        wires: wireSteps
+            .filter((step) => step.wires.length > 0)
+            .map((step) => ({ delay: step.delay, drawing: prepareFarDrawing({ groups: [], nodes: [], wires: step.wires }, palette) })),
+    };
+};
+
+/**
  * Paints the far drawing over the whole canvas, in the view's pan and zoom; `dpr` is the canvas's pixel ratio. The
- * pill of the `hover` group gets the near pill's hover border. Returns the title pills it drew, for hit-testing.
+ * pill of the `hover` group gets the near pill's hover border. During the entrance, `arrival` and its time `t` (ms
+ * since it started) draw the nodes and wires step by step instead. Returns the title pills it drew, for hit-testing.
  */
 export const drawFarScene = (
     ctx: CanvasRenderingContext2D,
@@ -483,7 +523,8 @@ export const drawFarScene = (
     dpr: number,
     level: Exclude<ViewLevel, 'near'> = 'far',
     hover: string | null = null,
-    marks: FarMarks = NO_FAR_MARKS
+    marks: FarMarks = NO_FAR_MARKS,
+    arrival: { steps: FarArrival; t: number } | null = null
 ): GroupLabel[] => {
     const { x, y, s } = view;
     const inv = 1 / s;
@@ -496,14 +537,23 @@ export const drawFarScene = (
     const wireWidth = drawing.wireWidth * Math.min(inv, WIRE_SCALE_CAP);
     ctx.lineCap = 'round';
     ctx.lineWidth = wireWidth;
-    ctx.globalAlpha = overview ? OVERVIEW_WIRE_ALPHA : 1;
-    for (const wire of drawing.wires) {
-        ctx.strokeStyle = wire.colour;
-        ctx.setLineDash(wire.bypassed ? [(6 / WIRE_WIDTH) * wireWidth, (5 / WIRE_WIDTH) * wireWidth] : []);
-        ctx.stroke(wire.path);
+    const wireLayers = arrival
+        ? arrival.steps.wires.map((step) => ({ drawing: step.drawing, alpha: arrived(arrival.t, step.delay, WIRE_DRAW_MS) }))
+        : [{ drawing, alpha: 1 }];
+    const nodeLayers = arrival
+        ? arrival.steps.nodes.map((step) => ({ drawing: step.drawing, alpha: arrived(arrival.t, step.delay, NODE_ARRIVE_MS) }))
+        : [{ drawing, alpha: 1 }];
+    const groupAlpha = arrival ? arrived(arrival.t, 0, GROUP_ARRIVE_MS) : 1;
+    for (const layer of wireLayers) {
+        ctx.globalAlpha = (overview ? OVERVIEW_WIRE_ALPHA : 1) * layer.alpha;
+        for (const wire of layer.drawing.wires) {
+            ctx.strokeStyle = wire.colour;
+            ctx.setLineDash(wire.bypassed ? [(6 / WIRE_WIDTH) * wireWidth, (5 / WIRE_WIDTH) * wireWidth] : []);
+            ctx.stroke(wire.path);
+        }
     }
     ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = groupAlpha;
 
     ctx.lineWidth = inv;
     for (const group of drawing.groups) {
@@ -545,39 +595,46 @@ export const drawFarScene = (
     };
     for (const label of groupLabels) if (label.kind === 'inside') paintGroupLabel(label);
 
-    // The overview draws nodes as soft shapes tinted toward their group's colour, without borders.
-    for (const look of drawing.nodes) {
-        ctx.globalAlpha = look.alpha;
-        ctx.fillStyle = look.fill;
-        ctx.fill(look.path);
-        if (overview) continue;
-        ctx.globalAlpha = look.alpha * NODE_STROKE_ALPHA;
-        ctx.strokeStyle = look.stroke;
-        ctx.setLineDash(look.dashed ? [4 * inv, 3 * inv] : []);
-        ctx.stroke(look.path);
-    }
-    ctx.setLineDash([]);
-    if (overview) {
-        ctx.globalAlpha = OVERVIEW_TINT_ALPHA;
-        for (const tint of drawing.tints) {
-            ctx.fillStyle = tint.colour;
-            ctx.fill(tint.path);
+    ctx.globalAlpha = 1;
+
+    for (const layer of nodeLayers) {
+        if (layer.alpha <= 0) continue;
+        // The overview draws nodes as soft shapes tinted toward their group's colour, without borders.
+        for (const look of layer.drawing.nodes) {
+            ctx.globalAlpha = look.alpha * layer.alpha;
+            ctx.fillStyle = look.fill;
+            ctx.fill(look.path);
+            if (overview) continue;
+            ctx.globalAlpha = look.alpha * NODE_STROKE_ALPHA * layer.alpha;
+            ctx.strokeStyle = look.stroke;
+            ctx.setLineDash(look.dashed ? [4 * inv, 3 * inv] : []);
+            ctx.stroke(look.path);
+        }
+        ctx.setLineDash([]);
+        if (overview) {
+            ctx.globalAlpha = OVERVIEW_TINT_ALPHA * layer.alpha;
+            for (const tint of layer.drawing.tints) {
+                ctx.fillStyle = tint.colour;
+                ctx.fill(tint.path);
+            }
+        }
+        // Node titles in far mode only; the overview's only text is the group titles.
+        if (!overview) {
+            ctx.globalAlpha = layer.alpha;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = drawing.muted;
+            ctx.font = `${NODE_TITLE_WEIGHT} ${titlePx}px ${drawing.font}`;
+            for (const label of nodeLabelsAt(ctx, layer.drawing, titlePx)) ctx.fillText(label.text, label.x, label.y);
         }
     }
     ctx.globalAlpha = 1;
 
-    // Node titles in far mode only; the overview's only text is the group titles.
-    if (!overview) {
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = drawing.muted;
-        ctx.font = `${NODE_TITLE_WEIGHT} ${titlePx}px ${drawing.font}`;
-        for (const label of nodeLabelsAt(ctx, drawing, titlePx)) ctx.fillText(label.text, label.x, label.y);
-    }
+    for (const layer of nodeLayers) paintMarks(ctx, layer.drawing, marks, inv, layer.alpha);
 
-    paintMarks(ctx, drawing, marks, inv);
-
+    ctx.globalAlpha = groupAlpha;
     const pills = groupLabels.filter((label) => label.kind === 'pill');
     for (const label of pills) paintGroupLabel(label);
+    ctx.globalAlpha = 1;
     return pills;
 };

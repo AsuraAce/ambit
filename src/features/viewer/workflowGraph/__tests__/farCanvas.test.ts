@@ -6,10 +6,13 @@ import {
     groupPillAt,
     layoutGroupLabels,
     NEAR_GROUP_TITLE_PX,
+    NO_FAR_MARKS,
+    prepareFarArrival,
     prepareFarDrawing,
     readFarPalette,
     type FarPalette,
 } from '../farCanvas';
+import { ARRIVE_STEPS, planEntrance } from '../entrance';
 import { FAR_SCALE, groupBox, LOWEST_SCALE, OVERVIEW_SCALE, nodeHeight, sceneFor, wirePaths } from '../geometry';
 import { GROUP_TITLE_CAP_PX, OVERVIEW_TITLE_MIN_PX, TITLE_CHROME, TITLE_INSET } from '../groupTitles';
 import { buildGraphModel, savedPositions } from '../graphModel';
@@ -378,5 +381,65 @@ describe('farGroupTitlePx', () => {
         expect(farGroupTitlePx(FAR_SCALE)).toBeCloseTo(NEAR_GROUP_TITLE_PX * FAR_SCALE);
         expect(farGroupTitlePx(0.3)).toBeGreaterThan(farGroupTitlePx(0.4));
         expect(farGroupTitlePx(0.05)).toBe(GROUP_TITLE_CAP_PX);
+    });
+});
+
+describe('the far canvas entrance', () => {
+    beforeEach(() => {
+        vi.stubGlobal(
+            'Path2D',
+            class {
+                constructor(readonly d = '') {}
+                roundRect() {}
+            }
+        );
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const { far } = farScene(new Set(), new Set());
+    const plan = planEntrance(far.nodes, false);
+
+    // Each node and wire is drawn exactly once a frame, in the step its start falls in, so nothing doubles up.
+    it('splits the nodes and wires into a few steps, each in exactly one', () => {
+        const arrival = prepareFarArrival(far, palette, plan);
+        expect(arrival.nodes.length).toBeLessThanOrEqual(ARRIVE_STEPS);
+        const ids = arrival.nodes.flatMap((step) => step.drawing.sceneNodes.map((node) => node.id));
+        expect([...ids].sort()).toEqual(far.nodes.map((node) => node.id).sort());
+        const delays = arrival.nodes.map((step) => step.delay);
+        expect(delays).toEqual([...delays].sort((a, b) => a - b));
+        expect(arrival.wires.reduce((sum, step) => sum + step.drawing.wires.length, 0)).toBeGreaterThan(0);
+    });
+
+    it('paints no node at the start, the leftmost first, and every node in full at the end', () => {
+        const arrival = prepareFarArrival(far, palette, plan);
+        const at = (t: number) => {
+            const { ctx, paints } = recordingCanvas();
+            drawFarScene(ctx, prepareFarDrawing(far, palette), { x: 0, y: 0, s: 0.4 }, 1, 'far', null, NO_FAR_MARKS, { steps: arrival, t });
+            return paints.filter((paint) => paint.startsWith('fill:a@'));
+        };
+        expect(at(0)).toEqual([]);
+        // Early on, only the first step has started, and it is not yet in full.
+        const early = at(60);
+        expect(early.length).toBeGreaterThan(0);
+        expect(early.length).toBeLessThan(arrival.nodes.length);
+        expect(early.every((paint) => Number(paint.split('@')[1]) < 1)).toBe(true);
+        expect(at(plan.end).every((paint) => paint.endsWith('@1'))).toBe(true);
+        expect(at(plan.end)).toHaveLength(arrival.nodes.reduce((sum, step) => sum + step.drawing.nodes.length, 0));
+    });
+
+    // A ring at full strength around a node not yet drawn reads as a stray mark: it fades in with its node.
+    it('fades the picked node’s ring in with its node', () => {
+        const arrival = prepareFarArrival(far, palette, plan);
+        const ringAt = (t: number) => {
+            const { ctx, paints } = recordingCanvas();
+            const marks = { ...NO_FAR_MARKS, selected: '1' };
+            drawFarScene(ctx, prepareFarDrawing(far, palette), { x: 0, y: 0, s: 0.4 }, 1, 'far', null, marks, { steps: arrival, t });
+            return paints.filter((paint) => paint.startsWith('stroke:sage@')).map((paint) => Number(paint.split('@')[1]));
+        };
+        expect(ringAt(0)).toEqual([0]);
+        const [early] = ringAt(60);
+        expect(early).toBeGreaterThan(0);
+        expect(early).toBeLessThan(1);
+        expect(ringAt(plan.end)).toEqual([1]);
     });
 });

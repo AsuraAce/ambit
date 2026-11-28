@@ -5,6 +5,7 @@ import {
     bundledPath,
     endpoint,
     fitView,
+    flightView,
     LOWEST_SCALE,
     MAX_SCALE,
     MIN_SCALE,
@@ -283,5 +284,30 @@ describe('wire shapes', () => {
         expect(visibleWires(wires, 'hidden', 'b')).toEqual(wires);
         // Every other shape shows them all, picked node or not.
         for (const shape of shapes.filter((candidate) => candidate !== 'hidden')) expect(visibleWires(wires, shape, 'a')).toEqual(wires);
+    });
+});
+
+describe('flightView', () => {
+    const from = { x: 100, y: 50, s: 0.2 };
+    const to = { x: -300, y: -120, s: 1 };
+
+    // #641: a flight from the overview raced through the switch into the Detailed level. The zoom now moves by equal
+    // ratios, so halfway it is at the geometric mean of the two zooms, not the arithmetic one.
+    it('moves the zoom by equal ratios, so it reaches the Detailed level late and slowly', () => {
+        expect(flightView(from, to, 0.5).s).toBeCloseTo(Math.sqrt(0.2 * 1), 9);
+        expect(flightView(from, to, 0.5).s).toBeLessThan((0.2 + 1) / 2);
+        expect(flightView(from, to, 0).s).toBeCloseTo(0.2, 9);
+        expect(flightView(from, to, 1)).toEqual(to);
+    });
+
+    // A flight that swings the screen sideways while it zooms reads as a lurch: one point stays put all the way.
+    it('zooms about the one point both views place in the same spot', () => {
+        const world = (to.x - from.x) / (from.s - to.s);
+        const screen = (view: { x: number; s: number }) => view.x + view.s * world;
+        for (const k of [0.1, 0.4, 0.8]) expect(screen(flightView(from, to, k))).toBeCloseTo(screen(from), 6);
+    });
+
+    it('pans in a straight line when the zoom does not change', () => {
+        expect(flightView({ x: 0, y: 0, s: 1 }, { x: 100, y: -40, s: 1 }, 0.25)).toEqual({ x: 25, y: -10, s: 1 });
     });
 });

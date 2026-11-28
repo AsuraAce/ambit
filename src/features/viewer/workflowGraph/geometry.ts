@@ -313,3 +313,17 @@ export const zoomAt = (view: View, factor: number, cx: number, cy: number, floor
     const k = s / view.s;
     return { s, x: cx - (cx - view.x) * k, y: cy - (cy - view.y) * k };
 };
+
+/**
+ * The view a flight from `from` to `to` shows at progress k (0 to 1, already eased). The zoom moves by equal ratios in
+ * equal steps, as a wheel zoom does, so a flight from an overview slows into the Detailed level instead of racing
+ * through it. The move is a zoom about the one point that both views place in the same spot, so the screen never
+ * swings; with no change of zoom it is a straight pan.
+ */
+export const flightView = (from: View, to: View, k: number): View => {
+    if (k >= 1) return to;
+    if (from.s === to.s) return { s: to.s, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
+    const s = from.s * (to.s / from.s) ** k;
+    const along = (s - from.s) / (to.s - from.s);
+    return { s, x: from.x + (to.x - from.x) * along, y: from.y + (to.y - from.y) * along };
+};
