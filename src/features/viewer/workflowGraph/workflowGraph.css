@@ -1175,6 +1175,27 @@ button.wg-crumb:hover {
     }
 }
 
+/* UX-L267's edge: a thin sage line down the panel's left border, fading out along its length, drawn down as the
+   panel arrives. */
+.wg-panel::before {
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(180deg, var(--graph-sage), transparent 55%);
+    transform-origin: top;
+    animation: wg-edge-in 420ms var(--wg-out) 120ms backwards;
+    pointer-events: none;
+}
+
+@keyframes wg-edge-in {
+    from {
+        transform: scaleY(0);
+    }
+}
+
 .wg-ph {
     padding: 14px 14px 12px;
     border-bottom: 1px solid var(--graph-line);
@@ -1187,7 +1208,9 @@ button.wg-crumb:hover {
     gap: 8px;
 }
 
+/* The node's class takes the room, so Fold and Close sit at the right end. */
 .wg-ph .cls {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1196,8 +1219,8 @@ button.wg-crumb:hover {
     font-size: 11px;
 }
 
-.wg-ph .wg-px {
-    margin-left: auto;
+.wg-ph .row .wg-tbtn + .wg-tbtn {
+    margin-left: -6px;
 }
 
 .wg-ph h3 {
@@ -1205,6 +1228,10 @@ button.wg-crumb:hover {
     font-size: 15px;
     font-weight: 700;
     overflow-wrap: anywhere;
+}
+
+.wg-ph h3:last-child {
+    margin-bottom: 0;
 }
 
 .wg-ph .wg-pa {
@@ -1729,7 +1756,8 @@ button.wg-crumb:hover {
     .wg-node.arriving,
     .wg-wire.arriving,
     .wg-wires.swap,
-    .wg-panel {
+    .wg-panel,
+    .wg-panel::before {
         animation: none;
     }
 }

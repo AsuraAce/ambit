@@ -105,7 +105,11 @@ describe('NodePanel', () => {
 
     it('folds the node and offers Open only for a subgraph it can open', () => {
         const { onToggleFold } = renderPanel();
-        fireEvent.click(screen.getByRole('button', { name: 'Fold' }));
+        // An icon beside Close, so its name and tooltip say what it does.
+        const fold = screen.getByRole('button', { name: 'Fold the node' });
+        expect(fold.getAttribute('title')).toBe('Fold the node');
+        expect(fold.closest('.row')?.querySelector('[aria-label="Close the node details"]')).toBeTruthy();
+        fireEvent.click(fold);
         expect(onToggleFold).toHaveBeenCalledWith('7');
         expect(screen.queryByRole('button', { name: 'Open subgraph' })).toBeNull();
     });

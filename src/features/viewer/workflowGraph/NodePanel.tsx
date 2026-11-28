@@ -90,27 +90,36 @@ export const NodePanel: React.FC<NodePanelProps> = ({ model, node, folded, onClo
                     <span className="cls">
                         #{node.id} · {node.nodeType}
                     </span>
-                    <button type="button" className="wg-tbtn wg-px" aria-label="Close the node details" onClick={onClose}>
+                    {/* The owner's look on smoke-423: Fold is a small icon beside Close, not a row of its own. */}
+                    {canFold ? (
+                        <button
+                            type="button"
+                            className="wg-tbtn"
+                            aria-label={folded ? 'Unfold the node' : 'Fold the node'}
+                            title={folded ? 'Unfold the node' : 'Fold the node'}
+                            aria-expanded={!folded}
+                            onClick={() => onToggleFold(node.id)}
+                        >
+                            <ChevronDown aria-hidden="true" className={folded ? 'h-3.5 w-3.5 -rotate-90' : 'h-3.5 w-3.5'} />
+                        </button>
+                    ) : null}
+                    <button type="button" className="wg-tbtn" aria-label="Close the node details" title="Close" onClick={onClose}>
                         <X aria-hidden="true" className="h-3.5 w-3.5" />
                     </button>
                 </div>
                 <h3>{node.title}</h3>
-                <div className="row">
-                    {node.mode === 'bypassed' ? <span className="wg-mark">Bypassed</span> : null}
-                    {node.mode === 'muted' ? <span className="wg-mark mute">Muted</span> : null}
-                    {onOpen ? (
-                        <button type="button" className="wg-tbtn wg-pa" onClick={() => onOpen(node.id)}>
-                            <LogIn aria-hidden="true" className="h-3.5 w-3.5" />
-                            Open subgraph
-                        </button>
-                    ) : null}
-                    {canFold ? (
-                        <button type="button" className="wg-tbtn wg-pa" aria-expanded={!folded} onClick={() => onToggleFold(node.id)}>
-                            <ChevronDown aria-hidden="true" className={folded ? 'h-3.5 w-3.5 -rotate-90' : 'h-3.5 w-3.5'} />
-                            {folded ? 'Unfold' : 'Fold'}
-                        </button>
-                    ) : null}
-                </div>
+                {node.mode !== 'active' || onOpen ? (
+                    <div className="row">
+                        {node.mode === 'bypassed' ? <span className="wg-mark">Bypassed</span> : null}
+                        {node.mode === 'muted' ? <span className="wg-mark mute">Muted</span> : null}
+                        {onOpen ? (
+                            <button type="button" className="wg-tbtn wg-pa" onClick={() => onOpen(node.id)}>
+                                <LogIn aria-hidden="true" className="h-3.5 w-3.5" />
+                                Open subgraph
+                            </button>
+                        ) : null}
+                    </div>
+                ) : null}
             </div>
             <div className="wg-pb">
                 {isNote ? (
